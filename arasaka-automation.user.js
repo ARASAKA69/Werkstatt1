@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         Auftrags-Automatisierung
+// @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Automatisiert den Freigabe- und Druckprozess mit dynamischem Dropdown-Check
+// @version      1.2
+// @description  Automatisiert den Freigabe- und Druckprozess mit dynamischem Dropdown-Check (+alerts)
 // @author       ARASAKA
 // @match        *://*/*
-// @updateURL    https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/arasaka-automatisierung.user.js
-// @downloadURL  https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/arasaka-automatisierung.user.js
+// @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
+// @downloadURL  https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
 // @grant        none
 // ==/UserScript==
 
