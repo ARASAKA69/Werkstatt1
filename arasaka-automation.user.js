@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Automatisiert den Freigabe- und Druckprozess mit dynamischem Dropdown-Check (+alerts)
 // @author       ARASAKA
 // @match        *://*/*
