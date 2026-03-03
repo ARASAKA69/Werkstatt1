@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  Automatisiert den Freigabe- und Druckprozess mit dynamischem Dropdown-Check (+alerts)
+// @version      1.4
+// @description  ARASAKA Premium (HUD, Audio-Ping & Not-Aus)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -13,7 +13,79 @@
 (function() {
     'use strict';
 
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    let abortMission = false;
+    let hudElement = null;
+
+    function createHUD() {
+        if (!hudElement) {
+            hudElement = document.createElement('div');
+            hudElement.style.position = 'fixed';
+            hudElement.style.bottom = '20px';
+            hudElement.style.right = '20px';
+            hudElement.style.backgroundColor = 'rgba(10, 10, 10, 0.9)';
+            hudElement.style.color = '#00ffcc';
+            hudElement.style.border = '1px solid #00ffcc';
+            hudElement.style.padding = '12px 20px';
+            hudElement.style.fontFamily = 'monospace';
+            hudElement.style.fontSize = '14px';
+            hudElement.style.zIndex = '999999';
+            hudElement.style.pointerEvents = 'none';
+            hudElement.style.boxShadow = '0 0 15px rgba(0, 255, 204, 0.4)';
+            hudElement.style.borderRadius = '3px';
+            document.body.appendChild(hudElement);
+        }
+    }
+
+    function updateHUD(text, color = '#00ffcc') {
+        createHUD();
+        hudElement.style.color = color;
+        hudElement.style.border = `1px solid ${color}`;
+        hudElement.style.boxShadow = `0 0 15px ${color}80`;
+        hudElement.innerHTML = `<strong style="letter-spacing: 2px;">ARASAKA SYS //</strong><br><br>${text}`;
+    }
+
+    function removeHUD() {
+        if (hudElement) {
+            hudElement.remove();
+            hudElement = null;
+        }
+    }
+
+    function playDing(type = 'success') {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            if (type === 'success') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.2, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.5);
+            } else {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(150, ctx.currentTime);
+                gain.gain.setValueAtTime(0.3, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.4);
+            }
+        } catch(e) {}
+    }
+
+    async function sleep(ms) {
+        let t = 0;
+        while (t < ms) {
+            if (abortMission) throw new Error("Abort");
+            await new Promise(r => setTimeout(r, 100));
+            t += 100;
+        }
+    }
 
     function getDeepestElementsByText(text) {
         const elements = document.querySelectorAll('*');
@@ -35,6 +107,7 @@
     async function waitForElement(text, timeout = 10000, pickLast = false) {
         let timePassed = 0;
         while (timePassed < timeout) {
+            if (abortMission) throw new Error("Abort");
             let els = getDeepestElementsByText(text);
             if (els.length > 0) {
                 return pickLast ? els[els.length - 1] : els[0];
@@ -54,13 +127,16 @@
     }
 
     async function sucheUndOeffnePdf() {
+        updateHUD("Warte auf Tabellen-Aufbau...");
         await sleep(4000);
 
+        updateHUD("Suche Werkstattauftrag...");
         let textWerkstatt = await waitForElement('Werkstattauftrag', 15000);
         if (textWerkstatt) {
             let parent = textWerkstatt.parentElement;
             let pdfClicked = false;
 
+            updateHUD("Scanne nach PDF...", "#ffff00");
             for (let i = 0; i < 8; i++) {
                 if (!parent) break;
 
@@ -80,105 +156,148 @@
                 if (pdfClicked) break;
                 parent = parent.parentElement;
             }
+
+            if (pdfClicked) {
+                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P", "#00ff00");
+                playDing('success');
+                setTimeout(removeHUD, 6000);
+            }
         }
     }
 
     async function startMacro() {
-        let btnEdit = await waitForElement('Edit damages and services');
-        if (btnEdit) { forceClick(btnEdit); } else return;
+        try {
+            updateHUD("Initialisiere...");
+            
+            let btnEdit = await waitForElement('Edit damages and services');
+            if (btnEdit) { forceClick(btnEdit); } else return;
 
-        await sleep(2000);
-        let btnSpareParts = await waitForElement('Spare parts');
-        if (btnSpareParts) { forceClick(btnSpareParts); } else return;
+            updateHUD("Navigiere zu Spare Parts...");
+            await sleep(2000);
+            let btnSpareParts = await waitForElement('Spare parts');
+            if (btnSpareParts) { forceClick(btnSpareParts); } else return;
 
-        await sleep(1000);
-        let btnSelectAll = await waitForElement('Select all');
-        if (btnSelectAll) { forceClick(btnSelectAll); } else return;
-
-        await sleep(1000);
-        let selects = document.querySelectorAll('select');
-        let foundDropdown = false;
-        for (let select of selects) {
-            for (let option of select.options) {
-                if (option.text.includes('Handed out')) {
-                    select.value = option.value;
-                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                    foundDropdown = true;
-                    break;
-                }
-            }
-            if (foundDropdown) break;
-        }
-
-        await sleep(1000);
-        let btnApply = await waitForElement('Apply');
-        if (btnApply) { forceClick(btnApply); }
-
-        let maxChecks = 3;
-        let checksDone = 0;
-        let allUpdated = false;
-
-        while (checksDone < maxChecks) {
+            updateHUD("Wähle alles aus...");
             await sleep(1000);
-            checksDone++;
+            let btnSelectAll = await waitForElement('Select all');
+            if (btnSelectAll) { forceClick(btnSelectAll); } else return;
 
-            let allSelects = document.querySelectorAll('select');
-            let unfertigeGefunden = false;
-            let relevanteDropdownsGefunden = 0;
-
-            for (let select of allSelects) {
-                let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
-
-                if (hasHandedOutOption) {
-                    relevanteDropdownsGefunden++;
-                    let currentText = select.options[select.selectedIndex].text;
-
-                    if (!currentText.includes('Handed out')) {
-                        unfertigeGefunden = true;
+            updateHUD("Passe Dropdowns an...");
+            await sleep(1000);
+            let selects = document.querySelectorAll('select');
+            let foundDropdown = false;
+            for (let select of selects) {
+                for (let option of select.options) {
+                    if (option.text.includes('Handed out')) {
+                        select.value = option.value;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        foundDropdown = true;
                         break;
                     }
                 }
+                if (foundDropdown) break;
             }
 
+            updateHUD("Wende Änderungen an...");
+            await sleep(1000);
+            let btnApply = await waitForElement('Apply');
+            if (btnApply) { forceClick(btnApply); }
 
-            if (relevanteDropdownsGefunden > 0 && !unfertigeGefunden) {
-                allUpdated = true;
-                break;
+            updateHUD("Prüfe Handed-Out...", "#ffff00");
+            let maxChecks = 3;
+            let checksDone = 0;
+            let allUpdated = false;
+
+            while (checksDone < maxChecks) {
+                await sleep(1000);
+                checksDone++;
+
+                let allSelects = document.querySelectorAll('select');
+                let unfertigeGefunden = false;
+                let relevanteDropdownsGefunden = 0;
+
+                for (let select of allSelects) {
+                    let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
+
+                    if (hasHandedOutOption) {
+                        relevanteDropdownsGefunden++;
+                        let currentText = select.options[select.selectedIndex].text;
+
+                        if (!currentText.includes('Handed out')) {
+                            unfertigeGefunden = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (relevanteDropdownsGefunden > 0 && !unfertigeGefunden) {
+                    allUpdated = true;
+                    break;
+                }
             }
-        }
 
-        if (!allUpdated) {
-            alert("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden. Das Skript wurde gestoppt. Bitte prüfe die Liste und mach manuell weiter (Und Machs gescheit!).");
-            return;
-        }
+            if (!allUpdated) {
+                updateHUD("FEHLER: SYNC FEHLGESCHLAGEN!", "#ff0000");
+                playDing('error');
+                setTimeout(removeHUD, 5000);
+                alert("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden. Das Skript wurde gestoppt. Bitte prüfe die Liste und mach manuell weiter (Und Machs gescheit!).");
+                return;
+            }
 
-        let btnSubmit = await waitForElement('Submit');
-        if (btnSubmit) { forceClick(btnSubmit); }
+            updateHUD("Übermittle Daten...");
+            let btnSubmit = await waitForElement('Submit');
+            if (btnSubmit) { forceClick(btnSubmit); }
 
-        await sleep(1000);
-        let btnConfirm = await waitForElement('Confirm');
-        if (btnConfirm) { forceClick(btnConfirm); }
+            updateHUD("Bestätige Freigabe...");
+            await sleep(1000);
+            let btnConfirm = await waitForElement('Confirm');
+            if (btnConfirm) { forceClick(btnConfirm); }
 
-        await sleep(2000);
-        let btnClose = await waitForElement('Close', 10000, true);
-        if (btnClose) { forceClick(btnClose); }
+            updateHUD("Schließe Fenster...");
+            await sleep(2000);
+            let btnClose = await waitForElement('Close', 10000, true);
+            if (btnClose) { forceClick(btnClose); }
 
-        await sleep(1500);
-        let btnBack = await waitForElement('Back to refurbishment detail', 15000);
-        if (btnBack) {
-            sessionStorage.setItem('hole_pdf_nach_reload', 'true');
-            forceClick(btnBack);
+            updateHUD("Rückkehr zum Auftrag...");
+            await sleep(1500);
+            let btnBack = await waitForElement('Back to refurbishment detail', 15000);
+            if (btnBack) {
+                sessionStorage.setItem('hole_pdf_nach_reload', 'true');
+                forceClick(btnBack);
+            }
+            
+        } catch (e) {
+            if (e.message === "Abort") {
+                updateHUD("ABBRUCH DURCH USER", "#ff0000");
+                playDing('error');
+                setTimeout(removeHUD, 3000);
+            }
         }
     }
 
     if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
         sessionStorage.removeItem('hole_pdf_nach_reload');
-        sucheUndOeffnePdf();
+        abortMission = false;
+        (async () => {
+            try {
+                await sucheUndOeffnePdf();
+            } catch (e) {
+                if (e.message === "Abort") {
+                    updateHUD("ABBRUCH DURCH USER", "#ff0000");
+                    playDing('error');
+                    setTimeout(removeHUD, 3000);
+                }
+            }
+        })();
     }
 
     document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            abortMission = true;
+        }
         if (event.altKey && event.key.toLowerCase() === 'y') {
             event.preventDefault();
+            abortMission = false;
             startMacro();
         }
     });
