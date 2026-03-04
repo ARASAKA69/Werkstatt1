@@ -204,7 +204,7 @@
             if (btnApply) { forceClick(btnApply); }
 
             updateHUD("Prüfe Handed-Out...", "#ffff00");
-            let maxChecks = 3;
+            let maxChecks = 4;
             let checksDone = 0;
             let allUpdated = false;
 
