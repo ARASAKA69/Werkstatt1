@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.8
-// @description  ARASAKA Premium (HUD, Audio-Ping, Not-Aus, Laser-Targeting, Admin-Menu)
+// @version      1.9
+// @description  ARASAKA Premium (Laser-Red, Smooth Scroll, Not-Aus, Admin-Menu)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -33,20 +33,20 @@
             hudElement.style.bottom = '20px';
             hudElement.style.right = '20px';
             hudElement.style.backgroundColor = 'rgba(10, 10, 10, 0.9)';
-            hudElement.style.color = '#00ffcc';
-            hudElement.style.border = '1px solid #00ffcc';
+            hudElement.style.color = '#ff0000';
+            hudElement.style.border = '1px solid #ff0000';
             hudElement.style.padding = '12px 20px';
             hudElement.style.fontFamily = 'monospace';
             hudElement.style.fontSize = '14px';
             hudElement.style.zIndex = '999999';
             hudElement.style.pointerEvents = 'none';
-            hudElement.style.boxShadow = '0 0 15px rgba(0, 255, 204, 0.4)';
+            hudElement.style.boxShadow = '0 0 15px rgba(255, 0, 0, 0.4)';
             hudElement.style.borderRadius = '3px';
             document.body.appendChild(hudElement);
         }
     }
 
-    function updateHUD(text, color = '#00ffcc') {
+    function updateHUD(text, color = '#ff0000') {
         createHUD();
         hudElement.style.color = color;
         hudElement.style.border = `1px solid ${color}`;
@@ -175,6 +175,8 @@
                             child.textContent && child.textContent.includes('.pdf')
                         );
                         if (!childHasText) {
+                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            await sleep(800);
                             forceClick(el);
                             pdfClicked = true;
                             break;
