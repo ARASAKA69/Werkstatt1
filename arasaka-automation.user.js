@@ -137,8 +137,8 @@
             const oShadow = el.style.boxShadow;
             const oTrans = el.style.transition;
             el.style.transition = 'all 0.1s';
-            el.style.outline = '2px solid #00ffcc';
-            el.style.boxShadow = '0 0 15px #00ffcc';
+            el.style.outline = '2px solid #ff0000';
+            el.style.boxShadow = '0 0 15px #ff0000';
             setTimeout(() => {
                 if(el) {
                     el.style.outline = oOutline;
