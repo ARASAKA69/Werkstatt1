@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.6
-// @description  ARASAKA Premium (HUD, Audio-Ping & Not-Aus)
+// @version      1.7
+// @description  ARASAKA Premium (HUD, Audio-Ping, Not-Aus, Laser-Targeting, Admin-Menu)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
 // @downloadURL  https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_registerMenuCommand
 // ==/UserScript==
 
 (function() {
@@ -15,6 +17,14 @@
 
     let abortMission = false;
     let hudElement = null;
+    const speedMultiplier = GM_getValue('arasaka_speed', 1);
+
+    GM_registerMenuCommand(`⚙️ ARASAKA Speed: ${speedMultiplier === 1 ? 'NORMAL' : (speedMultiplier === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM')}`, () => {
+        let next = speedMultiplier === 1 ? 1.5 : (speedMultiplier === 1.5 ? 2 : 1);
+        let modeName = next === 1 ? 'NORMAL' : (next === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM');
+        GM_setValue('arasaka_speed', next);
+        alert(`ARASAKA Geschwindigkeit geändert auf: ${modeName}\nBitte die Seite neu laden, damit die Änderung aktiv wird.`);
+    });
 
     function createHUD() {
         if (!hudElement) {
@@ -80,7 +90,8 @@
 
     async function sleep(ms) {
         let t = 0;
-        while (t < ms) {
+        let targetMs = ms * speedMultiplier;
+        while (t < targetMs) {
             if (abortMission) throw new Error("Abort");
             await new Promise(r => setTimeout(r, 100));
             t += 100;
@@ -106,7 +117,8 @@
 
     async function waitForElement(text, timeout = 10000, pickLast = false) {
         let timePassed = 0;
-        while (timePassed < timeout) {
+        let targetTimeout = timeout * speedMultiplier;
+        while (timePassed < targetTimeout) {
             if (abortMission) throw new Error("Abort");
             let els = getDeepestElementsByText(text);
             if (els.length > 0) {
@@ -120,6 +132,22 @@
 
     function forceClick(el) {
         if (!el) return;
+        try {
+            const oOutline = el.style.outline;
+            const oShadow = el.style.boxShadow;
+            const oTrans = el.style.transition;
+            el.style.transition = 'all 0.1s';
+            el.style.outline = '2px solid #00ffcc';
+            el.style.boxShadow = '0 0 15px #00ffcc';
+            setTimeout(() => {
+                if(el) {
+                    el.style.outline = oOutline;
+                    el.style.boxShadow = oShadow;
+                    el.style.transition = oTrans;
+                }
+            }, 400);
+        } catch(e) {}
+
         el.click();
         if (el.parentElement) {
             setTimeout(() => el.parentElement.click(), 50);
@@ -271,6 +299,11 @@
                 updateHUD("ABBRUCH DURCH USER", "#ff0000");
                 playDing('error');
                 setTimeout(removeHUD, 3000);
+            } else {
+                updateHUD("SYSTEMFEHLER", "#ff0000");
+                playDing('error');
+                setTimeout(removeHUD, 3000);
+                console.error("ARASAKA ERROR:", e);
             }
         }
     }
@@ -286,6 +319,11 @@
                     updateHUD("ABBRUCH DURCH USER", "#ff0000");
                     playDing('error');
                     setTimeout(removeHUD, 3000);
+                } else {
+                    updateHUD("SYSTEMFEHLER", "#ff0000");
+                    playDing('error');
+                    setTimeout(removeHUD, 3000);
+                    console.error("ARASAKA ERROR:", e);
                 }
             }
         })();
