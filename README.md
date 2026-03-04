@@ -2,10 +2,10 @@
 
 macht den kopf frei für wichtigere sachen.
 
-
 ## was das ding alles kann:
 
 * **alles automatisch:** ihr drückt einfach `ALT + Y` und er macht alles alleine. er geht in edit services, spare parts, wählt alles aus, stellt auf handed out, macht apply, submit, confirm und geht zurück um die pdf zu öffnen.
+* **ghost-ping (sheet auto-sync):** sobald ihr alt+y drückt, krallt sich das script die stock-id aus dem titel und feuert lautlos im hintergrund einen ping an unser "Hemau Tageslisten" google sheet. dort trägt es vollautomatisch das heutige datum beim wareneingang ein. ihr müsst den sheet-tab dafür nicht mal offen haben!
 * **smart check & rettungsprotokoll:** er checkt jede sekunde ob wirklich ALLES auf handed out steht. wenn carol mal wieder laggt und es nicht klappt, gibt er nicht gleich auf sondern fragt euch, ob er ein automatisches rettungsprotokoll starten soll oder ob ihr manuell übernehmen wollt (macht es dann halt gescheit!).
 * **cyberpunk hud & laser clicks:** unten rechts ist jetzt ein kleines terminal fenster eingebaut mit typewriter effekt, da seht ihr immer live was er gerade macht. auserdem leuchtet jeder button kurz knallrot auf wenn er geklickt wird so sieht man genau wo er ist.
 * **audio ping & smooth scroll:** am ende scrollt er ganz smooth runter zur pdf tabelle, klickt sie an und macht ein "ding!" sound. dann wisst ihr bescheid das ihr nur noch `STRG + P` und enter drücken müsst.
@@ -22,5 +22,8 @@ macht den kopf frei für wichtigere sachen.
 
 ## nutzung:
 auftrag ganz normal aufmachen (über sheets, refurbishment), **ALT + Y** drücken, hände von der maus nehmen und kurz entspannen. wenns ding macht, ausdrucken und next.
+
+🚨 **WICHTIG FÜR DAS ERSTE MAL STARTEN:** 🚨
+wenn ihr nach dem update das allererste mal `ALT + Y` drückt, wird tampermonkey euch eine kleine warnung anzeigen ("A user script wants to access a cross-origin resource..."). klickt da **unbedingt auf "Immer erlauben" (Always allow)**! das ist nur einmalig nötig, damit das script die berechtigung hat, das datum drüben im google sheet einzutragen.
 
 bei fehlern oder wenn was nicht funzt, einfach bescheid geben dann pass ich den code an.
