@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  ARASAKA v2.0 (Auto-Korrektur, Typewriter HUD, Safety Lock, Laser-Red)
+// @version      2.2
+// @description  ARASAKA v2.1 (Ghost-Ping zu Google Sheets, Auto-Korrektur)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -10,10 +10,13 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
 (function() {
     'use strict';
+
+    const googleWebAppUrl = 'https://script.google.com/a/macros/auto1.com/s/AKfycbzFCxeD2nL8-km1izhQr1mLU8mhd1hCymE5jwt3B_eYP7Iqe17DllFAUuRgNseWH7Ya/exec';
 
     let abortMission = false;
     let hudElement = null;
@@ -181,6 +184,25 @@
         }
     }
 
+    function sendGhostPing(stockId) {
+        return new Promise((resolve) => {
+            if (googleWebAppUrl === 'HIER_DEINE_KOPIERTE_GOOGLE_URL_EINZUFÜGEN') {
+                resolve(false);
+                return;
+            }
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: `${googleWebAppUrl}?stock=${stockId}`,
+                onload: function(response) {
+                    resolve(true);
+                },
+                onerror: function() {
+                    resolve(false);
+                }
+            });
+        });
+    }
+
     async function sucheUndOeffnePdf() {
         updateHUD("Warte auf Tabellen-Aufbau...");
         await sleep(4000);
@@ -226,6 +248,15 @@
         try {
             updateHUD("Initialisiere...");
             
+            // --- GHOST PING: Lese Stock ID aus Titel (2 Buchstaben, 5 Zahlen) ---
+            const titleMatch = document.title.match(/[A-Z]{2}\d{5}/i);
+            if (titleMatch) {
+                const stockId = titleMatch[0].toUpperCase();
+                updateHUD(`Stock-ID ${stockId} erkannt.<br>Sende Ping an Zentrale...`, '#ffff00');
+                sendGhostPing(stockId); // Feuert asynchron im Hintergrund, bremst uns nicht aus!
+                await sleep(1000);
+            }
+
             let btnEdit = await waitForElement('Edit damages and services');
             if (btnEdit) { forceClick(btnEdit); } else return;
 
