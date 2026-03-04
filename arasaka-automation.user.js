@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  ARASAKA Premium (Typewriter HUD, Safety Lock, Smooth Scroll, Laser-Red)
+// @version      2.1
+// @description  ARASAKA v2.0 (Auto-Korrektur, Typewriter HUD, Safety Lock, Laser-Red)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -47,9 +47,12 @@
             hudElement.style.whiteSpace = 'pre-wrap';
             document.body.appendChild(hudElement);
 
-            const style = document.createElement('style');
-            style.innerHTML = `@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } } .arasaka-cursor { animation: blink 1s infinite; }`;
-            document.head.appendChild(style);
+            if (!document.getElementById('arasaka-styles')) {
+                const style = document.createElement('style');
+                style.id = 'arasaka-styles';
+                style.innerHTML = `@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } } .arasaka-cursor { animation: blink 1s infinite; }`;
+                document.head.appendChild(style);
+            }
         }
     }
 
@@ -212,7 +215,7 @@
             }
 
             if (pdfClicked) {
-                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P zum Drucken.", "#00ff00");
+                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P", "#00ff00");
                 playDing('success');
                 setTimeout(removeHUD, 6000);
             }
@@ -239,17 +242,14 @@
             updateHUD("Passe Dropdowns an...");
             await sleep(1000);
             let selects = document.querySelectorAll('select');
-            let foundDropdown = false;
             for (let select of selects) {
                 for (let option of select.options) {
                     if (option.text.includes('Handed out')) {
                         select.value = option.value;
                         select.dispatchEvent(new Event('change', { bubbles: true }));
-                        foundDropdown = true;
                         break;
                     }
                 }
-                if (foundDropdown) break;
             }
 
             updateHUD("Wende Änderungen an...");
@@ -275,9 +275,7 @@
 
                     if (hasHandedOutOption) {
                         relevanteDropdownsGefunden++;
-                        let currentText = select.options[select.selectedIndex].text;
-
-                        if (!currentText.includes('Handed out')) {
+                        if (!select.options[select.selectedIndex].text.includes('Handed out')) {
                             unfertigeGefunden = true;
                             break;
                         }
@@ -291,11 +289,52 @@
             }
 
             if (!allUpdated) {
-                updateHUD("FEHLER: SYNC FEHLGESCHLAGEN!", "#ff0000");
                 playDing('error');
-                setTimeout(removeHUD, 5000);
-                alert("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden. Das Skript wurde gestoppt. Bitte prüfe die Liste und mach manuell weiter (Und Machs gescheit!).");
-                return;
+                let retry = confirm("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden.\n\nSoll ARASAKA einen automatischen Rettungsversuch starten (OK) oder machst du manuell weiter (Abbrechen)?");
+                
+                if (retry) {
+                    updateHUD("Starte Rettungsprotokoll...", "#ffff00");
+                    let allSelectsRetry = document.querySelectorAll('select');
+                    for (let select of allSelectsRetry) {
+                        let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
+                        if (hasHandedOutOption && !select.options[select.selectedIndex].text.includes('Handed out')) {
+                            for (let option of select.options) {
+                                if (option.text.includes('Handed out')) {
+                                    select.value = option.value;
+                                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    await sleep(3000);
+                    
+                    let finalCheckOk = true;
+                    let finalSelects = document.querySelectorAll('select');
+                    for (let select of finalSelects) {
+                        let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
+                        if (hasHandedOutOption && !select.options[select.selectedIndex].text.includes('Handed out')) {
+                            finalCheckOk = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!finalCheckOk) {
+                        updateHUD("RETTUNG FEHLGESCHLAGEN!", "#ff0000");
+                        playDing('error');
+                        setTimeout(removeHUD, 5000);
+                        alert("Rettungsversuch gescheitert. Das Skript bricht ab. Bitte manuell prüfen!");
+                        return;
+                    } else {
+                        updateHUD("Rettung erfolgreich! Setze fort...", "#00ff00");
+                        await sleep(1000);
+                    }
+                } else {
+                    updateHUD("MANUELLE ÜBERNAHME", "#ff0000");
+                    setTimeout(removeHUD, 5000);
+                    return;
+                }
             }
 
             updateHUD("Übermittle Daten...");
@@ -363,6 +402,7 @@
             abortMission = true;
             isLocked = false;
         }
+        
         if (event.altKey && event.key.toLowerCase() === 'y') {
             event.preventDefault();
             if (isLocked) return;
