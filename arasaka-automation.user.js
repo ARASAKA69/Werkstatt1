@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @description  ARASAKA Premium (Laser-Red, Smooth Scroll, Not-Aus, Admin-Menu)
+// @version      2.0
+// @description  ARASAKA Premium (Typewriter HUD, Safety Lock, Smooth Scroll, Laser-Red)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -17,6 +17,7 @@
 
     let abortMission = false;
     let hudElement = null;
+    let isLocked = false;
     const speedMultiplier = GM_getValue('arasaka_speed', 1);
 
     GM_registerMenuCommand(`⚙️ ARASAKA Speed: ${speedMultiplier === 1 ? 'NORMAL' : (speedMultiplier === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM')}`, () => {
@@ -30,28 +31,51 @@
         if (!hudElement) {
             hudElement = document.createElement('div');
             hudElement.style.position = 'fixed';
-            hudElement.style.bottom = '20px';
-            hudElement.style.right = '20px';
-            hudElement.style.backgroundColor = 'rgba(10, 10, 10, 0.9)';
-            hudElement.style.color = '#ff0000';
-            hudElement.style.border = '1px solid #ff0000';
-            hudElement.style.padding = '12px 20px';
+            hudElement.style.bottom = '30px';
+            hudElement.style.right = '30px';
+            hudElement.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
+            hudElement.style.color = '#00ffcc';
+            hudElement.style.border = '2px solid #00ffcc';
+            hudElement.style.padding = '20px 30px';
             hudElement.style.fontFamily = 'monospace';
-            hudElement.style.fontSize = '14px';
+            hudElement.style.fontSize = '18px';
             hudElement.style.zIndex = '999999';
             hudElement.style.pointerEvents = 'none';
-            hudElement.style.boxShadow = '0 0 15px rgba(255, 0, 0, 0.4)';
-            hudElement.style.borderRadius = '3px';
+            hudElement.style.boxShadow = '0 0 20px rgba(0, 255, 204, 0.5)';
+            hudElement.style.borderRadius = '5px';
+            hudElement.style.minWidth = '280px';
+            hudElement.style.whiteSpace = 'pre-wrap';
             document.body.appendChild(hudElement);
+
+            const style = document.createElement('style');
+            style.innerHTML = `@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } } .arasaka-cursor { animation: blink 1s infinite; }`;
+            document.head.appendChild(style);
         }
     }
 
-    function updateHUD(text, color = '#ff0000') {
+    function updateHUD(text, color = '#00ffcc') {
         createHUD();
         hudElement.style.color = color;
-        hudElement.style.border = `1px solid ${color}`;
-        hudElement.style.boxShadow = `0 0 15px ${color}80`;
-        hudElement.innerHTML = `<strong style="letter-spacing: 2px;">ARASAKA SYS //</strong><br><br>${text}`;
+        hudElement.style.border = `2px solid ${color}`;
+        hudElement.style.boxShadow = `0 0 20px ${color}80`;
+
+        if (window.arasakaTypeInterval) clearInterval(window.arasakaTypeInterval);
+
+        const header = `<strong style="letter-spacing: 2px;">ARASAKA SYS //</strong><br><br>`;
+        hudElement.innerHTML = header + `<span id="arasaka-text"></span><span class="arasaka-cursor">_</span>`;
+        
+        const textSpan = document.getElementById('arasaka-text');
+        const cleanText = text.replace(/<br>/g, '\n');
+        let i = 0;
+        
+        window.arasakaTypeInterval = setInterval(() => {
+            if (i < cleanText.length) {
+                textSpan.textContent += cleanText.charAt(i);
+                i++;
+            } else {
+                clearInterval(window.arasakaTypeInterval);
+            }
+        }, 20);
     }
 
     function removeHUD() {
@@ -188,7 +212,7 @@
             }
 
             if (pdfClicked) {
-                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P", "#00ff00");
+                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P zum Drucken.", "#00ff00");
                 playDing('success');
                 setTimeout(removeHUD, 6000);
             }
@@ -313,6 +337,7 @@
     if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
         sessionStorage.removeItem('hole_pdf_nach_reload');
         abortMission = false;
+        isLocked = true;
         (async () => {
             try {
                 await sucheUndOeffnePdf();
@@ -327,6 +352,8 @@
                     setTimeout(removeHUD, 3000);
                     console.error("ARASAKA ERROR:", e);
                 }
+            } finally {
+                isLocked = false;
             }
         })();
     }
@@ -334,11 +361,16 @@
     document.addEventListener('keydown', function(event) {
         if (event.key === 'Escape') {
             abortMission = true;
+            isLocked = false;
         }
         if (event.altKey && event.key.toLowerCase() === 'y') {
             event.preventDefault();
+            if (isLocked) return;
+            isLocked = true;
             abortMission = false;
-            startMacro();
+            startMacro().finally(() => {
+                isLocked = false;
+            });
         }
     });
 
