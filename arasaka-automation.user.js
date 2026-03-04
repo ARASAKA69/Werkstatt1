@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  ARASAKA Premium (HUD, Audio-Ping & Not-Aus)
 // @author       ARASAKA
 // @match        *://*/*
@@ -204,7 +204,7 @@
             if (btnApply) { forceClick(btnApply); }
 
             updateHUD("Prüfe Handed-Out...", "#ffff00");
-            let maxChecks = 4;
+            let maxChecks = 6;
             let checksDone = 0;
             let allUpdated = false;
 
