@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      1.71
+// @version      1.7.1
 // @description  ARASAKA Premium (HUD, Audio-Ping, Not-Aus, Laser-Targeting, Admin-Menu)
 // @author       ARASAKA
 // @match        *://*/*
