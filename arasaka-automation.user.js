@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.2
-// @description  ARASAKA v2.1 (Ghost-Ping zu Google Sheets, Auto-Korrektur)
+// @version      2.5
+// @description  ARASAKA v2.5 (Fire-and-Forget Ghost-Ping, Auto-Korrektur, Typewriter)
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -69,11 +69,11 @@
 
         const header = `<strong style="letter-spacing: 2px;">ARASAKA SYS //</strong><br><br>`;
         hudElement.innerHTML = header + `<span id="arasaka-text"></span><span class="arasaka-cursor">_</span>`;
-        
+
         const textSpan = document.getElementById('arasaka-text');
         const cleanText = text.replace(/<br>/g, '\n');
         let i = 0;
-        
+
         window.arasakaTypeInterval = setInterval(() => {
             if (i < cleanText.length) {
                 textSpan.textContent += cleanText.charAt(i);
@@ -98,7 +98,7 @@
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
-            
+
             if (type === 'success') {
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(880, ctx.currentTime);
@@ -185,21 +185,21 @@
     }
 
     function sendGhostPing(stockId) {
-        return new Promise((resolve) => {
-            if (googleWebAppUrl === 'HIER_DEINE_KOPIERTE_GOOGLE_URL_EINZUFÜGEN') {
-                resolve(false);
-                return;
+        if (googleWebAppUrl === 'HIER_DEINE_KOPIERTE_GOOGLE_URL_EINZUFÜGEN') {
+            console.error("FEHLER: Google URL fehlt!");
+            return;
+        }
+        GM_xmlhttpRequest({
+            method: "GET",
+            url: `${googleWebAppUrl}?stock=${stockId}`,
+            onload: function(response) {
+                console.log("=== ARASAKA GHOST PING ANTWORT ===");
+                console.log(response.responseText);
+                console.log("==================================");
+            },
+            onerror: function(error) {
+                console.error("=== ARASAKA PING FEHLER ===", error);
             }
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `${googleWebAppUrl}?stock=${stockId}`,
-                onload: function(response) {
-                    resolve(true);
-                },
-                onerror: function() {
-                    resolve(false);
-                }
-            });
         });
     }
 
@@ -207,7 +207,6 @@
         updateHUD("Warte auf Tabellen-Aufbau...");
         await sleep(4000);
 
-        updateHUD("Suche Werkstattauftrag...");
         let textWerkstatt = await waitForElement('Werkstattauftrag', 15000);
         if (textWerkstatt) {
             let parent = textWerkstatt.parentElement;
@@ -247,14 +246,13 @@
     async function startMacro() {
         try {
             updateHUD("Initialisiere...");
-            
-            // --- GHOST PING: Lese Stock ID aus Titel (2 Buchstaben, 5 Zahlen) ---
+
             const titleMatch = document.title.match(/[A-Z]{2}\d{5}/i);
             if (titleMatch) {
                 const stockId = titleMatch[0].toUpperCase();
-                updateHUD(`Stock-ID ${stockId} erkannt.<br>Sende Ping an Zentrale...`, '#ffff00');
-                sendGhostPing(stockId); // Feuert asynchron im Hintergrund, bremst uns nicht aus!
-                await sleep(1000);
+                updateHUD(`Stock-ID ${stockId} erkannt.<br>Daten-Ping gesendet!`, '#ffff00');
+                sendGhostPing(stockId);
+                await sleep(1500);
             }
 
             let btnEdit = await waitForElement('Edit damages and services');
@@ -322,7 +320,7 @@
             if (!allUpdated) {
                 playDing('error');
                 let retry = confirm("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden.\n\nSoll ARASAKA einen automatischen Rettungsversuch starten (OK) oder machst du manuell weiter (Abbrechen)?");
-                
+
                 if (retry) {
                     updateHUD("Starte Rettungsprotokoll...", "#ffff00");
                     let allSelectsRetry = document.querySelectorAll('select');
@@ -338,9 +336,9 @@
                             }
                         }
                     }
-                    
+
                     await sleep(3000);
-                    
+
                     let finalCheckOk = true;
                     let finalSelects = document.querySelectorAll('select');
                     for (let select of finalSelects) {
@@ -350,7 +348,7 @@
                             break;
                         }
                     }
-                    
+
                     if (!finalCheckOk) {
                         updateHUD("RETTUNG FEHLGESCHLAGEN!", "#ff0000");
                         playDing('error');
@@ -389,7 +387,7 @@
                 sessionStorage.setItem('hole_pdf_nach_reload', 'true');
                 forceClick(btnBack);
             }
-            
+
         } catch (e) {
             if (e.message === "Abort") {
                 updateHUD("ABBRUCH DURCH USER", "#ff0000");
@@ -399,7 +397,6 @@
                 updateHUD("SYSTEMFEHLER", "#ff0000");
                 playDing('error');
                 setTimeout(removeHUD, 3000);
-                console.error("ARASAKA ERROR:", e);
             }
         }
     }
@@ -420,7 +417,6 @@
                     updateHUD("SYSTEMFEHLER", "#ff0000");
                     playDing('error');
                     setTimeout(removeHUD, 3000);
-                    console.error("ARASAKA ERROR:", e);
                 }
             } finally {
                 isLocked = false;
@@ -433,7 +429,7 @@
             abortMission = true;
             isLocked = false;
         }
-        
+
         if (event.altKey && event.key.toLowerCase() === 'y') {
             event.preventDefault();
             if (isLocked) return;
