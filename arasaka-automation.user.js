@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  ARASAKA v2.5 (Fire-and-Forget Ghost-Ping, Auto-Korrektur, Typewriter)
+// @version      2.6
+// @description  ARASAKA v2.6 – HUD Pro, Progress-Log, Custom-Confirm
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -13,7 +13,7 @@
 // @grant        GM_xmlhttpRequest
 // ==/UserScript==
 
-(function() {
+(function () {
     'use strict';
 
     const googleWebAppUrl = 'https://script.google.com/a/macros/auto1.com/s/AKfycbzFCxeD2nL8-km1izhQr1mLU8mhd1hCymE5jwt3B_eYP7Iqe17DllFAUuRgNseWH7Ya/exec';
@@ -22,422 +22,574 @@
     let hudElement = null;
     let isLocked = false;
     const speedMultiplier = GM_getValue('arasaka_speed', 1);
+    const TOTAL_STEPS = 8;
+    let hudLog = [];
+    let currentStep = 0;
+    let startTime = null;
+    let timerInterval = null;
 
-    GM_registerMenuCommand(`⚙️ ARASAKA Speed: ${speedMultiplier === 1 ? 'NORMAL' : (speedMultiplier === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM')}`, () => {
-        let next = speedMultiplier === 1 ? 1.5 : (speedMultiplier === 1.5 ? 2 : 1);
-        let modeName = next === 1 ? 'NORMAL' : (next === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM');
-        GM_setValue('arasaka_speed', next);
-        alert(`ARASAKA Geschwindigkeit geändert auf: ${modeName}\nBitte die Seite neu laden, damit die Änderung aktiv wird.`);
-    });
-
-    function createHUD() {
-        if (!hudElement) {
-            hudElement = document.createElement('div');
-            hudElement.style.position = 'fixed';
-            hudElement.style.bottom = '30px';
-            hudElement.style.right = '30px';
-            hudElement.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
-            hudElement.style.color = '#00ffcc';
-            hudElement.style.border = '2px solid #00ffcc';
-            hudElement.style.padding = '20px 30px';
-            hudElement.style.fontFamily = 'monospace';
-            hudElement.style.fontSize = '18px';
-            hudElement.style.zIndex = '999999';
-            hudElement.style.pointerEvents = 'none';
-            hudElement.style.boxShadow = '0 0 20px rgba(0, 255, 204, 0.5)';
-            hudElement.style.borderRadius = '5px';
-            hudElement.style.minWidth = '280px';
-            hudElement.style.whiteSpace = 'pre-wrap';
-            document.body.appendChild(hudElement);
-
-            if (!document.getElementById('arasaka-styles')) {
-                const style = document.createElement('style');
-                style.id = 'arasaka-styles';
-                style.innerHTML = `@keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } } .arasaka-cursor { animation: blink 1s infinite; }`;
-                document.head.appendChild(style);
-            }
+    GM_registerMenuCommand(
+        `⚙️ ARASAKA Speed: ${speedMultiplier === 1 ? 'NORMAL' : speedMultiplier === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM'}`,
+        () => {
+            const next = speedMultiplier === 1 ? 1.5 : speedMultiplier === 1.5 ? 2 : 1;
+            const name = next === 1 ? 'NORMAL' : next === 1.5 ? 'LANGSAM' : 'SEHR LANGSAM';
+            GM_setValue('arasaka_speed', next);
+            alert(`ARASAKA Geschwindigkeit → ${name}\nSeite neu laden, damit die Änderung aktiv wird.`);
         }
+    );
+
+
+    function injectStyles() {
+        if (document.getElementById('arasaka-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'arasaka-styles';
+        style.innerHTML = `
+            @keyframes arasaka-fadein {
+                from { opacity: 0; transform: translateY(16px); }
+                to   { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes arasaka-pulse {
+                0%, 100% { box-shadow: 0 0 14px var(--a-col, #00ffcc88); }
+                50%       { box-shadow: 0 0 28px var(--a-col, #00ffcccc); }
+            }
+            @keyframes arasaka-blink {
+                0%, 100% { opacity: 1; } 50% { opacity: 0; }
+            }
+            @keyframes arasaka-scanline {
+                from { background-position: 0 0; }
+                to   { background-position: 0 100%; }
+            }
+            #arasaka-hud {
+                position: fixed;
+                bottom: 28px;
+                right: 28px;
+                width: 320px;
+                background: rgba(5, 8, 12, 0.96);
+                color: #00ffcc;
+                border: 1.5px solid #00ffcc;
+                border-radius: 6px;
+                font-family: 'Courier New', monospace;
+                font-size: 13px;
+                z-index: 999999;
+                pointer-events: none;
+                animation: arasaka-fadein 0.3s ease, arasaka-pulse 2.5s ease-in-out infinite;
+                --a-col: #00ffcc88;
+                overflow: hidden;
+                user-select: none;
+            }
+            #arasaka-hud::after {
+                content: '';
+                position: absolute;
+                inset: 0;
+                background: repeating-linear-gradient(
+                    0deg,
+                    transparent,
+                    transparent 3px,
+                    rgba(0,255,204,0.02) 3px,
+                    rgba(0,255,204,0.02) 4px
+                );
+                pointer-events: none;
+            }
+            .a-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 10px 14px 8px;
+                border-bottom: 1px solid rgba(0,255,204,0.25);
+                font-size: 12px;
+                letter-spacing: 2px;
+                font-weight: bold;
+            }
+            .a-timer { font-size: 11px; opacity: 0.7; letter-spacing: 1px; }
+            .a-progress-wrap {
+                padding: 8px 14px 4px;
+            }
+            .a-step-label {
+                display: flex;
+                justify-content: space-between;
+                font-size: 10px;
+                opacity: 0.6;
+                margin-bottom: 4px;
+                letter-spacing: 1px;
+            }
+            .a-bar-bg {
+                height: 5px;
+                background: rgba(0,255,204,0.1);
+                border-radius: 3px;
+                overflow: hidden;
+            }
+            .a-bar-fill {
+                height: 100%;
+                background: #00ffcc;
+                border-radius: 3px;
+                transition: width 0.4s ease;
+            }
+            .a-log {
+                padding: 6px 14px 0;
+                min-height: 44px;
+            }
+            .a-log-entry {
+                font-size: 11px;
+                opacity: 0.55;
+                margin-bottom: 2px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .a-log-entry::before { content: '✓ '; }
+            .a-current {
+                padding: 8px 14px 6px;
+                font-size: 13px;
+                border-top: 1px solid rgba(0,255,204,0.15);
+                margin-top: 4px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            .a-cursor { animation: arasaka-blink 0.9s infinite; }
+            .a-footer {
+                padding: 4px 14px 8px;
+                font-size: 10px;
+                opacity: 0.35;
+                letter-spacing: 1px;
+            }
+            
+            #arasaka-confirm {
+                position: fixed;
+                inset: 0;
+                background: rgba(0,0,0,0.7);
+                z-index: 1000000;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                animation: arasaka-fadein 0.2s ease;
+                pointer-events: all;
+            }
+            .a-dialog {
+                background: rgba(5, 8, 12, 0.98);
+                border: 1.5px solid #ffaa00;
+                border-radius: 6px;
+                padding: 24px 28px;
+                font-family: 'Courier New', monospace;
+                color: #ffaa00;
+                max-width: 420px;
+                width: 90%;
+                box-shadow: 0 0 30px rgba(255,170,0,0.4);
+            }
+            .a-dialog-title {
+                font-size: 13px;
+                font-weight: bold;
+                letter-spacing: 2px;
+                margin-bottom: 12px;
+            }
+            .a-dialog-msg {
+                font-size: 12px;
+                line-height: 1.6;
+                opacity: 0.85;
+                margin-bottom: 20px;
+                white-space: pre-wrap;
+            }
+            .a-dialog-btns { display: flex; gap: 10px; justify-content: flex-end; }
+            .a-btn {
+                padding: 7px 18px;
+                font-family: 'Courier New', monospace;
+                font-size: 12px;
+                font-weight: bold;
+                letter-spacing: 1px;
+                border-radius: 3px;
+                cursor: pointer;
+                border: 1.5px solid currentColor;
+                background: transparent;
+                transition: background 0.15s;
+            }
+            .a-btn-ok    { color: #00ffcc; }
+            .a-btn-ok:hover    { background: rgba(0,255,204,0.15); }
+            .a-btn-cancel { color: #ff4444; }
+            .a-btn-cancel:hover { background: rgba(255,68,68,0.15); }
+        `;
+        document.head.appendChild(style);
     }
 
-    function updateHUD(text, color = '#00ffcc') {
-        createHUD();
-        hudElement.style.color = color;
-        hudElement.style.border = `2px solid ${color}`;
-        hudElement.style.boxShadow = `0 0 20px ${color}80`;
+    function createHUD() {
+        if (hudElement) return;
+        injectStyles();
+        hudElement = document.createElement('div');
+        hudElement.id = 'arasaka-hud';
+        hudElement.innerHTML = buildHUDHTML('Initialisiere...', '#00ffcc', 0);
+        document.body.appendChild(hudElement);
 
-        if (window.arasakaTypeInterval) clearInterval(window.arasakaTypeInterval);
+        startTime = Date.now();
+        timerInterval = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+            const s = String(elapsed % 60).padStart(2, '0');
+            const el = document.querySelector('.a-timer');
+            if (el) el.textContent = `${m}:${s}`;
+        }, 1000);
+    }
 
-        const header = `<strong style="letter-spacing: 2px;">ARASAKA SYS //</strong><br><br>`;
-        hudElement.innerHTML = header + `<span id="arasaka-text"></span><span class="arasaka-cursor">_</span>`;
+    function buildHUDHTML(action, color, step) {
+        const pct = Math.round((step / TOTAL_STEPS) * 100);
+        const logHTML = hudLog.slice(-3).map(t =>
+            `<div class="a-log-entry">${t}</div>`
+        ).join('');
 
-        const textSpan = document.getElementById('arasaka-text');
-        const cleanText = text.replace(/<br>/g, '\n');
-        let i = 0;
+        return `
+            <div class="a-header" style="color:${color}; border-color: ${color}40;">
+                <span>ARASAKA SYS //</span>
+                <span class="a-timer">00:00</span>
+            </div>
+            <div class="a-progress-wrap">
+                <div class="a-step-label" style="color:${color}">
+                    <span>FORTSCHRITT</span>
+                    <span>SCHRITT ${step}/${TOTAL_STEPS}</span>
+                </div>
+                <div class="a-bar-bg">
+                    <div class="a-bar-fill" style="width:${pct}%; background:${color};"></div>
+                </div>
+            </div>
+            <div class="a-log" style="color:${color}">${logHTML}</div>
+            <div class="a-current" style="color:${color}">
+                ► ${action}<span class="a-cursor">_</span>
+            </div>
+            <div class="a-footer">[ALT+Y] START  ·  [ESC] ABBRUCH</div>
+        `;
+    }
 
-        window.arasakaTypeInterval = setInterval(() => {
-            if (i < cleanText.length) {
-                textSpan.textContent += cleanText.charAt(i);
-                i++;
-            } else {
-                clearInterval(window.arasakaTypeInterval);
+    function updateHUD(text, color = '#00ffcc', advanceStep = false) {
+        if (advanceStep && hudLog[hudLog.length - 1] !== text) {
+            const prev = document.querySelector('.a-current');
+            if (prev) {
+                const prevText = prev.textContent.replace('► ', '').replace('_', '').trim();
+                if (prevText && prevText !== text) hudLog.push(prevText);
             }
-        }, 20);
+            currentStep++;
+        }
+
+        if (!hudElement) createHUD();
+
+        hudElement.style.borderColor = color;
+        hudElement.style.setProperty('--a-col', color + '88');
+
+        const elapsed = document.querySelector('.a-timer')?.textContent || '00:00';
+
+        hudElement.innerHTML = buildHUDHTML(text, color, currentStep);
+        hudElement.style.borderColor = color;
+
+        const timerEl = hudElement.querySelector('.a-timer');
+        if (timerEl) timerEl.textContent = elapsed;
     }
 
     function removeHUD() {
+        clearInterval(timerInterval);
+        timerInterval = null;
         if (hudElement) {
-            hudElement.remove();
-            hudElement = null;
+            hudElement.style.animation = 'none';
+            hudElement.style.transition = 'opacity 0.4s ease';
+            hudElement.style.opacity = '0';
+            setTimeout(() => { hudElement?.remove(); hudElement = null; }, 400);
         }
+        hudLog = [];
+        currentStep = 0;
+        startTime = null;
+    }
+
+    function arasakaConfirm(message) {
+        return new Promise((resolve) => {
+            injectStyles();
+            const overlay = document.createElement('div');
+            overlay.id = 'arasaka-confirm';
+            overlay.innerHTML = `
+                <div class="a-dialog">
+                    <div class="a-dialog-title">⚠ ARASAKA WARNUNG</div>
+                    <div class="a-dialog-msg">${message}</div>
+                    <div class="a-dialog-btns">
+                        <button class="a-btn a-btn-cancel" id="a-btn-no">ABBRECHEN</button>
+                        <button class="a-btn a-btn-ok"    id="a-btn-yes">RETTUNG STARTEN</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            document.getElementById('a-btn-yes').onclick = () => { overlay.remove(); resolve(true); };
+            document.getElementById('a-btn-no').onclick  = () => { overlay.remove(); resolve(false); };
+        });
     }
 
     function playDing(type = 'success') {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
+            const osc  = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
-
             if (type === 'success') {
                 osc.type = 'sine';
                 osc.frequency.setValueAtTime(880, ctx.currentTime);
                 osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
                 gain.gain.setValueAtTime(0.2, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.5);
+                osc.start(); osc.stop(ctx.currentTime + 0.5);
             } else {
                 osc.type = 'sawtooth';
                 osc.frequency.setValueAtTime(150, ctx.currentTime);
                 gain.gain.setValueAtTime(0.3, ctx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
-                osc.start();
-                osc.stop(ctx.currentTime + 0.4);
+                osc.start(); osc.stop(ctx.currentTime + 0.4);
             }
-        } catch(e) {}
+        } catch (e) {}
     }
 
     async function sleep(ms) {
         let t = 0;
-        let targetMs = ms * speedMultiplier;
-        while (t < targetMs) {
-            if (abortMission) throw new Error("Abort");
+        const target = ms * speedMultiplier;
+        while (t < target) {
+            if (abortMission) throw new Error('Abort');
             await new Promise(r => setTimeout(r, 100));
             t += 100;
         }
     }
 
     function getDeepestElementsByText(text) {
-        const elements = document.querySelectorAll('*');
         const results = [];
-        for (let el of elements) {
+        for (const el of document.querySelectorAll('*')) {
             if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) continue;
-            if (el.textContent && el.textContent.includes(text)) {
-                let childHasText = Array.from(el.children).some(child =>
-                    child.textContent && child.textContent.includes(text)
-                );
-                if (!childHasText) {
-                    results.push(el);
-                }
+            if (el.textContent?.includes(text)) {
+                const childHasText = Array.from(el.children).some(c => c.textContent?.includes(text));
+                if (!childHasText) results.push(el);
             }
         }
         return results;
     }
 
     async function waitForElement(text, timeout = 10000, pickLast = false) {
-        let timePassed = 0;
-        let targetTimeout = timeout * speedMultiplier;
-        while (timePassed < targetTimeout) {
-            if (abortMission) throw new Error("Abort");
-            let els = getDeepestElementsByText(text);
-            if (els.length > 0) {
-                return pickLast ? els[els.length - 1] : els[0];
-            }
+        let passed = 0;
+        const target = timeout * speedMultiplier;
+        while (passed < target) {
+            if (abortMission) throw new Error('Abort');
+            const els = getDeepestElementsByText(text);
+            if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
             await sleep(500);
-            timePassed += 500;
+            passed += 500;
         }
         return null;
+    }
+
+    function checkAllHandedOut() {
+        const selects = document.querySelectorAll('select');
+        let relevant = 0;
+        for (const sel of selects) {
+            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
+            if (!hasOpt) continue;
+            relevant++;
+            if (!sel.options[sel.selectedIndex]?.text.includes('Handed out')) return false;
+        }
+        return relevant > 0;
+    }
+
+    function forceAllHandedOut() {
+        for (const sel of document.querySelectorAll('select')) {
+            const opt = Array.from(sel.options).find(o => o.text.includes('Handed out'));
+            if (opt && !sel.options[sel.selectedIndex]?.text.includes('Handed out')) {
+                sel.value = opt.value;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
     }
 
     function forceClick(el) {
         if (!el) return;
         try {
-            const oOutline = el.style.outline;
-            const oShadow = el.style.boxShadow;
-            const oTrans = el.style.transition;
+            const orig = { outline: el.style.outline, shadow: el.style.boxShadow, trans: el.style.transition };
             el.style.transition = 'all 0.1s';
             el.style.outline = '2px solid #ff0000';
             el.style.boxShadow = '0 0 15px #ff0000';
             setTimeout(() => {
-                if(el) {
-                    el.style.outline = oOutline;
-                    el.style.boxShadow = oShadow;
-                    el.style.transition = oTrans;
-                }
+                if (el) { el.style.outline = orig.outline; el.style.boxShadow = orig.shadow; el.style.transition = orig.trans; }
             }, 400);
-        } catch(e) {}
-
+        } catch (e) {}
         el.click();
-        if (el.parentElement) {
-            setTimeout(() => el.parentElement.click(), 50);
-        }
+        if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
     }
 
     function sendGhostPing(stockId) {
-        if (googleWebAppUrl === 'HIER_DEINE_KOPIERTE_GOOGLE_URL_EINZUFÜGEN') {
-            console.error("FEHLER: Google URL fehlt!");
-            return;
-        }
         GM_xmlhttpRequest({
-            method: "GET",
+            method: 'GET',
             url: `${googleWebAppUrl}?stock=${stockId}`,
-            onload: function(response) {
-                console.log("=== ARASAKA GHOST PING ANTWORT ===");
-                console.log(response.responseText);
-                console.log("==================================");
-            },
-            onerror: function(error) {
-                console.error("=== ARASAKA PING FEHLER ===", error);
-            }
+            onload:  r => console.log('ARASAKA PING OK:', r.responseText),
+            onerror: e => console.error('ARASAKA PING FEHLER:', e),
         });
     }
 
     async function sucheUndOeffnePdf() {
-        updateHUD("Warte auf Tabellen-Aufbau...");
+        updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
         await sleep(4000);
 
-        let textWerkstatt = await waitForElement('Werkstattauftrag', 15000);
-        if (textWerkstatt) {
-            let parent = textWerkstatt.parentElement;
-            let pdfClicked = false;
+        const textWerkstatt = await waitForElement('Werkstattauftrag', 15000);
+        if (!textWerkstatt) return;
 
-            updateHUD("Scanne nach PDF...", "#ffff00");
-            for (let i = 0; i < 8; i++) {
-                if (!parent) break;
+        let parent = textWerkstatt.parentElement;
+        let pdfClicked = false;
 
-                const allElements = parent.querySelectorAll('*');
-                for (let el of allElements) {
-                    if (el.textContent && el.textContent.includes('.pdf')) {
-                        let childHasText = Array.from(el.children).some(child =>
-                            child.textContent && child.textContent.includes('.pdf')
-                        );
-                        if (!childHasText) {
-                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            await sleep(800);
-                            forceClick(el);
-                            pdfClicked = true;
-                            break;
-                        }
-                    }
-                }
-                if (pdfClicked) break;
-                parent = parent.parentElement;
+        updateHUD('Scanne nach PDF...', '#ffff00', true);
+
+        for (let i = 0; i < 8; i++) {
+            if (!parent) break;
+            for (const el of parent.querySelectorAll('*')) {
+                if (!el.textContent?.includes('.pdf')) continue;
+                const childHas = Array.from(el.children).some(c => c.textContent?.includes('.pdf'));
+                if (childHas) continue;
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                await sleep(800);
+                forceClick(el);
+                pdfClicked = true;
+                break;
             }
+            if (pdfClicked) break;
+            parent = parent.parentElement;
+        }
 
-            if (pdfClicked) {
-                updateHUD("PDF GEÖFFNET.<br>Bereit für STRG+P", "#00ff00");
-                playDing('success');
-                setTimeout(removeHUD, 6000);
-            }
+        if (pdfClicked) {
+            updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P', '#00ff00', true);
+            playDing('success');
+            setTimeout(removeHUD, 6000);
         }
     }
 
     async function startMacro() {
         try {
-            updateHUD("Initialisiere...");
+            hudLog = []; currentStep = 0;
+            createHUD();
+            updateHUD('Initialisiere...');
 
             const titleMatch = document.title.match(/[A-Z]{2}\d{5}/i);
             if (titleMatch) {
                 const stockId = titleMatch[0].toUpperCase();
-                updateHUD(`Stock-ID ${stockId} erkannt.<br>Daten-Ping gesendet!`, '#ffff00');
+                updateHUD(`Stock-ID ${stockId} erkannt`, '#ffff00', true);
                 sendGhostPing(stockId);
                 await sleep(1500);
             }
 
-            let btnEdit = await waitForElement('Edit damages and services');
-            if (btnEdit) { forceClick(btnEdit); } else return;
+            updateHUD('Öffne Edit damages...', '#00ffcc', true);
+            const btnEdit = await waitForElement('Edit damages and services');
+            if (!btnEdit) { updateHUD('Edit-Button nicht gefunden!', '#ff4444'); return; }
+            forceClick(btnEdit);
 
-            updateHUD("Navigiere zu Spare Parts...");
+            updateHUD('Navigiere zu Spare Parts...', '#00ffcc', true);
             await sleep(2000);
-            let btnSpareParts = await waitForElement('Spare parts');
-            if (btnSpareParts) { forceClick(btnSpareParts); } else return;
+            const btnSpareParts = await waitForElement('Spare parts');
+            if (!btnSpareParts) { updateHUD('Spare Parts nicht gefunden!', '#ff4444'); return; }
+            forceClick(btnSpareParts);
 
-            updateHUD("Wähle alles aus...");
+            updateHUD('Wähle alle Positionen aus...', '#00ffcc', true);
             await sleep(1000);
-            let btnSelectAll = await waitForElement('Select all');
-            if (btnSelectAll) { forceClick(btnSelectAll); } else return;
+            const btnSelectAll = await waitForElement('Select all');
+            if (!btnSelectAll) { updateHUD('Select All nicht gefunden!', '#ff4444'); return; }
+            forceClick(btnSelectAll);
 
-            updateHUD("Passe Dropdowns an...");
+            updateHUD('Setze Dropdowns auf Handed out...', '#ffff00', true);
             await sleep(1000);
-            let selects = document.querySelectorAll('select');
-            for (let select of selects) {
-                for (let option of select.options) {
-                    if (option.text.includes('Handed out')) {
-                        select.value = option.value;
-                        select.dispatchEvent(new Event('change', { bubbles: true }));
-                        break;
-                    }
-                }
-            }
+            forceAllHandedOut();
 
-            updateHUD("Wende Änderungen an...");
+            updateHUD('Übernehme Änderungen...', '#00ffcc', true);
             await sleep(1000);
-            let btnApply = await waitForElement('Apply');
-            if (btnApply) { forceClick(btnApply); }
+            const btnApply = await waitForElement('Apply');
+            if (btnApply) forceClick(btnApply);
 
-            updateHUD("Prüfe Handed-Out...", "#ffff00");
-            let maxChecks = 6;
-            let checksDone = 0;
-            let allUpdated = false;
-
-            while (checksDone < maxChecks) {
+            updateHUD('Verifiziere Handed-Out Status...', '#ffff00', true);
+            let verified = false;
+            for (let i = 0; i < 6; i++) {
                 await sleep(1000);
-                checksDone++;
-
-                let allSelects = document.querySelectorAll('select');
-                let unfertigeGefunden = false;
-                let relevanteDropdownsGefunden = 0;
-
-                for (let select of allSelects) {
-                    let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
-
-                    if (hasHandedOutOption) {
-                        relevanteDropdownsGefunden++;
-                        if (!select.options[select.selectedIndex].text.includes('Handed out')) {
-                            unfertigeGefunden = true;
-                            break;
-                        }
-                    }
-                }
-
-                if (relevanteDropdownsGefunden > 0 && !unfertigeGefunden) {
-                    allUpdated = true;
-                    break;
-                }
+                if (checkAllHandedOut()) { verified = true; break; }
             }
 
-            if (!allUpdated) {
+            if (!verified) {
                 playDing('error');
-                let retry = confirm("⚠️ HEE DU HONK ! Achtung: Es konnten nicht alle Positionen auf 'Handed out' umgestellt werden.\n\nSoll ARASAKA einen automatischen Rettungsversuch starten (OK) oder machst du manuell weiter (Abbrechen)?");
+                const retry = await arasakaConfirm(
+                    'Nicht alle Positionen konnten auf "Handed out"\numgestellt werden.\n\nSoll ARASAKA einen Rettungsversuch starten?'
+                );
 
                 if (retry) {
-                    updateHUD("Starte Rettungsprotokoll...", "#ffff00");
-                    let allSelectsRetry = document.querySelectorAll('select');
-                    for (let select of allSelectsRetry) {
-                        let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
-                        if (hasHandedOutOption && !select.options[select.selectedIndex].text.includes('Handed out')) {
-                            for (let option of select.options) {
-                                if (option.text.includes('Handed out')) {
-                                    select.value = option.value;
-                                    select.dispatchEvent(new Event('change', { bubbles: true }));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
+                    updateHUD('Rettungsprotokoll aktiv...', '#ffaa00', true);
+                    forceAllHandedOut();
                     await sleep(3000);
-
-                    let finalCheckOk = true;
-                    let finalSelects = document.querySelectorAll('select');
-                    for (let select of finalSelects) {
-                        let hasHandedOutOption = Array.from(select.options).some(opt => opt.text.includes('Handed out'));
-                        if (hasHandedOutOption && !select.options[select.selectedIndex].text.includes('Handed out')) {
-                            finalCheckOk = false;
-                            break;
-                        }
-                    }
-
-                    if (!finalCheckOk) {
-                        updateHUD("RETTUNG FEHLGESCHLAGEN!", "#ff0000");
+                    if (!checkAllHandedOut()) {
+                        updateHUD('RETTUNG FEHLGESCHLAGEN', '#ff4444', true);
                         playDing('error');
                         setTimeout(removeHUD, 5000);
-                        alert("Rettungsversuch gescheitert. Das Skript bricht ab. Bitte manuell prüfen!");
                         return;
-                    } else {
-                        updateHUD("Rettung erfolgreich! Setze fort...", "#00ff00");
-                        await sleep(1000);
                     }
+                    updateHUD('Rettung erfolgreich!', '#00ff00', true);
+                    await sleep(1000);
                 } else {
-                    updateHUD("MANUELLE ÜBERNAHME", "#ff0000");
+                    updateHUD('MANUELLE ÜBERNAHME', '#ff4444');
                     setTimeout(removeHUD, 5000);
                     return;
                 }
             }
 
-            updateHUD("Übermittle Daten...");
-            let btnSubmit = await waitForElement('Submit');
-            if (btnSubmit) { forceClick(btnSubmit); }
+            updateHUD('Übermittle Daten...', '#00ffcc', true);
+            const btnSubmit = await waitForElement('Submit');
+            if (btnSubmit) forceClick(btnSubmit);
 
-            updateHUD("Bestätige Freigabe...");
+            updateHUD('Bestätige Freigabe...', '#00ffcc', true);
             await sleep(1000);
-            let btnConfirm = await waitForElement('Confirm');
-            if (btnConfirm) { forceClick(btnConfirm); }
+            const btnConfirm = await waitForElement('Confirm');
+            if (btnConfirm) forceClick(btnConfirm);
 
-            updateHUD("Schließe Fenster...");
+            updateHUD('Schließe Dialog...', '#00ffcc', true);
             await sleep(2000);
-            let btnClose = await waitForElement('Close', 10000, true);
-            if (btnClose) { forceClick(btnClose); }
+            const btnClose = await waitForElement('Close', 10000, true);
+            if (btnClose) forceClick(btnClose);
 
-            updateHUD("Rückkehr zum Auftrag...");
+            updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
             await sleep(1500);
-            let btnBack = await waitForElement('Back to refurbishment detail', 15000);
+            const btnBack = await waitForElement('Back to refurbishment detail', 15000);
             if (btnBack) {
                 sessionStorage.setItem('hole_pdf_nach_reload', 'true');
                 forceClick(btnBack);
             }
 
         } catch (e) {
-            if (e.message === "Abort") {
-                updateHUD("ABBRUCH DURCH USER", "#ff0000");
-                playDing('error');
-                setTimeout(removeHUD, 3000);
+            if (e.message === 'Abort') {
+                updateHUD('ABBRUCH DURCH USER', '#ff4444');
             } else {
-                updateHUD("SYSTEMFEHLER", "#ff0000");
-                playDing('error');
-                setTimeout(removeHUD, 3000);
+                console.error('ARASAKA FEHLER:', e);
+                updateHUD(`SYSTEMFEHLER: ${e.message}`, '#ff4444');
             }
+            playDing('error');
+            setTimeout(removeHUD, 4000);
         }
     }
 
     if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
         sessionStorage.removeItem('hole_pdf_nach_reload');
-        abortMission = false;
         isLocked = true;
         (async () => {
             try {
                 await sucheUndOeffnePdf();
             } catch (e) {
-                if (e.message === "Abort") {
-                    updateHUD("ABBRUCH DURCH USER", "#ff0000");
-                    playDing('error');
-                    setTimeout(removeHUD, 3000);
-                } else {
-                    updateHUD("SYSTEMFEHLER", "#ff0000");
-                    playDing('error');
-                    setTimeout(removeHUD, 3000);
-                }
+                const msg = e.message === 'Abort' ? 'ABBRUCH DURCH USER' : 'SYSTEMFEHLER';
+                updateHUD(msg, '#ff4444');
+                playDing('error');
+                setTimeout(removeHUD, 3000);
             } finally {
                 isLocked = false;
             }
         })();
     }
 
-    document.addEventListener('keydown', function(event) {
+    document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             abortMission = true;
             isLocked = false;
         }
-
         if (event.altKey && event.key.toLowerCase() === 'y') {
             event.preventDefault();
             if (isLocked) return;
             isLocked = true;
             abortMission = false;
-            startMacro().finally(() => {
-                isLocked = false;
-            });
+            startMacro().finally(() => { isLocked = false; });
         }
     });
 
