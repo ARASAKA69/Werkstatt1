@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.7
-// @description  ARASAKA v2.7 – HUD Pro, Progress-Log, Custom-Confirm
+// @version      2.8
+// @description  ARASAKA v2.8
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
