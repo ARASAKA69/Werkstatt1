@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol-Automation
 // @namespace    http://tampermonkey.net/
-// @version      2.6
-// @description  ARASAKA v2.6 – HUD Pro, Progress-Log, Custom-Confirm
+// @version      2.7
+// @description  ARASAKA v2.7 – HUD Pro, Progress-Log, Custom-Confirm
 // @author       ARASAKA
 // @match        *://*/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -22,7 +22,7 @@
     let hudElement = null;
     let isLocked = false;
     const speedMultiplier = GM_getValue('arasaka_speed', 1);
-    const TOTAL_STEPS = 8;
+    const TOTAL_STEPS = 14;
     let hudLog = [];
     let currentStep = 0;
     let startTime = null;
@@ -38,7 +38,6 @@
         }
     );
 
-
     function injectStyles() {
         if (document.getElementById('arasaka-styles')) return;
         const style = document.createElement('style');
@@ -50,7 +49,7 @@
             }
             @keyframes arasaka-pulse {
                 0%, 100% { box-shadow: 0 0 14px var(--a-col, #00ffcc88); }
-                50%       { box-shadow: 0 0 28px var(--a-col, #00ffcccc); }
+                50%      { box-shadow: 0 0 28px var(--a-col, #00ffcccc); }
             }
             @keyframes arasaka-blink {
                 0%, 100% { opacity: 1; } 50% { opacity: 0; }
@@ -153,7 +152,7 @@
                 opacity: 0.35;
                 letter-spacing: 1px;
             }
-            
+
             #arasaka-confirm {
                 position: fixed;
                 inset: 0;
@@ -215,7 +214,7 @@
         injectStyles();
         hudElement = document.createElement('div');
         hudElement.id = 'arasaka-hud';
-        hudElement.innerHTML = buildHUDHTML('Initialisiere...', '#00ffcc', 0);
+        hudElement.innerHTML = buildHUDHTML('Initialisiere...', '#00ffcc', currentStep);
         document.body.appendChild(hudElement);
 
         startTime = Date.now();
@@ -229,7 +228,8 @@
     }
 
     function buildHUDHTML(action, color, step) {
-        const pct = Math.round((step / TOTAL_STEPS) * 100);
+        const displayStep = Math.min(step, TOTAL_STEPS);
+        const pct = Math.min(100, Math.round((displayStep / TOTAL_STEPS) * 100));
         const logHTML = hudLog.slice(-3).map(t =>
             `<div class="a-log-entry">${t}</div>`
         ).join('');
@@ -242,7 +242,7 @@
             <div class="a-progress-wrap">
                 <div class="a-step-label" style="color:${color}">
                     <span>FORTSCHRITT</span>
-                    <span>SCHRITT ${step}/${TOTAL_STEPS}</span>
+                    <span>SCHRITT ${displayStep}/${TOTAL_STEPS}</span>
                 </div>
                 <div class="a-bar-bg">
                     <div class="a-bar-fill" style="width:${pct}%; background:${color};"></div>
@@ -565,6 +565,7 @@
     if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
         sessionStorage.removeItem('hole_pdf_nach_reload');
         isLocked = true;
+        currentStep = 11;
         (async () => {
             try {
                 await sucheUndOeffnePdf();
