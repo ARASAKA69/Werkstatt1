@@ -1,16 +1,16 @@
 // ==UserScript==
-// @name         Carol-Automation
-// @namespace    http://tampermonkey.net/
-// @version      2.8
-// @description  ARASAKA v2.8
-// @author       ARASAKA
-// @match        *://*/*
-// @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
-// @downloadURL  https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
-// @grant        GM_setValue
-// @grant        GM_getValue
-// @grant        GM_registerMenuCommand
-// @grant        GM_xmlhttpRequest
+// @name Carol-Automation
+// @namespace http://tampermonkey.net/
+// @version 2.9
+// @description ARASAKA v2.9
+// @author ARASAKA
+// @match *://*/*
+// @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
+// @downloadURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
+// @grant GM_setValue
+// @grant GM_getValue
+// @grant GM_registerMenuCommand
+// @grant GM_xmlhttpRequest
 // ==/UserScript==
 
 (function () {
@@ -45,18 +45,18 @@
         style.innerHTML = `
             @keyframes arasaka-fadein {
                 from { opacity: 0; transform: translateY(16px); }
-                to   { opacity: 1; transform: translateY(0); }
+                to { opacity: 1; transform: translateY(0); }
             }
             @keyframes arasaka-pulse {
                 0%, 100% { box-shadow: 0 0 14px var(--a-col, #00ffcc88); }
-                50%      { box-shadow: 0 0 28px var(--a-col, #00ffcccc); }
+                50% { box-shadow: 0 0 28px var(--a-col, #00ffcccc); }
             }
             @keyframes arasaka-blink {
                 0%, 100% { opacity: 1; } 50% { opacity: 0; }
             }
             @keyframes arasaka-scanline {
                 from { background-position: 0 0; }
-                to   { background-position: 0 100%; }
+                to { background-position: 0 100%; }
             }
             #arasaka-hud {
                 position: fixed;
@@ -201,8 +201,8 @@
                 background: transparent;
                 transition: background 0.15s;
             }
-            .a-btn-ok    { color: #00ffcc; }
-            .a-btn-ok:hover    { background: rgba(0,255,204,0.15); }
+            .a-btn-ok { color: #00ffcc; }
+            .a-btn-ok:hover { background: rgba(0,255,204,0.15); }
             .a-btn-cancel { color: #ff4444; }
             .a-btn-cancel:hover { background: rgba(255,68,68,0.15); }
         `;
@@ -252,7 +252,7 @@
             <div class="a-current" style="color:${color}">
                 ► ${action}<span class="a-cursor">_</span>
             </div>
-            <div class="a-footer">[ALT+Y] START  ·  [ESC] ABBRUCH</div>
+            <div class="a-footer">[ALT+Y] START · [ESC] ABBRUCH</div>
         `;
     }
 
@@ -305,21 +305,21 @@
                     <div class="a-dialog-msg">${message}</div>
                     <div class="a-dialog-btns">
                         <button class="a-btn a-btn-cancel" id="a-btn-no">ABBRECHEN</button>
-                        <button class="a-btn a-btn-ok"    id="a-btn-yes">RETTUNG STARTEN</button>
+                        <button class="a-btn a-btn-ok" id="a-btn-yes">RETTUNG STARTEN</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
 
             document.getElementById('a-btn-yes').onclick = () => { overlay.remove(); resolve(true); };
-            document.getElementById('a-btn-no').onclick  = () => { overlay.remove(); resolve(false); };
+            document.getElementById('a-btn-no').onclick = () => { overlay.remove(); resolve(false); };
         });
     }
 
     function playDing(type = 'success') {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc  = ctx.createOscillator();
+            const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -412,12 +412,59 @@
         if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
     }
 
+    function showArasakaRegalHUD(regalText) {
+        let existing = document.getElementById('arasaka-regal-hud');
+        if (existing) existing.remove();
+
+        const hud = document.createElement('div');
+        hud.id = 'arasaka-regal-hud';
+        hud.style.position = 'fixed';
+        hud.style.top = '50%';
+        hud.style.left = '50%';
+        hud.style.transform = 'translate(-50%, -50%)';
+        hud.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
+        hud.style.border = '4px solid #00FF00';
+        hud.style.boxShadow = '0 0 40px #00FF00, inset 0 0 20px #00FF00';
+        hud.style.padding = '60px 100px';
+        hud.style.borderRadius = '20px';
+        hud.style.zIndex = '9999999';
+        hud.style.color = '#00FF00';
+        hud.style.fontFamily = 'monospace';
+        hud.style.textAlign = 'center';
+        hud.style.cursor = 'pointer';
+
+        hud.innerHTML = `
+            <div style="font-size: 30px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF00;">TEILE STANDEN IN:</div>
+            <div style="font-size: 80px; font-weight: bold; color: #FFF; text-shadow: 0 0 20px #FFF, 0 0 40px #00FF00;">${regalText}</div>
+            <div style="font-size: 16px; margin-top: 30px; opacity: 0.7;">(Klick oder ESC zum Schließen)</div>
+        `;
+
+        document.body.appendChild(hud);
+
+        const closeHUD = (e) => {
+            if (e.type === 'keydown' && e.key !== 'Escape') return;
+            hud.remove();
+            document.removeEventListener('keydown', closeHUD);
+            document.removeEventListener('click', closeHUD);
+        };
+
+        setTimeout(() => {
+            document.addEventListener('click', closeHUD);
+            document.addEventListener('keydown', closeHUD);
+        }, 200);
+    }
+
     function sendGhostPing(stockId) {
         GM_xmlhttpRequest({
             method: 'GET',
             url: `${googleWebAppUrl}?stock=${stockId}`,
-            onload:  r => console.log('ARASAKA PING OK:', r.responseText),
-            onerror: e => console.error('ARASAKA PING FEHLER:', e),
+            onload: r => {
+                let match = r.responseText.match(/OLD_REGAL:(.*?)(?: \||$)/);
+                if (match && match[1]) {
+                    showArasakaRegalHUD(match[1].trim());
+                }
+            },
+            onerror: e => {}
         });
     }
 
@@ -456,7 +503,7 @@
         }
     }
 
-    async function startMacro() {
+  async function startMacro() {
         try {
             hudLog = []; currentStep = 0;
             createHUD();
@@ -554,7 +601,6 @@
             if (e.message === 'Abort') {
                 updateHUD('ABBRUCH DURCH USER', '#ff4444');
             } else {
-                console.error('ARASAKA FEHLER:', e);
                 updateHUD(`SYSTEMFEHLER: ${e.message}`, '#ff4444');
             }
             playDing('error');
@@ -593,5 +639,4 @@
             startMacro().finally(() => { isLocked = false; });
         }
     });
-
 })();
