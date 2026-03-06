@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 2.9
-// @description ARASAKA v2.9
+// @version 3.0
+// @description ARASAKA v3.0
 // @author ARASAKA
 // @match *://*/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -252,7 +252,7 @@
             <div class="a-current" style="color:${color}">
                 ► ${action}<span class="a-cursor">_</span>
             </div>
-            <div class="a-footer">[ALT+Y] START · [ESC] ABBRUCH</div>
+            <div class="a-footer">[ALT+Y] START  ·  [ESC] ABBRUCH</div>
         `;
     }
 
@@ -305,21 +305,21 @@
                     <div class="a-dialog-msg">${message}</div>
                     <div class="a-dialog-btns">
                         <button class="a-btn a-btn-cancel" id="a-btn-no">ABBRECHEN</button>
-                        <button class="a-btn a-btn-ok" id="a-btn-yes">RETTUNG STARTEN</button>
+                        <button class="a-btn a-btn-ok"    id="a-btn-yes">RETTUNG STARTEN</button>
                     </div>
                 </div>
             `;
             document.body.appendChild(overlay);
 
             document.getElementById('a-btn-yes').onclick = () => { overlay.remove(); resolve(true); };
-            document.getElementById('a-btn-no').onclick = () => { overlay.remove(); resolve(false); };
+            document.getElementById('a-btn-no').onclick  = () => { overlay.remove(); resolve(false); };
         });
     }
 
     function playDing(type = 'success') {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc = ctx.createOscillator();
+            const osc  = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -458,10 +458,10 @@
         GM_xmlhttpRequest({
             method: 'GET',
             url: `${googleWebAppUrl}?stock=${stockId}`,
-            onload: r => {
+            onload:  r => {
                 let match = r.responseText.match(/OLD_REGAL:(.*?)(?: \||$)/);
                 if (match && match[1]) {
-                    showArasakaRegalHUD(match[1].trim());
+                    sessionStorage.setItem('arasaka_old_regal', match[1].trim());
                 }
             },
             onerror: e => {}
@@ -499,11 +499,18 @@
         if (pdfClicked) {
             updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P', '#00ff00', true);
             playDing('success');
+           
+            const oldRegal = sessionStorage.getItem('arasaka_old_regal');
+            if (oldRegal) {
+                showArasakaRegalHUD(oldRegal);
+                sessionStorage.removeItem('arasaka_old_regal');
+            }
+
             setTimeout(removeHUD, 6000);
         }
     }
 
-  async function startMacro() {
+    async function startMacro() {
         try {
             hudLog = []; currentStep = 0;
             createHUD();
@@ -639,4 +646,5 @@
             startMacro().finally(() => { isLocked = false; });
         }
     });
+
 })();
