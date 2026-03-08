@@ -171,7 +171,7 @@
 
                     if (stockIds.length === 0) {
                         playSuccessSound();
-                        showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine neuen Bilder gefunden.\n\n[ALT + B] drücken, um später neu zu scannen.\nZeit, den Fehler-Ordner zu checken!", true);
+                        showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine neuen Bilder gefunden.\n\n[ALT + B] drücken, um später neu zu scannen.\nZeit, den Falsche Stock-Ordner zu checken!", true);
                         isProcessing = false;
                         return;
                     }
