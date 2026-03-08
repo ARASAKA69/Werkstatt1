@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.14
-// @description  Automatischer Batch-Upload + Error Folder Handling
+// @version      1.15
+// @description  Live-Version (API Key, Storage Fix, Skip Protection, Audio)
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -12,6 +12,7 @@
     'use strict';
 
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
+    const API_KEY = "ARASAKA_2026";
 
     let isProcessing = false;
     let abortMission = false;
@@ -44,6 +45,14 @@
             setTimeout(processNextStock, 1500);
         }
     }, 1500);
+
+    function playSuccessSound() {
+        try {
+            let audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
+            audio.volume = 0.8;
+            audio.play().catch(e => console.log('Audio Autoplay blockiert', e));
+        } catch (e) {}
+    }
 
     function forceClick(el) {
         if (!el) return;
@@ -117,7 +126,6 @@
 
             let inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"])'));
             let visibleInputs = inputs.filter(i => i.offsetWidth > 0 && i.offsetHeight > 0);
-
             if (visibleInputs.length > 0) return visibleInputs[0];
 
             await new Promise(r => setTimeout(r, 500));
@@ -126,8 +134,7 @@
     }
 
     async function handleStockError(stockId, idx, message) {
-        showCustomPopup("ARASAKA FEHLER", message + `\nVerschiebe Bild(er) in Fehler-Ordner...`, false);
-
+        showCustomPopup("ARASAKA FEHLER", `Fehler: ${message}\nVerschiebe in Fehler-Ordner...`, false);
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
         let files = allData[stockId];
 
@@ -136,7 +143,7 @@
             await new Promise(resolve => {
                 GM_xmlhttpRequest({
                     method: "GET",
-                    url: `${DRIVE_WEB_APP_URL}?action=moveFileError&fileId=${files[i].id}`,
+                    url: `${DRIVE_WEB_APP_URL}?action=moveFileError&fileId=${files[i].id}&stockId=${stockId}&reason=${encodeURIComponent(message)}&key=${API_KEY}`,
                     timeout: 10000,
                     onload: resolve,
                     onerror: resolve,
@@ -145,23 +152,17 @@
             });
         }
 
-        await sleep(2000);
+        await sleep(1500);
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
-
-        let overviewBtn = await waitForElementByText(['Overview'], 'a', 5000);
-        if (overviewBtn && overviewBtn.href) {
-            window.location.href = overviewBtn.href;
-        } else {
-            window.location.href = '/';
-        }
+        window.location.href = '/';
     }
 
     async function startBatchProcess() {
-        showCustomPopup("ARASAKA ONLINE", "Verbinde mit Google Drive... Lade Kisten aus.", false);
+        showCustomPopup("ARASAKA ONLINE", "Prüfe Kisten im Google Drive...", false);
 
         GM_xmlhttpRequest({
             method: "GET",
-            url: `${DRIVE_WEB_APP_URL}?action=getBatch`,
+            url: `${DRIVE_WEB_APP_URL}?action=getBatch&key=${API_KEY}`,
             timeout: 15000,
             onload: async function(response) {
                 if (abortMission) return;
@@ -170,7 +171,8 @@
                     let stockIds = Object.keys(data);
 
                     if (stockIds.length === 0) {
-                        showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine Bilder zum Hochladen gefunden.\n\n[ALT + B] drücken, um später einen neuen Scan zu starten.", true);
+                        playSuccessSound();
+                        showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine neuen Bilder gefunden.\n\n[ALT + B] drücken, um später neu zu scannen.\nZeit, den Fehler-Ordner zu checken!", true);
                         isProcessing = false;
                         return;
                     }
@@ -178,10 +180,9 @@
                     sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
                     sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
                     sessionStorage.setItem('arasaka_batch_current_idx', '0');
-
                     processNextStock();
                 } catch (err) {
-                    showCustomPopup("FEHLER", "Google Drive antwortet mit HTML. Prüfe die App Script Bereitstellung!", true);
+                    showCustomPopup("FEHLER", "Google Drive antwortet nicht richtig. Skript-URL und API-Key prüfen!", true);
                     isProcessing = false;
                 }
             },
@@ -201,11 +202,11 @@
             sessionStorage.removeItem('arasaka_batch_keys');
             sessionStorage.removeItem('arasaka_batch_current_idx');
 
-            showCustomPopup("ARASAKA", "Batch abgeschlossen. Prüfe Drive auf neue Kisten...", false);
+            showCustomPopup("ARASAKA", "Stapel fertig. Kurzer Check im Drive...", false);
 
             GM_xmlhttpRequest({
                 method: "GET",
-                url: `${DRIVE_WEB_APP_URL}?action=getBatch`,
+                url: `${DRIVE_WEB_APP_URL}?action=getBatch&key=${API_KEY}`,
                 timeout: 15000,
                 onload: async function(response) {
                     if (abortMission) return;
@@ -214,7 +215,8 @@
                         let stockIds = Object.keys(data);
 
                         if (stockIds.length === 0) {
-                            showCustomPopup("Mahlzeit!", "Alle Bilder verarbeitet!\n\nKeine neuen Kisten im Drive vorhanden.\n\nDrücke [ALT + B] um später einen neuen Scan zu starten.", true);
+                            playSuccessSound();
+                            showCustomPopup("Mahlzeit!", "Alle Bilder sind sauber hochgeladen!\n\nKeine Kisten mehr da.\n\n[ALT + B] für den nächsten Scan.", true);
                             isProcessing = false;
                         } else {
                             sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
@@ -223,12 +225,10 @@
                             processNextStock();
                         }
                     } catch (err) {
-                        showCustomPopup("FEHLER", "Fehler beim Auto-Recheck am Ende.", true);
+                        showCustomPopup("FEHLER", "Fehler beim Auto-Recheck.", true);
                         isProcessing = false;
                     }
-                },
-                onerror: function() { showCustomPopup("FEHLER", "Verbindungsfehler beim Auto-Recheck.", true); isProcessing = false; },
-                ontimeout: function() { showCustomPopup("FEHLER", "Zeitüberschreitung beim Auto-Recheck.", true); isProcessing = false; }
+                }
             });
             return;
         }
@@ -237,17 +237,8 @@
         showCustomPopup("ARASAKA LÄUFT", `Suche nach Stock ID: ${stockId}...`, false);
 
         let searchInput = await findSearchBar();
-
         if (!searchInput) {
-            showCustomPopup("ARASAKA NAVIGATION", "Suchleiste nicht gefunden. Navigiere zur Overview...", false);
-            let overviewBtn = await waitForElementByText(['Overview'], 'a', 5000);
-            if (abortMission) return;
-
-            if (overviewBtn && overviewBtn.href) {
-                window.location.href = overviewBtn.href;
-            } else {
-                window.location.href = '/';
-            }
+            await handleStockError(stockId, idx, "suchleiste auf startseite nicht gefunden");
             return;
         }
 
@@ -286,23 +277,14 @@
         let resultRow = null;
         for (let attempt = 0; attempt < 15; attempt++) {
             if (abortMission) return;
-
             let links = Array.from(document.querySelectorAll('a[href*="/refurbishment/"]'));
             let validLinks = links.filter(l => l.href.match(/[0-9a-f]{8}-[0-9a-f]{4}/i));
-            if (validLinks.length > 0) {
-                resultRow = validLinks[0];
-                break;
-            } else if (links.length > 0) {
-                resultRow = links[0];
-                break;
-            }
+            if (validLinks.length > 0) { resultRow = validLinks[0]; break; }
+            else if (links.length > 0) { resultRow = links[0]; break; }
 
             let rows = Array.from(document.querySelectorAll('tr.clickable-row, .rt-tr-group, tr[data-test-id*="row"]'));
             let validRows = rows.filter(r => !r.querySelector('th'));
-            if (validRows.length > 0) {
-                resultRow = validRows[0];
-                break;
-            }
+            if (validRows.length > 0) { resultRow = validRows[0]; break; }
             await sleep(500);
         }
 
@@ -310,7 +292,6 @@
 
         if (resultRow) {
             forceClick(resultRow);
-
             showCustomPopup("ARASAKA VERIFIKATION", `Prüfe, ob Auftrag ${stockId} geöffnet wurde...`, false);
             let isCorrectPage = await waitForText(stockId, 15000);
             if (abortMission) return;
@@ -318,21 +299,17 @@
             if (isCorrectPage) {
                 let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
                 if (abortMission) return;
-
                 if (uploadReady) {
                     executeUploadsForStock(stockId);
                 } else {
-                    sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
-                    window.location.href = '/';
+                    await handleStockError(stockId, idx, "upload button im auftrag fehlt");
                 }
             } else {
-                // NEU: Wenn zwar ein Auftrag aufgegangen ist, aber die Stock ID nicht drin steht!
-                await handleStockError(stockId, idx, `Falscher Auftrag für ${stockId} geladen!`);
+                await handleStockError(stockId, idx, "falscher auftrag geladen");
             }
 
         } else {
-            // NEU: Wenn gar kein Suchergebnis in der Liste gefunden wurde!
-            await handleStockError(stockId, idx, `Kein Suchergebnis für ${stockId} gefunden!`);
+            await handleStockError(stockId, idx, "auftrag nicht in der suche gefunden");
         }
     }
 
@@ -340,6 +317,7 @@
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
         let files = allData[stockId];
         let totalFiles = files.length;
+        let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
 
         for (let i = 0; i < totalFiles; i++) {
             if (abortMission) return;
@@ -347,7 +325,39 @@
             let fileInfo = files[i];
             let currentComment = `Ausgabe ${i + 1}/${totalFiles}`;
 
-            showCustomPopup("ARASAKA UPLOAD", `Lade Bild ${i + 1} von ${totalFiles} für ${stockId} hoch...`, false);
+            // DOPPEL-UPLOAD-SCHUTZ
+            if (document.body.innerText.includes(currentComment)) {
+                showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
+                await new Promise(resolve => {
+                    GM_xmlhttpRequest({
+                        method: "GET",
+                        url: `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&key=${API_KEY}`,
+                        timeout: 10000,
+                        onload: resolve, onerror: resolve, ontimeout: resolve
+                    });
+                });
+                continue;
+            }
+
+            // NEU: Bild exakt jetzt frisch runterladen (Speicher Fix)
+            showCustomPopup("ARASAKA DOWNLOAD", `Lade Bild ${i + 1} von ${totalFiles} für ${stockId} aus Drive...`, false);
+            let b64 = await new Promise((resolve) => {
+                GM_xmlhttpRequest({
+                    method: "GET",
+                    url: `${DRIVE_WEB_APP_URL}?action=getFileData&fileId=${fileInfo.id}&key=${API_KEY}`,
+                    timeout: 45000,
+                    onload: (res) => resolve(res.responseText),
+                    onerror: () => resolve(null),
+                    ontimeout: () => resolve(null)
+                });
+            });
+
+            if (!b64) {
+                await handleStockError(stockId, idx, `bild ${i+1} konnte nicht geladen werden`);
+                return;
+            }
+
+            showCustomPopup("ARASAKA UPLOAD", `Lade Bild ${i + 1} von ${totalFiles} in Carol hoch...`, false);
 
             let uploadBtn = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 10000);
             if (abortMission) return;
@@ -389,7 +399,7 @@
             }
             if (abortMission) return;
             if (fileInput) {
-                let blob = b64toBlob(fileInfo.b64, fileInfo.mimeType);
+                let blob = b64toBlob(b64, fileInfo.mimeType);
                 let file = new File([blob], fileInfo.name, { type: fileInfo.mimeType });
                 let dataTransfer = new DataTransfer();
                 dataTransfer.items.add(file);
@@ -403,8 +413,7 @@
             if (abortMission) return;
             if (submitBtn) forceClick(submitBtn);
 
-            showCustomPopup("ARASAKA VERIFIKATION", `Warte auf Bestätigung in Dokumentenliste...`, false);
-
+            showCustomPopup("ARASAKA VERIFIKATION", `Warte auf Bestätigung im System...`, false);
             let verifySuccess = await waitForText(currentComment, 20000);
             if (abortMission) return;
 
@@ -416,28 +425,18 @@
                 if (abortMission) return resolve();
                 GM_xmlhttpRequest({
                     method: "GET",
-                    url: `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}`,
+                    url: `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&key=${API_KEY}`,
                     timeout: 10000,
-                    onload: resolve,
-                    onerror: resolve,
-                    ontimeout: resolve
+                    onload: resolve, onerror: resolve, ontimeout: resolve
                 });
             });
         }
 
         if (abortMission) return;
 
-        let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
-
-        showCustomPopup("ARASAKA", `${stockId} abgeschlossen. Kehre zurück...`, false);
-
-        let overviewBtn = await waitForElementByText(['Overview'], 'a', 5000);
-        if (overviewBtn && overviewBtn.href) {
-            window.location.href = overviewBtn.href;
-        } else {
-            window.location.href = '/';
-        }
+        showCustomPopup("ARASAKA", `${stockId} sauber hochgeladen. Lade nächste Seite...`, false);
+        window.location.href = '/';
     }
 
     function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
