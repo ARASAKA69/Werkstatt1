@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.15
-// @description  Live-Version (API Key, Storage Fix, Skip Protection, Audio)
+// @version      1.16
+// @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -134,25 +134,25 @@
     }
 
     async function handleStockError(stockId, idx, message) {
-        showCustomPopup("ARASAKA FEHLER", `Fehler: ${message}\nVerschiebe in Fehler-Ordner...`, false);
+        showCustomPopup("ARASAKA FEHLER", `${message}\nVerschiebe in Kisten Falsche Stock Ordner...`, false);
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
         let files = allData[stockId];
 
-        for (let i = 0; i < files.length; i++) {
-            if (abortMission) return;
-            await new Promise(resolve => {
-                GM_xmlhttpRequest({
-                    method: "GET",
-                    url: `${DRIVE_WEB_APP_URL}?action=moveFileError&fileId=${files[i].id}&stockId=${stockId}&reason=${encodeURIComponent(message)}&key=${API_KEY}`,
-                    timeout: 10000,
-                    onload: resolve,
-                    onerror: resolve,
-                    ontimeout: resolve
-                });
+        // Alle Bilder gleichzeitig (parallel) an Google senden für maximalen Speed!
+        let movePromises = files.map(f => new Promise(resolve => {
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: `${DRIVE_WEB_APP_URL}?action=moveFileError&fileId=${f.id}&stockId=${stockId}&reason=${encodeURIComponent(message)}&key=${API_KEY}`,
+                timeout: 10000,
+                onload: resolve,
+                onerror: resolve,
+                ontimeout: resolve
             });
-        }
+        }));
 
-        await sleep(1500);
+        // Warten, bis Google für alle Bilder das "OK" zurückgibt, dann sofort weiter!
+        await Promise.all(movePromises);
+
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
         window.location.href = '/';
     }
@@ -238,7 +238,7 @@
 
         let searchInput = await findSearchBar();
         if (!searchInput) {
-            await handleStockError(stockId, idx, "suchleiste auf startseite nicht gefunden");
+            await handleStockError(stockId, idx, "Suchleiste auf Startseite nicht gefunden");
             return;
         }
 
@@ -261,22 +261,23 @@
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         searchInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-        await sleep(500);
+        await sleep(300); // Nur noch ein winziger Moment statt 500ms
 
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
         searchInput.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
         searchInput.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
 
-        setTimeout(() => { if(searchInput) searchInput.style.border = ""; }, 1500);
+        setTimeout(() => { if(searchInput) searchInput.style.border = ""; }, 1000);
 
-        showCustomPopup("ARASAKA LÄUFT", `Warte auf Suchergebnis für ${stockId}...`, false);
-        await sleep(2500);
+        showCustomPopup("ARASAKA LÄUFT", `Prüfe Ergebnisse für ${stockId}...`, false);
 
         if (abortMission) return;
 
         let resultRow = null;
-        for (let attempt = 0; attempt < 15; attempt++) {
+        // High-Speed Loop: Scannt 25x alle 200ms (max 5 Sekunden) statt feste Wartezeiten!
+        for (let attempt = 0; attempt < 25; attempt++) {
             if (abortMission) return;
+
             let links = Array.from(document.querySelectorAll('a[href*="/refurbishment/"]'));
             let validLinks = links.filter(l => l.href.match(/[0-9a-f]{8}-[0-9a-f]{4}/i));
             if (validLinks.length > 0) { resultRow = validLinks[0]; break; }
@@ -285,7 +286,16 @@
             let rows = Array.from(document.querySelectorAll('tr.clickable-row, .rt-tr-group, tr[data-test-id*="row"]'));
             let validRows = rows.filter(r => !r.querySelector('th'));
             if (validRows.length > 0) { resultRow = validRows[0]; break; }
-            await sleep(500);
+
+            // Wenn die Seite aktiv meldet, dass sie leer ist ("no data", "0 results"), und 1 Sekunde vergangen ist -> sofortiger Abbruch!
+            let isNoData = Array.from(document.querySelectorAll('div, span, td')).some(el =>
+                ['no data', 'keine daten', 'no results', 'keine ergebnisse', '0 results'].some(t => el.textContent.toLowerCase().trim() === t)
+            );
+            if (isNoData && attempt > 5) {
+                break;
+            }
+
+            await sleep(200);
         }
 
         if (abortMission) return;
@@ -302,14 +312,14 @@
                 if (uploadReady) {
                     executeUploadsForStock(stockId);
                 } else {
-                    await handleStockError(stockId, idx, "upload button im auftrag fehlt");
+                    await handleStockError(stockId, idx, "Upload Button im Auftrag fehlt");
                 }
             } else {
-                await handleStockError(stockId, idx, "falscher auftrag geladen");
+                await handleStockError(stockId, idx, "Falscher Auftrag geladen");
             }
 
         } else {
-            await handleStockError(stockId, idx, "auftrag nicht in der suche gefunden");
+            await handleStockError(stockId, idx, "Auftrag nicht gefunden");
         }
     }
 
@@ -339,7 +349,6 @@
                 continue;
             }
 
-            // NEU: Bild exakt jetzt frisch runterladen (Speicher Fix)
             showCustomPopup("ARASAKA DOWNLOAD", `Lade Bild ${i + 1} von ${totalFiles} für ${stockId} aus Drive...`, false);
             let b64 = await new Promise((resolve) => {
                 GM_xmlhttpRequest({
@@ -353,7 +362,7 @@
             });
 
             if (!b64) {
-                await handleStockError(stockId, idx, `bild ${i+1} konnte nicht geladen werden`);
+                await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
                 return;
             }
 
