@@ -138,7 +138,6 @@
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
         let files = allData[stockId];
 
-        // Alle Bilder gleichzeitig (parallel) an Google senden für maximalen Speed!
         let movePromises = files.map(f => new Promise(resolve => {
             GM_xmlhttpRequest({
                 method: "GET",
@@ -150,7 +149,6 @@
             });
         }));
 
-        // Warten, bis Google für alle Bilder das "OK" zurückgibt, dann sofort weiter!
         await Promise.all(movePromises);
 
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
@@ -261,7 +259,7 @@
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         searchInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-        await sleep(300); // Nur noch ein winziger Moment statt 500ms
+        await sleep(300);
 
         searchInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
         searchInput.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
@@ -274,7 +272,6 @@
         if (abortMission) return;
 
         let resultRow = null;
-        // High-Speed Loop: Scannt 25x alle 200ms (max 5 Sekunden) statt feste Wartezeiten!
         for (let attempt = 0; attempt < 25; attempt++) {
             if (abortMission) return;
 
@@ -287,7 +284,6 @@
             let validRows = rows.filter(r => !r.querySelector('th'));
             if (validRows.length > 0) { resultRow = validRows[0]; break; }
 
-            // Wenn die Seite aktiv meldet, dass sie leer ist ("no data", "0 results"), und 1 Sekunde vergangen ist -> sofortiger Abbruch!
             let isNoData = Array.from(document.querySelectorAll('div, span, td')).some(el =>
                 ['no data', 'keine daten', 'no results', 'keine ergebnisse', '0 results'].some(t => el.textContent.toLowerCase().trim() === t)
             );
@@ -335,7 +331,7 @@
             let fileInfo = files[i];
             let currentComment = `Ausgabe ${i + 1}/${totalFiles}`;
 
-            // DOPPEL-UPLOAD-SCHUTZ
+
             if (document.body.innerText.includes(currentComment)) {
                 showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
                 await new Promise(resolve => {
