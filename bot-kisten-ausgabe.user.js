@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.16
-// @description  Live-Version
+// @version      1.17
+// @description  Live-Version (Logic Fix: Wait for Upload Button BEFORE verify)
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -56,9 +56,9 @@
 
     function forceClick(el) {
         if (!el) return;
+        try { el.click(); } catch(e) {}
         el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-        el.click();
     }
 
     async function waitForElementByText(texts, selector = '*', timeout = 15000) {
@@ -267,7 +267,7 @@
 
         setTimeout(() => { if(searchInput) searchInput.style.border = ""; }, 1000);
 
-        showCustomPopup("ARASAKA LÄUFT", `Prüfe Ergebnisse für ${stockId}...`, false);
+        showCustomPopup("ARASAKA LÄUFT", `Warte auf Suchergebnis für ${stockId}...`, false);
 
         if (abortMission) return;
 
@@ -298,20 +298,23 @@
 
         if (resultRow) {
             forceClick(resultRow);
-            showCustomPopup("ARASAKA VERIFIKATION", `Prüfe, ob Auftrag ${stockId} geöffnet wurde...`, false);
-            let isCorrectPage = await waitForText(stockId, 15000);
+
+            showCustomPopup("ARASAKA NAVIGATION", `Öffne Auftrag...`, false);
+            let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
+
             if (abortMission) return;
 
-            if (isCorrectPage) {
-                let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
-                if (abortMission) return;
-                if (uploadReady) {
+            if (uploadReady) {
+                showCustomPopup("ARASAKA VERIFIKATION", `Prüfe, ob Auftrag ${stockId} der richtige ist...`, false);
+                let isCorrectPage = await waitForText(stockId, 5000);
+
+                if (isCorrectPage) {
                     executeUploadsForStock(stockId);
                 } else {
-                    await handleStockError(stockId, idx, "Upload Button im Auftrag fehlt");
+                    await handleStockError(stockId, idx, "Falscher Auftrag geladen (Stock-ID fehlt im Auftrag)");
                 }
             } else {
-                await handleStockError(stockId, idx, "Falscher Auftrag geladen");
+                await handleStockError(stockId, idx, "Auftrag hat nicht geöffnet oder Upload Button fehlt");
             }
 
         } else {
@@ -330,7 +333,6 @@
 
             let fileInfo = files[i];
             let currentComment = `Ausgabe ${i + 1}/${totalFiles}`;
-
 
             if (document.body.innerText.includes(currentComment)) {
                 showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
