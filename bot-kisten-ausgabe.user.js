@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.18
+// @version      1.19
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -56,9 +56,10 @@
 
     function forceClick(el) {
         if (!el) return;
-        try { el.click(); } catch(e) {}
+        el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
         el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        try { el.click(); } catch(e) {}
     }
 
     async function waitForElementByText(texts, selector = '*', timeout = 15000) {
@@ -267,7 +268,6 @@
 
         setTimeout(() => { if(searchInput) searchInput.style.border = ""; }, 1000);
 
-        // WICHTIG: Die zwingende Pause, damit Carol die Tabelle laden kann!
         showCustomPopup("ARASAKA LÄUFT", `Warte auf Suchergebnis für ${stockId}...`, false);
         await sleep(2000);
 
@@ -301,17 +301,7 @@
         if (resultRow) {
             showCustomPopup("ARASAKA NAVIGATION", `Öffne Auftrag...`, false);
 
-            // SUPER-KLICK: Harte Navigation, wenn es ein Link ist! Verhindert "Klick ins Nichts".
-            if (resultRow.tagName && resultRow.tagName.toLowerCase() === 'a' && resultRow.href) {
-                window.location.href = resultRow.href;
-            } else {
-                let innerLink = resultRow.querySelector('a[href*="/refurbishment/"]');
-                if (innerLink && innerLink.href) {
-                    window.location.href = innerLink.href;
-                } else {
-                    forceClick(resultRow);
-                }
-            }
+            forceClick(resultRow);
 
             let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
             if (abortMission) return;
