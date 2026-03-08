@@ -4,7 +4,7 @@
 // @version 3.0
 // @description ARASAKA v3.0
 // @author ARASAKA
-// @match *://*/*
+// @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
 // @downloadURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
 // @grant GM_setValue
