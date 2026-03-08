@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.17
-// @description  Live-Version (Logic Fix: Wait for Upload Button BEFORE verify)
+// @version      1.18
+// @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -267,7 +267,9 @@
 
         setTimeout(() => { if(searchInput) searchInput.style.border = ""; }, 1000);
 
+        // WICHTIG: Die zwingende Pause, damit Carol die Tabelle laden kann!
         showCustomPopup("ARASAKA LÄUFT", `Warte auf Suchergebnis für ${stockId}...`, false);
+        await sleep(2000);
 
         if (abortMission) return;
 
@@ -297,11 +299,21 @@
         if (abortMission) return;
 
         if (resultRow) {
-            forceClick(resultRow);
-
             showCustomPopup("ARASAKA NAVIGATION", `Öffne Auftrag...`, false);
-            let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
 
+            // SUPER-KLICK: Harte Navigation, wenn es ein Link ist! Verhindert "Klick ins Nichts".
+            if (resultRow.tagName && resultRow.tagName.toLowerCase() === 'a' && resultRow.href) {
+                window.location.href = resultRow.href;
+            } else {
+                let innerLink = resultRow.querySelector('a[href*="/refurbishment/"]');
+                if (innerLink && innerLink.href) {
+                    window.location.href = innerLink.href;
+                } else {
+                    forceClick(resultRow);
+                }
+            }
+
+            let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
             if (abortMission) return;
 
             if (uploadReady) {
