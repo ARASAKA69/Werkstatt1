@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.1
-// @description ARASAKA v3.1
+// @version 3.2
+// @description ARASAKA v3.2 - Fallback PDF Scanner & Bigger HUD
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
@@ -62,13 +62,13 @@
                 position: fixed;
                 bottom: 28px;
                 right: 28px;
-                width: 320px;
+                width: 360px; /* VERGRÖSSERT */
                 background: rgba(5, 8, 12, 0.96);
                 color: #00ffcc;
                 border: 1.5px solid #00ffcc;
                 border-radius: 6px;
                 font-family: 'Courier New', monospace;
-                font-size: 13px;
+                font-size: 14px; /* VERGRÖSSERT */
                 z-index: 999999;
                 pointer-events: none;
                 animation: arasaka-fadein 0.3s ease, arasaka-pulse 2.5s ease-in-out infinite;
@@ -93,20 +93,20 @@
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 10px 14px 8px;
+                padding: 12px 16px 10px; /* VERGRÖSSERT */
                 border-bottom: 1px solid rgba(0,255,204,0.25);
-                font-size: 12px;
+                font-size: 14px; /* VERGRÖSSERT */
                 letter-spacing: 2px;
                 font-weight: bold;
             }
-            .a-timer { font-size: 11px; opacity: 0.7; letter-spacing: 1px; }
+            .a-timer { font-size: 13px; opacity: 0.7; letter-spacing: 1px; } /* VERGRÖSSERT */
             .a-progress-wrap {
-                padding: 8px 14px 4px;
+                padding: 10px 16px 6px; /* VERGRÖSSERT */
             }
             .a-step-label {
                 display: flex;
                 justify-content: space-between;
-                font-size: 10px;
+                font-size: 12px; /* VERGRÖSSERT */
                 opacity: 0.6;
                 margin-bottom: 4px;
                 letter-spacing: 1px;
@@ -124,31 +124,31 @@
                 transition: width 0.4s ease;
             }
             .a-log {
-                padding: 6px 14px 0;
-                min-height: 44px;
+                padding: 8px 16px 0; /* VERGRÖSSERT */
+                min-height: 54px; /* VERGRÖSSERT */
             }
             .a-log-entry {
-                font-size: 11px;
+                font-size: 12px; /* VERGRÖSSERT */
                 opacity: 0.55;
-                margin-bottom: 2px;
+                margin-bottom: 4px; /* VERGRÖSSERT */
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .a-log-entry::before { content: '✓ '; }
             .a-current {
-                padding: 8px 14px 6px;
-                font-size: 13px;
+                padding: 10px 16px 8px; /* VERGRÖSSERT */
+                font-size: 15px; /* VERGRÖSSERT */
                 border-top: 1px solid rgba(0,255,204,0.15);
-                margin-top: 4px;
+                margin-top: 6px; /* VERGRÖSSERT */
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .a-cursor { animation: arasaka-blink 0.9s infinite; }
             .a-footer {
-                padding: 4px 14px 8px;
-                font-size: 10px;
+                padding: 6px 16px 10px; /* VERGRÖSSERT */
+                font-size: 12px; /* VERGRÖSSERT */
                 opacity: 0.35;
                 letter-spacing: 1px;
             }
@@ -468,38 +468,64 @@
         });
     }
 
+
     async function sucheUndOeffnePdf() {
         updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
         await sleep(4000);
 
-        const textWerkstatt = await waitForElement('Werkstattauftrag', 15000);
-        if (!textWerkstatt) return;
-
-        let parent = textWerkstatt.parentElement;
-        let pdfClicked = false;
-
         updateHUD('Scanne nach PDF...', '#ffff00', true);
 
-        for (let i = 0; i < 8; i++) {
-            if (!parent) break;
-            for (const el of parent.querySelectorAll('*')) {
-                if (!el.textContent?.includes('.pdf')) continue;
-                const childHas = Array.from(el.children).some(c => c.textContent?.includes('.pdf'));
-                if (childHas) continue;
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                await sleep(800);
-                forceClick(el);
-                pdfClicked = true;
-                break;
+        let textWerkstatt = await waitForElement('Werkstattauftrag', 5000);
+        let pdfElement = null;
+
+        if (textWerkstatt) {
+            let parent = textWerkstatt.parentElement;
+            for (let i = 0; i < 8; i++) {
+                if (!parent) break;
+                for (const el of parent.querySelectorAll('*')) {
+                    if (!el.textContent?.toLowerCase().includes('.pdf')) continue;
+                    const childHas = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
+                    if (childHas) continue;
+                    pdfElement = el;
+                    break;
+                }
+                if (pdfElement) break;
+                parent = parent.parentElement;
             }
-            if (pdfClicked) break;
-            parent = parent.parentElement;
         }
 
-        if (pdfClicked) {
+        if (!pdfElement) {
+            updateHUD('Fallback: Suche direkt nach PDF-Datei...', '#ffaa00', true);
+            const allPdfEls = [];
+            
+            for (const el of document.querySelectorAll('*')) {
+                if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY', 'svg', 'path'].includes(el.tagName)) continue;
+                if (el.textContent?.toLowerCase().includes('.pdf')) {
+                    const childHasPdf = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
+                    if (!childHasPdf) allPdfEls.push(el);
+                }
+            }
+
+            for (const el of allPdfEls) {
+                if (el.textContent.toLowerCase().includes('werkstatt')) {
+                    pdfElement = el;
+                    break;
+                }
+            }
+
+            if (!pdfElement && allPdfEls.length > 0) {
+                pdfElement = allPdfEls[0];
+            }
+        }
+
+        if (pdfElement) {
+            pdfElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            await sleep(800);
+            forceClick(pdfElement);
+            
             updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P', '#00ff00', true);
             playDing('success');
-           
+            
             const oldRegal = sessionStorage.getItem('arasaka_old_regal');
             if (oldRegal) {
                 showArasakaRegalHUD(oldRegal);
@@ -507,6 +533,10 @@
             }
 
             setTimeout(removeHUD, 6000);
+        } else {
+             updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
+             playDing('error');
+             setTimeout(removeHUD, 5000);
         }
     }
 
