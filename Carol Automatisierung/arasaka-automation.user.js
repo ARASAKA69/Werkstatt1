@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.2
-// @description ARASAKA v3.2 - Fallback PDF Scanner & Bigger HUD
+// @version 3.4
+// @description ARASAKA v3.4 - Fallback PDF Scanner & Bigger HUD & Auto-Start
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
-// @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
-// @downloadURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/arasaka-automation.user.js
+// @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
+// @downloadURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
 // @grant GM_setValue
 // @grant GM_getValue
 // @grant GM_registerMenuCommand
@@ -62,13 +62,13 @@
                 position: fixed;
                 bottom: 28px;
                 right: 28px;
-                width: 360px; /* VERGRÖSSERT */
+                width: 360px;
                 background: rgba(5, 8, 12, 0.96);
                 color: #00ffcc;
                 border: 1.5px solid #00ffcc;
                 border-radius: 6px;
                 font-family: 'Courier New', monospace;
-                font-size: 14px; /* VERGRÖSSERT */
+                font-size: 14px;
                 z-index: 999999;
                 pointer-events: none;
                 animation: arasaka-fadein 0.3s ease, arasaka-pulse 2.5s ease-in-out infinite;
@@ -93,20 +93,20 @@
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
-                padding: 12px 16px 10px; /* VERGRÖSSERT */
+                padding: 12px 16px 10px;
                 border-bottom: 1px solid rgba(0,255,204,0.25);
-                font-size: 14px; /* VERGRÖSSERT */
+                font-size: 14px;
                 letter-spacing: 2px;
                 font-weight: bold;
             }
-            .a-timer { font-size: 13px; opacity: 0.7; letter-spacing: 1px; } /* VERGRÖSSERT */
+            .a-timer { font-size: 13px; opacity: 0.7; letter-spacing: 1px; }
             .a-progress-wrap {
-                padding: 10px 16px 6px; /* VERGRÖSSERT */
+                padding: 10px 16px 6px;
             }
             .a-step-label {
                 display: flex;
                 justify-content: space-between;
-                font-size: 12px; /* VERGRÖSSERT */
+                font-size: 12px;
                 opacity: 0.6;
                 margin-bottom: 4px;
                 letter-spacing: 1px;
@@ -124,35 +124,34 @@
                 transition: width 0.4s ease;
             }
             .a-log {
-                padding: 8px 16px 0; /* VERGRÖSSERT */
-                min-height: 54px; /* VERGRÖSSERT */
+                padding: 8px 16px 0;
+                min-height: 54px;
             }
             .a-log-entry {
-                font-size: 12px; /* VERGRÖSSERT */
+                font-size: 12px;
                 opacity: 0.55;
-                margin-bottom: 4px; /* VERGRÖSSERT */
+                margin-bottom: 4px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .a-log-entry::before { content: '✓ '; }
             .a-current {
-                padding: 10px 16px 8px; /* VERGRÖSSERT */
-                font-size: 15px; /* VERGRÖSSERT */
+                padding: 10px 16px 8px;
+                font-size: 15px;
                 border-top: 1px solid rgba(0,255,204,0.15);
-                margin-top: 6px; /* VERGRÖSSERT */
+                margin-top: 6px;
                 white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
             .a-cursor { animation: arasaka-blink 0.9s infinite; }
             .a-footer {
-                padding: 6px 16px 10px; /* VERGRÖSSERT */
-                font-size: 12px; /* VERGRÖSSERT */
+                padding: 6px 16px 10px;
+                font-size: 12px;
                 opacity: 0.35;
                 letter-spacing: 1px;
             }
-
             #arasaka-confirm {
                 position: fixed;
                 inset: 0;
@@ -468,7 +467,6 @@
         });
     }
 
-
     async function sucheUndOeffnePdf() {
         updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
         await sleep(4000);
@@ -661,6 +659,15 @@
                 isLocked = false;
             }
         })();
+    }
+
+    if (window.location.href.includes('arasaka_auto=1')) {
+        setTimeout(() => {
+            if (isLocked) return;
+            isLocked = true;
+            abortMission = false;
+            startMacro().finally(() => { isLocked = false; });
+        }, 1500);
     }
 
     document.addEventListener('keydown', (event) => {
