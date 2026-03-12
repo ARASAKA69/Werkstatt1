@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html>
 <head>
 <style>
@@ -23,6 +23,12 @@
     color: #ffffff; 
     text-align: center;
   }
+  .autocomplete {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 15px;
+  }
   input { 
     width: 100%; 
     background: #161b22; 
@@ -33,7 +39,6 @@
     text-transform: uppercase; 
     box-sizing: border-box; 
     outline: none; 
-    margin-bottom: 15px; 
     text-align: center; 
     font-weight: bold; 
     border-radius: 6px; 
@@ -42,6 +47,40 @@
   input:focus { 
     border-color: #58a6ff; 
     box-shadow: 0 0 12px rgba(88, 166, 255, 0.3); 
+  }
+  .autocomplete-items {
+    position: absolute;
+    border: 2px solid #30363d;
+    border-top: none;
+    z-index: 99;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: #161b22;
+    border-radius: 0 0 6px 6px;
+    max-height: 180px;
+    overflow-y: auto;
+    display: none;
+    box-shadow: 0 8px 16px rgba(0,0,0,0.5);
+  }
+  .autocomplete-items div {
+    padding: 12px;
+    cursor: pointer;
+    background-color: #161b22;
+    border-bottom: 1px solid #21262d;
+    color: #8b949e;
+    font-weight: bold;
+    font-size: 18px;
+    text-align: center;
+    transition: 0.2s;
+  }
+  .autocomplete-items div:hover {
+    background-color: #30363d;
+    color: #ffffff;
+  }
+  .autocomplete-active {
+    background-color: #30363d !important;
+    color: #ffffff !important;
   }
   .btn-check { 
     width: 100%; 
@@ -169,7 +208,11 @@
 <body>
   <div class="header">LAGER ANNAHME SYSTEM</div>
   
-  <input type="text" id="stockId" placeholder="STOCK ID EINGEBEN" autocomplete="off">
+  <div class="autocomplete">
+    <input type="text" id="stockId" placeholder="STOCK ID EINGEBEN" autocomplete="off">
+    <div id="autocomplete-list" class="autocomplete-items"></div>
+  </div>
+  
   <button class="btn-check" id="btnCheck" onclick="verifyStock()">ID PRÜFEN (ENTER)</button>
   
   <div class="action-btns">
@@ -200,14 +243,13 @@
     var locationInfo = document.getElementById('locationInfo');
     
     var currentVerifiedStock = "";
+    var cachedStockIds = [];
+
+    google.script.run.withSuccessHandler(function(ids) {
+        cachedStockIds = ids;
+    }).getAvailableStockIds();
 
     stockInput.focus();
-
-    stockInput.addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        verifyStock();
-      }
-    });
 
     stockInput.addEventListener('input', function() {
       currentVerifiedStock = "";
@@ -216,6 +258,50 @@
       statusDiv.className = "status-wait";
       statusDiv.innerText = "Bitte Stock-ID prüfen...";
       dymoContainer.style.display = "none";
+      
+      var val = this.value.toUpperCase();
+      closeAllLists();
+      if (!val) return false;
+      
+      var list = document.getElementById("autocomplete-list");
+      list.style.display = "block";
+      
+      var count = 0;
+      for (var i = 0; i < cachedStockIds.length; i++) {
+        if (cachedStockIds[i].indexOf(val) !== -1) {
+          var item = document.createElement("DIV");
+          item.innerHTML = cachedStockIds[i].replace(val, "<span style='color:#58a6ff;'>" + val + "</span>");
+          item.innerHTML += "<input type='hidden' value='" + cachedStockIds[i] + "'>";
+          item.addEventListener("click", function(e) {
+              stockInput.value = this.getElementsByTagName("input")[0].value;
+              closeAllLists();
+              verifyStock();
+          });
+          list.appendChild(item);
+          count++;
+          if(count >= 30) break;
+        }
+      }
+      if(count === 0) list.style.display = "none";
+    });
+
+    stockInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        closeAllLists();
+        verifyStock();
+      }
+    });
+
+    function closeAllLists() {
+      var list = document.getElementById("autocomplete-list");
+      list.innerHTML = '';
+      list.style.display = "none";
+    }
+
+    document.addEventListener("click", function (e) {
+        if (e.target !== stockInput) {
+            closeAllLists();
+        }
     });
 
     function resetButtons() {
@@ -322,6 +408,11 @@
                    
                    dymoContainer.style.display = "block";
                }
+               
+               google.script.run.withSuccessHandler(function(ids) {
+                   cachedStockIds = ids;
+               }).getAvailableStockIds();
+
            } else {
                statusDiv.className = "status-error";
                statusDiv.innerText = "► FEHLER bei " + processingStock + ": " + res.message;
@@ -339,4 +430,5 @@
     }
   </script>
 </body>
-</html>
+  </html>
+  
