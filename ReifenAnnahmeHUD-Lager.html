@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { 
+    background: #0d1117; 
+    color: #c9d1d9; 
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+    padding: 20px; 
+    margin: 0; 
+    display: flex; 
+    flex-direction: column; 
+    min-height: 100vh; 
+    box-sizing: border-box; 
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .header { 
+    font-size: 20px; 
+    font-weight: bold; 
+    margin-bottom: 20px; 
+    letter-spacing: 1px; 
+    color: #ffffff; 
+    text-align: center;
+  }
+  input { 
+    width: 100%; 
+    background: #161b22; 
+    color: #58a6ff; 
+    border: 2px solid #30363d; 
+    padding: 15px; 
+    font-size: 24px; 
+    text-transform: uppercase; 
+    box-sizing: border-box; 
+    outline: none; 
+    margin-bottom: 15px; 
+    text-align: center; 
+    font-weight: bold; 
+    border-radius: 6px; 
+    transition: 0.3s; 
+  }
+  input:focus { 
+    border-color: #58a6ff; 
+    box-shadow: 0 0 12px rgba(88, 166, 255, 0.3); 
+  }
+  .btn-check { 
+    width: 100%; 
+    background: #21262d; 
+    color: #c9d1d9; 
+    padding: 12px; 
+    font-size: 14px; 
+    font-weight: bold; 
+    letter-spacing: 1px;
+    border: 1px solid #30363d; 
+    border-radius: 6px; 
+    cursor: pointer; 
+    margin-bottom: 25px; 
+    transition: 0.2s; 
+  }
+  .btn-check:hover { background: #30363d; color: #ffffff; }
+  .btn-check:active { transform: scale(0.98); }
+  
+  .action-btns { display: flex; gap: 10px; margin-bottom: 15px; }
+  
+  .btn-action { 
+    flex: 1; 
+    padding: 15px; 
+    font-size: 16px; 
+    font-weight: bold; 
+    border: none; 
+    border-radius: 6px; 
+    transition: 0.3s; 
+    background: #21262d; 
+    color: #484f58; 
+    cursor: not-allowed; 
+  }
+  
+  .btn-action.active-ja { 
+    background: #238636; 
+    color: #ffffff; 
+    cursor: pointer; 
+    box-shadow: 0 4px 15px rgba(35, 134, 54, 0.4);
+  }
+  .btn-action.active-ja:hover { background: #2ea043; }
+  .btn-action.active-ja:active { transform: scale(0.96); }
+  
+  .btn-action.active-nein { 
+    background: #da3633; 
+    color: #ffffff; 
+    cursor: pointer; 
+    box-shadow: 0 4px 15px rgba(218, 54, 51, 0.4);
+  }
+  .btn-action.active-nein:hover { background: #f85149; }
+  .btn-action.active-nein:active { transform: scale(0.96); }
+
+  #status { 
+    font-size: 13px; 
+    min-height: 40px; 
+    text-align: center; 
+    line-height: 1.4; 
+    font-weight: 500;
+  }
+  .status-wait { color: #8b949e; }
+  .status-loading { color: #f2cc60; }
+  .status-success { color: #56d364; }
+  .status-error { color: #f85149; }
+
+  #dymo-container {
+    display: none;
+    margin-top: 10px;
+    margin-bottom: 15px;
+    background: #161b22;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #30363d;
+  }
+  
+  #locationInfo {
+    color: #e3b341;
+    font-size: 14px;
+    text-align: center;
+    margin-bottom: 15px;
+    font-weight: bold;
+    background: #2d230e;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid #e3b341;
+  }
+
+  .dymo-title {
+    font-size: 11px;
+    color: #8b949e;
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: 1px;
+  }
+  .copy-box {
+    background: #21262d;
+    border: 1px dashed #58a6ff;
+    color: #58a6ff;
+    padding: 10px;
+    margin-bottom: 8px;
+    text-align: center;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: bold;
+    transition: 0.2s;
+  }
+  .copy-box:hover {
+    background: #30363d;
+    color: #ffffff;
+    border-color: #58a6ff;
+  }
+  .copy-box:active { transform: scale(0.98); }
+
+  .footer { 
+    margin-top: auto; 
+    text-align: center; 
+    font-size: 17px; 
+    color: #FFD700; 
+    letter-spacing: 2px; 
+    font-family: monospace;
+    font-weight: bold;
+    padding-top: 15px;
+  }
+</style>
+</head>
+<body>
+  <div class="header">LAGER ANNAHME SYSTEM</div>
+  
+  <input type="text" id="stockId" placeholder="STOCK ID EINGEBEN" autocomplete="off">
+  <button class="btn-check" id="btnCheck" onclick="verifyStock()">ID PRÜFEN (ENTER)</button>
+  
+  <div class="action-btns">
+    <button class="btn-action" id="btnJa" onclick="executeAction(true)">✅ DA (JA)</button>
+    <button class="btn-action" id="btnNein" onclick="executeAction(false)">❌ FEHLT (NEIN)</button>
+  </div>
+  
+  <div id="status" class="status-wait">Bitte Stock-ID eingeben...</div>
+
+  <div id="dymo-container">
+    <div id="locationInfo"></div>
+    <div class="dymo-title">ZUM KOPIEREN FÜR DYMO KLICKEN:</div>
+    <div class="copy-box" id="boxStock" onclick="copyToClipboard(this)"></div>
+    <div class="copy-box" id="boxTire" onclick="copyToClipboard(this)"></div>
+  </div>
+  
+  <div class="footer">SYSTEM BY ARASAKA</div>
+
+  <script>
+    var stockInput = document.getElementById('stockId');
+    var btnCheck = document.getElementById('btnCheck');
+    var btnJa = document.getElementById('btnJa');
+    var btnNein = document.getElementById('btnNein');
+    var statusDiv = document.getElementById('status');
+    var dymoContainer = document.getElementById('dymo-container');
+    var boxStock = document.getElementById('boxStock');
+    var boxTire = document.getElementById('boxTire');
+    var locationInfo = document.getElementById('locationInfo');
+    
+    var currentVerifiedStock = "";
+
+    stockInput.focus();
+
+    stockInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        verifyStock();
+      }
+    });
+
+    stockInput.addEventListener('input', function() {
+      currentVerifiedStock = "";
+      btnJa.className = "btn-action";
+      btnNein.className = "btn-action";
+      statusDiv.className = "status-wait";
+      statusDiv.innerText = "Bitte Stock-ID prüfen...";
+      dymoContainer.style.display = "none";
+    });
+
+    function resetButtons() {
+      currentVerifiedStock = "";
+      btnJa.className = "btn-action";
+      btnNein.className = "btn-action";
+      dymoContainer.style.display = "none";
+    }
+
+    function copyToClipboard(element) {
+      var textToCopy = element.getAttribute("data-value");
+      
+      var tempInput = document.createElement("textarea");
+      tempInput.value = textToCopy;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand("copy");
+      document.body.removeChild(tempInput);
+      
+      var originalText = element.innerText;
+      element.innerText = "✓ KOPIERT!";
+      element.style.background = "#238636";
+      element.style.color = "#ffffff";
+      element.style.borderColor = "#2ea043";
+      
+      setTimeout(function() {
+        element.innerText = originalText;
+        element.style.background = "";
+        element.style.color = "";
+        element.style.borderColor = "";
+      }, 1200);
+    }
+
+    function verifyStock() {
+      var stockId = stockInput.value.trim().toUpperCase();
+      if (!stockId) return;
+
+      resetButtons();
+      statusDiv.className = "status-loading";
+      statusDiv.innerText = "Suche " + stockId + " in den Listen...";
+      
+      stockInput.disabled = true;
+      btnCheck.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+           stockInput.disabled = false;
+           btnCheck.disabled = false;
+           
+           if (res.found) {
+               currentVerifiedStock = stockId;
+               statusDiv.className = "status-success";
+               statusDiv.innerText = res.message;
+               
+               btnJa.className = "btn-action active-ja";
+               btnNein.className = "btn-action active-nein";
+           } else {
+               statusDiv.className = "status-error";
+               statusDiv.innerText = res.message;
+               stockInput.focus();
+           }
+        })
+        .withFailureHandler(function(err) {
+           stockInput.disabled = false;
+           btnCheck.disabled = false;
+           statusDiv.className = "status-error";
+           statusDiv.innerText = "SYSTEMFEHLER: " + err.message;
+        })
+        .checkStock(stockId);
+    }
+
+    function executeAction(isDelivered) {
+      if (!currentVerifiedStock) return;
+
+      var actionText = isDelivered ? "als DA" : "als FEHLEND";
+      var processingStock = currentVerifiedStock; 
+      
+      statusDiv.className = "status-loading";
+      statusDiv.innerText = "Buche " + processingStock + " " + actionText + " ...";
+      
+      btnJa.className = "btn-action";
+      btnNein.className = "btn-action";
+      stockInput.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+           stockInput.disabled = false;
+           stockInput.value = '';
+           stockInput.focus();
+           resetButtons();
+           
+           if (res.success) {
+               statusDiv.className = "status-success";
+               statusDiv.innerText = "► " + processingStock + ": " + res.message;
+               
+               if (res.stockId && res.tireInfo) {
+                   boxStock.innerText = res.stockId;
+                   boxStock.setAttribute("data-value", res.stockId);
+                   
+                   boxTire.innerText = res.tireInfo;
+                   boxTire.setAttribute("data-value", res.tireInfo);
+                   
+                   locationInfo.innerText = res.locationText || "";
+                   
+                   dymoContainer.style.display = "block";
+               }
+           } else {
+               statusDiv.className = "status-error";
+               statusDiv.innerText = "► FEHLER bei " + processingStock + ": " + res.message;
+           }
+        })
+        .withFailureHandler(function(err) {
+           stockInput.disabled = false;
+           stockInput.value = '';
+           stockInput.focus();
+           resetButtons();
+           statusDiv.className = "status-error";
+           statusDiv.innerText = "SYSTEMFEHLER: " + err.message;
+        })
+        .processStock(processingStock, isDelivered);
+    }
+  </script>
+</body>
+</html>
