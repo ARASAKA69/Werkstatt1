@@ -16,8 +16,38 @@ function onOpen() {
 function openReifenHUD() {
   var html = HtmlService.createHtmlOutputFromFile('ReifenHUD')
     .setWidth(420)
-    .setHeight(580);
+    .setHeight(620);
   SpreadsheetApp.getUi().showModelessDialog(html, 'Reifen Annahme HUD');
+}
+
+function getAvailableStockIds() {
+  try {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    var lastRow = Math.max(1, sheet.getLastRow());
+    var lastCol = Math.max(1, sheet.getLastColumn());
+    var headerData = sheet.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
+    
+    var headerIdx = findHeaderRow(headerData, ["stockid", "stock"]);
+    if (headerIdx === -1) return [];
+    
+    var stockCol = getColIndex(headerData[headerIdx], ["stockid", "stock"]);
+    if (stockCol === -1) return [];
+    
+    var numRows = lastRow - headerIdx - 1;
+    if (numRows <= 0) return [];
+    
+    var colData = sheet.getRange(headerIdx + 2, stockCol, numRows, 1).getValues();
+    var ids = [];
+    for (var i = 0; i < colData.length; i++) {
+      var val = String(colData[i][0] || "").replace(/\s+/g, '').toUpperCase();
+      if (val !== "") {
+        ids.push(val);
+      }
+    }
+    return ids;
+  } catch (err) {
+    return [];
+  }
 }
 
 function getColIndex(headerRow, searchTerms) {
@@ -170,8 +200,7 @@ function processStock(stockId, isDelivered) {
 
     return { 
         success: true, 
-        message: "Gebucht " + hemauMsg,
-        stockId: stockId,
+        message: "Gebucht " + hemauMsg,\n        stockId: stockId,
         tireInfo: tireInfo,
         locationText: locationText
     };
