@@ -6,7 +6,6 @@ function autoFillAuftrag(e) {
   if (!e || !e.range) return;
   
   var bearbeiter = Session.getActiveUser().getEmail();
-  
   if (bearbeiter !== MEINE_EMAIL) return;
   
   var sheet = e.range.getSheet();
@@ -21,6 +20,7 @@ function autoFillAuftrag(e) {
     if (newValue.indexOf("Angeliefert/Bereit für Tagesliste") !== -1) {
       var stockId = sheet.getRange(row, 2).getValue();
       var beschreibung = sheet.getRange(row, 6).getValue();
+      var ui = SpreadsheetApp.getActiveSpreadsheet();
       
       try {
         var zielSs = SpreadsheetApp.openById(ZIEL_TABELLEN_ID);
@@ -29,8 +29,12 @@ function autoFillAuftrag(e) {
         if (zielSheet) {
           zielSheet.getRange("D10").setValue(stockId);
           zielSheet.getRange("D18").setValue(beschreibung);
+          ui.toast("✅ StockID " + stockId + " ans Auftragsblatt gesendet!", "ARASAKA SYSTEM", 4);
+        } else {
+          ui.toast("❌ Fehler: Auftragsblatt nicht gefunden!", "ARASAKA SYSTEM", 4);
         }
       } catch (err) {
+        ui.toast("❌ Fehler beim Senden: " + err.message, "ARASAKA SYSTEM", 5);
       }
     }
   }
