@@ -1,5 +1,7 @@
 // Nichts anfassen danke.
 
+// Nichts anfassen danke.
+
 const HEMAU_SHEET_ID = "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM";
 const HEMAU_TAB_NAME = "Refurbisment List";
 
@@ -124,6 +126,8 @@ function processStock(stockId, isDelivered) {
     var sheetHemau = ssHemau.getSheetByName(HEMAU_TAB_NAME);
     
     var tireInfo = "UNBEKANNT _X";
+    var mengeValNum = 1;
+    var carolUrl = "";
     
     var sengSearch = findRowFast(sheetSeng, ["stockid", "stock"], stockId);
     if (sengSearch.row !== -1) {
@@ -135,7 +139,8 @@ function processStock(stockId, isDelivered) {
         var lastIndexCol = getColIndex(headerDataSeng[0], ["lastindex", "last"]);
         var gwIndexCol = getColIndex(headerDataSeng[0], ["gwindex", "gw"]);
         
-        var mengeVal = mengeCol !== -1 ? sheetSeng.getRange(sengSearch.row, mengeCol).getValue() : "X";
+        var mengeVal = mengeCol !== -1 ? sheetSeng.getRange(sengSearch.row, mengeCol).getValue() : "1";
+        mengeValNum = parseInt(mengeVal) || 1;
         var groesseVal = groesseCol !== -1 ? sheetSeng.getRange(sengSearch.row, groesseCol).getValue() : "GRÖSSE";
         var lastIndexVal = lastIndexCol !== -1 ? sheetSeng.getRange(sengSearch.row, lastIndexCol).getValue() : "";
         var gwIndexVal = gwIndexCol !== -1 ? sheetSeng.getRange(sengSearch.row, gwIndexCol).getValue() : "";
@@ -169,6 +174,7 @@ function processStock(stockId, isDelivered) {
         }
 
         if (hemauRow !== -1) {
+            carolUrl = String(sheetHemau.getRange(hemauRow, 3).getValue() || "").trim();
             var oldLocationCol = 28;
             var oldLocation = String(sheetHemau.getRange(hemauRow, oldLocationCol).getValue() || "").trim();
             if (oldLocation !== "") {
@@ -200,9 +206,12 @@ function processStock(stockId, isDelivered) {
 
     return { 
         success: true, 
-        message: "Gebucht " + hemauMsg,\n        stockId: stockId,
+        message: "Gebucht " + hemauMsg,
+        stockId: stockId,
         tireInfo: tireInfo,
-        locationText: locationText
+        locationText: locationText,
+        menge: mengeValNum,
+        carolUrl: carolUrl
     };
 
   } catch (err) {
