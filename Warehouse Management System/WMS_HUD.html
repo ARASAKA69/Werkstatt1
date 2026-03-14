@@ -1,1 +1,677 @@
-// Coming Soon.
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/gh/dymosoftware/dymo-connect-framework@master/dymo.connect.framework.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(circle at top, rgba(255, 215, 0, 0.08), transparent 28%),
+      linear-gradient(180deg, #090d13 0%, #0d1117 100%);
+    color: #c9d1d9;
+    font-family: 'Segoe UI', sans-serif;
+    height: 100vh;
+    width: 100%;
+  }
+  .app-shell {
+    height: 100%;
+    width: 100%;
+    padding: 6px 8px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .topbar {
+    flex-shrink: 0;
+    background: linear-gradient(180deg, rgba(22, 27, 34, 0.98) 0%, rgba(15, 20, 28, 0.98) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 16px;
+    padding: 10px 18px 10px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+  }
+  .topbar-head {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .eyebrow {
+    text-align: center;
+    color: #8b949e;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2.2px;
+    margin-bottom: 0;
+    font-weight: 700;
+  }
+  .search-container {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .search-box {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    max-width: 760px;
+  }
+  .search-box input {
+    flex: 1;
+    background: #0f141c;
+    color: #58a6ff;
+    border: 1px solid #354152;
+    padding: 14px 18px;
+    font-size: 20px;
+    text-transform: uppercase;
+    font-weight: 700;
+    border-radius: 14px;
+    outline: none;
+    text-align: center;
+    transition: 0.2s;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .search-box input:focus,
+  .input-row input:focus,
+  select:focus,
+  textarea:focus {
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88,166,255,0.18);
+  }
+  .search-box input::placeholder,
+  .input-row input::placeholder,
+  textarea::placeholder {
+    color: #6e7681;
+  }
+  .btn-search {
+    min-width: 134px;
+    background: linear-gradient(180deg, #313b49 0%, #232b37 100%);
+    color: #fff;
+    border: 1px solid #4a5567;
+    padding: 0 30px;
+    font-size: 17px;
+    font-weight: 800;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: 0.2s;
+    letter-spacing: 1px;
+  }
+  .btn-search:hover { background: linear-gradient(180deg, #58a6ff 0%, #3479d6 100%); }
+  .status-row {
+    display: flex;
+    justify-content: center;
+  }
+  #globalStatus {
+    min-height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.15);
+    text-align: center;
+    font-weight: 700;
+    font-size: 14px;
+    color: #58a6ff;
+  }
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.28fr) minmax(0, 1fr) minmax(290px, 0.8fr);
+    gap: 10px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .card {
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  }
+  .card-header {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #242d39;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .card-title {
+    font-size: 17px;
+    color: #ffffff;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    margin: 0;
+    text-align: center;
+  }
+  .sub-title {
+    font-size: 12px;
+    color: #9da7b3;
+    font-weight: 800;
+    margin: 12px 0 6px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    flex-shrink: 0;
+  }
+  .info-box {
+    background: #0d1117;
+    padding: 14px 16px;
+    border-radius: 14px;
+    font-size: 17px;
+    font-weight: 500;
+    color: #e3b341;
+    flex: 1;
+    min-height: 120px;
+    word-wrap: break-word;
+    overflow: auto;
+    border: 1px solid #212a35;
+    line-height: 1.55;
+    display: flex;
+    flex-direction: column;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .info-box.schaeden-list { padding: 12px 16px; }
+  .info-box.schaeden-list ul {
+    margin: 0;
+    padding-left: 18px;
+    list-style: disc;
+  }
+  .info-box.schaeden-list li {
+    margin-bottom: 5px;
+    font-size: 17px;
+    line-height: 1.5;
+  }
+  textarea {
+    width: 100%;
+    flex: 1;
+    min-height: 120px;
+    background: #0d1117;
+    color: #ffffff;
+    border: 1px solid #303b47;
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 15px;
+    font-family: inherit;
+    resize: none;
+    outline: none;
+    margin-bottom: 14px;
+    line-height: 1.55;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .input-row {
+    display: grid;
+    grid-template-columns: 1.2fr 0.8fr;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .input-row input {
+    background: #0d1117;
+    color: #fff;
+    border: 1px solid #303b47;
+    padding: 13px 14px;
+    font-size: 15px;
+    border-radius: 14px;
+    width: 100%;
+    outline: none;
+    text-align: center;
+  }
+  select {
+    width: 100%;
+    background: #0d1117;
+    color: #e3b341;
+    border: 1px solid #303b47;
+    padding: 14px 16px;
+    font-size: 15px;
+    font-weight: 700;
+    border-radius: 14px;
+    margin-bottom: 14px;
+    outline: none;
+    cursor: pointer;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .btn {
+    border: 1px solid transparent;
+    padding: 14px 16px;
+    font-size: 14px;
+    border-radius: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.2s;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    width: auto;
+    min-width: 235px;
+    max-width: 100%;
+    align-self: center;
+  }
+  .btn-green {
+    background: linear-gradient(180deg, #2ea043 0%, #238636 100%);
+    color: white;
+    box-shadow: 0 8px 16px rgba(35, 134, 54, 0.22);
+  }
+  .btn-green:hover { transform: translateY(-1px); }
+  .btn-yellow {
+    background: linear-gradient(180deg, #f2cc60 0%, #e3b341 100%);
+    color: #0d1117;
+    box-shadow: 0 8px 16px rgba(227, 179, 65, 0.2);
+  }
+  .btn-yellow:hover { transform: translateY(-1px); }
+  .btn-blue {
+    background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
+    color: white;
+    box-shadow: 0 8px 16px rgba(31, 111, 235, 0.2);
+  }
+  .btn-blue:hover { transform: translateY(-1px); }
+  .btn-carol {
+    background: linear-gradient(180deg, #b06ad1 0%, #9B59B6 100%);
+    background: linear-gradient(180deg, #f2cc60 0%, #e3b341 100%);
+    color: #0d1117;
+    padding: 18px;
+    font-size: 15px;
+    font-weight: 900;
+    border-radius: 16px;
+    margin-top: auto;
+    min-width: 290px;
+    box-shadow: 0 10px 20px rgba(227, 179, 65, 0.22);
+    flex-shrink: 0;
+  }
+  .btn-carol:hover { transform: translateY(-1px); }
+  .btn-carol:disabled {
+    background: #21262d;
+    color: #484f58;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+  }
+  .highlight-red {
+    color: #ff6666;
+    font-weight: 700;
+    background: rgba(255, 68, 68, 0.14);
+    padding: 1px 4px;
+    border-radius: 6px;
+  }
+  .badge-reifen {
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    display: none;
+    white-space: nowrap;
+    letter-spacing: 0.8px;
+  }
+  .shelf-pill {
+    margin: 0;
+    text-transform: none;
+    color: #c9d1d9;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    white-space: nowrap;
+  }
+  .tool-spacer {
+    flex: 1;
+    min-height: 18px;
+  }
+  .card-header-meta {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  @media (max-width: 1500px) {
+    .dashboard-grid {
+      grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr) minmax(260px, 0.82fr);
+      gap: 14px;
+    }
+    .card {
+      padding: 16px;
+    }
+    .btn {
+      min-width: 210px;
+    }
+    .btn-carol {
+      min-width: 250px;
+    }
+  }
+  @media (max-width: 1280px) {
+    .dashboard-grid {
+      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.98fr) minmax(230px, 0.8fr);
+      gap: 12px;
+    }
+    .search-box {
+      max-width: 700px;
+    }
+    .btn {
+      min-width: 180px;
+      font-size: 13px;
+    }
+    .btn-carol {
+      min-width: 220px;
+      font-size: 14px;
+    }
+    .input-row {
+      grid-template-columns: 1fr 0.7fr;
+    }
+  }
+  .overlay-block { opacity: 0.2; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div class="app-shell">
+    <div class="topbar">
+      <div class="topbar-head">
+        <div>
+          <div class="eyebrow">Warehouse Management System</div>
+        </div>
+      </div>
+
+      <div class="search-container">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="STOCK ID SCAN..." autocomplete="off">
+          <button class="btn-search" onclick="loadData()">LADEN</button>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div id="globalStatus">System bereit.</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid overlay-block" id="mainGrid">
+    
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">🔍 Auftrags Infos</h3>
+        <div id="badgeReifen" class="badge-reifen card-header-meta">REIFEN: ?</div>
+      </div>
+      
+      <div class="sub-title">Schäden (Manueller Input)</div>
+      <div class="info-box schaeden-list" id="infoSchaeden">-</div>
+      
+      <div class="sub-title">Ersatzteile Bestellung</div>
+      <div class="info-box schaeden-list" id="infoBestellung">-</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">✏️ Workspace</h3>
+      </div>
+      
+      <div class="sub-title">Kommentar Anlieferung</div>
+      <textarea id="editAnlieferung" placeholder="Notizen..."></textarea>
+      <button class="btn btn-green" style="margin-bottom: 25px;" onclick="saveKomm()">💾 Kommentar Speichern</button>
+
+      <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
+        <h3 class="card-title">📦 Einlagern</h3>
+        <span class="shelf-pill card-header-meta" id="currentShelfLabel">Aktuell: -</span>
+      </div>
+      <select id="shelfSelect"><option value="">Lade Regale...</option></select>
+      <button class="btn btn-yellow" onclick="saveRegal()">Lagerplatz Buchen</button>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">🛠️ Tools & Action</h3>
+      </div>
+      
+      <div class="sub-title">Dymo Etikettendruck</div>
+      <div class="input-row">
+        <input type="text" id="dymoInitials" placeholder="Kürzel (z.B. FB)">
+        <input type="number" id="dymoCount" placeholder="Menge" value="1" min="1">
+      </div>
+      <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
+
+      <div class="tool-spacer"></div>
+      <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
+    </div>
+
+  </div>
+  </div>
+
+  <script>
+    var currentStock = "";
+    var currentCarolUrl = "";
+    var currentShelves = [];
+
+    var savedInitials = localStorage.getItem('arasaka_dymo_initials');
+    if(savedInitials) document.getElementById('dymoInitials').value = savedInitials;
+
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+      if(e.key === 'Enter') loadData();
+    });
+
+    function setStatus(msg, color) {
+      var el = document.getElementById('globalStatus');
+      el.innerText = msg;
+      el.style.color = color || "#58a6ff";
+    }
+
+    function toggleUI(enabled) {
+      var grid = document.getElementById('mainGrid');
+      if(enabled) {
+        grid.classList.remove('overlay-block');
+      } else {
+        grid.classList.add('overlay-block');
+      }
+    }
+    toggleUI(false);
+
+    function formatSchaeden(text) {
+      if(!text || !text.trim()) return "-";
+      var reifenHighlight = function(s) { return s.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span class="highlight-red">$1</span>'); };
+      var parts = text.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
+      if(parts.length <= 1) {
+        parts = text.split(/\s{2,}/).map(function(p) { return p.trim(); }).filter(Boolean);
+      }
+      if(parts.length <= 1) {
+        return reifenHighlight(text);
+      }
+      var html = '<ul>';
+      parts.forEach(function(p) {
+        html += '<li>' + reifenHighlight(p) + '</li>';
+      });
+      html += '</ul>';
+      return html;
+    }
+
+    function formatBestellung(text) {
+      if(!text || !text.trim()) return "-";
+      var parts = text.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
+      if(parts.length <= 1) {
+        return text.replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>');
+      }
+      var html = '<ul>';
+      parts.forEach(function(p) {
+        html += '<li>' + p.replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>') + '</li>';
+      });
+      html += '</ul>';
+      return html;
+    }
+
+    function loadData() {
+      var id = document.getElementById('searchInput').value.trim();
+      if(!id) return;
+      
+      setStatus("Scanne Datenbank...", "#f2cc60");
+      toggleUI(false);
+
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success) {
+          currentStock = id;
+          currentCarolUrl = res.carolUrl;
+          currentShelves = res.freeShelves;
+
+          document.getElementById('infoSchaeden').innerHTML = formatSchaeden(res.schaeden);
+          document.getElementById('infoBestellung').innerHTML = formatBestellung(res.kommBestellung);
+          document.getElementById('editAnlieferung').value = res.kommAnlieferung;
+          document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
+
+          var badge = document.getElementById('badgeReifen');
+          var reifenPattern = /(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i;
+          var sengPattern = /(Reifen Seng)/i;
+          var hasTires = reifenPattern.test(res.schaeden) || sengPattern.test(res.kommBestellung);
+
+          if (hasTires) {
+              badge.style.display = "inline-block";
+              var rStatus = (res.reifenStatus || "").toLowerCase().replace(/\s/g, '');
+              if (rStatus === "werkstatt1") {
+                  badge.innerText = "REIFEN: SIND DA";
+                  badge.style.background = "rgba(86, 211, 100, 0.15)";
+                  badge.style.color = "#56d364";
+              } else {
+                  badge.innerText = "REIFEN: FEHLEN";
+                  badge.style.background = "rgba(248, 81, 73, 0.15)";
+                  badge.style.color = "#f85149";
+              }
+          } else {
+              badge.style.display = "none";
+          }
+
+          var sel = document.getElementById('shelfSelect');
+          var currentRegal = (res.regal || "").trim();
+          sel.innerHTML = '';
+          if(currentRegal) {
+            sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
+          } else {
+            sel.innerHTML = '<option value="" selected>-- FREIES REGAL WÄHLEN --</option>';
+          }
+          res.freeShelves.forEach(function(s) {
+            if(s.name !== currentRegal) {
+              sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+            }
+          });
+
+          document.getElementById('btnCarol').disabled = !res.carolUrl;
+
+          setStatus("✅ Daten für " + id + " geladen!", "#56d364");
+          toggleUI(true);
+        } else {
+          setStatus("❌ FEHLER: " + res.message, "#f85149");
+        }
+      }).fetchWmsData(id);
+    }
+
+    function saveKomm() {
+      var text = document.getElementById('editAnlieferung').value;
+      setStatus("Speichere Kommentar...", "#f2cc60");
+      google.script.run.withSuccessHandler(function(res) {
+        setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
+      }).saveKommentar(currentStock, text);
+    }
+
+    function saveRegal() {
+      var regal = document.getElementById('shelfSelect').value;
+      if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
+      setStatus("Buche Regal...", "#f2cc60");
+      google.script.run.withSuccessHandler(function(res) {
+        setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
+        if(res.success) {
+          document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
+          document.getElementById('searchInput').value = currentStock;
+          loadData();
+        }
+      }).einlagern(currentStock, regal);
+    }
+
+    function printDymo() {
+      var initials = document.getElementById('dymoInitials').value.trim() || "LAGER";
+      localStorage.setItem('arasaka_dymo_initials', initials);
+      var menge = parseInt(document.getElementById('dymoCount').value) || 1;
+      
+      setStatus("🖨️ Sende an Dymo...", "#58a6ff");
+
+      try {
+        if (typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
+            setStatus("❌ FEHLER: DYMO Framework fehlt!", "#f85149");
+            return;
+        }
+        
+        var printers = dymo.label.framework.getPrinters();
+        if (printers.length === 0) {
+            setStatus("❌ FEHLER: Kein DYMO Drucker gefunden!", "#f85149");
+            return;
+        }
+        var printerName = printers[0].name;
+
+        var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><HasFixedLength>False</HasFixedLength><FixedLengthValue>0</FixedLengthValue><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>False</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><IsStatic>False</IsStatic><StaticDateTime>2025-07-30T10:14:27.0341230+02:00</StaticDateTime><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
+
+        var today = new Date();
+        var dateString = today.toLocaleDateString('de-DE');
+
+        var finalXml = baseXml
+            .replace('__STOCKID__', currentStock)
+            .replace('__DATE__', dateString)
+            .replace('__USER__', initials);
+
+        var label = dymo.label.framework.openLabelXml(finalXml);
+        var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: menge });
+        label.print(printerName, printParams);
+
+        setStatus("✅ Erfolgreich an DYMO gesendet!", "#56d364");
+
+      } catch (err) {
+        setStatus("❌ DYMO SYSTEMFEHLER: " + err.message, "#f85149");
+      }
+    }
+
+    function fireCarol() {
+      if(!currentCarolUrl || !currentStock) return;
+      var text = document.getElementById('editAnlieferung').value.trim();
+      if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      document.getElementById('btnCarol').disabled = true;
+      setStatus("💾 Speichere Kommentar...", "#f2cc60");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if(!res.success) {
+            setStatus("❌ FEHLER: " + res.message, "#f85149");
+            document.getElementById('btnCarol').disabled = false;
+            return;
+          }
+
+          setStatus("🚀 Setze Tagesliste & triggere Carol...", "#9B59B6");
+
+          google.script.run
+            .withSuccessHandler(function(res) {
+              if(res.success) {
+                alert("✅ ERFOLG!\n\nKommentar gespeichert.\nAuftrag auf Tagesliste gesetzt.\nAltes Regal war: " + res.oldRegal + "\n\nCarol öffnet sich jetzt...");
+                var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
+                window.open(autoUrl, '_blank');
+                setStatus("✅ Automatisierung gestartet!", "#56d364");
+                toggleUI(false);
+                document.getElementById('searchInput').value = "";
+                document.getElementById('searchInput').focus();
+              } else {
+                setStatus("❌ FEHLER: " + res.message, "#f85149");
+                document.getElementById('btnCarol').disabled = false;
+              }
+            })
+            .withFailureHandler(function(err) {
+              setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
+              document.getElementById('btnCarol').disabled = false;
+            })
+            .triggerCarolMission(currentStock);
+        })
+        .withFailureHandler(function(err) {
+          setStatus("❌ Kommentarfehler: " + (err.message || String(err)), "#f85149");
+          document.getElementById('btnCarol').disabled = false;
+        })
+        .saveKommentar(currentStock, text);
+
+    }
+  </script>
+</body>
+</html>
