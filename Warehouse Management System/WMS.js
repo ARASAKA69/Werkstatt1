@@ -1,10 +1,13 @@
+const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo/edit?gid=1453769469#gid=1453769469";
+
+function normalizeStockId(value) {
+    return String(value || "").replace(/\s+/g, "").toUpperCase();
+  }
+
 function cellMatchesStockId(cellVal, stockId) {
-    var cv = String(cellVal || "").trim().toUpperCase();
-    var sid = String(stockId || "").replace(/\s+/g, "").toUpperCase();
-    if (!sid) return false;
-    if (cv === sid) return true;
-    var parts = cv.split(/\s+/);
-    return parts.indexOf(sid) !== -1;
+    var cv = normalizeStockId(cellVal);
+    var sid = normalizeStockId(stockId);
+    return sid !== "" && cv === sid;
   }
 
   function onOpen() {
@@ -19,10 +22,35 @@ function cellMatchesStockId(cellVal, stockId) {
       .setHeight(1100);
     SpreadsheetApp.getUi().showModelessDialog(html, 'Warehouse Management System');
   }
+
+  function applyTrackingDateIfEmpty(stockId) {
+    stockId = normalizeStockId(stockId);
+    var trackingSs = SpreadsheetApp.openByUrl(TRACKING_SHEET_URL);
+    var sheet = trackingSs.getSheetByName("Stock ID extern Tracking");
+    if (!sheet) return { success: false, updated: false, message: "Reiter 'Stock ID extern Tracking' fehlt!" };
+
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var data = sheet.getRange(1, 1, lastRow, 9).getValues();
+
+    for (var i = 0; i < data.length; i++) {
+      if (cellMatchesStockId(data[i][0], stockId)) {
+        var currentDate = String(data[i][8] || "").trim();
+        if (currentDate !== "") {
+          return { success: true, updated: false, message: "Datum bereits gesetzt" };
+        }
+        var dateStr = Utilities.formatDate(new Date(), "Europe/Berlin", "dd.MM.yyyy");
+        sheet.getRange(i + 1, 9).setValue(dateStr);
+        SpreadsheetApp.flush();
+        return { success: true, updated: true, message: "Datum gesetzt" };
+      }
+    }
+
+    return { success: false, updated: false, message: "Stock-ID in Stock ID extern Tracking nicht gefunden!" };
+  }
   
   function fetchWmsData(stockId) {
     try {
-      stockId = stockId.replace(/\s+/g, '').toUpperCase();
+      stockId = normalizeStockId(stockId);
       if (!stockId) return { success: false, message: "Keine Stock-ID" };
   
       var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -64,6 +92,8 @@ function cellMatchesStockId(cellVal, stockId) {
         result.status = String(data[hitRow][25] || "");
         result.regal = String(data[hitRow][27] || "");
         result.reifenStatus = String(data[hitRow][29] || "");
+        result.currentShelfCount = counts[result.regal] || 0;
+        result.currentShelfCapacity = 5;
       } else {
         result.message = "Stock-ID in Refurbisment List nicht gefunden!";
       }
@@ -75,20 +105,31 @@ function cellMatchesStockId(cellVal, stockId) {
   }
   
   function saveKommentar(stockId, text) {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
-    var lastRow = Math.max(2, sheet.getLastRow());
-    var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+    try {
+      stockId = normalizeStockId(stockId);
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var data = sheet.getRange(1, 2, lastRow, 1).getValues();
 
-    for (var i = 1; i < data.length; i++) {
-      if (cellMatchesStockId(data[i][0], stockId)) {
-        var row = i + 1;
-        sheet.getRange(row, 25).setValue(text);
-        SpreadsheetApp.flush();
-        var check = sheet.getRange(row, 25).getValue();
-        return (check == text) ? { success: true, message: "Kommentar gespeichert!" } : { success: false, message: "Fehler beim Verifizieren!" };
+      for (var i = 1; i < data.length; i++) {
+        if (cellMatchesStockId(data[i][0], stockId)) {
+          var row = i + 1;
+          sheet.getRange(row, 25).setValue(text);
+          SpreadsheetApp.flush();
+          var check = sheet.getRange(row, 25).getValue();
+          if (check != text) return { success: false, message: "Fehler beim Verifizieren!" };
+
+          var dateResult = applyTrackingDateIfEmpty(stockId);
+          var msg = "Kommentar gespeichert!";
+          if (dateResult.updated) msg += " Datum gesetzt!";
+          if (!dateResult.success) msg += " " + dateResult.message;
+          return { success: true, message: msg };
+        }
       }
+      return { success: false, message: "Stock-ID nicht gefunden!" };
+    } catch (err) {
+      return { success: false, message: "Fehler: " + err.message };
     }
-    return { success: false, message: "Stock-ID nicht gefunden!" };
   }
   
   function einlagern(stockId, regal) {
@@ -110,25 +151,17 @@ function cellMatchesStockId(cellVal, stockId) {
   
   function triggerCarolMission(stockId) {
     try {
-      stockId = String(stockId || "").replace(/\s+/g, "").toUpperCase();
+      stockId = normalizeStockId(stockId);
       if (!stockId) return { success: false, message: "Keine Stock-ID", oldRegal: "LEER", carolUrl: "" };
 
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var log = [];
       var result = { success: false, oldRegal: "LEER", carolUrl: "" };
 
-      var sheetTrack = ss.getSheetByName("Stock ID extern Tracking");
-      if (sheetTrack) {
-        var lastRowTrack = Math.max(2, sheetTrack.getLastRow());
-        var dataTrack = sheetTrack.getRange(1, 1, lastRowTrack, 1).getValues();
-        for (var i = 0; i < dataTrack.length; i++) {
-          if (String(dataTrack[i][0] || "").trim().toUpperCase() === stockId) {
-            sheetTrack.getRange(i + 1, 9).setValue(Utilities.formatDate(new Date(), "Europe/Berlin", "dd.MM.yyyy"));
-            log.push("Datum gesetzt");
-            break;
-          }
-        }
-      }
+      var dateResult = applyTrackingDateIfEmpty(stockId);
+      if (dateResult.updated) log.push("Datum gesetzt");
+      if (dateResult.success && !dateResult.updated) log.push("Datum bereits vorhanden");
+      if (!dateResult.success) log.push(dateResult.message);
 
       var sheetRefurb = ss.getSheetByName("Refurbisment List");
       if (!sheetRefurb) return { success: false, message: "Reiter Refurbisment List fehlt!", oldRegal: "LEER", carolUrl: "" };
@@ -137,7 +170,7 @@ function cellMatchesStockId(cellVal, stockId) {
       var dataRefurb = sheetRefurb.getRange(1, 2, lastRowRefurb, 1).getValues();
       var foundRow = -1;
       for (var j = 0; j < dataRefurb.length; j++) {
-        if (String(dataRefurb[j][0] || "").trim().toUpperCase() === stockId) {
+        if (cellMatchesStockId(dataRefurb[j][0], stockId)) {
           foundRow = j + 1;
           break;
         }

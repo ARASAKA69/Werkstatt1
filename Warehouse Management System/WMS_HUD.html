@@ -29,6 +29,21 @@
     border-radius: 16px;
     padding: 10px 18px 10px;
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
+    position: relative;
+  }
+  .topbar-credit {
+    position: absolute;
+    top: 10px;
+    right: 18px;
+    color: #f2cc60;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(242, 204, 96, 0.08);
+    border: 1px solid rgba(242, 204, 96, 0.14);
   }
   .topbar-head {
     display: flex;
@@ -38,7 +53,7 @@
   }
   .eyebrow {
     text-align: center;
-    color: #8b949e;
+    color: #f2cc60;
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 2.2px;
@@ -75,19 +90,19 @@
   .search-box input:focus,
   .input-row input:focus,
   select:focus,
-  textarea:focus {
+  .comment-editor:focus {
     border-color: #58a6ff;
     box-shadow: 0 0 0 3px rgba(88,166,255,0.18);
   }
   .search-box input::placeholder,
   .input-row input::placeholder,
-  textarea::placeholder {
+  .comment-editor:empty::before {
     color: #6e7681;
   }
   .btn-search {
     min-width: 134px;
     background: linear-gradient(180deg, #313b49 0%, #232b37 100%);
-    color: #fff;
+    color: #f2cc60;
     border: 1px solid #4a5567;
     padding: 0 30px;
     font-size: 17px;
@@ -118,11 +133,12 @@
   }
   .dashboard-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.28fr) minmax(0, 1fr) minmax(290px, 0.8fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 10px;
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    align-items: stretch;
   }
   .card {
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
@@ -148,7 +164,7 @@
   }
   .card-title {
     font-size: 17px;
-    color: #ffffff;
+    color: #f2cc60;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1.2px;
@@ -192,7 +208,7 @@
     font-size: 17px;
     line-height: 1.5;
   }
-  textarea {
+  .comment-editor {
     width: 100%;
     flex: 1;
     min-height: 120px;
@@ -203,11 +219,16 @@
     padding: 14px 16px;
     font-size: 15px;
     font-family: inherit;
-    resize: none;
     outline: none;
     margin-bottom: 14px;
     line-height: 1.55;
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .comment-editor:empty::before {
+    content: attr(data-placeholder);
   }
   .input-row {
     display: grid;
@@ -257,7 +278,7 @@
   }
   .btn-green {
     background: linear-gradient(180deg, #2ea043 0%, #238636 100%);
-    color: white;
+    color: #0d1117;
     box-shadow: 0 8px 16px rgba(35, 134, 54, 0.22);
   }
   .btn-green:hover { transform: translateY(-1px); }
@@ -269,7 +290,7 @@
   .btn-yellow:hover { transform: translateY(-1px); }
   .btn-blue {
     background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
-    color: white;
+    color: #0d1117;
     box-shadow: 0 8px 16px rgba(31, 111, 235, 0.2);
   }
   .btn-blue:hover { transform: translateY(-1px); }
@@ -301,6 +322,13 @@
     padding: 1px 4px;
     border-radius: 6px;
   }
+  .highlight-green {
+    color: #56d364;
+    font-weight: 700;
+    background: rgba(86, 211, 100, 0.16);
+    padding: 1px 4px;
+    border-radius: 6px;
+  }
   .badge-reifen {
     padding: 8px 14px;
     border-radius: 999px;
@@ -322,6 +350,122 @@
     border: 1px solid rgba(255,255,255,0.06);
     white-space: nowrap;
   }
+  .shelf-count-badge {
+    display: none;
+    align-self: flex-start;
+    margin: 0 0 10px 0;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(227, 179, 65, 0.12);
+    border: 1px solid rgba(227, 179, 65, 0.18);
+    color: #f2cc60;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .workspace-split {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    flex: 1;
+    min-height: 0;
+  }
+  .workspace-panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .workspace-panel .card-header {
+    margin-bottom: 12px;
+  }
+  .workspace-panel .comment-editor {
+    flex: 1;
+    min-height: 0;
+  }
+  .workspace-panel .btn-green,
+  .workspace-panel .btn-yellow {
+    margin-top: 12px;
+  }
+  .tools-card {
+    justify-content: space-between;
+  }
+  .tools-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    flex: 1;
+    min-height: 0;
+  }
+  .tools-panel {
+    background: rgba(13, 17, 23, 0.55);
+    border: 1px solid #242d39;
+    border-radius: 16px;
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .tools-panel.primary {
+    flex: 2;
+    min-height: 0;
+    justify-content: center;
+    align-items: center;
+  }
+  .tools-panel.secondary {
+    flex: 1;
+    justify-content: center;
+    align-items: center;
+  }
+  .tools-panel-title {
+    color: #f2cc60;
+    font-size: 14px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    margin-top: -2px;
+    margin-bottom: 4px;
+  }
+  .dymo-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 100%;
+    max-width: 320px;
+    align-items: center;
+  }
+  .dymo-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    align-items: center;
+  }
+  .field-label {
+    color: #9da7b3;
+    font-size: 12px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    text-align: center;
+  }
+  .dymo-field input {
+    width: 100%;
+    background: #0d1117;
+    color: #fff;
+    border: 1px solid #303b47;
+    padding: 13px 14px;
+    font-size: 15px;
+    border-radius: 14px;
+    outline: none;
+    text-align: center;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  .tools-panel .btn-blue,
+  .tools-panel .btn-carol {
+    align-self: center;
+  }
   .tool-spacer {
     flex: 1;
     min-height: 18px;
@@ -334,7 +478,7 @@
   }
   @media (max-width: 1500px) {
     .dashboard-grid {
-      grid-template-columns: minmax(0, 1.18fr) minmax(0, 1fr) minmax(260px, 0.82fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 14px;
     }
     .card {
@@ -349,7 +493,7 @@
   }
   @media (max-width: 1280px) {
     .dashboard-grid {
-      grid-template-columns: minmax(0, 1.12fr) minmax(0, 0.98fr) minmax(230px, 0.8fr);
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
     }
     .search-box {
@@ -373,6 +517,7 @@
 <body>
   <div class="app-shell">
     <div class="topbar">
+      <div class="topbar-credit">BY ARASAKA</div>
       <div class="topbar-head">
         <div>
           <div class="eyebrow">Warehouse Management System</div>
@@ -410,33 +555,51 @@
       <div class="card-header">
         <h3 class="card-title">✏️ Workspace</h3>
       </div>
-      
-      <div class="sub-title">Kommentar Anlieferung</div>
-      <textarea id="editAnlieferung" placeholder="Notizen..."></textarea>
-      <button class="btn btn-green" style="margin-bottom: 25px;" onclick="saveKomm()">💾 Kommentar Speichern</button>
 
-      <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
-        <h3 class="card-title">📦 Einlagern</h3>
-        <span class="shelf-pill card-header-meta" id="currentShelfLabel">Aktuell: -</span>
+      <div class="workspace-split">
+        <div class="workspace-panel">
+          <div class="sub-title">Kommentar Anlieferung</div>
+          <div id="editAnlieferung" class="comment-editor" contenteditable="true" spellcheck="false" data-placeholder="Notizen..."></div>
+          <button class="btn btn-green" onclick="saveKomm()">💾 Kommentar Speichern</button>
+        </div>
+
+        <div class="workspace-panel">
+          <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
+            <h3 class="card-title">📦 Einlagern</h3>
+            <span class="shelf-pill card-header-meta" id="currentShelfLabel">Aktuell: -</span>
+          </div>
+          <div class="shelf-count-badge" id="currentShelfCountBadge">-</div>
+          <select id="shelfSelect"><option value="">Lade Regale...</option></select>
+          <button class="btn btn-yellow" onclick="saveRegal()">Lagerplatz Buchen</button>
+        </div>
       </div>
-      <select id="shelfSelect"><option value="">Lade Regale...</option></select>
-      <button class="btn btn-yellow" onclick="saveRegal()">Lagerplatz Buchen</button>
     </div>
 
-    <div class="card">
+    <div class="card tools-card">
       <div class="card-header">
-        <h3 class="card-title">🛠️ Tools & Action</h3>
+        <h3 class="card-title">🛠️ DYMO Druck & Auftrag Rausgeben</h3>
       </div>
-      
-      <div class="sub-title">Dymo Etikettendruck</div>
-      <div class="input-row">
-        <input type="text" id="dymoInitials" placeholder="Kürzel (z.B. FB)">
-        <input type="number" id="dymoCount" placeholder="Menge" value="1" min="1">
-      </div>
-      <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
 
-      <div class="tool-spacer"></div>
-      <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
+      <div class="tools-layout">
+        <div class="tools-panel primary">
+          <div class="tools-panel-title">DYMO Etikettendruck</div>
+          <div class="dymo-fields">
+            <div class="dymo-field">
+              <div class="field-label">Kürzel auf Label</div>
+              <input type="text" id="dymoInitials" placeholder="z. B. FB">
+            </div>
+            <div class="dymo-field">
+              <div class="field-label">Stückzahl</div>
+              <input type="number" id="dymoCount" placeholder="Menge" value="1" min="1">
+            </div>
+            <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
+          </div>
+        </div>
+
+        <div class="tools-panel secondary">
+          <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -446,12 +609,34 @@
     var currentStock = "";
     var currentCarolUrl = "";
     var currentShelves = [];
+    var currentSchaedenText = "";
+    var currentBestellungText = "";
+    var commentEditor = document.getElementById('editAnlieferung');
+    var ignoredHighlightWords = {
+      "da": true,
+      "der": true,
+      "die": true,
+      "das": true,
+      "und": true,
+      "mit": true,
+      "fuer": true,
+      "für": true,
+      "bestellt": true,
+      "bestellung": true,
+      "extern": true,
+      "intern": true,
+      "plus": true,
+      "inkl": true
+    };
 
     var savedInitials = localStorage.getItem('arasaka_dymo_initials');
     if(savedInitials) document.getElementById('dymoInitials').value = savedInitials;
 
     document.getElementById('searchInput').addEventListener('keypress', function(e) {
       if(e.key === 'Enter') loadData();
+    });
+    commentEditor.addEventListener('input', function() {
+      refreshCrossHighlights(true);
     });
 
     function setStatus(msg, color) {
@@ -470,9 +655,126 @@
     }
     toggleUI(false);
 
+    function escapeHtml(text) {
+      return String(text || "")
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function normalizeMatchWord(word) {
+      return String(word || "").toLowerCase();
+    }
+
+    function isHighlightableWord(word) {
+      var normalized = normalizeMatchWord(word);
+      return normalized.length >= 4 && !ignoredHighlightWords[normalized] && !/^\d+$/.test(normalized);
+    }
+
+    function extractWords(text) {
+      return String(text || "").match(/[A-Za-z0-9ÄÖÜäöüß]+/g) || [];
+    }
+
+    function getMatchedWords(schaedenText, commentText) {
+      var schaedenWords = {};
+      var matched = {};
+      extractWords(schaedenText).forEach(function(word) {
+        if(isHighlightableWord(word)) {
+          schaedenWords[normalizeMatchWord(word)] = true;
+        }
+      });
+      extractWords(commentText).forEach(function(word) {
+        var key = normalizeMatchWord(word);
+        if(isHighlightableWord(word) && schaedenWords[key]) matched[key] = true;
+      });
+      return matched;
+    }
+
+    function applyWordHighlightsToHtml(html, matchedWords) {
+      return html.split(/(<[^>]+>)/g).map(function(part) {
+        if(part.indexOf('<') === 0) return part;
+        return part.replace(/[A-Za-z0-9ÄÖÜäöüß]+/g, function(word) {
+          return isHighlightableWord(word) && matchedWords[normalizeMatchWord(word)] ? '<span class="highlight-green">' + word + '</span>' : word;
+        });
+      }).join('');
+    }
+
+    function getCommentText() {
+      return commentEditor.innerText.replace(/\r/g, '');
+    }
+
+    function setCommentText(text) {
+      commentEditor.textContent = text || "";
+      refreshCrossHighlights(false);
+    }
+
+    function getCaretOffset(element) {
+      var selection = window.getSelection();
+      if (!selection.rangeCount) return 0;
+      var range = selection.getRangeAt(0);
+      var preRange = range.cloneRange();
+      preRange.selectNodeContents(element);
+      preRange.setEnd(range.endContainer, range.endOffset);
+      return preRange.toString().length;
+    }
+
+    function setCaretOffset(element, offset) {
+      var selection = window.getSelection();
+      var range = document.createRange();
+      var stack = [element];
+      var node;
+      var remaining = offset;
+
+      while (stack.length) {
+        node = stack.pop();
+        if (node.nodeType === 3) {
+          var textLength = node.textContent.length;
+          if (remaining <= textLength) {
+            range.setStart(node, remaining);
+            range.collapse(true);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return;
+          }
+          remaining -= textLength;
+        } else {
+          for (var i = node.childNodes.length - 1; i >= 0; i--) {
+            stack.push(node.childNodes[i]);
+          }
+        }
+      }
+
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    function renderCommentEditor(text, matchedWords, preserveCaret) {
+      var caretOffset = preserveCaret ? getCaretOffset(commentEditor) : 0;
+      var html = escapeHtml(text || "").replace(/\n/g, '<br>');
+      commentEditor.innerHTML = applyWordHighlightsToHtml(html, matchedWords);
+      if(!text) commentEditor.innerHTML = "";
+      if(preserveCaret) setCaretOffset(commentEditor, caretOffset);
+    }
+
+    function refreshCrossHighlights(preserveCaret) {
+      var commentText = getCommentText();
+      var matchedWords = getMatchedWords(currentBestellungText, commentText);
+      document.getElementById('infoSchaeden').innerHTML = formatSchaeden(currentSchaedenText);
+      document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText, matchedWords);
+      renderCommentEditor(commentText, matchedWords, preserveCaret);
+    }
+
     function formatSchaeden(text) {
       if(!text || !text.trim()) return "-";
-      var reifenHighlight = function(s) { return s.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span class="highlight-red">$1</span>'); };
+      var reifenHighlight = function(s) {
+        var html = escapeHtml(s);
+        html = html.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span class="highlight-red">$1</span>');
+        return html;
+      };
       var parts = text.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
       if(parts.length <= 1) {
         parts = text.split(/\s{2,}/).map(function(p) { return p.trim(); }).filter(Boolean);
@@ -488,15 +790,21 @@
       return html;
     }
 
-    function formatBestellung(text) {
+    function formatBestellung(text, matchedWords) {
       if(!text || !text.trim()) return "-";
       var parts = text.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
       if(parts.length <= 1) {
-        return text.replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>');
+        return applyWordHighlightsToHtml(
+          escapeHtml(text).replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>'),
+          matchedWords || {}
+        );
       }
       var html = '<ul>';
       parts.forEach(function(p) {
-        html += '<li>' + p.replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>') + '</li>';
+        html += '<li>' + applyWordHighlightsToHtml(
+          escapeHtml(p).replace(/(Reifen Seng)/gi, '<span class="highlight-red">$1</span>'),
+          matchedWords || {}
+        ) + '</li>';
       });
       html += '</ul>';
       return html;
@@ -514,11 +822,19 @@
           currentStock = id;
           currentCarolUrl = res.carolUrl;
           currentShelves = res.freeShelves;
+          currentSchaedenText = res.schaeden || "";
+          currentBestellungText = res.kommBestellung || "";
 
-          document.getElementById('infoSchaeden').innerHTML = formatSchaeden(res.schaeden);
-          document.getElementById('infoBestellung').innerHTML = formatBestellung(res.kommBestellung);
-          document.getElementById('editAnlieferung').value = res.kommAnlieferung;
+          document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText);
+          setCommentText(res.kommAnlieferung || "");
           document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
+          var shelfCountBadge = document.getElementById('currentShelfCountBadge');
+          if(/^Regal\s+\d+\.\d+$/i.test(res.regal || "")) {
+            shelfCountBadge.style.display = "inline-flex";
+            shelfCountBadge.innerText = "In " + res.regal + " sind " + (res.currentShelfCount || 0) + " Kisten";
+          } else {
+            shelfCountBadge.style.display = "none";
+          }
 
           var badge = document.getElementById('badgeReifen');
           var reifenPattern = /(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i;
@@ -566,7 +882,7 @@
     }
 
     function saveKomm() {
-      var text = document.getElementById('editAnlieferung').value;
+      var text = getCommentText();
       setStatus("Speichere Kommentar...", "#f2cc60");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
@@ -587,23 +903,28 @@
       }).einlagern(currentStock, regal);
     }
 
-    function printDymo() {
-      var initials = document.getElementById('dymoInitials').value.trim() || "LAGER";
+    function sendDymoPrint(options) {
+      var opts = options || {};
+      var typedInitials = document.getElementById('dymoInitials').value.trim();
+      if(opts.requireInitials && !typedInitials) {
+        return { success: false, skipped: true };
+      }
+      var initials = typedInitials || "LAGER";
       localStorage.setItem('arasaka_dymo_initials', initials);
       var menge = parseInt(document.getElementById('dymoCount').value) || 1;
-      
-      setStatus("🖨️ Sende an Dymo...", "#58a6ff");
-
+      if(!opts.silent) {
+        setStatus("🖨️ Sende an Dymo...", "#58a6ff");
+      }
       try {
         if (typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
-            setStatus("❌ FEHLER: DYMO Framework fehlt!", "#f85149");
-            return;
+            if(!opts.silent) setStatus("❌ FEHLER: DYMO Framework fehlt!", "#f85149");
+            return { success: false, skipped: false, message: "DYMO Framework fehlt!" };
         }
         
         var printers = dymo.label.framework.getPrinters();
         if (printers.length === 0) {
-            setStatus("❌ FEHLER: Kein DYMO Drucker gefunden!", "#f85149");
-            return;
+            if(!opts.silent) setStatus("❌ FEHLER: Kein DYMO Drucker gefunden!", "#f85149");
+            return { success: false, skipped: false, message: "Kein DYMO Drucker gefunden!" };
         }
         var printerName = printers[0].name;
 
@@ -620,20 +941,34 @@
         var label = dymo.label.framework.openLabelXml(finalXml);
         var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: menge });
         label.print(printerName, printParams);
-
-        setStatus("✅ Erfolgreich an DYMO gesendet!", "#56d364");
+        if(!opts.silent) {
+          setStatus("✅ Erfolgreich an DYMO gesendet!", "#56d364");
+        }
+        return { success: true, skipped: false };
 
       } catch (err) {
-        setStatus("❌ DYMO SYSTEMFEHLER: " + err.message, "#f85149");
+        if(!opts.silent) setStatus("❌ DYMO SYSTEMFEHLER: " + err.message, "#f85149");
+        return { success: false, skipped: false, message: err.message };
       }
+    }
+
+    function printDymo() {
+      sendDymoPrint({ silent: false, requireInitials: false });
     }
 
     function fireCarol() {
       if(!currentCarolUrl || !currentStock) return;
-      var text = document.getElementById('editAnlieferung').value.trim();
+      var text = getCommentText().trim();
       if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      var dymoResult = sendDymoPrint({ silent: true, requireInitials: true });
+      var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
+      var carolWindow = window.open(autoUrl, '_blank');
+      if(!carolWindow) {
+        setStatus("❌ Carol-Popup wurde blockiert!", "#f85149");
+        return;
+      }
       document.getElementById('btnCarol').disabled = true;
-      setStatus("💾 Speichere Kommentar...", "#f2cc60");
+      setStatus("🚀 Carol gestartet. Sheet wird im Hintergrund aktualisiert...", "#58a6ff");
       google.script.run
         .withSuccessHandler(function(res) {
           if(!res.success) {
@@ -647,10 +982,10 @@
           google.script.run
             .withSuccessHandler(function(res) {
               if(res.success) {
-                alert("✅ ERFOLG!\n\nKommentar gespeichert.\nAuftrag auf Tagesliste gesetzt.\nAltes Regal war: " + res.oldRegal + "\n\nCarol öffnet sich jetzt...");
-                var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
-                window.open(autoUrl, '_blank');
-                setStatus("✅ Automatisierung gestartet!", "#56d364");
+                var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
+                if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
+                if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
+                setStatus(finalStatus, "#56d364");
                 toggleUI(false);
                 document.getElementById('searchInput').value = "";
                 document.getElementById('searchInput').focus();
