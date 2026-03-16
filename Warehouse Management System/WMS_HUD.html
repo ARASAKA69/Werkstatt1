@@ -31,6 +31,25 @@
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
     position: relative;
   }
+  .topbar-action {
+    position: absolute;
+    top: 10px;
+    left: 18px;
+    color: #f2cc60;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(242, 204, 96, 0.08);
+    border: 1px solid rgba(242, 204, 96, 0.14);
+    cursor: pointer;
+    transition: 0.2s;
+  }
+  .topbar-action:hover {
+    background: rgba(242, 204, 96, 0.16);
+  }
   .topbar-credit {
     position: absolute;
     top: 10px;
@@ -387,6 +406,13 @@
   .workspace-panel .btn-yellow {
     margin-top: 12px;
   }
+  .workspace-merge-action {
+    padding-top: 12px;
+    margin-top: 4px;
+    border-top: 1px solid #242d39;
+    display: flex;
+    justify-content: center;
+  }
   .tools-card {
     justify-content: space-between;
   }
@@ -512,11 +538,114 @@
     }
   }
   .overlay-block { opacity: 0.2; pointer-events: none; }
+  .overview-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    padding: 24px;
+  }
+  .overview-modal.open {
+    display: flex;
+  }
+  .overview-dialog {
+    width: min(900px, 100%);
+    max-height: min(88vh, 920px);
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .overview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #242d39;
+  }
+  .overview-title {
+    color: #f2cc60;
+    font-size: 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .overview-close {
+    background: rgba(255,255,255,0.04);
+    color: #f2cc60;
+    border: 1px solid rgba(242, 204, 96, 0.14);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .overview-body {
+    padding: 14px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+  .overview-note {
+    color: #9da7b3;
+    font-size: 13px;
+  }
+  .overview-table-wrap {
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid #242d39;
+    border-radius: 14px;
+    background: #0d1117;
+  }
+  .overview-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .overview-table th,
+  .overview-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid #1d2530;
+    font-size: 14px;
+  }
+  .overview-table th {
+    position: sticky;
+    top: 0;
+    background: #111722;
+    color: #f2cc60;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    z-index: 1;
+  }
+  .overview-table td {
+    color: #d0d7de;
+  }
+  .overview-table tr:last-child td {
+    border-bottom: none;
+  }
+  .overview-stock {
+    color: #58a6ff;
+    font-weight: 700;
+  }
+  .overview-regal {
+    color: #e3b341;
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
   <div class="app-shell">
     <div class="topbar">
+      <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
       <div class="topbar-credit">BY ARASAKA</div>
       <div class="topbar-head">
         <div>
@@ -560,7 +689,6 @@
         <div class="workspace-panel">
           <div class="sub-title">Kommentar Anlieferung</div>
           <div id="editAnlieferung" class="comment-editor" contenteditable="true" spellcheck="false" data-placeholder="Notizen..."></div>
-          <button class="btn btn-green" onclick="saveKomm()">💾 Kommentar Speichern</button>
         </div>
 
         <div class="workspace-panel">
@@ -570,8 +698,11 @@
           </div>
           <div class="shelf-count-badge" id="currentShelfCountBadge">-</div>
           <select id="shelfSelect"><option value="">Lade Regale...</option></select>
-          <button class="btn btn-yellow" onclick="saveRegal()">Lagerplatz Buchen</button>
         </div>
+      </div>
+
+      <div class="workspace-merge-action">
+        <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
       </div>
     </div>
 
@@ -605,6 +736,31 @@
   </div>
   </div>
 
+  <div class="overview-modal" id="overviewModal">
+    <div class="overview-dialog">
+      <div class="overview-header">
+        <div class="overview-title">Stock-ID + Regal Übersicht</div>
+        <button class="overview-close" onclick="closeStockOverview()">Schließen</button>
+      </div>
+      <div class="overview-body">
+        <div class="overview-note">Sortiert nach Regalplatz.</div>
+        <div class="overview-table-wrap">
+          <table class="overview-table">
+            <thead>
+              <tr>
+                <th>Stock-ID</th>
+                <th>Regalplatz</th>
+              </tr>
+            </thead>
+            <tbody id="overviewTableBody">
+              <tr><td colspan="2">Lade Übersicht...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     var currentStock = "";
     var currentCarolUrl = "";
@@ -627,6 +783,14 @@
       "intern": true,
       "plus": true,
       "inkl": true
+    };
+    var forcedGreenWords = {
+      "öl": true,
+      "oel": true,
+      "wm": true,
+      "knoll": true,
+      "sta": true,
+      "alfah": true
     };
 
     var savedInitials = localStorage.getItem('arasaka_dymo_initials');
@@ -655,6 +819,32 @@
     }
     toggleUI(false);
 
+    function closeStockOverview() {
+      document.getElementById('overviewModal').classList.remove('open');
+    }
+
+    function openStockOverview() {
+      var modal = document.getElementById('overviewModal');
+      var body = document.getElementById('overviewTableBody');
+      modal.classList.add('open');
+      body.innerHTML = '<tr><td colspan="2">Lade Übersicht...</td></tr>';
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          body.innerHTML = '<tr><td colspan="2">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
+          return;
+        }
+        if(!res.entries || !res.entries.length) {
+          body.innerHTML = '<tr><td colspan="2">Keine Einträge gefunden.</td></tr>';
+          return;
+        }
+        var rows = '';
+        res.entries.forEach(function(entry) {
+          rows += '<tr><td class="overview-stock">' + escapeHtml(entry.stockId) + '</td><td class="overview-regal">' + escapeHtml(entry.regal) + '</td></tr>';
+        });
+        body.innerHTML = rows;
+      }).getStockRegalOverview();
+    }
+
     function escapeHtml(text) {
       return String(text || "")
         .replace(/&/g, '&amp;')
@@ -670,6 +860,7 @@
 
     function isHighlightableWord(word) {
       var normalized = normalizeMatchWord(word);
+      if (forcedGreenWords[normalized]) return true;
       return normalized.length >= 4 && !ignoredHighlightWords[normalized] && !/^\d+$/.test(normalized);
     }
 
@@ -696,7 +887,9 @@
       return html.split(/(<[^>]+>)/g).map(function(part) {
         if(part.indexOf('<') === 0) return part;
         return part.replace(/[A-Za-z0-9ÄÖÜäöüß]+/g, function(word) {
-          return isHighlightableWord(word) && matchedWords[normalizeMatchWord(word)] ? '<span class="highlight-green">' + word + '</span>' : word;
+          var normalized = normalizeMatchWord(word);
+          if(forcedGreenWords[normalized]) return '<span class="highlight-green">' + word + '</span>';
+          return isHighlightableWord(word) && matchedWords[normalized] ? '<span class="highlight-green">' + word + '</span>' : word;
         });
       }).join('');
     }
@@ -887,6 +1080,21 @@
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
       }).saveKommentar(currentStock, text);
+    }
+
+    function saveKommentarUndRegalFlow() {
+      var text = getCommentText().trim();
+      var regal = document.getElementById('shelfSelect').value;
+      if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
+      setStatus("💾 Speichere Kommentar + Regal...", "#f2cc60");
+      google.script.run.withSuccessHandler(function(res) {
+        setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
+        if(res.success) {
+          document.getElementById('searchInput').value = currentStock;
+          loadData();
+        }
+      }).saveKommentarUndRegal(currentStock, text, regal);
     }
 
     function saveRegal() {

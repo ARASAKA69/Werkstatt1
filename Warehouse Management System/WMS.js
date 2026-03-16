@@ -58,9 +58,10 @@ function cellMatchesStockId(cellVal, stockId) {
       if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
   
       var lastRow = Math.max(2, sheet.getLastRow());
-      var data = sheet.getRange(1, 1, lastRow, 30).getValues();
-      var hitRow = -1;
+      var stockColData = sheet.getRange(1, 2, lastRow, 1).getValues();
+      var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
       var result = { success: false };
+      var hitRow = -1;
   
       var counts = {};
       for (var i = 1; i <= 9; i++) {
@@ -69,10 +70,16 @@ function cellMatchesStockId(cellVal, stockId) {
         }
       }
   
-      for (var r = 1; r < data.length; r++) {
-        var regalVal = String(data[r][27] || "").trim();
+      for (var r = 1; r < regalColData.length; r++) {
+        var regalVal = String(regalColData[r][0] || "").trim();
         if (counts.hasOwnProperty(regalVal)) counts[regalVal]++;
-        if (cellMatchesStockId(data[r][1], stockId)) hitRow = r;
+      }
+
+      for (var s = 1; s < stockColData.length; s++) {
+        if (cellMatchesStockId(stockColData[s][0], stockId)) {
+          hitRow = s + 1;
+          break;
+        }
       }
   
       var availableShelves = [];
@@ -83,15 +90,16 @@ function cellMatchesStockId(cellVal, stockId) {
       }
       result.freeShelves = availableShelves;
   
-      if (hitRow !== -1) {
+      if (hitRow > 0) {
+        var rowData = sheet.getRange(hitRow, 1, 1, 30).getValues()[0];
         result.success = true;
-        result.carolUrl = String(data[hitRow][2] || "");
-        result.schaeden = String(data[hitRow][22] || "");
-        result.kommBestellung = String(data[hitRow][23] || "");
-        result.kommAnlieferung = String(data[hitRow][24] || "");
-        result.status = String(data[hitRow][25] || "");
-        result.regal = String(data[hitRow][27] || "");
-        result.reifenStatus = String(data[hitRow][29] || "");
+        result.carolUrl = String(rowData[2] || "");
+        result.schaeden = String(rowData[22] || "");
+        result.kommBestellung = String(rowData[23] || "");
+        result.kommAnlieferung = String(rowData[24] || "");
+        result.status = String(rowData[25] || "");
+        result.regal = String(rowData[27] || "");
+        result.reifenStatus = String(rowData[29] || "");
         result.currentShelfCount = counts[result.regal] || 0;
         result.currentShelfCapacity = 5;
       } else {
@@ -147,6 +155,101 @@ function cellMatchesStockId(cellVal, stockId) {
       }
     }
     return { success: false, message: "Stock-ID nicht gefunden!" };
+  }
+
+  function saveKommentarUndRegal(stockId, text, regal) {
+    try {
+      stockId = normalizeStockId(stockId);
+      regal = String(regal || "").trim();
+      text = String(text || "");
+      if (!stockId) return { success: false, message: "Keine Stock-ID" };
+      if (!text.trim()) return { success: false, message: "Bitte erst Kommentar eintragen!" };
+      if (!regal) return { success: false, message: "Bitte Regal auswählen!" };
+
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+
+      for (var i = 1; i < data.length; i++) {
+        if (cellMatchesStockId(data[i][0], stockId)) {
+          var row = i + 1;
+          sheet.getRange(row, 25).setValue(text);
+          sheet.getRange(row, 25).setBackground("#ff0000");
+          sheet.getRange(row, 26).setValue("Teilweise angeliefert");
+          sheet.getRange(row, 28).setValue(regal);
+          SpreadsheetApp.flush();
+
+          var commentCheck = sheet.getRange(row, 25).getValue();
+          var statusCheck = String(sheet.getRange(row, 26).getValue() || "").trim();
+          var regalCheck = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (commentCheck != text || statusCheck !== "Teilweise angeliefert" || regalCheck !== regal) {
+            return { success: false, message: "Fehler beim Verifizieren!" };
+          }
+
+          var dateResult = applyTrackingDateIfEmpty(stockId);
+          var msg = "Kommentar und Regal gespeichert! Status auf Teilweise angeliefert gesetzt.";
+          if (dateResult.updated) msg += " Datum gesetzt!";
+          if (!dateResult.success) msg += " " + dateResult.message;
+          return { success: true, message: msg };
+        }
+      }
+
+      return { success: false, message: "Stock-ID nicht gefunden!" };
+    } catch (err) {
+      return { success: false, message: "Fehler: " + err.message };
+    }
+  }
+
+  function getStockRegalOverview() {
+    try {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!", entries: [] };
+
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var data = sheet.getRange(1, 1, lastRow, 28).getValues();
+      var entries = [];
+
+      for (var i = 1; i < data.length; i++) {
+        var stockId = String(data[i][1] || "").trim();
+        var regal = String(data[i][27] || "").trim();
+        if (!stockId) continue;
+        if (!/^Regal\s+\d+\.\d+$/i.test(regal)) continue;
+        entries.push({
+          stockId: stockId,
+          regal: regal,
+          sortKey: regal
+        });
+      }
+
+      entries.sort(function(a, b) {
+        var regalMatchA = String(a.regal).match(/^Regal\s+(\d+)\.(\d+)$/i);
+        var regalMatchB = String(b.regal).match(/^Regal\s+(\d+)\.(\d+)$/i);
+
+        if (regalMatchA && regalMatchB) {
+          var aMain = parseInt(regalMatchA[1], 10);
+          var bMain = parseInt(regalMatchB[1], 10);
+          if (aMain !== bMain) return aMain - bMain;
+          var aSub = parseInt(regalMatchA[2], 10);
+          var bSub = parseInt(regalMatchB[2], 10);
+          if (aSub !== bSub) return aSub - bSub;
+        } else if (regalMatchA) {
+          return -1;
+        } else if (regalMatchB) {
+          return 1;
+        } else {
+          var regalCompare = String(a.regal).localeCompare(String(b.regal), "de");
+          if (regalCompare !== 0) return regalCompare;
+        }
+
+        return normalizeStockId(a.stockId).localeCompare(normalizeStockId(b.stockId), "de");
+      });
+
+      return { success: true, entries: entries };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [] };
+    }
   }
   
   function triggerCarolMission(stockId) {
