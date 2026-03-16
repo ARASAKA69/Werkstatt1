@@ -1,4 +1,5 @@
 const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo/edit?gid=1453769469#gid=1453769469";
+const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -8,6 +9,221 @@ function cellMatchesStockId(cellVal, stockId) {
     var cv = normalizeStockId(cellVal);
     var sid = normalizeStockId(stockId);
     return sid !== "" && cv === sid;
+  }
+
+function getColIndex(headerRow, searchTerms) {
+    if (!headerRow) return -1;
+    for (var i = 0; i < headerRow.length; i++) {
+      var cellText = String(headerRow[i] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+      for (var j = 0; j < searchTerms.length; j++) {
+        var term = String(searchTerms[j] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+        if (cellText === term || cellText.indexOf(term) !== -1) return i + 1;
+      }
+    }
+    return -1;
+  }
+
+function findHeaderRow(data, searchTerms) {
+    for (var i = 0; i < Math.min(30, data.length); i++) {
+      if (getColIndex(data[i], searchTerms) !== -1) return i;
+    }
+    return -1;
+  }
+
+function findRowFast(sheet, searchTermsHeader, stockId) {
+    stockId = normalizeStockId(stockId);
+    var lastRow = Math.max(1, sheet.getLastRow());
+    var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+    var headerData = sheet.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
+    var headerIdx = findHeaderRow(headerData, searchTermsHeader);
+    if (headerIdx === -1) return { row: -1, headerIdx: -1, stockCol: -1 };
+
+    var stockCol = getColIndex(headerData[headerIdx], searchTermsHeader);
+    if (stockCol === -1) return { row: -1, headerIdx: headerIdx, stockCol: -1 };
+
+    var colData = sheet.getRange(1, stockCol, lastRow, 1).getValues();
+    for (var i = headerIdx + 1; i < colData.length; i++) {
+      if (cellMatchesStockId(colData[i][0], stockId)) {
+        return { row: i + 1, headerIdx: headerIdx, stockCol: stockCol };
+      }
+    }
+    return { row: -1, headerIdx: headerIdx, stockCol: stockCol };
+  }
+
+function getReifenSheet() {
+    return SpreadsheetApp.openById(REIFEN_SHEET_ID);
+  }
+
+function getReifenTabOptions() {
+    try {
+      var ss = getReifenSheet();
+      var sheets = ss.getSheets().map(function(sheet) {
+        return sheet.getName();
+      });
+      sheets.sort(function(a, b) {
+        var matchA = String(a).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+        var matchB = String(b).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (matchA && matchB) {
+          var dateA = new Date(parseInt(matchA[3], 10), parseInt(matchA[2], 10) - 1, parseInt(matchA[1], 10)).getTime();
+          var dateB = new Date(parseInt(matchB[3], 10), parseInt(matchB[2], 10) - 1, parseInt(matchB[1], 10)).getTime();
+          return dateB - dateA;
+        }
+        if (matchA) return -1;
+        if (matchB) return 1;
+        return String(a).localeCompare(String(b), "de");
+      });
+      return { success: true, tabs: sheets };
+    } catch (err) {
+      return { success: false, message: err.message, tabs: [] };
+    }
+  }
+
+function getAvailableReifenStockIds(tabName) {
+    try {
+      var sheet = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      if (!sheet) return { success: false, message: "Tabellenblatt nicht gefunden!", ids: [] };
+      var search = findRowFast(sheet, ["stockid", "stock"], "___NEVER_MATCH___");
+      if (search.headerIdx === -1 || search.stockCol === -1) {
+        return { success: false, message: "Kopfzeile 'Stock ID' nicht gefunden!", ids: [] };
+      }
+
+      var lastRow = Math.max(1, sheet.getLastRow());
+      var startRow = search.headerIdx + 2;
+      var numRows = lastRow - startRow + 1;
+      if (numRows <= 0) return { success: true, ids: [] };
+
+      var headerRow = sheet.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheet.getLastColumn()))).getValues()[0];
+      var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
+      var stockData = sheet.getRange(startRow, search.stockCol, numRows, 1).getValues();
+      var statusData = angeliefertCol !== -1 ? sheet.getRange(startRow, angeliefertCol, numRows, 1).getValues() : [];
+      var ids = [];
+      for (var i = 0; i < stockData.length; i++) {
+        var val = normalizeStockId(stockData[i][0]);
+        if (val) {
+          ids.push({
+            id: val,
+            status: angeliefertCol !== -1 ? String(statusData[i][0] || "").trim().toLowerCase() : ""
+          });
+        }
+      }
+      return { success: true, ids: ids };
+    } catch (err) {
+      return { success: false, message: err.message, ids: [] };
+    }
+  }
+
+function checkReifenStock(tabName, stockId) {
+    try {
+      stockId = normalizeStockId(stockId);
+      if (!stockId) return { found: false, message: "Bitte eine Stock-ID eingeben." };
+
+      var sheet = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      if (!sheet) return { found: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
+
+      var search = findRowFast(sheet, ["stockid", "stock"], stockId);
+      if (search.headerIdx === -1) return { found: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
+      if (search.row === -1) return { found: false, message: "Stock-ID '" + stockId + "' in '" + sheet.getName() + "' nicht gefunden!" };
+      var headerRow = sheet.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheet.getLastColumn()))).getValues()[0];
+      var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
+      if (angeliefertCol !== -1) {
+        var currentStatus = String(sheet.getRange(search.row, angeliefertCol).getValue() || "").trim().toLowerCase();
+        if (currentStatus === "ja" || currentStatus === "nein") {
+          return { found: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheet.getName() + "' bereits verbucht!" };
+        }
+      }
+      return { found: true, message: "Stock-ID gefunden! Bitte Status auswählen:" };
+    } catch (err) {
+      return { found: false, message: "Systemfehler: " + err.message };
+    }
+  }
+
+function processReifenStock(tabName, stockId, isDelivered) {
+    try {
+      stockId = normalizeStockId(stockId);
+      var sheetSeng = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      if (!sheetSeng) return { success: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
+
+      var sheetHemau = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheetHemau) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+      var tireInfo = "UNBEKANNT _X";
+      var mengeValNum = 1;
+      var search = findRowFast(sheetSeng, ["stockid", "stock"], stockId);
+      if (search.headerIdx === -1) return { success: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
+      if (search.row === -1) return { success: false, message: "Stock-ID '" + stockId + "' in '" + sheetSeng.getName() + "' nicht gefunden!" };
+
+      var headerRow = sheetSeng.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheetSeng.getLastColumn()))).getValues()[0];
+      var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
+      var mengeCol = getColIndex(headerRow, ["menge", "anzahl"]);
+      var groesseCol = getColIndex(headerRow, ["größe", "groesse"]);
+      var lastIndexCol = getColIndex(headerRow, ["lastindex", "last"]);
+      var gwIndexCol = getColIndex(headerRow, ["gwindex", "gw"]);
+      if (angeliefertCol !== -1) {
+        var existingStatus = String(sheetSeng.getRange(search.row, angeliefertCol).getValue() || "").trim().toLowerCase();
+        if (existingStatus === "ja" || existingStatus === "nein") {
+          return { success: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheetSeng.getName() + "' bereits verbucht!" };
+        }
+      }
+
+      var mengeVal = mengeCol !== -1 ? sheetSeng.getRange(search.row, mengeCol).getValue() : "1";
+      mengeValNum = parseInt(mengeVal, 10) || 1;
+      var groesseVal = groesseCol !== -1 ? sheetSeng.getRange(search.row, groesseCol).getValue() : "GRÖSSE";
+      var lastIndexVal = lastIndexCol !== -1 ? sheetSeng.getRange(search.row, lastIndexCol).getValue() : "";
+      var gwIndexVal = gwIndexCol !== -1 ? sheetSeng.getRange(search.row, gwIndexCol).getValue() : "";
+      tireInfo = String(groesseVal).trim() + " " + String(lastIndexVal).trim() + String(gwIndexVal).trim() + " _" + String(mengeVal).trim();
+
+      if (angeliefertCol !== -1) {
+        var statusSeng = isDelivered ? "Ja" : "Nein";
+        var colorSeng = isDelivered ? "#00FF00" : "#FF0000";
+        sheetSeng.getRange(search.row, angeliefertCol).setValue(statusSeng);
+        var startCol = Math.min(search.stockCol, angeliefertCol);
+        var numCols = Math.abs(angeliefertCol - search.stockCol) + 1;
+        sheetSeng.getRange(search.row, startCol, 1, numCols).setBackground(colorSeng);
+      }
+
+      var hemauDataStock = sheetHemau.getRange(1, 2, Math.max(1, sheetHemau.getLastRow()), 1).getValues();
+      var hemauRow = -1;
+      for (var i = 0; i < hemauDataStock.length; i++) {
+        if (cellMatchesStockId(hemauDataStock[i][0], stockId)) {
+          hemauRow = i + 1;
+          break;
+        }
+      }
+
+      var hemauMsg = "";
+      var locationText = "Lagerplatz unbekannt";
+      if (hemauRow !== -1) {
+        var oldLocation = String(sheetHemau.getRange(hemauRow, 28).getValue() || "").trim();
+        if (oldLocation !== "") locationText = "Kiste steht in Regal " + oldLocation;
+
+        var currentComment = String(sheetHemau.getRange(hemauRow, 25).getValue() || "");
+        if (isDelivered) {
+          if (currentComment.indexOf("Reifen da //") === -1) {
+            var newComment = currentComment ? "Reifen da // " + currentComment : "Reifen da // ";
+            sheetHemau.getRange(hemauRow, 25).setValue(newComment);
+          }
+          sheetHemau.getRange(hemauRow, 30).setValue("Werkstatt 1");
+          hemauMsg = "Reifen als da gebucht & Refurbishment aktualisiert!";
+        } else {
+          sheetHemau.getRange(hemauRow, 30).setValue("Reifen nicht vorhanden");
+          hemauMsg = "Reifen als fehlend gebucht & Refurbishment aktualisiert!";
+        }
+      } else {
+        hemauMsg = "Reifen gebucht (Refurbishment übersprungen: ID nicht gefunden)";
+      }
+
+      SpreadsheetApp.flush();
+      return {
+        success: true,
+        message: hemauMsg,
+        stockId: stockId,
+        tireInfo: tireInfo,
+        locationText: locationText,
+        menge: mengeValNum
+      };
+    } catch (err) {
+      return { success: false, message: "Fehler: " + err.message };
+    }
   }
 
   function onOpen() {
@@ -208,7 +424,7 @@ function cellMatchesStockId(cellVal, stockId) {
       if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!", entries: [] };
 
       var lastRow = Math.max(2, sheet.getLastRow());
-      var data = sheet.getRange(1, 1, lastRow, 28).getValues();
+      var data = sheet.getRange(1, 1, lastRow, 30).getValues();
       var entries = [];
 
       for (var i = 1; i < data.length; i++) {
@@ -219,7 +435,10 @@ function cellMatchesStockId(cellVal, stockId) {
         entries.push({
           stockId: stockId,
           regal: regal,
-          sortKey: regal
+          kommBestellung: String(data[i][23] || ""),
+          kommAnlieferung: String(data[i][24] || ""),
+          regalReifen: String(data[i][29] || ""),
+          status: String(data[i][25] || "")
         });
       }
 

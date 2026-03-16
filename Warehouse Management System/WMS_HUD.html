@@ -31,10 +31,14 @@
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
     position: relative;
   }
-  .topbar-action {
+  .topbar-actions {
     position: absolute;
     top: 10px;
     left: 18px;
+    display: flex;
+    gap: 8px;
+  }
+  .topbar-action {
     color: #f2cc60;
     font-size: 11px;
     font-weight: 800;
@@ -552,7 +556,7 @@
     display: flex;
   }
   .overview-dialog {
-    width: min(900px, 100%);
+    width: min(1280px, 100%);
     max-height: min(88vh, 920px);
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
     border: 1px solid #2d3642;
@@ -632,20 +636,324 @@
   .overview-table tr:last-child td {
     border-bottom: none;
   }
-  .overview-stock {
-    color: #58a6ff;
-    font-weight: 700;
+  .overview-table .ov-row {
+    cursor: pointer;
   }
-  .overview-regal {
-    color: #e3b341;
+  .overview-table .ov-row:hover td {
+    background: #161d29;
+  }
+  .overview-table .ov-detail {
+    display: none;
+  }
+  .overview-table .ov-detail.open {
+    display: table-row;
+  }
+  .overview-table .ov-detail td {
+    padding: 16px;
+    background: #0a0e14;
+    border-bottom: 2px solid #242d39;
+  }
+  .ov-detail-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .ov-detail-box {
+    flex: 1 1 220px;
+    min-width: 200px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid #1d2530;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .ov-detail-box.wide {
+    flex: 1 1 100%;
+  }
+  .ov-detail-lbl {
+    margin-bottom: 6px;
+    color: #9da7b3;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .ov-detail-val {
+    color: #d0d7de;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-word;
+  }
+  .ov-detail-val .highlight-green {
+    font-weight: 800;
+  }
+  .reifen-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 24px;
+  }
+  .reifen-modal.open {
+    display: flex;
+  }
+  .reifen-dialog {
+    width: min(620px, 100%);
+    max-height: min(88vh, 960px);
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .reifen-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #242d39;
+  }
+  .reifen-title {
+    color: #f2cc60;
+    font-size: 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .reifen-close {
+    background: rgba(255,255,255,0.04);
+    color: #f2cc60;
+    border: 1px solid rgba(242, 204, 96, 0.14);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .reifen-body {
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow: auto;
+  }
+  .reifen-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .reifen-autocomplete {
+    position: relative;
+    width: 100%;
+  }
+  .reifen-field input,
+  .reifen-field select {
+    margin-bottom: 0;
+  }
+  #reifenStockInput {
+    width: 100%;
+    background: #0f141c;
+    color: #58a6ff;
+    border: 1px solid #354152;
+    padding: 14px 18px;
+    font-size: 20px;
+    text-transform: uppercase;
     font-weight: 700;
+    border-radius: 14px;
+    outline: none;
+    text-align: center;
+    transition: 0.2s;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+  }
+  #reifenStockInput::placeholder {
+    color: #6e7681;
+    text-align: center;
+  }
+  .reifen-field .field-label {
+    text-align: center;
+  }
+  .reifen-autocomplete-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    display: none;
+    max-height: 260px;
+    overflow: auto;
+    background: #0d1117;
+    border: 1px solid #303b47;
+    border-radius: 14px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+    z-index: 3;
+  }
+  .reifen-autocomplete-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    color: #c9d1d9;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    border-bottom: 1px solid #1d2530;
+  }
+  .reifen-autocomplete-item:last-child {
+    border-bottom: none;
+  }
+  .reifen-autocomplete-item:hover {
+    background: #161b22;
+  }
+  .reifen-autocomplete-item.booked-ja {
+    background: rgba(46, 160, 67, 0.12);
+    color: #56d364;
+  }
+  .reifen-autocomplete-hit {
+    color: #58a6ff;
+  }
+  .reifen-autocomplete-status {
+    flex-shrink: 0;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    border: 1px solid transparent;
+  }
+  .reifen-autocomplete-status.status-ja {
+    color: #56d364;
+    background: rgba(46, 160, 67, 0.14);
+    border-color: rgba(86, 211, 100, 0.22);
+  }
+  .reifen-status {
+    min-height: 42px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.45;
+    color: #8b949e;
+  }
+  .reifen-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .reifen-action-btn {
+    flex: 1;
+    padding: 15px;
+    border-radius: 14px;
+    border: 1px solid #303b47;
+    background: #21262d;
+    color: #6e7681;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: not-allowed;
+    transition: 0.2s;
+  }
+  .reifen-action-btn.active-ja {
+    background: linear-gradient(180deg, #2ea043 0%, #238636 100%);
+    color: #0d1117;
+    border-color: transparent;
+    cursor: pointer;
+  }
+  .reifen-action-btn.active-nein {
+    background: linear-gradient(180deg, #f85149 0%, #da3633 100%);
+    color: #ffffff;
+    border-color: transparent;
+    cursor: pointer;
+  }
+  .reifen-info-box {
+    display: none;
+    background: rgba(13, 17, 23, 0.75);
+    border: 1px solid #242d39;
+    border-radius: 14px;
+    padding: 14px;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .reifen-location {
+    color: #e3b341;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+    background: #2d230e;
+    border: 1px solid #e3b341;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .reifen-copy-title {
+    color: #9da7b3;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .reifen-copy-box {
+    background: #21262d;
+    border: 1px dashed #58a6ff;
+    color: #58a6ff;
+    padding: 10px 12px;
+    text-align: center;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    font-weight: 800;
+    transition: 0.2s;
+  }
+  .reifen-copy-box:hover {
+    background: #30363d;
+    color: #ffffff;
+  }
+  .reifen-confirm {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10001;
+    padding: 24px;
+  }
+  .reifen-confirm.open {
+    display: flex;
+  }
+  .reifen-confirm-dialog {
+    width: min(480px, 100%);
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .reifen-confirm-text {
+    color: #c9d1d9;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.45;
+    text-align: center;
+  }
+  .reifen-confirm-sub {
+    color: #8b949e;
+    font-size: 14px;
+    font-weight: 500;
   }
 </style>
 </head>
 <body>
   <div class="app-shell">
     <div class="topbar">
-      <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
+      <div class="topbar-actions">
+        <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
+        <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
+      </div>
       <div class="topbar-credit">BY ARASAKA</div>
       <div class="topbar-head">
         <div>
@@ -721,7 +1029,7 @@
             </div>
             <div class="dymo-field">
               <div class="field-label">Stückzahl</div>
-              <input type="number" id="dymoCount" placeholder="Menge" value="1" min="1">
+              <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
             </div>
             <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
           </div>
@@ -743,20 +1051,73 @@
         <button class="overview-close" onclick="closeStockOverview()">Schließen</button>
       </div>
       <div class="overview-body">
-        <div class="overview-note">Sortiert nach Regalplatz.</div>
+        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
         <div class="overview-table-wrap">
           <table class="overview-table">
             <thead>
               <tr>
+                <th></th>
                 <th>Stock-ID</th>
                 <th>Regalplatz</th>
+                <th>Status</th>
+                <th>Reifen</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="overviewTableBody">
-              <tr><td colspan="2">Lade Übersicht...</td></tr>
+              <tr><td colspan="6" style="text-align:center;color:#9da7b3;">Lade Übersicht...</td></tr>
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-modal" id="reifenModal">
+    <div class="reifen-dialog">
+      <div class="reifen-header">
+        <div class="reifen-title">Reifen Annahme</div>
+        <button class="reifen-close" onclick="closeReifenModal()">Schließen</button>
+      </div>
+      <div class="reifen-body">
+        <div class="reifen-field">
+          <div class="field-label">Tabellenblatt wählen</div>
+          <select id="reifenTabSelect" onchange="onReifenTabChange()">
+            <option value="">Lade Tabellenblätter...</option>
+          </select>
+        </div>
+        <div class="reifen-field">
+          <div class="field-label">Stock-ID scannen</div>
+          <div class="reifen-autocomplete">
+            <input type="text" id="reifenStockInput" placeholder="Stock-ID eingeben" autocomplete="off">
+            <div class="reifen-autocomplete-list" id="reifenAutocompleteList"></div>
+          </div>
+        </div>
+        <button class="btn btn-blue" onclick="verifyReifenStock()">ID prüfen</button>
+        <div class="reifen-actions">
+          <button class="reifen-action-btn" id="reifenBtnJa" onclick="executeReifenAction(true)">✅ DA (JA)</button>
+          <button class="reifen-action-btn" id="reifenBtnNein" onclick="executeReifenAction(false)">❌ FEHLT (NEIN)</button>
+        </div>
+        <div class="reifen-status" id="reifenStatus">Bitte Tabellenblatt auswählen und Stock-ID eingeben...</div>
+        <div class="reifen-info-box" id="reifenInfoBox">
+          <div class="reifen-location" id="reifenLocationInfo"></div>
+          <div class="reifen-copy-title">Falls Auto-Druck fehlschlägt</div>
+          <div class="reifen-copy-box" id="reifenCopyStock" onclick="copyReifenValue(this)"></div>
+          <div class="reifen-copy-box" id="reifenCopyTire" onclick="copyReifenValue(this)"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-confirm" id="reifenConfirmModal">
+    <div class="reifen-confirm-dialog">
+      <div class="reifen-confirm-text">
+        Auftrag checken ob er fertig ist?<br>
+        <span class="reifen-confirm-sub">(Bitte Refurbishment Liste checken)</span>
+      </div>
+      <div class="reifen-actions">
+        <button class="reifen-action-btn active-ja" onclick="confirmReifenFinished(true)">✅ JA</button>
+        <button class="reifen-action-btn active-nein" onclick="confirmReifenFinished(false)">❌ NEIN</button>
       </div>
     </div>
   </div>
@@ -767,7 +1128,12 @@
     var currentShelves = [];
     var currentSchaedenText = "";
     var currentBestellungText = "";
+    var currentVerifiedReifenStock = "";
+    var currentReifenResult = null;
+    var currentReifenTab = localStorage.getItem('arasaka_reifen_tab') || "";
+    var cachedReifenStockIds = [];
     var commentEditor = document.getElementById('editAnlieferung');
+    var reifenStockInput = document.getElementById('reifenStockInput');
     var ignoredHighlightWords = {
       "da": true,
       "der": true,
@@ -799,6 +1165,18 @@
     document.getElementById('searchInput').addEventListener('keypress', function(e) {
       if(e.key === 'Enter') loadData();
     });
+    reifenStockInput.addEventListener('input', function() {
+      currentVerifiedReifenStock = "";
+      setReifenActionState(false);
+      hideReifenInfo();
+      renderReifenAutocomplete(this.value);
+    });
+    reifenStockInput.addEventListener('keypress', function(e) {
+      if(e.key === 'Enter') verifyReifenStock();
+    });
+    document.addEventListener('click', function(e) {
+      if(!e.target.closest('.reifen-autocomplete')) closeReifenAutocomplete();
+    });
     commentEditor.addEventListener('input', function() {
       refreshCrossHighlights(true);
     });
@@ -823,26 +1201,337 @@
       document.getElementById('overviewModal').classList.remove('open');
     }
 
+    function getStatusStyle(status) {
+      var n = String(status || "").trim().toLowerCase();
+      if(n === "herausgegeben") return "color:#56d364;background:rgba(46,160,67,0.14);border-color:rgba(86,211,100,0.2);";
+      if(n === "teilweise angeliefert") return "color:#f2cc60;background:rgba(242,204,96,0.14);border-color:rgba(242,204,96,0.2);";
+      return "color:#9da7b3;";
+    }
+
+    function getReifenStyle(value) {
+      var n = String(value || "").trim().toLowerCase().replace(/\s+/g, '');
+      if(n === "werkstatt1") return "color:#56d364;font-weight:800;";
+      if(n === "reifennichtvorhanden") return "color:#f85149;font-weight:800;";
+      return "color:#d0d7de;";
+    }
+
+    function formatOverviewComment(text, compareText) {
+      var s = String(text || "");
+      if(!s.trim()) return '<span style="color:#6e7681;">-</span>';
+      var matchedWords = getMatchedWords(compareText || "", s);
+      return applyWordHighlightsToHtml(escapeHtml(s).replace(/\n/g, '<br>'), matchedWords);
+    }
+
+    function renderStockOverview(entries) {
+      var body = document.getElementById('overviewTableBody');
+      if(!entries || !entries.length) {
+        body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9da7b3;padding:18px;">Keine Einträge gefunden.</td></tr>';
+        return;
+      }
+      var html = '';
+      for(var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var statusStyle = getStatusStyle(e.status);
+        var reifenStyle = getReifenStyle(e.regalReifen);
+        var bestellHtml = formatOverviewComment(e.kommBestellung, e.kommAnlieferung);
+        var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
+        html += '<tr class="ov-row" onclick="toggleOverviewEntry(' + i + ')">'
+          + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
+          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="color:#e3b341;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
+          + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
+          + '<td><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></td>'
+          + '<td style="text-align:right;"><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
+          + '</tr>';
+        html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
+          + '<td colspan="6">'
+          + '<div class="ov-detail-inner">'
+          + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Bestellung</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
+          + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Anlieferung</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
+          + '<div class="ov-detail-box"><div class="ov-detail-lbl">Regal Reifen</div><div class="ov-detail-val"><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></div></div>'
+          + '</div>'
+          + '</td>'
+          + '</tr>';
+      }
+      body.innerHTML = html;
+    }
+
+    function toggleOverviewEntry(index) {
+      var detail = document.getElementById('ov-detail-' + index);
+      var chev = document.getElementById('ov-chev-' + index);
+      if(!detail) return;
+      if(detail.classList.contains('open')) {
+        detail.classList.remove('open');
+        if(chev) chev.innerText = '▶';
+      } else {
+        detail.classList.add('open');
+        if(chev) chev.innerText = '▼';
+      }
+    }
+
+    function openOverviewStock(event, stockId) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      closeStockOverview();
+      document.getElementById('searchInput').value = stockId;
+      loadData();
+    }
+
     function openStockOverview() {
       var modal = document.getElementById('overviewModal');
       var body = document.getElementById('overviewTableBody');
       modal.classList.add('open');
-      body.innerHTML = '<tr><td colspan="2">Lade Übersicht...</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9da7b3;padding:18px;">Lade Übersicht...</td></tr>';
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
-          body.innerHTML = '<tr><td colspan="2">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
+          body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
           return;
         }
-        if(!res.entries || !res.entries.length) {
-          body.innerHTML = '<tr><td colspan="2">Keine Einträge gefunden.</td></tr>';
-          return;
-        }
-        var rows = '';
-        res.entries.forEach(function(entry) {
-          rows += '<tr><td class="overview-stock">' + escapeHtml(entry.stockId) + '</td><td class="overview-regal">' + escapeHtml(entry.regal) + '</td></tr>';
-        });
-        body.innerHTML = rows;
+        var entries = res.entries || [];
+        var count = entries.length;
+        var kistenWord = count === 1 ? "Kiste" : "Kisten";
+        document.getElementById('overviewTotalBadge').innerText = "Insgesamt: " + count + " " + kistenWord + " im Lager";
+        renderStockOverview(entries);
       }).getStockRegalOverview();
+    }
+
+    function normalizeStockInput(value) {
+      return String(value || "").replace(/\s+/g, '').toUpperCase();
+    }
+
+    function escapeJs(text) {
+      return String(text || "").replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    function closeReifenAutocomplete() {
+      var list = document.getElementById('reifenAutocompleteList');
+      list.innerHTML = '';
+      list.style.display = 'none';
+    }
+
+    function renderReifenAutocomplete(value) {
+      var list = document.getElementById('reifenAutocompleteList');
+      var search = normalizeStockInput(value);
+      closeReifenAutocomplete();
+      if(!search || !cachedReifenStockIds.length) return;
+      var matches = [];
+      for(var i = 0; i < cachedReifenStockIds.length; i++) {
+        if(cachedReifenStockIds[i].id.indexOf(search) !== -1) {
+          matches.push(cachedReifenStockIds[i]);
+          if(matches.length >= 30) break;
+        }
+      }
+      if(!matches.length) return;
+      list.innerHTML = matches.map(function(item) {
+        var itemClass = 'reifen-autocomplete-item';
+        var statusHtml = '';
+        if(item.status === 'ja') {
+          itemClass += ' booked-ja';
+          statusHtml = '<span class="reifen-autocomplete-status status-ja">JA</span>';
+        }
+        return '<div class="' + itemClass + '" data-value="' + escapeHtml(item.id) + '"><span>' + escapeHtml(item.id).replace(search, '<span class="reifen-autocomplete-hit">' + search + '</span>') + '</span>' + statusHtml + '</div>';
+      }).join('');
+      list.style.display = 'block';
+      Array.prototype.forEach.call(list.children, function(node) {
+        node.addEventListener('click', function() {
+          reifenStockInput.value = this.getAttribute('data-value');
+          closeReifenAutocomplete();
+          verifyReifenStock();
+        });
+      });
+    }
+
+    function loadReifenStockIds(tabName) {
+      cachedReifenStockIds = [];
+      closeReifenAutocomplete();
+      if(!tabName) return;
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success && res.ids) cachedReifenStockIds = res.ids;
+      }).getAvailableReifenStockIds(tabName);
+    }
+
+    function setReifenStatus(msg, color) {
+      var el = document.getElementById('reifenStatus');
+      el.innerText = msg;
+      el.style.color = color || "#8b949e";
+    }
+
+    function setReifenActionState(enabled) {
+      var btnJa = document.getElementById('reifenBtnJa');
+      var btnNein = document.getElementById('reifenBtnNein');
+      btnJa.className = "reifen-action-btn";
+      btnNein.className = "reifen-action-btn";
+      btnJa.disabled = !enabled;
+      btnNein.disabled = !enabled;
+      if(enabled) {
+        btnJa.classList.add('active-ja');
+        btnNein.classList.add('active-nein');
+      }
+    }
+
+    function hideReifenInfo() {
+      document.getElementById('reifenInfoBox').style.display = 'none';
+      document.getElementById('reifenLocationInfo').innerText = '';
+      document.getElementById('reifenCopyStock').innerText = '';
+      document.getElementById('reifenCopyTire').innerText = '';
+    }
+
+    function showReifenInfo(res) {
+      document.getElementById('reifenInfoBox').style.display = 'flex';
+      document.getElementById('reifenLocationInfo').innerText = res.locationText || "Lagerplatz unbekannt";
+      document.getElementById('reifenCopyStock').innerText = res.stockId || "";
+      document.getElementById('reifenCopyTire').innerText = res.tireInfo || "";
+    }
+
+    function resetReifenState(keepInput) {
+      currentVerifiedReifenStock = "";
+      currentReifenResult = null;
+      setReifenActionState(false);
+      hideReifenInfo();
+      closeReifenAutocomplete();
+      if(!keepInput) reifenStockInput.value = "";
+    }
+
+    function closeReifenConfirm() {
+      document.getElementById('reifenConfirmModal').classList.remove('open');
+    }
+
+    function closeReifenModal() {
+      document.getElementById('reifenModal').classList.remove('open');
+      closeReifenConfirm();
+      resetReifenState(false);
+      setReifenStatus("Bitte Tabellenblatt auswählen und Stock-ID eingeben...", "#8b949e");
+    }
+
+    function openReifenModal() {
+      document.getElementById('reifenModal').classList.add('open');
+      resetReifenState(false);
+      setReifenStatus("Lade Tabellenblätter...", "#f2cc60");
+      loadReifenTabs();
+    }
+
+    function loadReifenTabs() {
+      var select = document.getElementById('reifenTabSelect');
+      select.innerHTML = '<option value="">Lade Tabellenblätter...</option>';
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          select.innerHTML = '<option value="">Fehler beim Laden</option>';
+          setReifenStatus("❌ " + (res.message || "Tabellenblätter konnten nicht geladen werden."), "#f85149");
+          return;
+        }
+        if(!res.tabs || !res.tabs.length) {
+          select.innerHTML = '<option value="">Keine Tabellenblätter gefunden</option>';
+          setReifenStatus("❌ Keine Tabellenblätter gefunden.", "#f85149");
+          return;
+        }
+        var selected = currentReifenTab && res.tabs.indexOf(currentReifenTab) !== -1 ? currentReifenTab : res.tabs[0];
+        select.innerHTML = res.tabs.map(function(tab) {
+          return '<option value="' + escapeHtml(tab) + '"' + (tab === selected ? ' selected' : '') + '>' + escapeHtml(tab) + '</option>';
+        }).join('');
+        currentReifenTab = selected;
+        localStorage.setItem('arasaka_reifen_tab', selected);
+        loadReifenStockIds(selected);
+        setReifenStatus("Tab '" + selected + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+        reifenStockInput.focus();
+      }).getReifenTabOptions();
+    }
+
+    function onReifenTabChange() {
+      currentReifenTab = document.getElementById('reifenTabSelect').value;
+      if(currentReifenTab) {
+        localStorage.setItem('arasaka_reifen_tab', currentReifenTab);
+        loadReifenStockIds(currentReifenTab);
+        setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+      } else {
+        cachedReifenStockIds = [];
+        setReifenStatus("❌ Bitte ein Tabellenblatt auswählen.", "#f85149");
+      }
+      resetReifenState(true);
+    }
+
+    function verifyReifenStock() {
+      var tab = document.getElementById('reifenTabSelect').value;
+      var stockId = normalizeStockInput(reifenStockInput.value);
+      closeReifenAutocomplete();
+      reifenStockInput.value = stockId;
+      resetReifenState(true);
+      if(!tab) return setReifenStatus("❌ Bitte zuerst ein Tabellenblatt auswählen.", "#f85149");
+      if(!stockId) return setReifenStatus("❌ Bitte eine Stock-ID eingeben.", "#f85149");
+      setReifenStatus("Suche " + stockId + " in '" + tab + "'...", "#f2cc60");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if(res.found) {
+            currentVerifiedReifenStock = stockId;
+            setReifenActionState(true);
+            setReifenStatus("✅ " + res.message, "#56d364");
+          } else {
+            setReifenStatus("❌ " + res.message, "#f85149");
+            reifenStockInput.focus();
+          }
+        })
+        .withFailureHandler(function(err) {
+          setReifenStatus("❌ Systemfehler: " + (err.message || String(err)), "#f85149");
+        })
+        .checkReifenStock(tab, stockId);
+    }
+
+    function executeReifenAction(isDelivered) {
+      var tab = document.getElementById('reifenTabSelect').value;
+      var stockId = currentVerifiedReifenStock || normalizeStockInput(reifenStockInput.value);
+      if(!tab) return setReifenStatus("❌ Bitte zuerst ein Tabellenblatt auswählen.", "#f85149");
+      if(!stockId) return setReifenStatus("❌ Bitte zuerst eine Stock-ID prüfen.", "#f85149");
+      setReifenActionState(false);
+      setReifenStatus((isDelivered ? "Buche Reifen als DA..." : "Buche Reifen als FEHLT..."), "#f2cc60");
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if(!res.success) {
+            setReifenStatus("❌ " + res.message, "#f85149");
+            return;
+          }
+          currentReifenResult = res;
+          showReifenInfo(res);
+          var finalMessage = "✅ " + res.message;
+          if(isDelivered) {
+            var printResult = printReifenDymoLabels(res.stockId, res.tireInfo, res.menge);
+            if(printResult.success) {
+              finalMessage += " DYMO Druck gesendet.";
+            } else {
+              finalMessage += " DYMO Fehler: " + printResult.message;
+            }
+            document.getElementById('reifenConfirmModal').classList.add('open');
+          } else {
+            reifenStockInput.value = "";
+            reifenStockInput.focus();
+          }
+          setReifenStatus(finalMessage, "#56d364");
+        })
+        .withFailureHandler(function(err) {
+          setReifenStatus("❌ Systemfehler: " + (err.message || String(err)), "#f85149");
+        })
+        .processReifenStock(tab, stockId, isDelivered);
+    }
+
+    function copyReifenValue(element) {
+      var value = String(element.innerText || "").trim();
+      if(!value) return;
+      navigator.clipboard.writeText(value).then(function() {
+        setReifenStatus("📋 Kopiert: " + value, "#58a6ff");
+      }).catch(function() {
+        setReifenStatus("❌ Kopieren fehlgeschlagen.", "#f85149");
+      });
+    }
+
+    function confirmReifenFinished(openInWms) {
+      var stockId = currentReifenResult && currentReifenResult.stockId ? currentReifenResult.stockId : "";
+      closeReifenConfirm();
+      resetReifenState(false);
+      if(openInWms && stockId) {
+        closeReifenModal();
+        document.getElementById('searchInput').value = stockId;
+        loadData();
+        return;
+      }
+      setReifenStatus("Nächste Stock-ID scannen...", "#58a6ff");
+      reifenStockInput.focus();
     }
 
     function escapeHtml(text) {
@@ -1023,8 +1712,11 @@
           document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
           var shelfCountBadge = document.getElementById('currentShelfCountBadge');
           if(/^Regal\s+\d+\.\d+$/i.test(res.regal || "")) {
+            var shelfCount = res.currentShelfCount || 0;
+            var shelfWord = shelfCount === 1 ? "Kiste" : "Kisten";
+            var shelfVerb = shelfCount === 1 ? "ist" : "sind";
             shelfCountBadge.style.display = "inline-flex";
-            shelfCountBadge.innerText = "In " + res.regal + " sind " + (res.currentShelfCount || 0) + " Kisten";
+            shelfCountBadge.innerText = "In " + res.regal + " " + shelfVerb + " " + shelfCount + " " + shelfWord;
           } else {
             shelfCountBadge.style.display = "none";
           }
@@ -1113,13 +1805,18 @@
 
     function sendDymoPrint(options) {
       var opts = options || {};
+      var rawMenge = parseInt(document.getElementById('dymoCount').value, 10);
+      var menge = isNaN(rawMenge) ? 1 : Math.max(0, rawMenge);
+      if(menge === 0) {
+        if(!opts.silent) setStatus("ℹ️ DYMO Druck übersprungen (0 Etiketten).", "#9da7b3");
+        return { success: true, skipped: true, message: "DYMO Druck übersprungen." };
+      }
       var typedInitials = document.getElementById('dymoInitials').value.trim();
       if(opts.requireInitials && !typedInitials) {
         return { success: false, skipped: true };
       }
       var initials = typedInitials || "LAGER";
       localStorage.setItem('arasaka_dymo_initials', initials);
-      var menge = parseInt(document.getElementById('dymoCount').value) || 1;
       if(!opts.silent) {
         setStatus("🖨️ Sende an Dymo...", "#58a6ff");
       }
@@ -1136,7 +1833,7 @@
         }
         var printerName = printers[0].name;
 
-        var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><HasFixedLength>False</HasFixedLength><FixedLengthValue>0</FixedLengthValue><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>False</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><IsStatic>False</IsStatic><StaticDateTime>2025-07-30T10:14:27.0341230+02:00</StaticDateTime><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
+        var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><HasFixedLength>False</HasFixedLength><FixedLengthValue>0</FixedLengthValue><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><IsStatic>False</IsStatic><StaticDateTime>2025-07-30T10:14:27.0341230+02:00</StaticDateTime><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
 
         var today = new Date();
         var dateString = today.toLocaleDateString('de-DE');
@@ -1157,6 +1854,46 @@
       } catch (err) {
         if(!opts.silent) setStatus("❌ DYMO SYSTEMFEHLER: " + err.message, "#f85149");
         return { success: false, skipped: false, message: err.message };
+      }
+    }
+
+    function printReifenDymoLabels(stockId, tireInfo, mengeStr) {
+      var typedInitials = document.getElementById('dymoInitials').value.trim();
+      var initials = typedInitials || "LAGER";
+      localStorage.setItem('arasaka_dymo_initials', initials);
+      try {
+        if (typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
+          return { success: false, message: "DYMO Framework fehlt!" };
+        }
+
+        var printers = dymo.label.framework.getPrinters();
+        if (printers.length === 0) {
+          return { success: false, message: "Kein DYMO Drucker gefunden!" };
+        }
+        var printerName = printers[0].name;
+        var menge = parseInt(mengeStr, 10);
+        if (isNaN(menge) || menge < 1) menge = 1;
+
+        var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><HasFixedLength>False</HasFixedLength><FixedLengthValue>0</FixedLengthValue><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><IsStatic>False</IsStatic><StaticDateTime>2025-07-30T10:14:27.0341230+02:00</StaticDateTime><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
+
+        var today = new Date();
+        var dateString = today.toLocaleDateString('de-DE');
+
+        function firePrint(mainData, copiesCount) {
+          var finalXml = baseXml
+            .replace('__STOCKID__', mainData)
+            .replace('__DATE__', dateString)
+            .replace('__USER__', initials);
+          var label = dymo.label.framework.openLabelXml(finalXml);
+          var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copiesCount });
+          label.print(printerName, printParams);
+        }
+
+        firePrint(stockId, menge);
+        firePrint(tireInfo, 1);
+        return { success: true };
+      } catch (err) {
+        return { success: false, message: err.message };
       }
     }
 
@@ -1191,7 +1928,8 @@
             .withSuccessHandler(function(res) {
               if(res.success) {
                 var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
-                if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
+                if(dymoResult.skipped) finalStatus += " DYMO übersprungen.";
+                else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
                 if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
                 setStatus(finalStatus, "#56d364");
                 toggleUI(false);
