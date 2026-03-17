@@ -2,6 +2,8 @@ const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
 const NACHBESTELL_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const NACHBESTELL_TAB = "Nachbestellungen";
+const EXIT_SHEET_ID = "1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI";
+const EXIT_TAB = "Exit Repair";
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -56,6 +58,20 @@ function getReifenSheet() {
     return SpreadsheetApp.openById(REIFEN_SHEET_ID);
   }
 
+function getReifenSheetTab(tabName) {
+    var ss = getReifenSheet();
+    var name = String(tabName || "").trim();
+    var sheet = ss.getSheetByName(name);
+    if (sheet) return sheet;
+    var sheets = ss.getSheets();
+    var normalizedName = name.replace(/\s+/g, '').toLowerCase();
+    for (var i = 0; i < sheets.length; i++) {
+      var sn = sheets[i].getName().replace(/\s+/g, '').toLowerCase();
+      if (sn === normalizedName) return sheets[i];
+    }
+    return null;
+  }
+
 function getReifenTabOptions() {
     try {
       var ss = getReifenSheet();
@@ -82,7 +98,7 @@ function getReifenTabOptions() {
 
 function getAvailableReifenStockIds(tabName) {
     try {
-      var sheet = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      var sheet = getReifenSheetTab(tabName);
       if (!sheet) return { success: false, message: "Tabellenblatt nicht gefunden!", ids: [] };
       var search = findRowFast(sheet, ["stockid", "stock"], "___NEVER_MATCH___");
       if (search.headerIdx === -1 || search.stockCol === -1) {
@@ -119,7 +135,7 @@ function checkReifenStock(tabName, stockId) {
       stockId = normalizeStockId(stockId);
       if (!stockId) return { found: false, message: "Bitte eine Stock-ID eingeben." };
 
-      var sheet = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      var sheet = getReifenSheetTab(tabName);
       if (!sheet) return { found: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
 
       var search = findRowFast(sheet, ["stockid", "stock"], stockId);
@@ -142,7 +158,7 @@ function checkReifenStock(tabName, stockId) {
 function processReifenStock(tabName, stockId, isDelivered) {
     try {
       stockId = normalizeStockId(stockId);
-      var sheetSeng = getReifenSheet().getSheetByName(String(tabName || "").trim());
+      var sheetSeng = getReifenSheetTab(tabName);
       if (!sheetSeng) return { success: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
 
       var sheetHemau = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
@@ -236,8 +252,8 @@ function processReifenStock(tabName, stockId, isDelivered) {
   
   function openWMS() {
     var html = HtmlService.createHtmlOutputFromFile('WMS_HUD')
-      .setWidth(1900)
-      .setHeight(1100);
+      .setWidth(2400)
+      .setHeight(1600);
     SpreadsheetApp.getUi().showModelessDialog(html, 'Warehouse Management System');
   }
 
@@ -266,6 +282,39 @@ function processReifenStock(tabName, stockId, isDelivered) {
     return { success: false, updated: false, message: "Stock-ID in Stock ID extern Tracking nicht gefunden!" };
   }
   
+  function searchByOrderNumber(query) {
+    try {
+      query = String(query || "").replace(/\s+/g, '').toUpperCase();
+      if (!query) return { found: false, message: "Keine Suchanfrage" };
+
+      var cleanQuery = query.replace(/^N4P/i, '');
+      if (!cleanQuery || cleanQuery.length < 4) return { found: false, message: "Suchanfrage zu kurz (min. 4 Zeichen)" };
+
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName("Refurbisment List");
+      if (!sheet) return { found: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var kommData = sheet.getRange(1, 24, lastRow, 1).getValues();
+      var stockData = sheet.getRange(1, 2, lastRow, 1).getValues();
+
+      for (var i = 1; i < kommData.length; i++) {
+        var cellText = String(kommData[i][0] || "").replace(/\s+/g, '').toUpperCase();
+        if (!cellText) continue;
+        if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
+          var stockId = String(stockData[i][0] || "").trim();
+          if (stockId) {
+            return { found: true, stockId: stockId, message: "Gefunden via Bestellnummer in Zeile " + (i + 1) };
+          }
+        }
+      }
+
+      return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
+    } catch (err) {
+      return { found: false, message: "Fehler: " + err.message };
+    }
+  }
+
   function fetchWmsData(stockId) {
     try {
       stockId = normalizeStockId(stockId);
@@ -382,7 +431,6 @@ function processReifenStock(tabName, stockId, isDelivered) {
       text = String(text || "");
       if (!stockId) return { success: false, message: "Keine Stock-ID" };
       if (!text.trim()) return { success: false, message: "Bitte erst Kommentar eintragen!" };
-      if (!regal) return { success: false, message: "Bitte Regal auswählen!" };
 
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
       if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
@@ -396,18 +444,25 @@ function processReifenStock(tabName, stockId, isDelivered) {
           sheet.getRange(row, 25).setValue(text);
           sheet.getRange(row, 25).setBackground("#ff0000");
           sheet.getRange(row, 26).setValue("Teilweise angeliefert");
-          sheet.getRange(row, 28).setValue(regal);
+          if (regal) {
+            sheet.getRange(row, 28).setValue(regal);
+          }
           SpreadsheetApp.flush();
 
           var commentCheck = sheet.getRange(row, 25).getValue();
           var statusCheck = String(sheet.getRange(row, 26).getValue() || "").trim();
-          var regalCheck = String(sheet.getRange(row, 28).getValue() || "").trim();
-          if (commentCheck != text || statusCheck !== "Teilweise angeliefert" || regalCheck !== regal) {
+          if (commentCheck != text || statusCheck !== "Teilweise angeliefert") {
             return { success: false, message: "Fehler beim Verifizieren!" };
+          }
+          if (regal) {
+            var regalCheck = String(sheet.getRange(row, 28).getValue() || "").trim();
+            if (regalCheck !== regal) return { success: false, message: "Fehler beim Verifizieren!" };
           }
 
           var dateResult = applyTrackingDateIfEmpty(stockId);
-          var msg = "Kommentar und Regal gespeichert! Status auf Teilweise angeliefert gesetzt.";
+          var msg = regal
+            ? "Kommentar und Regal gespeichert! Status auf Teilweise angeliefert gesetzt."
+            : "Kommentar gespeichert! Status auf Teilweise angeliefert gesetzt.";
           if (dateResult.updated) msg += " Datum gesetzt!";
           if (!dateResult.success) msg += " " + dateResult.message;
           return { success: true, message: msg };
@@ -570,7 +625,7 @@ function getNachbestellungen() {
         if (!stockId) continue;
 
         var statusVal = cols.status !== undefined ? String(data[i][cols.status] || "").trim().toLowerCase() : "";
-        if (statusVal === "angeliefert") continue;
+        if (statusVal === "angeliefert" || statusVal.indexOf("angeliefert/bereit") !== -1 || statusVal === "fahrzeug rr") continue;
 
         var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
         var dateStr = "";
@@ -642,8 +697,75 @@ function updateNachbestellung(sheetRow, fieldName, value) {
 
       sheet.getRange(sheetRow, targetCol).setValue(value);
       SpreadsheetApp.flush();
-      return { success: true, message: "Gespeichert!" };
+
+      var exitMsg = "";
+      if (fieldName === "status" && String(value || "").toLowerCase().indexOf("angeliefert") !== -1) {
+        var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
+        var rowStockId = "";
+        var rowTyp = "";
+        for (var r = 0; r < rowData.length; r++) {
+          var cellVal = String(rowData[r] || "").trim();
+          if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
+          if (!rowTyp && cellVal.toLowerCase().indexOf("exit") !== -1) rowTyp = cellVal;
+        }
+        if (rowTyp && rowStockId) {
+          exitMsg = updateExitListStatus(rowStockId);
+        } else {
+          exitMsg = "(Kein Exit-Typ: Typ='" + rowTyp + "' Stock='" + rowStockId + "')";
+        }
+      }
+
+      var msg = "Gespeichert!";
+      if (exitMsg) msg += " | " + exitMsg;
+      return { success: true, message: msg };
     } catch (err) {
       return { success: false, message: err.message };
+    }
+  }
+
+function updateExitListStatus(stockId) {
+    try {
+      if (!stockId) return "Exit: Keine Stock-ID";
+      var EXIT_STOCK_COL = 2;
+      var EXIT_STATUS_COL = 8;
+      var ss = SpreadsheetApp.openById(EXIT_SHEET_ID);
+      var sh = ss.getSheetByName(EXIT_TAB);
+      if (!sh) return "Exit: Tab '" + EXIT_TAB + "' nicht gefunden!";
+      var lastRow = Math.max(1, sh.getLastRow());
+      if (lastRow < 2) return "Exit: Tab leer";
+      var stockData = sh.getRange(1, EXIT_STOCK_COL, lastRow, 1).getValues();
+      for (var i = 0; i < stockData.length; i++) {
+        if (cellMatchesStockId(stockData[i][0], stockId)) {
+          var cell = sh.getRange(i + 1, EXIT_STATUS_COL);
+          var validation = cell.getDataValidation();
+          var targetValue = "komplett angeliefert";
+          if (validation) {
+            var criteria = validation.getCriteriaValues();
+            if (criteria && criteria.length > 0 && Array.isArray(criteria[0])) {
+              for (var v = 0; v < criteria[0].length; v++) {
+                var opt = String(criteria[0][v] || "").toLowerCase();
+                if (opt.indexOf("komplett") !== -1) {
+                  targetValue = String(criteria[0][v]);
+                  break;
+                }
+              }
+            }
+          }
+          cell.setValue(targetValue);
+          SpreadsheetApp.flush();
+          var verify = String(cell.getValue() || "");
+          if (verify.toLowerCase().indexOf("komplett") !== -1) {
+            return "Exit Z" + (i + 1) + " → " + targetValue;
+          }
+          cell.clearDataValidations();
+          cell.setValue(targetValue);
+          if (validation) cell.setDataValidation(validation);
+          SpreadsheetApp.flush();
+          return "Exit Z" + (i + 1) + " → " + targetValue + " (forced)";
+        }
+      }
+      return "Exit: '" + stockId + "' in '" + EXIT_TAB + "' nicht gefunden";
+    } catch (err) {
+      return "Exit Fehler: " + err.message;
     }
   }

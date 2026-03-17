@@ -31,33 +31,37 @@
     box-shadow: 0 14px 40px rgba(0, 0, 0, 0.35);
     position: relative;
   }
+  .topbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
   .topbar-actions {
-    position: absolute;
-    top: 10px;
-    left: 18px;
     display: flex;
     gap: 8px;
+    flex-shrink: 0;
   }
   .topbar-action {
     color: #f2cc60;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 800;
-    letter-spacing: 1.2px;
+    letter-spacing: 1px;
     text-transform: uppercase;
-    padding: 6px 10px;
-    border-radius: 999px;
+    padding: 10px 16px;
+    border-radius: 12px;
     background: rgba(242, 204, 96, 0.08);
-    border: 1px solid rgba(242, 204, 96, 0.14);
+    border: 1px solid rgba(242, 204, 96, 0.18);
     cursor: pointer;
     transition: 0.2s;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
   .topbar-action:hover {
-    background: rgba(242, 204, 96, 0.16);
+    background: rgba(242, 204, 96, 0.2);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(242, 204, 96, 0.12);
   }
   .topbar-credit {
-    position: absolute;
-    top: 10px;
-    right: 18px;
     color: #f2cc60;
     font-size: 11px;
     font-weight: 800;
@@ -67,12 +71,13 @@
     border-radius: 999px;
     background: rgba(242, 204, 96, 0.08);
     border: 1px solid rgba(242, 204, 96, 0.14);
+    flex-shrink: 0;
   }
   .topbar-head {
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
   .eyebrow {
     text-align: center;
@@ -276,8 +281,8 @@
     color: #e3b341;
     border: 1px solid #303b47;
     padding: 14px 16px;
-    font-size: 15px;
-    font-weight: 700;
+    font-size: 18px;
+    font-weight: 800;
     border-radius: 14px;
     margin-bottom: 14px;
     outline: none;
@@ -364,20 +369,18 @@
   .shelf-pill {
     margin: 0;
     text-transform: none;
-    color: #c9d1d9;
-    font-size: 14px;
-    font-weight: 700;
-    padding: 8px 14px;
+    color: #e3b341;
+    font-size: 17px;
+    font-weight: 800;
+    padding: 10px 18px;
     border-radius: 999px;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.06);
+    background: rgba(227, 179, 65, 0.1);
+    border: 1px solid rgba(227, 179, 65, 0.18);
     white-space: nowrap;
   }
   .shelf-count-badge {
     display: none;
-    align-self: flex-start;
-    margin: 0 0 10px 0;
-    padding: 7px 12px;
+    padding: 10px 18px;
     border-radius: 999px;
     background: rgba(227, 179, 65, 0.12);
     border: 1px solid rgba(227, 179, 65, 0.18);
@@ -385,6 +388,7 @@
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.3px;
+    white-space: nowrap;
   }
   .workspace-split {
     display: flex;
@@ -415,10 +419,11 @@
     margin-top: 4px;
     border-top: 1px solid #242d39;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
   }
   .tools-card {
-    justify-content: space-between;
+    justify-content: stretch;
   }
   .tools-layout {
     display: flex;
@@ -426,6 +431,7 @@
     gap: 14px;
     flex: 1;
     min-height: 0;
+    justify-content: center;
   }
   .tools-panel {
     background: rgba(13, 17, 23, 0.55);
@@ -446,6 +452,7 @@
     flex: 1;
     justify-content: center;
     align-items: center;
+    display: flex;
   }
   .tools-panel-title {
     color: #f2cc60;
@@ -899,10 +906,8 @@
   .nb-print-section {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-top: 8px;
-    padding-top: 10px;
-    border-top: 1px solid #1d2530;
+    gap: 8px;
+    margin-top: 6px;
   }
   .nb-print-btn {
     background: rgba(88, 166, 255, 0.12);
@@ -915,15 +920,82 @@
     cursor: pointer;
   }
   .nb-print-input {
-    width: 60px;
+    width: 46px;
     background: #0f141c;
     color: #ffffff;
     border: 1px solid #354152;
-    padding: 8px 10px;
+    padding: 6px 4px;
     font-size: 13px;
-    border-radius: 10px;
+    border-radius: 8px;
     outline: none;
     text-align: center;
+    -moz-appearance: textfield;
+  }
+  .nb-print-input::-webkit-outer-spin-button,
+  .nb-print-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .qty-stepper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    justify-content: center;
+  }
+  .qty-stepper input {
+    flex: 1;
+    max-width: 100px;
+    -moz-appearance: textfield;
+  }
+  .qty-stepper input::-webkit-outer-spin-button,
+  .qty-stepper input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .qty-btn {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+    font-weight: 900;
+    border-radius: 12px;
+    border: 1px solid #354152;
+    background: rgba(88, 166, 255, 0.1);
+    color: #58a6ff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: 0.15s;
+  }
+  .qty-btn:hover {
+    background: rgba(88, 166, 255, 0.2);
+  }
+  .nb-qty-stepper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .nb-qty-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+    font-weight: 900;
+    border-radius: 8px;
+    border: 1px solid #354152;
+    background: rgba(88, 166, 255, 0.1);
+    color: #58a6ff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
+  }
+  .nb-qty-btn:hover {
+    background: rgba(88, 166, 255, 0.2);
   }
   .reifen-modal {
     position: fixed;
@@ -1189,12 +1261,14 @@
 <body>
   <div class="app-shell">
     <div class="topbar">
-      <div class="topbar-actions">
-        <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
-        <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
-        <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
+      <div class="topbar-row">
+        <div class="topbar-actions">
+          <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
+          <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
+          <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
+        </div>
+        <div class="topbar-credit">BY ARASAKA</div>
       </div>
-      <div class="topbar-credit">BY ARASAKA</div>
       <div class="topbar-head">
         <div>
           <div class="eyebrow">Warehouse Management System</div>
@@ -1203,7 +1277,7 @@
 
       <div class="search-container">
         <div class="search-box">
-          <input type="text" id="searchInput" placeholder="STOCK ID SCAN..." autocomplete="off">
+          <input type="text" id="searchInput" placeholder="STOCK-ID / BESTELLNUMMER SCAN..." autocomplete="off">
           <button class="btn-search" onclick="loadData()">LADEN</button>
         </div>
       </div>
@@ -1242,14 +1316,17 @@
         <div class="workspace-panel">
           <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
             <h3 class="card-title">📦 Einlagern</h3>
-            <span class="shelf-pill card-header-meta" id="currentShelfLabel">Aktuell: -</span>
           </div>
-          <div class="shelf-count-badge" id="currentShelfCountBadge">-</div>
+          <div style="display:flex;justify-content:center;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+            <span class="shelf-pill" id="currentShelfLabel">Aktuell: -</span>
+            <span class="shelf-count-badge" id="currentShelfCountBadge" style="display:none;">-</span>
+          </div>
           <select id="shelfSelect"><option value="">Lade Regale...</option></select>
         </div>
       </div>
 
       <div class="workspace-merge-action">
+        <div style="color:#9da7b3;font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
         <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
       </div>
     </div>
@@ -1269,7 +1346,11 @@
             </div>
             <div class="dymo-field">
               <div class="field-label">Stückzahl</div>
-              <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
+              <div class="qty-stepper">
+                <button type="button" class="qty-btn" onclick="stepQty('dymoCount',-1)">−</button>
+                <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
+                <button type="button" class="qty-btn" onclick="stepQty('dymoCount',1)">+</button>
+              </div>
             </div>
             <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
           </div>
@@ -1322,9 +1403,10 @@
       </div>
       <div class="nb-toolbar">
         <div class="nb-search-wrap">
-          <input type="text" id="nbSearchInput" placeholder="Stock-ID suchen..." autocomplete="off">
+          <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
           <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
         </div>
+        <button type="button" onclick="refreshNbModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
       </div>
       <div class="nb-body">
         <table class="nb-table">
@@ -1402,6 +1484,7 @@
     var currentCarolUrl = "";
     var currentShelves = [];
     var currentSchaedenText = "";
+    var pendingWarning = null;
     var currentBestellungText = "";
     var currentVerifiedReifenStock = "";
     var currentReifenResult = null;
@@ -1431,7 +1514,11 @@
       "wm": true,
       "knoll": true,
       "sta": true,
-      "alfah": true
+      "alfah": true,
+      "wss": true,
+      "va": true,
+      "ha": true,
+      "seng": true
     };
 
     var savedInitials = localStorage.getItem('arasaka_dymo_initials');
@@ -1455,6 +1542,15 @@
     commentEditor.addEventListener('input', function() {
       refreshCrossHighlights(true);
     });
+
+    function stepQty(inputId, delta) {
+      var inp = document.getElementById(inputId);
+      if(!inp) return;
+      var val = parseInt(inp.value, 10);
+      if(isNaN(val)) val = 0;
+      val = Math.max(0, val + delta);
+      inp.value = val;
+    }
 
     function setStatus(msg, color) {
       var el = document.getElementById('globalStatus');
@@ -1516,7 +1612,7 @@
           + '<td style="color:#e3b341;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
           + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
           + '<td><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></td>'
-          + '<td style="text-align:right;"><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
+          + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
           + '</tr>';
         html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
           + '<td colspan="6">'
@@ -1542,6 +1638,13 @@
         detail.classList.add('open');
         if(chev) chev.innerText = '▼';
       }
+    }
+
+    function copyOverviewStock(event, stockId) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      navigator.clipboard.writeText(stockId).catch(function() {});
+      var btn = event ? event.target : null;
+      if(btn) { var orig = btn.innerText; btn.innerText = '✅ Kopiert'; setTimeout(function() { btn.innerText = orig; }, 1200); }
     }
 
     function openOverviewStock(event, stockId) {
@@ -1613,6 +1716,11 @@
       if(t.indexOf("exit") !== -1) return "border-left:4px solid #f85149;";
       if(t.indexOf("mechanik") !== -1) return "border-left:4px solid #58a6ff;";
       if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "border-left:4px solid #f2cc60;";
+      if(t.indexOf("verschwunden") !== -1) return "border-left:4px solid #e3935b;";
+      if(t.indexOf("falsch") !== -1) return "border-left:4px solid #d972b0;";
+      if(t.indexOf("aufgenommen") !== -1 || t.indexOf("entry") !== -1) return "border-left:4px solid #a371f7;";
+      if(t.indexOf("lack") !== -1) return "border-left:4px solid #39d0d8;";
+      if(t.indexOf("defekt") !== -1) return "border-left:4px solid #e09040;";
       return "border-left:4px solid #303b47;";
     }
 
@@ -1621,6 +1729,11 @@
       if(t.indexOf("exit") !== -1) return "color:#f85149;font-weight:800;";
       if(t.indexOf("mechanik") !== -1) return "color:#58a6ff;font-weight:800;";
       if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "color:#f2cc60;font-weight:800;";
+      if(t.indexOf("verschwunden") !== -1) return "color:#e3935b;font-weight:800;";
+      if(t.indexOf("falsch") !== -1) return "color:#d972b0;font-weight:800;";
+      if(t.indexOf("aufgenommen") !== -1 || t.indexOf("entry") !== -1) return "color:#a371f7;font-weight:800;";
+      if(t.indexOf("lack") !== -1) return "color:#39d0d8;font-weight:800;";
+      if(t.indexOf("defekt") !== -1) return "color:#e09040;font-weight:800;";
       return "";
     }
 
@@ -1685,10 +1798,12 @@
           +   '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
           + '</div>'
           + '<div class="nb-detail-box"><div class="nb-detail-lbl">Etiketten</div>'
-          +   '<div class="nb-print-section">'
+          +   '<div class="nb-qty-stepper" style="margin-bottom:8px;">'
+          +     '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',-1)">−</button>'
           +     '<input type="number" class="nb-print-input" id="nb-qty-' + i + '" value="1" min="0">'
-          +     '<button class="nb-print-btn" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
+          +     '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',1)">+</button>'
           +   '</div>'
+          +   '<button class="nb-print-btn" style="width:100%;" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
           + '</div>'
           + '</div>'
           + '</td>'
@@ -1721,23 +1836,44 @@
       if(event) { event.stopPropagation(); event.preventDefault(); }
       var sel = event ? event.target : null;
       if(sel) sel.disabled = true;
+      var badge = document.getElementById('nbTotalBadge');
+      if(badge) badge.innerText = 'Speichere...';
       google.script.run.withSuccessHandler(function(res) {
         if(sel) sel.disabled = false;
         if(res.success) {
-          if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 1500); }
-          if(value.toLowerCase() === 'angeliefert/bereit für tagesliste') {
-            for(var k = 0; k < nbAllEntries.length; k++) {
-              if(nbAllEntries[k].row === sheetRow) { nbAllEntries.splice(k, 1); break; }
-            }
-            filterNbBySearch();
-            document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+          if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 2500); }
+          for(var k = 0; k < nbAllEntries.length; k++) {
+            if(nbAllEntries[k].row === sheetRow) { nbAllEntries[k].status = value; break; }
           }
+          if(badge) badge.innerText = res.message || 'Gespeichert!';
+          setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         } else {
           if(sel) sel.style.borderColor = '#f85149';
+          if(badge) { badge.innerText = res.message || 'Fehler'; badge.style.color = '#f85149'; }
         }
       }).withFailureHandler(function(err) {
         if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
+        if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
       }).updateNachbestellung(sheetRow, 'status', value);
+    }
+
+    function refreshNbModal() {
+      document.getElementById('nbSearchInput').value = '';
+      document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>';
+      document.getElementById('nbTotalBadge').innerText = '...';
+      closeNbAutocomplete();
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message) + '</td></tr>';
+          return;
+        }
+        nbAllEntries = res.entries || [];
+        nbFilteredEntries = nbAllEntries;
+        document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+        renderNbTable(nbAllEntries);
+      }).withFailureHandler(function(err) {
+        document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }).getNachbestellungen();
     }
 
     function copyNbValue(event, value) {
@@ -1785,9 +1921,11 @@
       var seen = {};
       for(var i = 0; i < nbAllEntries.length; i++) {
         var sid = normalizeStockInput(nbAllEntries[i].stockId);
-        if(sid.indexOf(search) !== -1 && !seen[sid]) {
-          matches.push(sid);
-          seen[sid] = true;
+        var artNr = normalizeStockInput(nbAllEntries[i].artikel || "");
+        var matchVal = sid.indexOf(search) !== -1 ? sid : (artNr.indexOf(search) !== -1 ? artNr : null);
+        if(matchVal && !seen[matchVal]) {
+          matches.push(matchVal);
+          seen[matchVal] = true;
           if(matches.length >= 20) break;
         }
       }
@@ -1822,7 +1960,8 @@
         nbFilteredEntries = nbAllEntries;
       } else {
         nbFilteredEntries = nbAllEntries.filter(function(e) {
-          return normalizeStockInput(e.stockId).indexOf(search) !== -1;
+          return normalizeStockInput(e.stockId).indexOf(search) !== -1
+            || normalizeStockInput(e.artikel || "").indexOf(search) !== -1;
         });
       }
       renderNbTable(nbFilteredEntries);
@@ -2218,9 +2357,31 @@
       return html;
     }
 
+    function isStockIdFormat(val) {
+      return /^[A-Z]{2}\d{3,}/i.test(val.replace(/\s+/g, ''));
+    }
+
     function loadData() {
       var id = document.getElementById('searchInput').value.trim();
       if(!id) return;
+
+      if(!isStockIdFormat(id)) {
+        setStatus("🔍 Suche Bestellnummer '" + id + "'...", "#f2cc60");
+        toggleUI(false);
+        google.script.run.withSuccessHandler(function(res) {
+          if(res.found && res.stockId) {
+            setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
+            document.getElementById('searchInput').value = res.stockId;
+            setTimeout(function() { loadData(); }, 600);
+          } else {
+            setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
+            toggleUI(false);
+          }
+        }).withFailureHandler(function(err) {
+          setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+        }).searchByOrderNumber(id);
+        return;
+      }
       
       setStatus("Scanne Datenbank...", "#f2cc60");
       toggleUI(false);
@@ -2284,7 +2445,12 @@
 
           document.getElementById('btnCarol').disabled = !res.carolUrl;
 
-          setStatus("✅ Daten für " + id + " geladen!", "#56d364");
+          if(pendingWarning) {
+            setStatus(pendingWarning.msg, pendingWarning.color);
+            pendingWarning = null;
+          } else {
+            setStatus("✅ Daten für " + id + " geladen!", "#56d364");
+          }
           toggleUI(true);
         } else {
           setStatus("❌ FEHLER: " + res.message, "#f85149");
@@ -2304,7 +2470,19 @@
       var text = getCommentText().trim();
       var regal = document.getElementById('shelfSelect').value;
       if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
-      if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
+      if(!regal) {
+        setStatus("💾 Speichere nur Kommentar (kein Regal gewählt)...", "#f2cc60");
+        google.script.run.withSuccessHandler(function(res) {
+          if(res.success) {
+            pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#f2cc60" };
+            document.getElementById('searchInput').value = currentStock;
+            loadData();
+          } else {
+            setStatus("❌ " + res.message, "#f85149");
+          }
+        }).saveKommentarUndRegal(currentStock, text, "");
+        return;
+      }
       setStatus("💾 Speichere Kommentar + Regal...", "#f2cc60");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
