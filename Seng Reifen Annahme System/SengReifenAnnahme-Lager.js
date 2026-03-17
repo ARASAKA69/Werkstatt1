@@ -1,7 +1,5 @@
 // Nichts anfassen danke.
 
-// Nichts anfassen danke.
-
 const HEMAU_SHEET_ID = "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM";
 const HEMAU_TAB_NAME = "Refurbisment List";
 
