@@ -23,7 +23,7 @@
 
 - [ ] When hit delivered (in my case) i need to use my other google sheet code to auto implement the stock id and the description into my Werkstattauftrag, this way i dont have to place it manually (for now only for myself cause i have it in my own sheet, the others are using 1 for all which is useless then. (CODE FOR THE AUTO APPLY OF STOCK AND DESCRIPTION NEEDED FROM GOOGLE APPS SCRIPTS)
 
-```
+```ruby
 const ZIEL_TABELLEN_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
 const ZIEL_TABELLENBLATT_NAME = "BLANCO Reparaturauftrag";
 const MEINE_EMAIL = "francesco.berger@auto1.com";
