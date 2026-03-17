@@ -4,10 +4,18 @@
 - [x] Wortfilter: Öl + WM + KNOLL + STA + ALFAH ebenfalls grün markieren
 - [x] Kleinen Button oben links bauen, der alle Stock-IDs mit Regalplatz sortiert anzeigt
 - [ ] Reifen annahme system, erkennt das tabellenblatt nicht, bzw. nicht die StockID wenn ein leerzeichen im namen vom Tabellenblatt ist.
-- [ ] Add WSS in die Wort filter Liste die Grün markiert werden im HUD
+- [ ] Add WSS + VA + HA in die Wort filter Liste die Grün markiert werden im HUD
 - [ ] Kommentar sollte auch OHNE ein Regalplatz auszuwählen abgespeichert werden können, jedoch eine kleine info angezeigt werden mit OK das kein Regal vergeben worden ist.
 - [ ] Wenn nachbestellung EXIT dann Exit liste ebenfalls auf Komplett ANgelkiefert markieren im dropdown wenn auf Angeliefert im HUD gesetzt wird
 - [ ] Link zum sheet --> https://docs.google.com/spreadsheets/d/1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI/edit?gid=1722963315#gid=1722963315
 - [ ] Nachbestellung, Pfeile beim Etiketten druck Grösser machen wo man Stückzahl von etiketten ändern kann
-- [ ] 
+- [ ] Übersicht + Reifen Annahme + Nachbestellungen Button als button Cards einrichten (Bigger)
+- [ ] Add settings button top right, only with login ARASAKA (random short pass) to setup word filters, which words are in filters and or remove them/ add as seperate section inside Settings.
+- [ ] Add Language change inside Settings and make sure everything inside the HUB get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
+- [ ] Add descripütion on Kommentar + Regal Speichern button over it (Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !)
+- [ ] Move (Inside Regal xx are x Boxes) badge in the middle
+- [ ] Make Regal x.x Dropdown font and Aktuell: Regal x.x badge bigger to be more present and visible.
+- [ ]  Move Auftrag Beenden & Carold Starten Button Centered also Vertically inside its card.
+- [ ]  Inside Übersicht Popup adding Copy button for the StockID beside of Im WMS öffnen button
+- [ ]  
 -----
