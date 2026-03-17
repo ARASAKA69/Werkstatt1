@@ -5,5 +5,6 @@
 - [x] Kleinen Button oben links bauen, der alle Stock-IDs mit Regalplatz sortiert anzeigt
 - [ ] Reifen annahme system, erkennt das tabellenblatt nicht, bzw. nicht die StockID wenn ein leerzeichen im namen vom Tabellenblatt ist.
 - [ ] Add WSS in die Wort filter Liste die Grün markiert werden im HUD
+- [ ] Kommentar sollte auch OHNE ein Regalplatz auszuwählen abgespeichert werden können, jedoch eine kleine info angezeigt werden mit OK das kein Regal vergeben worden ist.
 - [ ] 
 -----
