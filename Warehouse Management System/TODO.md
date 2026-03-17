@@ -3,4 +3,7 @@
 - [x] Kommentar beim gemeinsamen Regal-Speichern automatisch mitspeichern
 - [x] Wortfilter: Öl + WM + KNOLL + STA + ALFAH ebenfalls grün markieren
 - [x] Kleinen Button oben links bauen, der alle Stock-IDs mit Regalplatz sortiert anzeigt
+- [ ] Reifen annahme system, erkennt das tabellenblatt nicht, bzw. nicht die StockID wenn ein leerzeichen im namen vom Tabellenblatt ist.
+- [ ] Add WSS in die Wort filter Liste die Grün markiert werden im HUD
+- [ ] 
 -----
