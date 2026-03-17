@@ -6,5 +6,8 @@
 - [ ] Reifen annahme system, erkennt das tabellenblatt nicht, bzw. nicht die StockID wenn ein leerzeichen im namen vom Tabellenblatt ist.
 - [ ] Add WSS in die Wort filter Liste die Grün markiert werden im HUD
 - [ ] Kommentar sollte auch OHNE ein Regalplatz auszuwählen abgespeichert werden können, jedoch eine kleine info angezeigt werden mit OK das kein Regal vergeben worden ist.
+- [ ] Wenn nachbestellung EXIT dann Exit liste ebenfalls auf Komplett ANgelkiefert markieren im dropdown wenn auf Angeliefert im HUD gesetzt wird
+- [ ] Link zum sheet --> https://docs.google.com/spreadsheets/d/1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI/edit?gid=1722963315#gid=1722963315
+- [ ] Nachbestellung, Pfeile beim Etiketten druck Grösser machen wo man Stückzahl von etiketten ändern kann
 - [ ] 
 -----
