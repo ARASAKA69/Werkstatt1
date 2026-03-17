@@ -1,5 +1,7 @@
 const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo/edit?gid=1453769469#gid=1453769469";
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
+const NACHBESTELL_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
+const NACHBESTELL_TAB = "Nachbestellungen";
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -515,5 +517,133 @@ function processReifenStock(tabName, stockId, isDelivered) {
       return result;
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message, oldRegal: "LEER", carolUrl: "" };
+    }
+  }
+
+function getNachbestellungen() {
+    try {
+      var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+      var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [] };
+
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var lastCol = Math.max(1, Math.min(15, sheet.getLastColumn()));
+      var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+      var headerIdx = -1;
+      for (var h = 0; h < Math.min(10, data.length); h++) {
+        var row = data[h].map(function(c) { return String(c || "").toLowerCase(); });
+        if (row.some(function(c) { return c.indexOf("stock") !== -1; })) {
+          headerIdx = h;
+          break;
+        }
+      }
+      if (headerIdx === -1) headerIdx = 0;
+
+      var header = data[headerIdx];
+      var cols = {};
+      for (var c = 0; c < header.length; c++) {
+        var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+        if (!cols.date && (txt === "datum" || txt === "date")) cols.date = c;
+        if (!cols.stock && (txt.indexOf("stock") !== -1)) cols.stock = c;
+        if (!cols.url && (txt.indexOf("carol") !== -1 || txt.indexOf("url") !== -1 || txt.indexOf("link") !== -1)) cols.url = c;
+        if (!cols.typ && (txt.indexOf("typ") !== -1 || txt.indexOf("art") !== -1 || txt.indexOf("bestellung") !== -1 || txt.indexOf("beschreibung") !== -1)) cols.typ = c;
+        if (!cols.person && (txt.indexOf("team") !== -1 || txt.indexOf("name") !== -1 || txt.indexOf("person") !== -1 || txt.indexOf("mechaniker") !== -1)) cols.person = c;
+        if (!cols.teil && (txt.indexOf("teil") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1)) cols.teil = c;
+        if (!cols.preis && (txt.indexOf("preis") !== -1 || txt.indexOf("kosten") !== -1 || txt.indexOf("price") !== -1)) cols.preis = c;
+        if (!cols.artikel && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
+        if (!cols.status && (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1)) cols.status = c;
+      }
+
+      if (cols.stock === undefined) {
+        for (var bc = 0; bc < header.length; bc++) {
+          var sample = String(data[headerIdx + 1] ? data[headerIdx + 1][bc] : "").trim();
+          if (/^[A-Z]{2}\d{4,}/.test(sample)) { cols.stock = bc; break; }
+        }
+      }
+
+      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
+
+      var entries = [];
+      for (var i = headerIdx + 1; i < data.length; i++) {
+        var stockId = String(data[i][cols.stock] || "").trim();
+        if (!stockId) continue;
+
+        var statusVal = cols.status !== undefined ? String(data[i][cols.status] || "").trim().toLowerCase() : "";
+        if (statusVal === "angeliefert") continue;
+
+        var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
+        var dateStr = "";
+        if (dateVal instanceof Date) {
+          dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
+        } else {
+          dateStr = String(dateVal || "");
+        }
+
+        var typ = cols.typ !== undefined ? String(data[i][cols.typ] || "").trim() : "";
+
+        entries.push({
+          row: i + 1,
+          date: dateStr,
+          stockId: stockId,
+          url: cols.url !== undefined ? String(data[i][cols.url] || "").trim() : "",
+          typ: typ,
+          person: cols.person !== undefined ? String(data[i][cols.person] || "").trim() : "",
+          teil: cols.teil !== undefined ? String(data[i][cols.teil] || "").trim() : "",
+          preis: cols.preis !== undefined ? String(data[i][cols.preis] || "").trim() : "",
+          artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
+          status: cols.status !== undefined ? String(data[i][cols.status] || "").trim() : ""
+        });
+      }
+
+      entries.sort(function(a, b) {
+        var ma = String(a.date).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        var mb = String(b.date).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (ma && mb) {
+          var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
+          var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
+          return db - da;
+        }
+        return 0;
+      });
+
+      return { success: true, entries: entries };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [] };
+    }
+  }
+
+function updateNachbestellung(sheetRow, fieldName, value) {
+    try {
+      var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+      var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+      if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
+
+      var lastCol = Math.max(1, Math.min(15, sheet.getLastColumn()));
+      var headerData = sheet.getRange(1, 1, Math.min(10, sheet.getLastRow()), lastCol).getValues();
+      var headerIdx = -1;
+      for (var h = 0; h < headerData.length; h++) {
+        var row = headerData[h].map(function(c) { return String(c || "").toLowerCase(); });
+        if (row.some(function(c) { return c.indexOf("stock") !== -1; })) { headerIdx = h; break; }
+      }
+      if (headerIdx === -1) headerIdx = 0;
+
+      var header = headerData[headerIdx];
+      var colMap = {};
+      for (var c = 0; c < header.length; c++) {
+        var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+        if (txt.indexOf("teil") !== -1 || txt.indexOf("benennung") !== -1 || txt.indexOf("ersatzteil") !== -1) colMap["teil"] = c + 1;
+        if (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("teilenr") !== -1) colMap["artikel"] = c + 1;
+        if (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1) colMap["status"] = c + 1;
+      }
+
+      var targetCol = colMap[fieldName];
+      if (!targetCol) return { success: false, message: "Spalte '" + fieldName + "' nicht gefunden!" };
+
+      sheet.getRange(sheetRow, targetCol).setValue(value);
+      SpreadsheetApp.flush();
+      return { success: true, message: "Gespeichert!" };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
   }

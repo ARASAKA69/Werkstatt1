@@ -686,6 +686,245 @@
   .ov-detail-val .highlight-green {
     font-weight: 800;
   }
+  .nb-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 24px;
+  }
+  .nb-modal.open {
+    display: flex;
+  }
+  .nb-dialog {
+    width: min(1100px, 100%);
+    max-height: min(90vh, 960px);
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .nb-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #242d39;
+  }
+  .nb-title {
+    color: #f2cc60;
+    font-size: 18px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .nb-close {
+    background: rgba(255,255,255,0.04);
+    color: #f2cc60;
+    border: 1px solid rgba(242, 204, 96, 0.14);
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .nb-toolbar {
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid #1d2530;
+    flex-wrap: wrap;
+  }
+  .nb-search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+  }
+  #nbSearchInput {
+    width: 100%;
+    background: #0f141c;
+    color: #58a6ff;
+    border: 1px solid #354152;
+    padding: 12px 16px;
+    font-size: 16px;
+    text-transform: uppercase;
+    font-weight: 700;
+    border-radius: 14px;
+    outline: none;
+    text-align: center;
+  }
+  #nbSearchInput::placeholder {
+    color: #6e7681;
+  }
+  .nb-autocomplete-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    display: none;
+    max-height: 240px;
+    overflow: auto;
+    background: #0d1117;
+    border: 1px solid #303b47;
+    border-radius: 14px;
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.4);
+    z-index: 5;
+  }
+  .nb-autocomplete-item {
+    padding: 10px 14px;
+    color: #c9d1d9;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    border-bottom: 1px solid #1d2530;
+  }
+  .nb-autocomplete-item:last-child { border-bottom: none; }
+  .nb-autocomplete-item:hover { background: #161b22; }
+  .nb-body {
+    min-height: 0;
+    overflow: auto;
+    padding: 0;
+    flex: 1;
+  }
+  .nb-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .nb-table th, .nb-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #1d2530;
+    font-size: 13px;
+  }
+  .nb-table th {
+    position: sticky;
+    top: 0;
+    background: #111722;
+    color: #f2cc60;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    z-index: 1;
+  }
+  .nb-table td { color: #d0d7de; }
+  .nb-table tr:last-child td { border-bottom: none; }
+  .nb-table .nb-row:hover td { background: #161d29; }
+  .nb-typ-exit {
+    color: #f85149;
+    font-weight: 800;
+  }
+  .nb-typ-mechanik {
+    color: #58a6ff;
+    font-weight: 800;
+  }
+  .nb-typ-qcheck {
+    color: #f2cc60;
+    font-weight: 800;
+  }
+  .nb-detail { display: none; }
+  .nb-detail.open { display: table-row; }
+  .nb-detail td {
+    padding: 16px;
+    background: #0a0e14;
+    border-bottom: 2px solid #242d39;
+  }
+  .nb-detail-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .nb-detail-box {
+    flex: 1 1 200px;
+    min-width: 180px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid #1d2530;
+    border-radius: 12px;
+    padding: 12px;
+  }
+  .nb-detail-lbl {
+    margin-bottom: 6px;
+    color: #9da7b3;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+  .nb-detail-val {
+    color: #d0d7de;
+    font-size: 14px;
+    word-break: break-word;
+  }
+  .nb-edit-input {
+    width: 100%;
+    background: #0f141c;
+    color: #ffffff;
+    border: 1px solid #354152;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 10px;
+    outline: none;
+  }
+  .nb-save-btn {
+    margin-top: 6px;
+    background: rgba(46, 160, 67, 0.14);
+    color: #56d364;
+    border: 1px solid rgba(86, 211, 100, 0.2);
+    border-radius: 10px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .nb-copy-box {
+    background: #21262d;
+    border: 1px dashed #58a6ff;
+    color: #58a6ff;
+    padding: 8px 12px;
+    text-align: center;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 800;
+  }
+  .nb-copy-box:hover { background: #30363d; color: #ffffff; }
+  .nb-print-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 8px;
+    padding-top: 10px;
+    border-top: 1px solid #1d2530;
+  }
+  .nb-print-btn {
+    background: rgba(88, 166, 255, 0.12);
+    color: #58a6ff;
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .nb-print-input {
+    width: 60px;
+    background: #0f141c;
+    color: #ffffff;
+    border: 1px solid #354152;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 10px;
+    outline: none;
+    text-align: center;
+  }
   .reifen-modal {
     position: fixed;
     inset: 0;
@@ -953,6 +1192,7 @@
       <div class="topbar-actions">
         <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
         <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
+        <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
       </div>
       <div class="topbar-credit">BY ARASAKA</div>
       <div class="topbar-head">
@@ -1069,6 +1309,41 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nb-modal" id="nbModal">
+    <div class="nb-dialog">
+      <div class="nb-header">
+        <div class="nb-title">Nachbestellungen</div>
+        <span id="nbTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
+        <button class="nb-close" onclick="closeNbModal()">Schließen</button>
+      </div>
+      <div class="nb-toolbar">
+        <div class="nb-search-wrap">
+          <input type="text" id="nbSearchInput" placeholder="Stock-ID suchen..." autocomplete="off">
+          <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
+        </div>
+      </div>
+      <div class="nb-body">
+        <table class="nb-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Datum</th>
+              <th>Stock-ID</th>
+              <th>Typ</th>
+              <th>Beschreibung</th>
+              <th>Artikel-Nr.</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="nbTableBody">
+            <tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1300,6 +1575,257 @@
 
     function escapeJs(text) {
       return String(text || "").replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    var nbAllEntries = [];
+    var nbFilteredEntries = [];
+
+    function closeNbModal() {
+      document.getElementById('nbModal').classList.remove('open');
+      nbAllEntries = [];
+      nbFilteredEntries = [];
+    }
+
+    function openNbModal() {
+      document.getElementById('nbModal').classList.add('open');
+      document.getElementById('nbSearchInput').value = '';
+      document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>';
+      document.getElementById('nbTotalBadge').innerText = '...';
+      closeNbAutocomplete();
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message) + '</td></tr>';
+          return;
+        }
+        nbAllEntries = res.entries || [];
+        nbFilteredEntries = nbAllEntries;
+        document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+        renderNbTable(nbAllEntries);
+      }).withFailureHandler(function(err) {
+        document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }).getNachbestellungen();
+    }
+
+    var NB_STATUS_OPTIONS = ["bestellt", "nicht bestellt", "teilweise angeliefert", "Angeliefert/Bereit für Tagesliste", "Fahrzeug RR", "Rückstand", "nicht genehmigt"];
+
+    function getNbTypStyle(typ) {
+      var t = String(typ || "").toLowerCase();
+      if(t.indexOf("exit") !== -1) return "border-left:4px solid #f85149;";
+      if(t.indexOf("mechanik") !== -1) return "border-left:4px solid #58a6ff;";
+      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "border-left:4px solid #f2cc60;";
+      return "border-left:4px solid #303b47;";
+    }
+
+    function getNbTypColor(typ) {
+      var t = String(typ || "").toLowerCase();
+      if(t.indexOf("exit") !== -1) return "color:#f85149;font-weight:800;";
+      if(t.indexOf("mechanik") !== -1) return "color:#58a6ff;font-weight:800;";
+      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "color:#f2cc60;font-weight:800;";
+      return "";
+    }
+
+    function buildNbStatusSelect(index, currentStatus, sheetRow) {
+      var html = '<select class="nb-edit-input" onchange="saveNbStatus(event,' + sheetRow + ',this.value,' + index + ')" onclick="event.stopPropagation();">';
+      var found = false;
+      for(var s = 0; s < NB_STATUS_OPTIONS.length; s++) {
+        var opt = NB_STATUS_OPTIONS[s];
+        var sel = opt.toLowerCase() === String(currentStatus || "").toLowerCase() ? ' selected' : '';
+        if(sel) found = true;
+        html += '<option value="' + escapeHtml(opt) + '"' + sel + '>' + escapeHtml(opt) + '</option>';
+      }
+      if(!found && currentStatus) {
+        html = '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>' + html.replace('<select ', '').replace('>', '');
+        html = '<select class="nb-edit-input" onchange="saveNbStatus(event,' + sheetRow + ',this.value,' + index + ')" onclick="event.stopPropagation();">' + '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>';
+        for(var s2 = 0; s2 < NB_STATUS_OPTIONS.length; s2++) {
+          html += '<option value="' + escapeHtml(NB_STATUS_OPTIONS[s2]) + '">' + escapeHtml(NB_STATUS_OPTIONS[s2]) + '</option>';
+        }
+        html += '</select>';
+      } else {
+        html += '</select>';
+      }
+      return html;
+    }
+
+    function renderNbTable(entries) {
+      var body = document.getElementById('nbTableBody');
+      if(!entries || !entries.length) {
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Keine offenen Nachbestellungen gefunden.</td></tr>';
+        return;
+      }
+      var html = '';
+      for(var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var rowStyle = getNbTypStyle(e.typ);
+        var typColor = getNbTypColor(e.typ);
+        html += '<tr class="nb-row" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
+          + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
+          + '<td style="white-space:nowrap;">' + escapeHtml(e.date) + '</td>'
+          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="' + typColor + '">' + escapeHtml(e.typ) + '</td>'
+          + '<td>' + escapeHtml(e.teil) + '</td>'
+          + '<td>' + escapeHtml(e.artikel) + '</td>'
+          + '<td style="font-weight:700;">' + escapeHtml(e.status || '-') + '</td>'
+          + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">WMS</button></td>'
+          + '</tr>';
+
+        html += '<tr class="nb-detail" id="nb-detail-' + i + '">'
+          + '<td colspan="8">'
+          + '<div class="nb-detail-inner">'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Beschreibung</div>'
+          +   '<div class="nb-detail-val">' + escapeHtml(e.teil || '-') + '</div>'
+          + '</div>'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Artikel-Nr.</div>'
+          +   '<div class="nb-detail-val">' + escapeHtml(e.artikel || '-') + '</div>'
+          + '</div>'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Status ändern</div>'
+          +   buildNbStatusSelect(i, e.status, e.row)
+          + '</div>'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Kopieren</div>'
+          +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
+          +   '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
+          + '</div>'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Etiketten</div>'
+          +   '<div class="nb-print-section">'
+          +     '<input type="number" class="nb-print-input" id="nb-qty-' + i + '" value="1" min="0">'
+          +     '<button class="nb-print-btn" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
+          +   '</div>'
+          + '</div>'
+          + '</div>'
+          + '</td>'
+          + '</tr>';
+      }
+      body.innerHTML = html;
+    }
+
+    function toggleNbDetail(index) {
+      var detail = document.getElementById('nb-detail-' + index);
+      var chev = document.getElementById('nb-chev-' + index);
+      if(!detail) return;
+      if(detail.classList.contains('open')) {
+        detail.classList.remove('open');
+        if(chev) chev.innerText = '▶';
+      } else {
+        detail.classList.add('open');
+        if(chev) chev.innerText = '▼';
+      }
+    }
+
+    function openNbInWms(event, stockId) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      closeNbModal();
+      document.getElementById('searchInput').value = stockId;
+      loadData();
+    }
+
+    function saveNbStatus(event, sheetRow, value, index) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      var sel = event ? event.target : null;
+      if(sel) sel.disabled = true;
+      google.script.run.withSuccessHandler(function(res) {
+        if(sel) sel.disabled = false;
+        if(res.success) {
+          if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 1500); }
+          if(value.toLowerCase() === 'angeliefert/bereit für tagesliste') {
+            for(var k = 0; k < nbAllEntries.length; k++) {
+              if(nbAllEntries[k].row === sheetRow) { nbAllEntries.splice(k, 1); break; }
+            }
+            filterNbBySearch();
+            document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+          }
+        } else {
+          if(sel) sel.style.borderColor = '#f85149';
+        }
+      }).withFailureHandler(function(err) {
+        if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
+      }).updateNachbestellung(sheetRow, 'status', value);
+    }
+
+    function copyNbValue(event, value) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      navigator.clipboard.writeText(value).catch(function() {});
+    }
+
+    function printNbLabel(event, stockId, index) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      var qtyInput = document.getElementById('nb-qty-' + index);
+      var qty = parseInt(qtyInput ? qtyInput.value : "1", 10);
+      if(isNaN(qty) || qty <= 0) return;
+      var typedInitials = document.getElementById('dymoInitials').value.trim();
+      var initials = typedInitials || "LAGER";
+      try {
+        if(typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) return;
+        var printers = dymo.label.framework.getPrinters();
+        if(printers.length === 0) return;
+        var printerName = printers[0].name;
+        var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><HasFixedLength>False</HasFixedLength><FixedLengthValue>0</FixedLengthValue><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><IsStatic>False</IsStatic><StaticDateTime>2025-07-30T10:14:27.0341230+02:00</StaticDateTime><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
+        var today = new Date();
+        var dateString = today.toLocaleDateString('de-DE');
+        var finalXml = baseXml.replace('__STOCKID__', stockId).replace('__DATE__', dateString).replace('__USER__', initials);
+        var label = dymo.label.framework.openLabelXml(finalXml);
+        var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: qty });
+        label.print(printerName, printParams);
+      } catch(err) {}
+    }
+
+    function closeNbAutocomplete() {
+      var list = document.getElementById('nbAutocompleteList');
+      list.innerHTML = '';
+      list.style.display = 'none';
+    }
+
+    document.getElementById('nbSearchInput').addEventListener('input', function() {
+      var search = normalizeStockInput(this.value);
+      closeNbAutocomplete();
+      if(!search) {
+        nbFilteredEntries = nbAllEntries;
+        renderNbTable(nbAllEntries);
+        return;
+      }
+      var matches = [];
+      var seen = {};
+      for(var i = 0; i < nbAllEntries.length; i++) {
+        var sid = normalizeStockInput(nbAllEntries[i].stockId);
+        if(sid.indexOf(search) !== -1 && !seen[sid]) {
+          matches.push(sid);
+          seen[sid] = true;
+          if(matches.length >= 20) break;
+        }
+      }
+      if(matches.length > 0) {
+        var list = document.getElementById('nbAutocompleteList');
+        list.innerHTML = matches.map(function(m) {
+          return '<div class="nb-autocomplete-item" data-value="' + escapeHtml(m) + '">' + escapeHtml(m).replace(search, '<span style="color:#58a6ff;">' + search + '</span>') + '</div>';
+        }).join('');
+        list.style.display = 'block';
+        Array.prototype.forEach.call(list.children, function(node) {
+          node.addEventListener('click', function() {
+            document.getElementById('nbSearchInput').value = this.getAttribute('data-value');
+            closeNbAutocomplete();
+            filterNbBySearch();
+          });
+        });
+      }
+      filterNbBySearch();
+    });
+
+    document.getElementById('nbSearchInput').addEventListener('keypress', function(e) {
+      if(e.key === 'Enter') { closeNbAutocomplete(); filterNbBySearch(); }
+    });
+
+    document.addEventListener('click', function(e) {
+      if(!e.target.closest('.nb-search-wrap')) closeNbAutocomplete();
+    });
+
+    function filterNbBySearch() {
+      var search = normalizeStockInput(document.getElementById('nbSearchInput').value);
+      if(!search) {
+        nbFilteredEntries = nbAllEntries;
+      } else {
+        nbFilteredEntries = nbAllEntries.filter(function(e) {
+          return normalizeStockInput(e.stockId).indexOf(search) !== -1;
+        });
+      }
+      renderNbTable(nbFilteredEntries);
     }
 
     function closeReifenAutocomplete() {
