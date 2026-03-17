@@ -1,7 +1,6 @@
 - [x] Kommentar + Regal als ein Flow: Kommentar rot im Sheet, Status auf Teilweise angeliefert, Regal setzen
 - [x] Kommentar- und Regal-Buttons zu einem gemeinsamen Button zusammenführen für unvollständige Aufträge
-
-- [x] Wortfilter: Öl + WM + KNOLL + STA + ALFAH ebenfalls grün markieren
 - [x] Kommentar beim gemeinsamen Regal-Speichern automatisch mitspeichern
+- [x] Wortfilter: Öl + WM + KNOLL + STA + ALFAH ebenfalls grün markieren
 - [x] Kleinen Button oben links bauen, der alle Stock-IDs mit Regalplatz sortiert anzeigt
 -----
