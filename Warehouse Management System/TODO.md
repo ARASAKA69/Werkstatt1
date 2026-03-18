@@ -18,6 +18,8 @@
 - [x] Move Auftrag Beenden & Carold Starten Button Centered also Vertically inside its card.
 - [x] Inside Übersicht Popup adding Copy button for the StockID beside of Im WMS öffnen button
 - [ ] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box.
+- [ ] Update Regal Places inside dropdown automatic every 2 seconds, when the dropdown is not in use. to make sure the places are updated even someone uses any place, without affecting the dropdown while choosing a place.
+- [ ] Auto add the Nachbestellung Beschreibung and StockID based on my Script down below, into my Werkstattauftrag.
 - [x] Nachbestellungen is filtering out everything not only the open orders, we need only the open orders in the list nit the ended oney, ofc. when i set one to delivered it should not be removed by itself cause i still need the infos. maybe we add a refresh button ontop to filter them out too when done.
 - [ ] Also its better to add a minimize button which ends in a small toolbar on the bottom to make sure i can reopen it and see all from before again, without need to re enter it and wait for new filtering of all the orders. Only Status bestellt inside the Dropdown.
 
