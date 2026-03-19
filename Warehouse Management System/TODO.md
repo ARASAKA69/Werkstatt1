@@ -15,7 +15,6 @@
 - [x] Add descripütion on Kommentar + Regal Speichern button over it (Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !)
 - [x] Move (Inside Regal xx are x Boxes) badge in the middle
 - [x] Make Regal x.x Dropdown font and Aktuell: Regal x.x badge bigger to be more present and visible.
-- [x] Move Auftrag Beenden & Carold Starten Button Centered also Vertically inside its card.
 - [x] Inside Übersicht Popup adding Copy button for the StockID beside of Im WMS öffnen button
 - [x] Update Regal Places inside dropdown automatic every 2 seconds, when the dropdown is not in use. to make sure the places are updated even someone uses any place, without affecting the dropdown while choosing a place.
 - [x] Auto add the Nachbestellung Beschreibung and StockID based on my Script down below, into my Werkstattauftrag.
@@ -31,14 +30,24 @@
 - [x] Copy button for the description in Nachbestellungen wasnt copying anything, only the stockid one worked. fixed it with a proper clipboard fallback and now both boxes flash green with a Kopiert! feedback so u actually know it copied.
 - [x] Made the Nachbestellungen detail sections color coded so its not all the same boring look. Kopieren section is now purple, Etiketten section golden and centered, and the Status box goes red when its nicht bestellt and green when angeliefert. also updates live when u change the dropdown no refresh needed.
 - [x] Built the Heutige Reifenausgabe feature, new button in topbar that opens a modal showing only todays and tomorrows tires from the Tagesliste sheet. only shows entries with 2 Reifen or 4 Reifen dropdown (the yellow/orange ones), ignores gestellt/fehlbestand/lagerbestand since those are already handled. color coded badges for 2 vs 4 tires, dates tagged as Heute/Morgen, yes/no columns green/red. minimize + refresh just like the other modals.
-
+- [x] Reifen annahme, after click buchen and popup for checking the order, i click yes and it just stays at reifne annahme window and dont sends me into the HUD for checking the StockID automatically as it should do.
+- [x] Heutige Reifenausgabe modal MASSIVE wider, toolbar wrapped to 2 lines so shit aint cramped, table + status buttons beefier
+- [x] Rename all Minimieren buttons to Zurück everywhere
+- [x] Main HUD golden borders a tick thicker (cards, inputs, topbar pills, nb gold box, etc)
+- [x] Heutige Reifenausgabe title now golden not white
+- [x] Modern golden spinners when loading: full HUD overlay w blur when scan/load order, same vibe in modals + reifen lade rows + nb badge speichern etc
+- [x] Tagesliste regal: no double "Tagesliste" text (pill hidden), only in dropdown, green theme when still on tagesliste, can pick real regals again in same list, data-server-regal so refresh dont break
+- [x] Regal select is now a CUSTOM dropdown so no more ugly white windows native list — matches HUD dark/gold (and green branch for tagesliste)
+- [x] That regal dropdown opens UPWARD + bigger scroll height cause downward theres no space
+- [x] Carol / Auftrag beenden button: killed margin-top auto so it actually sits dead center in the gold tools panel not glued to bottom
 -----
 
 # Offen
 
 
 - [ ] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
+
 - [ ] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box.
-- [ ] Reifen annahme, after click buchen and popup for checking the order, i click yes and it just stays at reifne annahme window and dont sends me into the HUD for checking the StockID automatically as it should do.
+
 - [ ] The regal counting is not correctly, because we also have boxes from Tagesliste/Nachbestellungen which are stored inside a regal and these boxes dont get counted inside the system, we need to take care of these ones too.
 - [ ] .

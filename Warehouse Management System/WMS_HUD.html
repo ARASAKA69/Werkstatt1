@@ -51,7 +51,7 @@
     padding: 10px 16px;
     border-radius: 12px;
     background: rgba(242, 204, 96, 0.08);
-    border: 1px solid rgba(242, 204, 96, 0.18);
+    border: 2px solid rgba(242, 204, 96, 0.26);
     cursor: pointer;
     transition: 0.2s;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
@@ -70,7 +70,7 @@
     padding: 6px 10px;
     border-radius: 999px;
     background: rgba(242, 204, 96, 0.08);
-    border: 1px solid rgba(242, 204, 96, 0.14);
+    border: 2px solid rgba(242, 204, 96, 0.22);
     flex-shrink: 0;
   }
   .topbar-head {
@@ -168,9 +168,12 @@
     overflow: hidden;
     align-items: stretch;
   }
+  .dashboard-grid:has(.shelf-dd-wrap.open) {
+    overflow: visible;
+  }
   .card {
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
-    border: 2px solid rgba(242, 204, 96, 0.35);
+    border: 3px solid rgba(242, 204, 96, 0.45);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -178,6 +181,9 @@
     min-height: 0;
     overflow: hidden;
     box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
+  }
+  .card:has(.shelf-dd-wrap.open) {
+    overflow: visible;
   }
   .card-header {
     display: flex;
@@ -219,7 +225,7 @@
     min-height: 120px;
     word-wrap: break-word;
     overflow: auto;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     line-height: 1.55;
     display: flex;
     flex-direction: column;
@@ -242,7 +248,7 @@
     min-height: 120px;
     background: #0d1117;
     color: #ffffff;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     border-radius: 14px;
     padding: 14px 16px;
     font-size: 15px;
@@ -267,7 +273,7 @@
   .input-row input {
     background: #0d1117;
     color: #fff;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -279,7 +285,7 @@
     width: 100%;
     background: #0d1117;
     color: #e3b341;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     padding: 14px 16px;
     font-size: 18px;
     font-weight: 800;
@@ -330,7 +336,6 @@
     font-size: 15px;
     font-weight: 900;
     border-radius: 16px;
-    margin-top: auto;
     min-width: 290px;
     box-shadow: 0 10px 20px rgba(227, 179, 65, 0.22);
     flex-shrink: 0;
@@ -377,6 +382,185 @@
     background: rgba(227, 179, 65, 0.1);
     border: 1px solid rgba(227, 179, 65, 0.18);
     white-space: nowrap;
+  }
+  .shelf-dd-wrap {
+    position: relative;
+    width: 100%;
+    margin-bottom: 14px;
+  }
+  .shelf-dd-native {
+    position: absolute !important;
+    left: -9999px !important;
+    width: 1px !important;
+    height: 1px !important;
+    opacity: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    pointer-events: none !important;
+  }
+  .shelf-dd-trigger {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    background: #0d1117;
+    color: #e3b341;
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    padding: 15px 17px;
+    font-size: 21px;
+    font-weight: 800;
+    border-radius: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    box-sizing: border-box;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.02);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .shelf-dd-trigger:hover {
+    border-color: rgba(242, 204, 96, 0.48);
+  }
+  .shelf-dd-trigger:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+  }
+  .shelf-dd-trigger-text {
+    flex: 1;
+    text-align: center;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .shelf-dd-chevron {
+    flex-shrink: 0;
+    font-size: 13px;
+    opacity: 0.85;
+    transition: transform 0.2s;
+  }
+  .shelf-dd-wrap.open .shelf-dd-chevron {
+    transform: rotate(180deg);
+  }
+  .shelf-dd-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    top: auto;
+    z-index: 20050;
+    background: linear-gradient(180deg, rgba(21,27,35,0.99) 0%, rgba(14,19,26,0.99) 100%);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border-radius: 14px;
+    box-shadow: 0 -14px 40px rgba(0,0,0,0.55);
+    overflow: hidden;
+  }
+  .shelf-dd-scroll {
+    max-height: min(420px, 58vh);
+    overflow-y: auto;
+    scrollbar-color: #354152 #0d1117;
+    scrollbar-width: thin;
+  }
+  .shelf-dd-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .shelf-dd-scroll::-webkit-scrollbar-track {
+    background: #0d1117;
+  }
+  .shelf-dd-scroll::-webkit-scrollbar-thumb {
+    background: #354152;
+    border-radius: 4px;
+  }
+  .shelf-dd-count {
+    font-weight: 800;
+  }
+  .shelf-dd-count--open {
+    color: #f2cc60;
+  }
+  .shelf-dd-count--full {
+    color: #f85149;
+  }
+  .shelf-dd-item:hover .shelf-dd-count--open {
+    color: #ffd866;
+  }
+  .shelf-dd-item:hover .shelf-dd-count--full {
+    color: #ff7b72;
+  }
+  .shelf-dd-item.is-selected .shelf-dd-count--open {
+    color: #f2cc60;
+  }
+  .shelf-dd-item.is-selected .shelf-dd-count--full {
+    color: #ff7b72;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger .shelf-dd-count--open {
+    color: #f2cc60;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger .shelf-dd-count--full {
+    color: #f85149;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item .shelf-dd-count--open {
+    color: #f2cc60;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item .shelf-dd-count--full {
+    color: #f85149;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item:hover .shelf-dd-count--open {
+    color: #ffd866;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item:hover .shelf-dd-count--full {
+    color: #ff7b72;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item.is-selected .shelf-dd-count--open {
+    color: #f2cc60;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item.is-selected .shelf-dd-count--full {
+    color: #ff7b72;
+  }
+  .shelf-dd-item {
+    padding: 15px 17px;
+    color: #e3b341;
+    font-size: 19px;
+    font-weight: 700;
+    cursor: pointer;
+    border-bottom: 1px solid #1d2530;
+    text-align: center;
+    transition: background 0.12s, color 0.12s;
+  }
+  .shelf-dd-item:last-child {
+    border-bottom: none;
+  }
+  .shelf-dd-item:hover {
+    background: rgba(88, 166, 255, 0.14);
+    color: #58a6ff;
+  }
+  .shelf-dd-item.is-selected {
+    background: rgba(242, 204, 96, 0.12);
+    color: #f2cc60;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger {
+    color: #56d364;
+    border-color: rgba(86, 211, 100, 0.45);
+    background: rgba(86, 211, 100, 0.08);
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger:focus {
+    border-color: rgba(86, 211, 100, 0.65);
+    box-shadow: 0 0 0 3px rgba(86, 211, 100, 0.22);
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-panel {
+    border-color: rgba(86, 211, 100, 0.4);
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item {
+    color: #7ee787;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item:hover {
+    background: rgba(86, 211, 100, 0.16);
+    color: #56d364;
+  }
+  .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item.is-selected {
+    background: rgba(86, 211, 100, 0.18);
+    color: #aff5b4;
   }
   .shelf-count-badge {
     display: none;
@@ -435,7 +619,7 @@
   }
   .tools-panel {
     background: rgba(13, 17, 23, 0.55);
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -450,9 +634,9 @@
   }
   .tools-panel.secondary {
     flex: 1;
+    min-height: 0;
     justify-content: center;
     align-items: center;
-    display: flex;
   }
   .tools-panel-title {
     color: #f2cc60;
@@ -491,7 +675,7 @@
     width: 100%;
     background: #0d1117;
     color: #fff;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -548,7 +732,85 @@
       grid-template-columns: 1fr 0.7fr;
     }
   }
-  .overlay-block { opacity: 0.2; pointer-events: none; }
+  .overlay-block { opacity: 0.2; pointer-events: none; filter: blur(2px); }
+  .hud-busy-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9998;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(9, 13, 19, 0.52);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .hud-busy-overlay.open {
+    display: flex;
+  }
+  .hud-busy-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+    padding: 30px 44px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.96) 0%, rgba(14, 19, 26, 0.96) 100%);
+    border: 2px solid rgba(242, 204, 96, 0.4);
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.5);
+  }
+  .hud-busy-text {
+    color: #f2cc60;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-align: center;
+    max-width: 440px;
+    line-height: 1.4;
+  }
+  .hud-spin {
+    display: inline-block;
+    width: 40px;
+    height: 40px;
+    border: 3px solid rgba(242, 204, 96, 0.22);
+    border-top-color: #f2cc60;
+    border-radius: 50%;
+    animation: hudSpin 0.72s linear infinite;
+    box-sizing: border-box;
+    flex-shrink: 0;
+  }
+  .hud-spin--sm {
+    width: 22px;
+    height: 22px;
+    border-width: 2px;
+  }
+  .hud-spin--lg {
+    width: 54px;
+    height: 54px;
+    border-width: 4px;
+  }
+  @keyframes hudSpin {
+    to { transform: rotate(360deg); }
+  }
+  .hud-load-cell {
+    padding: 26px 18px !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+  }
+  .hud-load-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .hud-load-inline--compact {
+    gap: 10px;
+    justify-content: center;
+  }
+  .hud-load-label {
+    color: #c9d1d9;
+  }
   .overview-modal {
     position: fixed;
     inset: 0;
@@ -591,7 +853,7 @@
   .overview-close {
     background: rgba(255,255,255,0.04);
     color: #f2cc60;
-    border: 1px solid rgba(242, 204, 96, 0.14);
+    border: 2px solid rgba(242, 204, 96, 0.24);
     border-radius: 12px;
     padding: 10px 14px;
     font-size: 13px;
@@ -735,7 +997,7 @@
   .nb-close {
     background: rgba(255,255,255,0.04);
     color: #f2cc60;
-    border: 1px solid rgba(242, 204, 96, 0.14);
+    border: 2px solid rgba(242, 204, 96, 0.24);
     border-radius: 12px;
     padding: 10px 14px;
     font-size: 13px;
@@ -910,7 +1172,7 @@
   .nb-box-purple .nb-detail-lbl { color: #a371f7; }
   .nb-box-gold {
     background: rgba(227,180,60,0.06);
-    border-color: rgba(227,180,60,0.35);
+    border: 2px solid rgba(227,180,60,0.42);
     text-align: center;
   }
   .nb-box-gold .nb-detail-lbl { color: #e3b43c; }
@@ -958,8 +1220,8 @@
   }
   .ra-modal.open { display: flex; }
   .ra-dialog {
-    width: min(700px, 100%);
-    max-height: min(90vh, 800px);
+    width: min(1320px, calc(100vw - 40px));
+    max-height: min(92vh, 940px);
     background: linear-gradient(180deg, rgba(21,27,35,0.99) 0%, rgba(14,19,26,0.99) 100%);
     border: 1px solid #2d3642;
     border-radius: 18px;
@@ -970,54 +1232,140 @@
   }
   .ra-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 18px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    padding: 18px 22px;
     border-bottom: 1px solid #242d39;
     flex-shrink: 0;
   }
+  .ra-header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .ra-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
   .ra-title {
-    color: #ffffff;
-    font-size: 16px;
+    color: #f2cc60;
+    font-size: 18px;
     font-weight: 900;
     letter-spacing: 1px;
     text-transform: uppercase;
+  }
+  .ra-total-badge {
+    padding: 7px 18px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 13px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    border: 2px solid transparent;
+  }
+  .ra-total-loading {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(157,167,179,0.1);
+    border-color: rgba(157,167,179,0.28);
+    color: #9da7b3;
+  }
+  .ra-total-mixed {
+    background: rgba(242,204,96,0.12);
+    border-color: rgba(242,204,96,0.32);
+    color: #f2cc60;
+  }
+  .ra-total-complete {
+    background: rgba(63,185,80,0.12);
+    border-color: rgba(63,185,80,0.3);
+    color: #3fb950;
+  }
+  .ra-total-error {
+    background: rgba(248,81,73,0.12);
+    border-color: rgba(248,81,73,0.28);
+    color: #f85149;
+  }
+  .ra-btn {
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.15s;
+    border: 1px solid;
+    white-space: nowrap;
+  }
+  .ra-btn-print {
+    background: rgba(187,128,255,0.12);
+    color: #bb80ff;
+    border-color: rgba(187,128,255,0.22);
+  }
+  .ra-btn-print:hover {
+    filter: brightness(1.12);
+  }
+  .ra-btn-refresh {
+    background: rgba(88,166,255,0.12);
+    color: #58a6ff;
+    border-color: rgba(88,166,255,0.2);
+  }
+  .ra-btn-refresh:hover {
+    filter: brightness(1.12);
   }
   .ra-close {
     background: rgba(248,81,73,0.12);
     color: #f85149;
     border: 1px solid rgba(248,81,73,0.2);
     border-radius: 12px;
-    padding: 8px 18px;
-    font-size: 12px;
+    padding: 10px 20px;
+    font-size: 13px;
     font-weight: 800;
     cursor: pointer;
     letter-spacing: 0.5px;
+    white-space: nowrap;
   }
   .ra-body {
-    padding: 0;
+    padding: 10px 18px 18px;
     overflow: auto;
     flex: 1;
   }
   .ra-table {
+    table-layout: fixed;
     width: 100%;
     border-collapse: collapse;
-    font-size: 13px;
+    font-size: 14px;
   }
   .ra-table thead th {
     position: sticky;
     top: 0;
     background: #0d1117;
     color: #9da7b3;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.8px;
     text-transform: uppercase;
-    padding: 10px 12px;
+    padding: 12px 16px;
     text-align: left;
     border-bottom: 2px solid #242d39;
     z-index: 2;
+  }
+  .ra-col-date { width: 22%; }
+  .ra-col-stock { width: 40%; }
+  .ra-col-qty { width: 14%; text-align: center; }
+  .ra-col-status { width: 24%; text-align: center; }
+  .ra-cell-stock {
+    color: #58a6ff;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.04em;
+    word-break: break-word;
   }
   .ra-table tbody tr {
     border-bottom: 1px solid #1d2530;
@@ -1025,10 +1373,12 @@
   }
   .ra-table tbody tr:hover { background: rgba(255,255,255,0.03); }
   .ra-table tbody td {
-    padding: 10px 12px;
+    padding: 14px 16px;
     color: #d0d7de;
     vertical-align: middle;
   }
+  .ra-table tbody td.ra-col-qty { text-align: center; }
+  .ra-table tbody td.ra-col-status { text-align: center; }
   .ra-badge-2 {
     display: inline-block;
     padding: 3px 10px;
@@ -1061,13 +1411,14 @@
   .ra-no { color: #f85149; font-weight: 800; }
   .ra-status-btn {
     display: inline-block;
-    padding: 4px 14px;
-    border-radius: 10px;
+    padding: 9px 20px;
+    border-radius: 12px;
     font-weight: 800;
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     border: 1px solid;
     transition: 0.15s;
+    min-width: 11rem;
   }
   .ra-status-btn:hover { filter: brightness(1.2); }
   .ra-status-gestellt {
@@ -1085,11 +1436,12 @@
     color: #3fb950;
     border: 1px solid rgba(63,185,80,0.3);
     border-radius: 12px;
-    padding: 8px 16px;
-    font-size: 12px;
+    padding: 10px 20px;
+    font-size: 13px;
     font-weight: 800;
     cursor: pointer;
     transition: 0.15s;
+    white-space: nowrap;
   }
   .ra-alle-btn:hover { background: rgba(63,185,80,0.25); }
   .ra-alle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -1450,7 +1802,7 @@
     font-weight: 500;
   }
   .reifen-size-section {
-    border-top: 2px solid rgba(242, 204, 96, 0.25);
+    border-top: 3px solid rgba(242, 204, 96, 0.35);
     padding-top: 18px;
     margin-top: 4px;
   }
@@ -1472,7 +1824,7 @@
     flex: 1;
     background: #0f141c;
     color: #58a6ff;
-    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    border: 2.5px solid rgba(242, 204, 96, 0.34);
     padding: 14px 18px;
     font-size: 18px;
     font-weight: 700;
@@ -1558,7 +1910,7 @@
           <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
           <button class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
         </div>
-        <div class="topbar-credit">BY ARASAKA v1.1</div>
+        <div class="topbar-credit">BY ARASAKA v1.2</div>
       </div>
       <div class="topbar-head">
         <div>
@@ -1612,7 +1964,16 @@
             <span class="shelf-pill" id="currentShelfLabel">Aktuell: -</span>
             <span class="shelf-count-badge" id="currentShelfCountBadge" style="display:none;">-</span>
           </div>
-          <select id="shelfSelect"><option value="">Lade Regale...</option></select>
+          <div class="shelf-dd-wrap" id="shelfDdWrap">
+            <button type="button" class="shelf-dd-trigger" id="shelfDdTrigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="shelf-dd-trigger-text" id="shelfDdTriggerText">Lade Regale…</span>
+              <span class="shelf-dd-chevron">▼</span>
+            </button>
+            <div class="shelf-dd-panel" id="shelfDdPanel" role="listbox" hidden>
+              <div class="shelf-dd-scroll" id="shelfDdScroll"></div>
+            </div>
+            <select id="shelfSelect" class="shelf-dd-native"><option value="">Lade Regale...</option></select>
+          </div>
         </div>
       </div>
 
@@ -1663,7 +2024,7 @@
         <button class="overview-close" onclick="closeStockOverview()">Schließen</button>
       </div>
       <div class="overview-body">
-        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
+        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
         <div class="overview-table-wrap">
           <table class="overview-table">
             <thead>
@@ -1688,21 +2049,25 @@
   <div class="ra-modal" id="raModal">
     <div class="ra-dialog">
       <div class="ra-header">
-        <div class="ra-title">🛞 Heutige Reifenausgabe</div>
-        <span id="raTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
-        <button type="button" class="ra-alle-btn" id="raAlleBtn" onclick="stelleAlleReifenHud()">✅ Alle Reifen Stellen</button>
-        <button type="button" onclick="printRaList()" style="background:rgba(187,128,255,0.12);color:#bb80ff;border:1px solid rgba(187,128,255,0.2);border-radius:12px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;">🖨️ Drucken</button>
-        <button type="button" onclick="refreshRaModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;">🔄 Refresh</button>
-        <button class="ra-close" onclick="minimizeRaModal()">Minimieren</button>
+        <div class="ra-header-top">
+          <div class="ra-title">🛞 Heutige Reifenausgabe</div>
+          <span id="raTotalBadge" class="ra-total-badge ra-total-loading">...</span>
+        </div>
+        <div class="ra-toolbar">
+          <button type="button" class="ra-alle-btn" id="raAlleBtn" onclick="stelleAlleReifenHud()">✅ Alle Reifen Stellen</button>
+          <button type="button" class="ra-btn ra-btn-print" onclick="printRaList()">🖨️ Drucken</button>
+          <button type="button" class="ra-btn ra-btn-refresh" onclick="refreshRaModal()">🔄 Refresh</button>
+          <button class="ra-close" onclick="minimizeRaModal()">Zurück</button>
+        </div>
       </div>
       <div class="ra-body">
         <table class="ra-table">
           <thead>
             <tr>
-              <th>Datum</th>
-              <th>Stock-ID</th>
-              <th>Anzahl</th>
-              <th>Status</th>
+              <th class="ra-col-date">Datum</th>
+              <th class="ra-col-stock">Stock-ID</th>
+              <th class="ra-col-qty">Anzahl</th>
+              <th class="ra-col-status">Status</th>
             </tr>
           </thead>
           <tbody id="raTableBody">
@@ -1717,8 +2082,8 @@
     <div class="nb-dialog">
       <div class="nb-header">
         <div class="nb-title">Nachbestellungen</div>
-        <span id="nbTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
-        <button class="nb-close" onclick="minimizeNbModal()">Minimieren</button>
+        <span id="nbTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
+        <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
       </div>
       <div class="nb-toolbar">
         <div class="nb-search-wrap">
@@ -1754,7 +2119,7 @@
       <div class="reifen-header">
         <div class="reifen-title">Reifen Annahme</div>
         <button type="button" onclick="refreshReifenModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
-        <button class="reifen-close" onclick="minimizeReifenModal()">Minimieren</button>
+        <button class="reifen-close" onclick="minimizeReifenModal()">Zurück</button>
       </div>
       <div class="reifen-body">
         <div class="reifen-field">
@@ -1824,6 +2189,13 @@
     </div>
   </div>
 
+  <div id="hudBusyOverlay" class="hud-busy-overlay" aria-hidden="true">
+    <div class="hud-busy-card">
+      <div class="hud-spin hud-spin--lg"></div>
+      <div class="hud-busy-text" id="hudBusyText"></div>
+    </div>
+  </div>
+
   <script>
     var currentStock = "";
     var currentCarolUrl = "";
@@ -1875,10 +2247,101 @@
       if(e.key === 'Enter') loadData();
     });
 
+    function formatShelfDdLabelHtml(raw) {
+      var s = String(raw == null ? '' : raw);
+      var m = s.match(/^(.*?)(\((?:AKTUELL )?(\d+|\?)\/(\d+|\?)\))$/);
+      if(m) {
+        var frac = m[2];
+        var nStr = m[3];
+        var dStr = m[4];
+        var mod = ' shelf-dd-count--open';
+        if(nStr !== '?' && dStr !== '?') {
+          var n = parseInt(nStr, 10);
+          var d = parseInt(dStr, 10);
+          if(d > 0 && n === d) mod = ' shelf-dd-count--full';
+        }
+        return escapeHtml(m[1]) + '<span class="shelf-dd-count' + mod + '">' + escapeHtml(frac) + '</span>';
+      }
+      return escapeHtml(s);
+    }
+
+    function syncShelfTriggerFromNative() {
+      var sel = document.getElementById('shelfSelect');
+      var t = document.getElementById('shelfDdTriggerText');
+      if(!sel || !t) return;
+      var opt = sel.options[sel.selectedIndex];
+      t.innerHTML = opt ? formatShelfDdLabelHtml(opt.text) : '';
+    }
+
+    function closeShelfDd() {
+      var wrap = document.getElementById('shelfDdWrap');
+      var panel = document.getElementById('shelfDdPanel');
+      var trig = document.getElementById('shelfDdTrigger');
+      if(!wrap || !panel) return;
+      wrap.classList.remove('open');
+      panel.hidden = true;
+      shelfDropdownOpen = false;
+      if(trig) trig.setAttribute('aria-expanded', 'false');
+    }
+
+    function openShelfDd() {
+      var wrap = document.getElementById('shelfDdWrap');
+      var panel = document.getElementById('shelfDdPanel');
+      var trig = document.getElementById('shelfDdTrigger');
+      if(!wrap || !panel) return;
+      rebuildShelfCustomOptions();
+      wrap.classList.add('open');
+      panel.hidden = false;
+      shelfDropdownOpen = true;
+      if(trig) trig.setAttribute('aria-expanded', 'true');
+    }
+
+    function rebuildShelfCustomOptions() {
+      var sel = document.getElementById('shelfSelect');
+      var scroll = document.getElementById('shelfDdScroll');
+      if(!sel || !scroll) return;
+      var val = sel.value;
+      scroll.innerHTML = '';
+      for(var i = 0; i < sel.options.length; i++) {
+        var opt = sel.options[i];
+        var div = document.createElement('div');
+        div.className = 'shelf-dd-item' + (opt.value === val ? ' is-selected' : '');
+        div.setAttribute('role', 'option');
+        div.setAttribute('data-value', opt.value);
+        div.innerHTML = formatShelfDdLabelHtml(opt.text);
+        div.addEventListener('click', function(ev) {
+          ev.stopPropagation();
+          var v = this.getAttribute('data-value');
+          sel.value = v;
+          syncShelfTriggerFromNative();
+          closeShelfDd();
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        scroll.appendChild(div);
+      }
+      syncShelfTriggerFromNative();
+    }
+
     var shelfSelectEl = document.getElementById('shelfSelect');
-    shelfSelectEl.addEventListener('focus', function() { shelfDropdownOpen = true; });
-    shelfSelectEl.addEventListener('blur', function() { shelfDropdownOpen = false; });
-    shelfSelectEl.addEventListener('mousedown', function() { shelfDropdownOpen = true; });
+    var shelfDdTriggerEl = document.getElementById('shelfDdTrigger');
+    if(shelfDdTriggerEl) {
+      shelfDdTriggerEl.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var wrap = document.getElementById('shelfDdWrap');
+        if(wrap && wrap.classList.contains('open')) closeShelfDd();
+        else openShelfDd();
+      });
+    }
+    shelfSelectEl.addEventListener('change', function() {
+      syncShelfTriggerFromNative();
+      applyTageslisteShelfUi((this.dataset.serverRegal || '').trim());
+    });
+    new MutationObserver(function() {
+      syncShelfTriggerFromNative();
+      var wrap = document.getElementById('shelfDdWrap');
+      if(wrap && wrap.classList.contains('open')) rebuildShelfCustomOptions();
+    }).observe(shelfSelectEl, { childList: true, subtree: true });
+    syncShelfTriggerFromNative();
 
     function startShelfRefresh() {
       stopShelfRefresh();
@@ -1889,18 +2352,64 @@
       if(shelfRefreshTimer) { clearInterval(shelfRefreshTimer); shelfRefreshTimer = null; }
     }
 
+    function isRegalTagesliste(regal) {
+      return String(regal || '').trim().toLowerCase() === 'tagesliste';
+    }
+
+    function applyTageslisteShelfUi(regal) {
+      var sel = document.getElementById('shelfSelect');
+      var pill = document.getElementById('currentShelfLabel');
+      var wrap = document.getElementById('shelfDdWrap');
+      if(!sel || !pill || !wrap) return;
+      if(isRegalTagesliste(regal)) {
+        pill.style.display = 'none';
+        if(sel.value === 'Tagesliste') wrap.classList.add('shelf-dd-tagesliste');
+        else wrap.classList.remove('shelf-dd-tagesliste');
+      } else {
+        wrap.classList.remove('shelf-dd-tagesliste');
+        pill.style.display = '';
+      }
+    }
+
     function refreshShelfCounts() {
       if(!currentStock || shelfDropdownOpen) return;
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success || shelfDropdownOpen) return;
         var sel = document.getElementById('shelfSelect');
         var currentVal = sel.value;
-        var currentRegal = document.getElementById('currentShelfLabel').innerText.replace('Aktuell: ', '').trim();
+        var serverRegal = (sel.dataset.serverRegal || '').trim();
+        var currentRegal = serverRegal;
+        if(!currentRegal) {
+          var labTxt = document.getElementById('currentShelfLabel').innerText.trim();
+          currentRegal = labTxt.indexOf('Aktuell: ') === 0 ? labTxt.replace('Aktuell: ', '').trim() : labTxt;
+        }
         var shelfMap = {};
         for(var i = 0; i < res.shelves.length; i++) {
           shelfMap[res.shelves[i].name] = res.shelves[i].count;
         }
         sel.innerHTML = '';
+        if(isRegalTagesliste(currentRegal)) {
+          sel.innerHTML = '<option value="Tagesliste">Tagesliste</option>';
+          for(var name in shelfMap) {
+            if(shelfMap[name] < 5) {
+              sel.innerHTML += '<option value="' + name + '">' + name + ' (' + shelfMap[name] + '/5)</option>';
+            }
+          }
+          document.getElementById('currentShelfCountBadge').style.display = 'none';
+          var restoredSel = false;
+          if(currentVal) {
+            for(var ci = 0; ci < sel.options.length; ci++) {
+              if(sel.options[ci].value === currentVal) {
+                sel.value = currentVal;
+                restoredSel = true;
+                break;
+              }
+            }
+          }
+          if(!restoredSel && isRegalTagesliste(serverRegal)) sel.value = 'Tagesliste';
+          applyTageslisteShelfUi(serverRegal);
+          return;
+        }
         if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER') {
           var cnt = shelfMap[currentRegal] !== undefined ? shelfMap[currentRegal] : '?';
           sel.innerHTML += '<option value="' + currentRegal + '">' + currentRegal + ' (AKTUELL ' + cnt + '/5)</option>';
@@ -1913,6 +2422,7 @@
           }
         }
         if(currentVal) sel.value = currentVal;
+        applyTageslisteShelfUi(currentRegal);
         var badge = document.getElementById('currentShelfCountBadge');
         if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER' && shelfMap[currentRegal] !== undefined) {
           var c = shelfMap[currentRegal];
@@ -1932,6 +2442,7 @@
     });
     document.addEventListener('click', function(e) {
       if(!e.target.closest('.reifen-autocomplete')) closeReifenAutocomplete();
+      if(!e.target.closest('#shelfDdWrap')) closeShelfDd();
     });
     commentEditor.addEventListener('input', function() {
       refreshCrossHighlights(true);
@@ -1952,10 +2463,30 @@
       el.style.color = color || "#58a6ff";
     }
 
+    function setHudBusy(active, message) {
+      var el = document.getElementById('hudBusyOverlay');
+      var tx = document.getElementById('hudBusyText');
+      if(!el) return;
+      if(active) {
+        el.classList.add('open');
+        el.setAttribute('aria-hidden', 'false');
+        if(tx) tx.textContent = message || '';
+      } else {
+        el.classList.remove('open');
+        el.setAttribute('aria-hidden', 'true');
+        if(tx) tx.textContent = '';
+      }
+    }
+
+    function hudLoadingRowHtml(colspan, message) {
+      return '<tr><td colspan="' + colspan + '" class="hud-load-cell"><div class="hud-load-inline"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml(message) + '</span></div></td></tr>';
+    }
+
     function toggleUI(enabled) {
       var grid = document.getElementById('mainGrid');
       if(enabled) {
         grid.classList.remove('overlay-block');
+        setHudBusy(false);
       } else {
         grid.classList.add('overlay-block');
         stopShelfRefresh();
@@ -2053,7 +2584,7 @@
       var modal = document.getElementById('overviewModal');
       var body = document.getElementById('overviewTableBody');
       modal.classList.add('open');
-      body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9da7b3;padding:18px;">Lade Übersicht...</td></tr>';
+      body.innerHTML = hudLoadingRowHtml(6, 'Lade Übersicht…');
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
           body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
@@ -2084,8 +2615,10 @@
         return;
       }
       raSessionActive = true;
-      document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>';
-      document.getElementById('raTotalBadge').innerText = '...';
+      document.getElementById('raTableBody').innerHTML = hudLoadingRowHtml(4, 'Lade Reifenausgabe…');
+      var raB = document.getElementById('raTotalBadge');
+      raB.className = 'ra-total-badge ra-total-loading';
+      raB.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span>Lade…</span>';
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
           document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message) + '</td></tr>';
@@ -2106,15 +2639,11 @@
       }
       var badge = document.getElementById('raTotalBadge');
       if(offen === 0 && done > 0) {
+        badge.className = 'ra-total-badge ra-total-complete';
         badge.innerText = '✅ Alle ' + done + ' gestellt';
-        badge.style.background = 'rgba(63,185,80,0.12)';
-        badge.style.borderColor = 'rgba(63,185,80,0.3)';
-        badge.style.color = '#3fb950';
       } else {
+        badge.className = 'ra-total-badge ra-total-mixed';
         badge.innerText = offen + ' offen / ' + done + ' gestellt';
-        badge.style.background = 'rgba(242,204,96,0.12)';
-        badge.style.borderColor = 'rgba(242,204,96,0.18)';
-        badge.style.color = '#f2cc60';
       }
       document.getElementById('raAlleBtn').disabled = (offen === 0);
     }
@@ -2132,8 +2661,10 @@
     function refreshRaModal() {
       raSessionActive = false;
       raAllEntries = [];
-      document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>';
-      document.getElementById('raTotalBadge').innerText = '...';
+      document.getElementById('raTableBody').innerHTML = hudLoadingRowHtml(4, 'Lade Reifenausgabe…');
+      var raB = document.getElementById('raTotalBadge');
+      raB.className = 'ra-total-badge ra-total-loading';
+      raB.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span>Lade…</span>';
       raSessionActive = true;
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
@@ -2168,10 +2699,10 @@
         var statusClass = e.gestellt ? 'ra-status-btn ra-status-gestellt' : 'ra-status-btn ra-status-offen';
         var statusLabel = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen';
         html += '<tr class="' + rowClass + '" id="ra-row-' + i + '">'
-          + '<td class="' + dateClass + '">' + escapeHtml(dateLabel) + '</td>'
-          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
-          + '<td><span class="' + reifenBadge + '">' + e.amount + ' Reifen</span></td>'
-          + '<td><button type="button" class="' + statusClass + '" id="ra-status-' + i + '" onclick="toggleRaStatus(' + i + ')">' + statusLabel + '</button></td>'
+          + '<td class="ra-col-date ' + dateClass + '">' + escapeHtml(dateLabel) + '</td>'
+          + '<td class="ra-col-stock ra-cell-stock">' + escapeHtml(e.stockId) + '</td>'
+          + '<td class="ra-col-qty"><span class="' + reifenBadge + '">' + e.amount + ' Reifen</span></td>'
+          + '<td class="ra-col-status"><button type="button" class="' + statusClass + '" id="ra-status-' + i + '" onclick="toggleRaStatus(' + i + ')">' + statusLabel + '</button></td>'
           + '</tr>';
       }
       body.innerHTML = html;
@@ -2192,7 +2723,9 @@
           renderRaTable(raAllEntries);
         } else {
           if(btn) { btn.disabled = false; btn.innerText = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen'; }
-          document.getElementById('raTotalBadge').innerText = 'Fehler: ' + (res.message || '?');
+          var rb = document.getElementById('raTotalBadge');
+          rb.className = 'ra-total-badge ra-total-error';
+          rb.innerText = 'Fehler: ' + (res.message || '?');
         }
       }).withFailureHandler(function(err) {
         if(btn) { btn.disabled = false; btn.innerText = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen'; }
@@ -2295,8 +2828,8 @@
       }
       nbSessionActive = true;
       document.getElementById('nbSearchInput').value = '';
-      document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>';
-      document.getElementById('nbTotalBadge').innerText = '...';
+      document.getElementById('nbTableBody').innerHTML = hudLoadingRowHtml(8, 'Lade Nachbestellungen…');
+      document.getElementById('nbTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
       closeNbAutocomplete();
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
@@ -2448,7 +2981,7 @@
       var sel = event ? event.target : null;
       if(sel) sel.disabled = true;
       var badge = document.getElementById('nbTotalBadge');
-      if(badge) badge.innerText = 'Speichere...';
+      if(badge) badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
       google.script.run.withSuccessHandler(function(res) {
         if(sel) sel.disabled = false;
         if(res.success) {
@@ -2472,8 +3005,8 @@
 
     function refreshNbModal() {
       document.getElementById('nbSearchInput').value = '';
-      document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>';
-      document.getElementById('nbTotalBadge').innerText = '...';
+      document.getElementById('nbTableBody').innerHTML = hudLoadingRowHtml(8, 'Lade Nachbestellungen…');
+      document.getElementById('nbTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
       closeNbAutocomplete();
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
@@ -2657,10 +3190,14 @@
       }).getAvailableReifenStockIds(tabName);
     }
 
-    function setReifenStatus(msg, color) {
+    function setReifenStatus(msg, color, useSpinner) {
       var el = document.getElementById('reifenStatus');
-      el.innerText = msg;
       el.style.color = color || "#8b949e";
+      if(useSpinner) {
+        el.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml(msg) + '</span></span>';
+      } else {
+        el.innerText = msg;
+      }
     }
 
     function setReifenActionState(enabled) {
@@ -2736,14 +3273,14 @@
       }
       reifenSessionActive = true;
       resetReifenState(false);
-      setReifenStatus("Lade Tabellenblätter...", "#f2cc60");
+      setReifenStatus("Lade Tabellenblätter…", "#f2cc60", true);
       loadReifenTabs();
     }
 
     function refreshReifenModal() {
       reifenSessionActive = false;
       resetReifenState(false);
-      setReifenStatus("Lade Tabellenblätter...", "#f2cc60");
+      setReifenStatus("Lade Tabellenblätter…", "#f2cc60", true);
       loadReifenTabs();
       reifenSessionActive = true;
     }
@@ -2762,7 +3299,7 @@
       var badge = document.getElementById('reifenSizeBadge');
       statusEl.style.display = 'block';
       statusEl.style.color = '#f2cc60';
-      statusEl.innerText = 'Suche "' + query + '" in Tabellenblättern der letzten 2 Monate...';
+      statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('Suche "' + query + '" in Tabellenblättern der letzten 2 Monate…') + '</span></span>';
       resultsEl.style.display = 'none';
       badge.style.display = 'none';
       google.script.run.withSuccessHandler(function(res) {
@@ -2824,7 +3361,7 @@
       var statusEl = document.getElementById('reifenSizeStatus');
       statusEl.style.display = 'block';
       statusEl.style.color = '#f2cc60';
-      statusEl.innerText = 'Buche ' + tire.stockId + ' aus ' + tire.tabName + '...';
+      statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('Buche ' + tire.stockId + ' aus ' + tire.tabName + '…') + '</span></span>';
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
           statusEl.style.color = '#f85149';
@@ -2832,6 +3369,7 @@
           if(btn) { btn.disabled = false; btn.innerText = 'Buchen'; }
           return;
         }
+        currentReifenResult = res;
         statusEl.style.color = '#56d364';
         var finalMessage = '✅ ' + res.message;
         printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge);
@@ -2900,7 +3438,7 @@
       resetReifenState(true);
       if(!tab) return setReifenStatus("❌ Bitte zuerst ein Tabellenblatt auswählen.", "#f85149");
       if(!stockId) return setReifenStatus("❌ Bitte eine Stock-ID eingeben.", "#f85149");
-      setReifenStatus("Suche " + stockId + " in '" + tab + "'...", "#f2cc60");
+      setReifenStatus("Suche " + stockId + " in '" + tab + "'…", "#f2cc60", true);
       google.script.run
         .withSuccessHandler(function(res) {
           if(res.found) {
@@ -2924,7 +3462,7 @@
       if(!tab) return setReifenStatus("❌ Bitte zuerst ein Tabellenblatt auswählen.", "#f85149");
       if(!stockId) return setReifenStatus("❌ Bitte zuerst eine Stock-ID prüfen.", "#f85149");
       setReifenActionState(false);
-      setReifenStatus((isDelivered ? "Buche Reifen als DA..." : "Buche Reifen als FEHLT..."), "#f2cc60");
+      setReifenStatus((isDelivered ? "Buche Reifen als DA…" : "Buche Reifen als FEHLT…"), "#f2cc60", true);
       google.script.run
         .withSuccessHandler(function(res) {
           if(!res.success) {
@@ -2965,7 +3503,16 @@
     }
 
     function confirmReifenFinished(openInWms) {
-      var stockId = currentReifenResult && currentReifenResult.stockId ? currentReifenResult.stockId : "";
+      var stockId = "";
+      if(currentReifenResult && currentReifenResult.stockId) {
+        stockId = String(currentReifenResult.stockId).trim();
+      }
+      if(!stockId) {
+        stockId = String(document.getElementById('reifenCopyStock').innerText || "").trim();
+      }
+      if(!stockId) {
+        stockId = normalizeStockInput(reifenStockInput.value);
+      }
       closeReifenConfirm();
       resetReifenState(false);
       if(openInWms && stockId) {
@@ -3147,23 +3694,27 @@
       if(!isStockIdFormat(id)) {
         setStatus("🔍 Suche Bestellnummer '" + id + "'...", "#f2cc60");
         toggleUI(false);
+        setHudBusy(true, 'Suche Bestellnummer…');
         google.script.run.withSuccessHandler(function(res) {
           if(res.found && res.stockId) {
             setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
             document.getElementById('searchInput').value = res.stockId;
+            setHudBusy(true, 'Lade Auftrag…');
             setTimeout(function() { loadData(); }, 600);
           } else {
             setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
-            toggleUI(false);
+            toggleUI(true);
           }
         }).withFailureHandler(function(err) {
           setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+          toggleUI(true);
         }).searchByOrderNumber(id);
         return;
       }
       
       setStatus("Scanne Datenbank...", "#f2cc60");
       toggleUI(false);
+      setHudBusy(true, 'Scanne Datenbank…');
 
       google.script.run.withSuccessHandler(function(res) {
         if(res.success) {
@@ -3175,16 +3726,22 @@
 
           document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText);
           setCommentText(res.kommAnlieferung || "");
-          document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
           var shelfCountBadge = document.getElementById('currentShelfCountBadge');
-          if(/^Regal\s+\d+\.\d+$/i.test(res.regal || "")) {
-            var shelfCount = res.currentShelfCount || 0;
-            var shelfWord = shelfCount === 1 ? "Kiste" : "Kisten";
-            var shelfVerb = shelfCount === 1 ? "ist" : "sind";
-            shelfCountBadge.style.display = "inline-flex";
-            shelfCountBadge.innerText = "In " + res.regal + " " + shelfVerb + " " + shelfCount + " " + shelfWord;
-          } else {
+          var regalVal = (res.regal || "").trim();
+          if(isRegalTagesliste(regalVal)) {
+            document.getElementById('currentShelfLabel').innerText = "";
             shelfCountBadge.style.display = "none";
+          } else {
+            document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
+            if(/^Regal\s+\d+\.\d+$/i.test(res.regal || "")) {
+              var shelfCount = res.currentShelfCount || 0;
+              var shelfWord = shelfCount === 1 ? "Kiste" : "Kisten";
+              var shelfVerb = shelfCount === 1 ? "ist" : "sind";
+              shelfCountBadge.style.display = "inline-flex";
+              shelfCountBadge.innerText = "In " + res.regal + " " + shelfVerb + " " + shelfCount + " " + shelfWord;
+            } else {
+              shelfCountBadge.style.display = "none";
+            }
           }
 
           var badge = document.getElementById('badgeReifen');
@@ -3210,17 +3767,29 @@
 
           var sel = document.getElementById('shelfSelect');
           var currentRegal = (res.regal || "").trim();
+          sel.dataset.serverRegal = currentRegal;
           sel.innerHTML = '';
           if(currentRegal) {
-            sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
+            if(isRegalTagesliste(currentRegal)) {
+              sel.innerHTML = '<option value="Tagesliste" selected>Tagesliste</option>';
+              res.freeShelves.forEach(function(s) {
+                sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+              });
+            } else {
+              sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
+              res.freeShelves.forEach(function(s) {
+                if(s.name !== currentRegal) {
+                  sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+                }
+              });
+            }
           } else {
             sel.innerHTML = '<option value="" selected>-- FREIES REGAL WÄHLEN --</option>';
-          }
-          res.freeShelves.forEach(function(s) {
-            if(s.name !== currentRegal) {
+            res.freeShelves.forEach(function(s) {
               sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-            }
-          });
+            });
+          }
+          applyTageslisteShelfUi(currentRegal);
 
           document.getElementById('btnCarol').disabled = !res.carolUrl;
 
@@ -3234,7 +3803,11 @@
           startShelfRefresh();
         } else {
           setStatus("❌ FEHLER: " + res.message, "#f85149");
+          toggleUI(true);
         }
+      }).withFailureHandler(function(err) {
+        setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
+        toggleUI(true);
       }).fetchWmsData(id);
     }
 
@@ -3397,16 +3970,20 @@
         return;
       }
       document.getElementById('btnCarol').disabled = true;
+      toggleUI(false);
+      setHudBusy(true, 'Speichere & Carol…');
       setStatus("🚀 Carol gestartet. Sheet wird im Hintergrund aktualisiert...", "#58a6ff");
       google.script.run
         .withSuccessHandler(function(res) {
           if(!res.success) {
             setStatus("❌ FEHLER: " + res.message, "#f85149");
             document.getElementById('btnCarol').disabled = false;
+            toggleUI(true);
             return;
           }
 
           setStatus("🚀 Setze Tagesliste & triggere Carol...", "#9B59B6");
+          setHudBusy(true, 'Tagesliste & Carol…');
 
           google.script.run
             .withSuccessHandler(function(res) {
@@ -3416,23 +3993,27 @@
                 else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
                 if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
                 setStatus(finalStatus, "#56d364");
+                setHudBusy(false);
                 toggleUI(false);
                 document.getElementById('searchInput').value = "";
                 document.getElementById('searchInput').focus();
               } else {
                 setStatus("❌ FEHLER: " + res.message, "#f85149");
                 document.getElementById('btnCarol').disabled = false;
+                toggleUI(true);
               }
             })
             .withFailureHandler(function(err) {
               setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
               document.getElementById('btnCarol').disabled = false;
+              toggleUI(true);
             })
             .triggerCarolMission(currentStock);
         })
         .withFailureHandler(function(err) {
           setStatus("❌ Kommentarfehler: " + (err.message || String(err)), "#f85149");
           document.getElementById('btnCarol').disabled = false;
+          toggleUI(true);
         })
         .saveKommentar(currentStock, text);
 
