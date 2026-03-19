@@ -7,6 +7,8 @@ const EXIT_TAB = "Exit Repair";
 const AUFTRAG_SHEET_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
 const AUFTRAG_TAB = "BLANCO Reparaturauftrag";
 const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
+const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
+const TAGESLISTE_TAB = "Tagesliste";
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -730,7 +732,7 @@ function getNachbestellungen() {
       if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [] };
 
       var lastRow = Math.max(2, sheet.getLastRow());
-      var lastCol = Math.max(1, Math.min(15, sheet.getLastColumn()));
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
       var headerIdx = -1;
@@ -768,19 +770,38 @@ function getNachbestellungen() {
       if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
 
       var entries = [];
+      
       for (var i = headerIdx + 1; i < data.length; i++) {
         var stockId = String(data[i][cols.stock] || "").trim();
+        
         if (!stockId) continue;
 
-        var statusVal = cols.status !== undefined ? String(data[i][cols.status] || "").trim().toLowerCase() : "";
+        var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
+        var statusVal = rawStatus.toLowerCase();
         if (statusVal === "angeliefert" || statusVal.indexOf("angeliefert/bereit") !== -1 || statusVal === "fahrzeug rr") continue;
 
         var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
         var dateStr = "";
         if (dateVal instanceof Date) {
           dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
+        } else if (Object.prototype.toString.call(dateVal) === '[object Date]') {
+          dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
         } else {
-          dateStr = String(dateVal || "");
+          var rawDate = String(dateVal || "");
+          var jsDateMatch = rawDate.match(/(\w+)\s(\w+)\s(\d{1,2})\s(\d{4})/);
+          if (jsDateMatch) {
+            var months = {Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+            var mm = months[jsDateMatch[2]] || 0;
+            var dd = parseInt(jsDateMatch[3], 10);
+            var yyyy = parseInt(jsDateMatch[4], 10);
+            if (mm > 0) {
+              dateStr = (dd < 10 ? "0" : "") + dd + "." + (mm < 10 ? "0" : "") + mm + "." + yyyy;
+            } else {
+              dateStr = rawDate;
+            }
+          } else {
+            dateStr = rawDate;
+          }
         }
 
         var typ = cols.typ !== undefined ? String(data[i][cols.typ] || "").trim() : "";
@@ -805,9 +826,9 @@ function getNachbestellungen() {
         if (ma && mb) {
           var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
           var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
-          return db - da;
+          if (da !== db) return db - da;
         }
-        return 0;
+        return b.row - a.row;
       });
 
       return { success: true, entries: entries };
@@ -941,3 +962,131 @@ function autoFillWerkstattauftrag(stockId, beschreibung) {
       return "Auftrag Fehler: " + err.message;
     }
   }
+
+function getHeutigeReifenausgabe() {
+  try {
+    var sheet = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID).getSheetByName(TAGESLISTE_TAB);
+    if (!sheet) return { success: false, message: "Tab '" + TAGESLISTE_TAB + "' nicht gefunden!", entries: [] };
+
+    /* ONE single API read — everything else is pure JS filtering (instant) */
+    var data = sheet.getDataRange().getValues();
+    if (data.length < 2) return { success: true, entries: [] };
+
+    var headerIdx = -1;
+    for (var h = 0; h < Math.min(10, data.length); h++) {
+      var rowLc = data[h].map(function(c) { return String(c || "").toLowerCase(); });
+      if (rowLc.some(function(c) { return c.indexOf("stock") !== -1; })) { headerIdx = h; break; }
+    }
+    if (headerIdx === -1) headerIdx = 0;
+
+    var header = data[headerIdx];
+    var cols = {};
+    for (var c = 0; c < header.length; c++) {
+      var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+      if (!cols.date && (txt === "datum" || txt === "date")) cols.date = c;
+      if (!cols.stock && (txt.indexOf("stock") !== -1)) cols.stock = c;
+      if (!cols.reifen && (txt.indexOf("reifen") !== -1)) cols.reifen = c;
+    }
+    if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
+    if (cols.reifen === undefined) return { success: false, message: "Spalte 'Reifen' nicht gefunden!", entries: [] };
+
+    var today = new Date(); today.setHours(0,0,0,0);
+    var tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+    var dayAfter = new Date(tomorrow); dayAfter.setDate(dayAfter.getDate() + 1);
+
+    var entries = [];
+    for (var i = headerIdx + 1; i < data.length; i++) {
+      var stockId = String(data[i][cols.stock] || "").trim();
+      if (!stockId) continue;
+
+      var reifenVal = String(data[i][cols.reifen] || "").trim().toLowerCase();
+      var isReifen   = (reifenVal === "2 reifen"  || reifenVal === "4 reifen");
+      var isGestellt = (reifenVal === "2 gestellt" || reifenVal === "4 gestellt");
+      if (!isReifen && !isGestellt) continue;
+
+      var dateVal = cols.date !== undefined ? data[i][cols.date] : null;
+      var dateObj = null, dateStr = "";
+      if (dateVal instanceof Date || Object.prototype.toString.call(dateVal) === '[object Date]') {
+        dateObj = new Date(dateVal); dateObj.setHours(0,0,0,0);
+        dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
+      } else {
+        var raw = String(dateVal || "");
+        var m = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+        if (m) { dateObj = new Date(+m[3], +m[2]-1, +m[1]); dateObj.setHours(0,0,0,0); dateStr = raw; }
+      }
+      if (!dateObj || dateObj < today || dateObj >= dayAfter) continue;
+
+      entries.push({
+        row: i + 1,
+        date: dateStr,
+        stockId: stockId,
+        reifen: String(data[i][cols.reifen] || "").trim(),
+        amount: reifenVal.indexOf("4") !== -1 ? 4 : 2,
+        gestellt: isGestellt,
+        reifenCol: cols.reifen + 1
+      });
+    }
+
+    entries.sort(function(a, b) {
+      if (a.gestellt !== b.gestellt) return a.gestellt ? 1 : -1;
+      var ma = String(a.date).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      var mb = String(b.date).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (ma && mb) {
+        var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
+        var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
+        if (da !== db) return da - db;
+      }
+      return a.row - b.row;
+    });
+
+    return { success: true, entries: entries };
+  } catch (err) {
+    return { success: false, message: err.message, entries: [] };
+  }
+}
+
+function updateReifenGestellt(sheetRow, reifenCol, newValue) {
+  try {
+    var ss = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheet = ss.getSheetByName(TAGESLISTE_TAB);
+    if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
+    sheet.getRange(sheetRow, reifenCol).setValue(newValue);
+    SpreadsheetApp.flush();
+    var verify = String(sheet.getRange(sheetRow, reifenCol).getValue() || "").trim().toLowerCase();
+    if (verify === newValue.toLowerCase()) {
+      return { success: true, message: "Gespeichert!" };
+    }
+    return { success: false, message: "Verifikation fehlgeschlagen: '" + verify + "'" };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+function stelleAlleReifen(entries) {
+  try {
+    var ss = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheet = ss.getSheetByName(TAGESLISTE_TAB);
+    if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
+    var updated = 0;
+    var failed = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      if (e.gestellt) continue;
+      var newVal = e.amount === 4 ? "4 gestellt" : "2 gestellt";
+      sheet.getRange(e.row, e.reifenCol).setValue(newVal);
+      updated++;
+    }
+    SpreadsheetApp.flush();
+    for (var j = 0; j < entries.length; j++) {
+      var en = entries[j];
+      if (en.gestellt) continue;
+      var expected = en.amount === 4 ? "4 gestellt" : "2 gestellt";
+      var actual = String(sheet.getRange(en.row, en.reifenCol).getValue() || "").trim().toLowerCase();
+      if (actual !== expected.toLowerCase()) failed++;
+    }
+    if (failed > 0) return { success: false, message: updated + " aktualisiert, " + failed + " fehlgeschlagen!" };
+    return { success: true, message: "Alle " + updated + " Reifen auf gestellt gesetzt!" };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
