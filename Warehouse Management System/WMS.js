@@ -4,6 +4,9 @@ const NACHBESTELL_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const NACHBESTELL_TAB = "Nachbestellungen";
 const EXIT_SHEET_ID = "1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI";
 const EXIT_TAB = "Exit Repair";
+const AUFTRAG_SHEET_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
+const AUFTRAG_TAB = "BLANCO Reparaturauftrag";
+const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -93,6 +96,121 @@ function getReifenTabOptions() {
       return { success: true, tabs: sheets };
     } catch (err) {
       return { success: false, message: err.message, tabs: [] };
+    }
+  }
+
+function searchReifenBySize(query) {
+    try {
+      query = String(query || "").trim();
+      if (!query || query.length < 3) return { success: false, message: "Suchbegriff zu kurz (min. 3 Zeichen)", results: [] };
+
+      var queryParts = query.replace(/\s+/g, ' ').split(' ');
+      var sizeQuery = "";
+      var lastQuery = "";
+      var gwQuery = "";
+      for (var q = 0; q < queryParts.length; q++) {
+        var p = queryParts[q];
+        if (p.indexOf('/') !== -1 || /^r\d+/i.test(p) || /^\d{3}\//.test(p)) {
+          sizeQuery += (sizeQuery ? " " : "") + p;
+        } else if (/^\d{2,3}$/.test(p) && !lastQuery) {
+          lastQuery = p;
+        } else if (/^[A-Za-z]{1,2}$/.test(p) && !gwQuery) {
+          gwQuery = p.toUpperCase();
+        } else {
+          sizeQuery += (sizeQuery ? " " : "") + p;
+        }
+      }
+      if (!sizeQuery) sizeQuery = query;
+      var sizeNorm = sizeQuery.replace(/\s+/g, '').toUpperCase();
+
+      var ss = getReifenSheet();
+      var allSheets = ss.getSheets();
+      var results = [];
+      var now = new Date();
+      var cutoff = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).getTime();
+
+      for (var s = 0; s < allSheets.length; s++) {
+        var sh = allSheets[s];
+        var tabName = sh.getName();
+        var dateMatch = String(tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (!dateMatch) continue;
+        var tabDate = new Date(parseInt(dateMatch[3], 10), parseInt(dateMatch[2], 10) - 1, parseInt(dateMatch[1], 10)).getTime();
+        if (tabDate < cutoff) continue;
+        var lastRow = Math.max(1, sh.getLastRow());
+        var lastCol = Math.max(1, Math.min(80, sh.getLastColumn()));
+        if (lastRow < 3) continue;
+
+        var headerData = sh.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
+        var headerIdx = findHeaderRow(headerData, ["stockid", "stock"]);
+        if (headerIdx === -1) continue;
+        var header = headerData[headerIdx];
+
+        var stockCol = getColIndex(header, ["stockid", "stock"]);
+        var groesseCol = getColIndex(header, ["größe", "groesse"]);
+        var lastIndexCol = getColIndex(header, ["lastindex", "last"]);
+        var gwIndexCol = getColIndex(header, ["gwindex", "gw"]);
+        var mengeCol = getColIndex(header, ["menge", "anzahl"]);
+        var angeliefertCol = getColIndex(header, ["angeliefert"]);
+        var kommentarCol = getColIndex(header, ["kommentar"]);
+        if (stockCol === -1 || groesseCol === -1) continue;
+
+        var startRow = headerIdx + 2;
+        var numRows = lastRow - startRow + 1;
+        if (numRows <= 0) continue;
+        var data = sh.getRange(startRow, 1, numRows, lastCol).getValues();
+
+        for (var i = 0; i < data.length; i++) {
+          var row = data[i];
+          var hasPaket = false;
+          for (var c = 0; c < row.length; c++) {
+            if (String(row[c] || "").toLowerCase().indexOf("paketdienst") !== -1) { hasPaket = true; break; }
+          }
+          if (!hasPaket) continue;
+
+          if (angeliefertCol !== -1) {
+            var status = String(row[angeliefertCol - 1] || "").trim().toLowerCase();
+            if (status === "ja" || status === "nein") continue;
+          }
+
+          var cellGroesse = String(row[groesseCol - 1] || "").trim();
+          var cellGroesseNorm = cellGroesse.replace(/\s+/g, '').toUpperCase();
+          if (cellGroesseNorm.indexOf(sizeNorm) === -1) continue;
+
+          var cellLast = lastIndexCol !== -1 ? String(row[lastIndexCol - 1] || "").trim() : "";
+          var cellGw = gwIndexCol !== -1 ? String(row[gwIndexCol - 1] || "").trim() : "";
+          if (lastQuery && cellLast.indexOf(lastQuery) === -1) continue;
+          if (gwQuery && cellGw.toUpperCase().indexOf(gwQuery) === -1) continue;
+
+          var cellStock = stockCol !== -1 ? normalizeStockId(row[stockCol - 1]) : "";
+          var cellMenge = mengeCol !== -1 ? (parseInt(row[mengeCol - 1], 10) || 1) : 1;
+          if (!cellStock) continue;
+
+          results.push({
+            tabName: tabName,
+            stockId: cellStock,
+            groesse: cellGroesse,
+            lastindex: cellLast,
+            gwIndex: cellGw,
+            menge: cellMenge,
+            row: startRow + i
+          });
+        }
+      }
+
+      results.sort(function(a, b) {
+        var ma = String(a.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+        var mb = String(b.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+        if (ma && mb) {
+          var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
+          var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
+          return db - da;
+        }
+        return 0;
+      });
+
+      return { success: true, results: results, message: results.length + " Reifen gefunden" };
+    } catch (err) {
+      return { success: false, message: "Fehler: " + err.message, results: [] };
     }
   }
 
@@ -312,6 +430,36 @@ function processReifenStock(tabName, stockId, isDelivered) {
       return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
     } catch (err) {
       return { found: false, message: "Fehler: " + err.message };
+    }
+  }
+
+  function getShelfCounts() {
+    try {
+      var ss = SpreadsheetApp.getActiveSpreadsheet();
+      var sheet = ss.getSheetByName("Refurbisment List");
+      if (!sheet) return { success: false, shelves: [] };
+
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
+
+      var counts = {};
+      for (var i = 1; i <= 9; i++) {
+        for (var j = 1; j <= 8; j++) {
+          counts["Regal " + i + "." + j] = 0;
+        }
+      }
+      for (var r = 1; r < regalColData.length; r++) {
+        var regalVal = String(regalColData[r][0] || "").trim();
+        if (counts.hasOwnProperty(regalVal)) counts[regalVal]++;
+      }
+
+      var shelves = [];
+      for (var shelf in counts) {
+        shelves.push({ name: shelf, count: counts[shelf] });
+      }
+      return { success: true, shelves: shelves };
+    } catch (err) {
+      return { success: false, shelves: [] };
     }
   }
 
@@ -698,25 +846,32 @@ function updateNachbestellung(sheetRow, fieldName, value) {
       sheet.getRange(sheetRow, targetCol).setValue(value);
       SpreadsheetApp.flush();
 
-      var exitMsg = "";
+      var extraMsgs = [];
       if (fieldName === "status" && String(value || "").toLowerCase().indexOf("angeliefert") !== -1) {
         var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
         var rowStockId = "";
         var rowTyp = "";
+        var rowBeschreibung = "";
         for (var r = 0; r < rowData.length; r++) {
           var cellVal = String(rowData[r] || "").trim();
           if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
           if (!rowTyp && cellVal.toLowerCase().indexOf("exit") !== -1) rowTyp = cellVal;
         }
+        if (colMap["teil"]) rowBeschreibung = String(sheet.getRange(sheetRow, colMap["teil"]).getValue() || "").trim();
+
         if (rowTyp && rowStockId) {
-          exitMsg = updateExitListStatus(rowStockId);
-        } else {
-          exitMsg = "(Kein Exit-Typ: Typ='" + rowTyp + "' Stock='" + rowStockId + "')";
+          extraMsgs.push(updateExitListStatus(rowStockId));
+        }
+
+        if (rowStockId && String(value || "").indexOf("Angeliefert/Bereit") !== -1) {
+          extraMsgs.push(autoFillWerkstattauftrag(rowStockId, rowBeschreibung));
         }
       }
 
       var msg = "Gespeichert!";
-      if (exitMsg) msg += " | " + exitMsg;
+      for (var m = 0; m < extraMsgs.length; m++) {
+        if (extraMsgs[m]) msg += " | " + extraMsgs[m];
+      }
       return { success: true, message: msg };
     } catch (err) {
       return { success: false, message: err.message };
@@ -767,5 +922,22 @@ function updateExitListStatus(stockId) {
       return "Exit: '" + stockId + "' in '" + EXIT_TAB + "' nicht gefunden";
     } catch (err) {
       return "Exit Fehler: " + err.message;
+    }
+  }
+
+function autoFillWerkstattauftrag(stockId, beschreibung) {
+    try {
+      var bearbeiter = Session.getActiveUser().getEmail();
+      if (bearbeiter !== AUFTRAG_EMAIL) return "";
+      if (!stockId) return "";
+      var zielSs = SpreadsheetApp.openById(AUFTRAG_SHEET_ID);
+      var zielSheet = zielSs.getSheetByName(AUFTRAG_TAB);
+      if (!zielSheet) return "Auftrag: Tab '" + AUFTRAG_TAB + "' nicht gefunden";
+      zielSheet.getRange("D10").setValue(stockId);
+      zielSheet.getRange("D18").setValue(beschreibung || "");
+      SpreadsheetApp.flush();
+      return "Werkstattauftrag befüllt (" + stockId + ")";
+    } catch (err) {
+      return "Auftrag Fehler: " + err.message;
     }
   }

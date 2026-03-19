@@ -170,7 +170,7 @@
   }
   .card {
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
-    border: 1px solid #2d3642;
+    border: 2px solid rgba(242, 204, 96, 0.35);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -219,7 +219,7 @@
     min-height: 120px;
     word-wrap: break-word;
     overflow: auto;
-    border: 1px solid #212a35;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     line-height: 1.55;
     display: flex;
     flex-direction: column;
@@ -242,7 +242,7 @@
     min-height: 120px;
     background: #0d1117;
     color: #ffffff;
-    border: 1px solid #303b47;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     border-radius: 14px;
     padding: 14px 16px;
     font-size: 15px;
@@ -267,7 +267,7 @@
   .input-row input {
     background: #0d1117;
     color: #fff;
-    border: 1px solid #303b47;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -279,7 +279,7 @@
     width: 100%;
     background: #0d1117;
     color: #e3b341;
-    border: 1px solid #303b47;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     padding: 14px 16px;
     font-size: 18px;
     font-weight: 800;
@@ -435,7 +435,7 @@
   }
   .tools-panel {
     background: rgba(13, 17, 23, 0.55);
-    border: 1px solid #242d39;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -491,7 +491,7 @@
     width: 100%;
     background: #0d1117;
     color: #fff;
-    border: 1px solid #303b47;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -1011,8 +1011,8 @@
     display: flex;
   }
   .reifen-dialog {
-    width: min(620px, 100%);
-    max-height: min(88vh, 960px);
+    width: min(780px, 100%);
+    max-height: min(90vh, 980px);
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
     border: 1px solid #2d3642;
     border-radius: 18px;
@@ -1031,7 +1031,7 @@
   }
   .reifen-title {
     color: #f2cc60;
-    font-size: 18px;
+    font-size: 22px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -1047,10 +1047,10 @@
     cursor: pointer;
   }
   .reifen-body {
-    padding: 16px 18px 18px;
+    padding: 22px 28px 28px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 18px;
     overflow: auto;
   }
   .reifen-field {
@@ -1071,8 +1071,8 @@
     background: #0f141c;
     color: #58a6ff;
     border: 1px solid #354152;
-    padding: 14px 18px;
-    font-size: 20px;
+    padding: 16px 20px;
+    font-size: 22px;
     text-transform: uppercase;
     font-weight: 700;
     border-radius: 14px;
@@ -1087,6 +1087,7 @@
   }
   .reifen-field .field-label {
     text-align: center;
+    font-size: 14px;
   }
   .reifen-autocomplete-list {
     position: absolute;
@@ -1106,7 +1107,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 10px;
+    gap: 12px;
     padding: 12px 14px;
     color: #c9d1d9;
     font-size: 14px;
@@ -1143,10 +1144,10 @@
     border-color: rgba(86, 211, 100, 0.22);
   }
   .reifen-status {
-    min-height: 42px;
+    min-height: 48px;
     text-align: center;
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: 17px;
+    line-height: 1.5;
     color: #8b949e;
   }
   .reifen-actions {
@@ -1155,9 +1156,10 @@
   }
   .reifen-action-btn {
     flex: 1;
-    padding: 15px;
+    padding: 18px;
     border-radius: 14px;
     border: 1px solid #303b47;
+    font-size: 16px;
     background: #21262d;
     color: #6e7681;
     font-size: 15px;
@@ -1198,7 +1200,7 @@
   }
   .reifen-copy-title {
     color: #9da7b3;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 800;
     letter-spacing: 0.8px;
     text-transform: uppercase;
@@ -1208,11 +1210,11 @@
     background: #21262d;
     border: 1px dashed #58a6ff;
     color: #58a6ff;
-    padding: 10px 12px;
+    padding: 14px 16px;
     text-align: center;
-    border-radius: 10px;
+    border-radius: 12px;
     cursor: pointer;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 800;
     transition: 0.2s;
   }
@@ -1256,6 +1258,103 @@
     font-size: 14px;
     font-weight: 500;
   }
+  .reifen-size-section {
+    border-top: 2px solid rgba(242, 204, 96, 0.25);
+    padding-top: 18px;
+    margin-top: 4px;
+  }
+  .reifen-size-title {
+    color: #f2cc60;
+    font-size: 16px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+  .reifen-size-search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .reifen-size-input {
+    flex: 1;
+    background: #0f141c;
+    color: #58a6ff;
+    border: 1.5px solid rgba(242, 204, 96, 0.25);
+    padding: 14px 18px;
+    font-size: 18px;
+    font-weight: 700;
+    border-radius: 14px;
+    outline: none;
+    text-align: center;
+  }
+  .reifen-size-input::placeholder { color: #6e7681; }
+  .reifen-size-btn {
+    background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
+    color: #0d1117;
+    border: none;
+    border-radius: 14px;
+    padding: 14px 24px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .reifen-size-results {
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid #242d39;
+    border-radius: 14px;
+    background: #0d1117;
+  }
+  .reifen-size-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .reifen-size-table th,
+  .reifen-size-table td {
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid #1d2530;
+    font-size: 14px;
+  }
+  .reifen-size-table th {
+    position: sticky;
+    top: 0;
+    background: #111722;
+    color: #f2cc60;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    z-index: 1;
+  }
+  .reifen-size-table td { color: #d0d7de; }
+  .reifen-size-table tr:last-child td { border-bottom: none; }
+  .reifen-size-table tr:hover td { background: #161d29; }
+  .reifen-size-book-btn {
+    background: linear-gradient(180deg, #2ea043 0%, #238636 100%);
+    color: #0d1117;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .reifen-size-book-btn:hover { transform: translateY(-1px); }
+  .reifen-size-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(242,204,96,0.12);
+    border: 1px solid rgba(242,204,96,0.18);
+    color: #f2cc60;
+    font-weight: 800;
+    font-size: 12px;
+    margin-left: 8px;
+  }
 </style>
 </head>
 <body>
@@ -1267,7 +1366,7 @@
           <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
           <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
         </div>
-        <div class="topbar-credit">BY ARASAKA</div>
+        <div class="topbar-credit">BY ARASAKA v1.1</div>
       </div>
       <div class="topbar-head">
         <div>
@@ -1399,7 +1498,7 @@
       <div class="nb-header">
         <div class="nb-title">Nachbestellungen</div>
         <span id="nbTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
-        <button class="nb-close" onclick="closeNbModal()">Schließen</button>
+        <button class="nb-close" onclick="minimizeNbModal()">Minimieren</button>
       </div>
       <div class="nb-toolbar">
         <div class="nb-search-wrap">
@@ -1434,7 +1533,8 @@
     <div class="reifen-dialog">
       <div class="reifen-header">
         <div class="reifen-title">Reifen Annahme</div>
-        <button class="reifen-close" onclick="closeReifenModal()">Schließen</button>
+        <button type="button" onclick="refreshReifenModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button class="reifen-close" onclick="minimizeReifenModal()">Minimieren</button>
       </div>
       <div class="reifen-body">
         <div class="reifen-field">
@@ -1462,6 +1562,31 @@
           <div class="reifen-copy-box" id="reifenCopyStock" onclick="copyReifenValue(this)"></div>
           <div class="reifen-copy-box" id="reifenCopyTire" onclick="copyReifenValue(this)"></div>
         </div>
+
+        <div class="reifen-size-section">
+          <div class="reifen-size-title">Reifensuche nach Größe (Paketdienst)<span class="reifen-size-badge" id="reifenSizeBadge" style="display:none;">0</span></div>
+          <div class="reifen-size-search">
+            <input type="text" class="reifen-size-input" id="reifenSizeInput" placeholder="z.B. 225/50 R17 103 H" autocomplete="off">
+            <button class="reifen-size-btn" onclick="searchTireBySize()">Suchen</button>
+          </div>
+          <div id="reifenSizeStatus" style="text-align:center;font-size:14px;color:#8b949e;margin-bottom:10px;display:none;"></div>
+          <div class="reifen-size-results" id="reifenSizeResults" style="display:none;">
+            <table class="reifen-size-table">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Stock-ID</th>
+                  <th>Größe</th>
+                  <th>Last</th>
+                  <th>GW</th>
+                  <th>Menge</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="reifenSizeBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1486,6 +1611,8 @@
     var currentSchaedenText = "";
     var pendingWarning = null;
     var currentBestellungText = "";
+    var shelfRefreshTimer = null;
+    var shelfDropdownOpen = false;
     var currentVerifiedReifenStock = "";
     var currentReifenResult = null;
     var currentReifenTab = localStorage.getItem('arasaka_reifen_tab') || "";
@@ -1527,6 +1654,53 @@
     document.getElementById('searchInput').addEventListener('keypress', function(e) {
       if(e.key === 'Enter') loadData();
     });
+
+    var shelfSelectEl = document.getElementById('shelfSelect');
+    shelfSelectEl.addEventListener('focus', function() { shelfDropdownOpen = true; });
+    shelfSelectEl.addEventListener('blur', function() { shelfDropdownOpen = false; });
+    shelfSelectEl.addEventListener('mousedown', function() { shelfDropdownOpen = true; });
+
+    function startShelfRefresh() {
+      stopShelfRefresh();
+      shelfRefreshTimer = setInterval(refreshShelfCounts, 2000);
+    }
+
+    function stopShelfRefresh() {
+      if(shelfRefreshTimer) { clearInterval(shelfRefreshTimer); shelfRefreshTimer = null; }
+    }
+
+    function refreshShelfCounts() {
+      if(!currentStock || shelfDropdownOpen) return;
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success || shelfDropdownOpen) return;
+        var sel = document.getElementById('shelfSelect');
+        var currentVal = sel.value;
+        var currentRegal = document.getElementById('currentShelfLabel').innerText.replace('Aktuell: ', '').trim();
+        var shelfMap = {};
+        for(var i = 0; i < res.shelves.length; i++) {
+          shelfMap[res.shelves[i].name] = res.shelves[i].count;
+        }
+        sel.innerHTML = '';
+        if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER') {
+          var cnt = shelfMap[currentRegal] !== undefined ? shelfMap[currentRegal] : '?';
+          sel.innerHTML += '<option value="' + currentRegal + '">' + currentRegal + ' (AKTUELL ' + cnt + '/5)</option>';
+        } else {
+          sel.innerHTML = '<option value="">-- FREIES REGAL WÄHLEN --</option>';
+        }
+        for(var name in shelfMap) {
+          if(name !== currentRegal && shelfMap[name] < 5) {
+            sel.innerHTML += '<option value="' + name + '">' + name + ' (' + shelfMap[name] + '/5)</option>';
+          }
+        }
+        if(currentVal) sel.value = currentVal;
+        var badge = document.getElementById('currentShelfCountBadge');
+        if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER' && shelfMap[currentRegal] !== undefined) {
+          var c = shelfMap[currentRegal];
+          badge.style.display = 'inline-flex';
+          badge.innerText = 'In ' + currentRegal + ' ' + (c === 1 ? 'ist' : 'sind') + ' ' + c + ' ' + (c === 1 ? 'Kiste' : 'Kisten');
+        }
+      }).getShelfCounts();
+    }
     reifenStockInput.addEventListener('input', function() {
       currentVerifiedReifenStock = "";
       setReifenActionState(false);
@@ -1564,6 +1738,7 @@
         grid.classList.remove('overlay-block');
       } else {
         grid.classList.add('overlay-block');
+        stopShelfRefresh();
       }
     }
     toggleUI(false);
@@ -1682,15 +1857,34 @@
 
     var nbAllEntries = [];
     var nbFilteredEntries = [];
+    var nbSessionActive = false;
+
+    function minimizeNbModal() {
+      document.getElementById('nbModal').classList.remove('open');
+      var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
+      if(btn && nbAllEntries.length > 0) {
+        btn.style.background = 'rgba(88,166,255,0.18)';
+        btn.style.borderColor = '#58a6ff';
+        btn.style.color = '#58a6ff';
+      }
+    }
 
     function closeNbModal() {
       document.getElementById('nbModal').classList.remove('open');
       nbAllEntries = [];
       nbFilteredEntries = [];
+      nbSessionActive = false;
+      var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
+      if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
     }
 
     function openNbModal() {
       document.getElementById('nbModal').classList.add('open');
+      if(nbSessionActive && nbAllEntries.length > 0) {
+        filterNbBySearch();
+        return;
+      }
+      nbSessionActive = true;
       document.getElementById('nbSearchInput').value = '';
       document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>';
       document.getElementById('nbTotalBadge').innerText = '...';
@@ -1827,7 +2021,7 @@
 
     function openNbInWms(event, stockId) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
-      closeNbModal();
+      minimizeNbModal();
       document.getElementById('searchInput').value = stockId;
       loadData();
     }
@@ -2060,18 +2254,154 @@
       document.getElementById('reifenConfirmModal').classList.remove('open');
     }
 
+    var reifenSessionActive = false;
+
+    function minimizeReifenModal() {
+      document.getElementById('reifenModal').classList.remove('open');
+      closeReifenConfirm();
+      var btn = document.querySelector('.topbar-action[onclick*="openReifenModal"]');
+      if(btn && reifenSessionActive) {
+        btn.style.background = 'rgba(88,166,255,0.18)';
+        btn.style.borderColor = '#58a6ff';
+        btn.style.color = '#58a6ff';
+      }
+    }
+
     function closeReifenModal() {
       document.getElementById('reifenModal').classList.remove('open');
       closeReifenConfirm();
       resetReifenState(false);
+      reifenSessionActive = false;
+      cachedReifenStockIds = [];
+      var btn = document.querySelector('.topbar-action[onclick*="openReifenModal"]');
+      if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
       setReifenStatus("Bitte Tabellenblatt auswählen und Stock-ID eingeben...", "#8b949e");
     }
 
     function openReifenModal() {
       document.getElementById('reifenModal').classList.add('open');
+      if(reifenSessionActive && currentReifenTab) {
+        setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+        reifenStockInput.focus();
+        return;
+      }
+      reifenSessionActive = true;
       resetReifenState(false);
       setReifenStatus("Lade Tabellenblätter...", "#f2cc60");
       loadReifenTabs();
+    }
+
+    function refreshReifenModal() {
+      reifenSessionActive = false;
+      resetReifenState(false);
+      setReifenStatus("Lade Tabellenblätter...", "#f2cc60");
+      loadReifenTabs();
+      reifenSessionActive = true;
+    }
+
+    var tireSearchResults = [];
+
+    document.getElementById('reifenSizeInput').addEventListener('keypress', function(e) {
+      if(e.key === 'Enter') searchTireBySize();
+    });
+
+    function searchTireBySize() {
+      var query = document.getElementById('reifenSizeInput').value.trim();
+      if(!query) return;
+      var statusEl = document.getElementById('reifenSizeStatus');
+      var resultsEl = document.getElementById('reifenSizeResults');
+      var badge = document.getElementById('reifenSizeBadge');
+      statusEl.style.display = 'block';
+      statusEl.style.color = '#f2cc60';
+      statusEl.innerText = 'Suche "' + query + '" in Tabellenblättern der letzten 2 Monate...';
+      resultsEl.style.display = 'none';
+      badge.style.display = 'none';
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          statusEl.style.color = '#f85149';
+          statusEl.innerText = res.message || 'Fehler';
+          return;
+        }
+        tireSearchResults = res.results || [];
+        badge.style.display = 'inline-block';
+        badge.innerText = tireSearchResults.length + ' gefunden';
+        if(!tireSearchResults.length) {
+          statusEl.style.color = '#9da7b3';
+          statusEl.innerText = 'Keine Paketdienst-Reifen mit "' + query + '" gefunden.';
+          return;
+        }
+        statusEl.style.display = 'none';
+        renderTireResults();
+      }).withFailureHandler(function(err) {
+        statusEl.style.color = '#f85149';
+        statusEl.innerText = 'Serverfehler: ' + (err.message || String(err));
+      }).searchReifenBySize(query);
+    }
+
+    function getTabDate(tabName) {
+      var m = String(tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+      return m ? m[1] + '.' + m[2] + '.' + m[3] : tabName;
+    }
+
+    function renderTireResults() {
+      var body = document.getElementById('reifenSizeBody');
+      var resultsEl = document.getElementById('reifenSizeResults');
+      if(!tireSearchResults.length) {
+        resultsEl.style.display = 'none';
+        return;
+      }
+      resultsEl.style.display = 'block';
+      var html = '';
+      for(var i = 0; i < tireSearchResults.length; i++) {
+        var r = tireSearchResults[i];
+        html += '<tr>'
+          + '<td style="white-space:nowrap;">' + escapeHtml(getTabDate(r.tabName)) + '</td>'
+          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(r.stockId) + '</td>'
+          + '<td style="font-weight:700;">' + escapeHtml(r.groesse) + '</td>'
+          + '<td>' + escapeHtml(r.lastindex) + '</td>'
+          + '<td>' + escapeHtml(r.gwIndex) + '</td>'
+          + '<td style="text-align:center;font-weight:700;">' + r.menge + '</td>'
+          + '<td style="text-align:right;"><button class="reifen-size-book-btn" onclick="bookTireFromSearch(' + i + ')">Buchen</button></td>'
+          + '</tr>';
+      }
+      body.innerHTML = html;
+    }
+
+    function bookTireFromSearch(index) {
+      var tire = tireSearchResults[index];
+      if(!tire) return;
+      var btn = document.querySelectorAll('.reifen-size-book-btn')[index];
+      if(btn) { btn.disabled = true; btn.innerText = 'Buche...'; }
+      var statusEl = document.getElementById('reifenSizeStatus');
+      statusEl.style.display = 'block';
+      statusEl.style.color = '#f2cc60';
+      statusEl.innerText = 'Buche ' + tire.stockId + ' aus ' + tire.tabName + '...';
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          statusEl.style.color = '#f85149';
+          statusEl.innerText = res.message;
+          if(btn) { btn.disabled = false; btn.innerText = 'Buchen'; }
+          return;
+        }
+        statusEl.style.color = '#56d364';
+        var finalMessage = '✅ ' + res.message;
+        printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge);
+        statusEl.innerText = finalMessage;
+        showReifenInfo(res);
+        tireSearchResults.splice(index, 1);
+        var badge = document.getElementById('reifenSizeBadge');
+        badge.innerText = tireSearchResults.length + ' gefunden';
+        renderTireResults();
+        if(!tireSearchResults.length) {
+          document.getElementById('reifenSizeResults').style.display = 'none';
+          statusEl.innerText = finalMessage + ' (Keine weiteren Ergebnisse)';
+        }
+        document.getElementById('reifenConfirmModal').classList.add('open');
+      }).withFailureHandler(function(err) {
+        statusEl.style.color = '#f85149';
+        statusEl.innerText = 'Fehler: ' + (err.message || String(err));
+        if(btn) { btn.disabled = false; btn.innerText = 'Buchen'; }
+      }).processReifenStock(tire.tabName, tire.stockId, true);
     }
 
     function loadReifenTabs() {
@@ -2452,6 +2782,7 @@
             setStatus("✅ Daten für " + id + " geladen!", "#56d364");
           }
           toggleUI(true);
+          startShelfRefresh();
         } else {
           setStatus("❌ FEHLER: " + res.message, "#f85149");
         }
