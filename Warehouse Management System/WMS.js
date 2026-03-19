@@ -968,7 +968,6 @@ function getHeutigeReifenausgabe() {
     var sheet = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID).getSheetByName(TAGESLISTE_TAB);
     if (!sheet) return { success: false, message: "Tab '" + TAGESLISTE_TAB + "' nicht gefunden!", entries: [] };
 
-    /* ONE single API read — everything else is pure JS filtering (instant) */
     var data = sheet.getDataRange().getValues();
     if (data.length < 2) return { success: true, entries: [] };
 
