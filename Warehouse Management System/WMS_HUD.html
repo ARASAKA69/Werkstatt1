@@ -892,9 +892,9 @@
     cursor: pointer;
   }
   .nb-copy-box {
-    background: #21262d;
-    border: 1px dashed #58a6ff;
-    color: #58a6ff;
+    background: rgba(163,113,247,0.10);
+    border: 1px dashed #a371f7;
+    color: #a371f7;
     padding: 8px 12px;
     text-align: center;
     border-radius: 10px;
@@ -902,7 +902,199 @@
     font-size: 13px;
     font-weight: 800;
   }
-  .nb-copy-box:hover { background: #30363d; color: #ffffff; }
+  .nb-copy-box:hover { background: rgba(163,113,247,0.22); color: #d2a8ff; }
+  .nb-box-purple {
+    background: rgba(163,113,247,0.06);
+    border-color: rgba(163,113,247,0.35);
+  }
+  .nb-box-purple .nb-detail-lbl { color: #a371f7; }
+  .nb-box-gold {
+    background: rgba(227,180,60,0.06);
+    border-color: rgba(227,180,60,0.35);
+    text-align: center;
+  }
+  .nb-box-gold .nb-detail-lbl { color: #e3b43c; }
+  .nb-box-gold .nb-qty-stepper { justify-content: center; }
+  .nb-box-gold .nb-print-btn {
+    background: rgba(227,180,60,0.14);
+    color: #e3b43c;
+    border-color: rgba(227,180,60,0.3);
+  }
+  .nb-box-gold .nb-print-btn:hover { background: rgba(227,180,60,0.25); }
+  .nb-box-gold .nb-qty-btn {
+    background: rgba(227,180,60,0.10);
+    color: #e3b43c;
+    border-color: rgba(227,180,60,0.3);
+  }
+  .nb-box-gold .nb-qty-btn:hover { background: rgba(227,180,60,0.22); }
+  .nb-box-status-red {
+    background: rgba(248,81,73,0.08);
+    border-color: rgba(248,81,73,0.35);
+  }
+  .nb-box-status-red .nb-detail-lbl { color: #f85149; }
+  .nb-box-status-red .nb-edit-input { border-color: rgba(248,81,73,0.4); color: #f85149; }
+  .nb-box-status-green {
+    background: rgba(63,185,80,0.08);
+    border-color: rgba(63,185,80,0.35);
+  }
+  .nb-box-status-green .nb-detail-lbl { color: #3fb950; }
+  .nb-box-status-green .nb-edit-input { border-color: rgba(63,185,80,0.4); color: #3fb950; }
+  .nb-box-status-yellow {
+    background: rgba(227,180,60,0.08);
+    border-color: rgba(227,180,60,0.35);
+  }
+  .nb-box-status-yellow .nb-detail-lbl { color: #e3b43c; }
+  .nb-box-status-yellow .nb-edit-input { border-color: rgba(227,180,60,0.4); color: #e3b43c; }
+
+  /* Heutige Reifenausgabe Modal */
+  .ra-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 24px;
+  }
+  .ra-modal.open { display: flex; }
+  .ra-dialog {
+    width: min(700px, 100%);
+    max-height: min(90vh, 800px);
+    background: linear-gradient(180deg, rgba(21,27,35,0.99) 0%, rgba(14,19,26,0.99) 100%);
+    border: 1px solid #2d3642;
+    border-radius: 18px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .ra-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #242d39;
+    flex-shrink: 0;
+  }
+  .ra-title {
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .ra-close {
+    background: rgba(248,81,73,0.12);
+    color: #f85149;
+    border: 1px solid rgba(248,81,73,0.2);
+    border-radius: 12px;
+    padding: 8px 18px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+  }
+  .ra-body {
+    padding: 0;
+    overflow: auto;
+    flex: 1;
+  }
+  .ra-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .ra-table thead th {
+    position: sticky;
+    top: 0;
+    background: #0d1117;
+    color: #9da7b3;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 2px solid #242d39;
+    z-index: 2;
+  }
+  .ra-table tbody tr {
+    border-bottom: 1px solid #1d2530;
+    transition: background 0.15s;
+  }
+  .ra-table tbody tr:hover { background: rgba(255,255,255,0.03); }
+  .ra-table tbody td {
+    padding: 10px 12px;
+    color: #d0d7de;
+    vertical-align: middle;
+  }
+  .ra-badge-2 {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: 12px;
+    background: rgba(255,229,160,0.18);
+    color: #e3b43c;
+    border: 1px solid rgba(255,229,160,0.3);
+  }
+  .ra-badge-4 {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 8px;
+    font-weight: 800;
+    font-size: 12px;
+    background: rgba(255,200,170,0.18);
+    color: #e09040;
+    border: 1px solid rgba(255,200,170,0.3);
+  }
+  .ra-date-today {
+    color: #58a6ff;
+    font-weight: 800;
+  }
+  .ra-date-tomorrow {
+    color: #a371f7;
+    font-weight: 800;
+  }
+  .ra-yes { color: #3fb950; font-weight: 800; }
+  .ra-no { color: #f85149; font-weight: 800; }
+  .ra-status-btn {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 10px;
+    font-weight: 800;
+    font-size: 12px;
+    cursor: pointer;
+    border: 1px solid;
+    transition: 0.15s;
+  }
+  .ra-status-btn:hover { filter: brightness(1.2); }
+  .ra-status-gestellt {
+    background: rgba(63,185,80,0.14);
+    color: #3fb950;
+    border-color: rgba(63,185,80,0.3);
+  }
+  .ra-status-offen {
+    background: rgba(227,180,60,0.14);
+    color: #e3b43c;
+    border-color: rgba(227,180,60,0.3);
+  }
+  .ra-alle-btn {
+    background: rgba(63,185,80,0.14);
+    color: #3fb950;
+    border: 1px solid rgba(63,185,80,0.3);
+    border-radius: 12px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.15s;
+  }
+  .ra-alle-btn:hover { background: rgba(63,185,80,0.25); }
+  .ra-alle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .ra-row-gestellt { opacity: 0.55; }
   .nb-print-section {
     display: flex;
     align-items: center;
@@ -1365,6 +1557,7 @@
           <button class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
           <button class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
           <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
+          <button class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
         </div>
         <div class="topbar-credit">BY ARASAKA v1.1</div>
       </div>
@@ -1489,6 +1682,34 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ra-modal" id="raModal">
+    <div class="ra-dialog">
+      <div class="ra-header">
+        <div class="ra-title">🛞 Heutige Reifenausgabe</div>
+        <span id="raTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:1px solid rgba(242,204,96,0.18);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
+        <button type="button" class="ra-alle-btn" id="raAlleBtn" onclick="stelleAlleReifenHud()">✅ Alle Reifen Stellen</button>
+        <button type="button" onclick="printRaList()" style="background:rgba(187,128,255,0.12);color:#bb80ff;border:1px solid rgba(187,128,255,0.2);border-radius:12px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;">🖨️ Drucken</button>
+        <button type="button" onclick="refreshRaModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:8px 16px;font-size:12px;font-weight:800;cursor:pointer;">🔄 Refresh</button>
+        <button class="ra-close" onclick="minimizeRaModal()">Minimieren</button>
+      </div>
+      <div class="ra-body">
+        <table class="ra-table">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Stock-ID</th>
+              <th>Anzahl</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="raTableBody">
+            <tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1855,6 +2076,197 @@
       return String(text || "").replace(/\\/g, '\\\\').replace(/'/g, "\\'");
     }
 
+    /* ─── Heutige Reifenausgabe ─── */
+    var raAllEntries = [];
+    var raSessionActive = false;
+
+    function openRaModal() {
+      document.getElementById('raModal').classList.add('open');
+      if(raSessionActive && raAllEntries.length > 0) {
+        return;
+      }
+      raSessionActive = true;
+      document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>';
+      document.getElementById('raTotalBadge').innerText = '...';
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message) + '</td></tr>';
+          return;
+        }
+        raAllEntries = res.entries || [];
+        updateRaBadge();
+        renderRaTable(raAllEntries);
+      }).withFailureHandler(function(err) {
+        document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }).getHeutigeReifenausgabe();
+    }
+
+    function updateRaBadge() {
+      var offen = 0, done = 0;
+      for(var i = 0; i < raAllEntries.length; i++) {
+        if(raAllEntries[i].gestellt) done++; else offen++;
+      }
+      var badge = document.getElementById('raTotalBadge');
+      if(offen === 0 && done > 0) {
+        badge.innerText = '✅ Alle ' + done + ' gestellt';
+        badge.style.background = 'rgba(63,185,80,0.12)';
+        badge.style.borderColor = 'rgba(63,185,80,0.3)';
+        badge.style.color = '#3fb950';
+      } else {
+        badge.innerText = offen + ' offen / ' + done + ' gestellt';
+        badge.style.background = 'rgba(242,204,96,0.12)';
+        badge.style.borderColor = 'rgba(242,204,96,0.18)';
+        badge.style.color = '#f2cc60';
+      }
+      document.getElementById('raAlleBtn').disabled = (offen === 0);
+    }
+
+    function minimizeRaModal() {
+      document.getElementById('raModal').classList.remove('open');
+      var btn = document.querySelector('.topbar-action[onclick*="openRaModal"]');
+      if(btn && raAllEntries.length > 0) {
+        btn.style.background = 'rgba(88,166,255,0.18)';
+        btn.style.borderColor = '#58a6ff';
+        btn.style.color = '#58a6ff';
+      }
+    }
+
+    function refreshRaModal() {
+      raSessionActive = false;
+      raAllEntries = [];
+      document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>';
+      document.getElementById('raTotalBadge').innerText = '...';
+      raSessionActive = true;
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success) {
+          document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message) + '</td></tr>';
+          return;
+        }
+        raAllEntries = res.entries || [];
+        updateRaBadge();
+        renderRaTable(raAllEntries);
+      }).withFailureHandler(function(err) {
+        document.getElementById('raTableBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }).getHeutigeReifenausgabe();
+    }
+
+    function renderRaTable(entries) {
+      var body = document.getElementById('raTableBody');
+      if(!entries || !entries.length) {
+        body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Keine Reifen für heute/morgen gefunden.</td></tr>';
+        return;
+      }
+      var today = new Date();
+      today.setHours(0,0,0,0);
+      var todayStr = (today.getDate() < 10 ? '0' : '') + today.getDate() + '.' + ((today.getMonth()+1) < 10 ? '0' : '') + (today.getMonth()+1) + '.' + today.getFullYear();
+      var html = '';
+      for(var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var isToday = e.date === todayStr;
+        var dateClass = isToday ? 'ra-date-today' : 'ra-date-tomorrow';
+        var dateLabel = isToday ? e.date + ' (Heute)' : e.date + ' (Morgen)';
+        var reifenBadge = e.amount === 4 ? 'ra-badge-4' : 'ra-badge-2';
+        var rowClass = e.gestellt ? 'ra-row-gestellt' : '';
+        var statusClass = e.gestellt ? 'ra-status-btn ra-status-gestellt' : 'ra-status-btn ra-status-offen';
+        var statusLabel = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen';
+        html += '<tr class="' + rowClass + '" id="ra-row-' + i + '">'
+          + '<td class="' + dateClass + '">' + escapeHtml(dateLabel) + '</td>'
+          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td><span class="' + reifenBadge + '">' + e.amount + ' Reifen</span></td>'
+          + '<td><button type="button" class="' + statusClass + '" id="ra-status-' + i + '" onclick="toggleRaStatus(' + i + ')">' + statusLabel + '</button></td>'
+          + '</tr>';
+      }
+      body.innerHTML = html;
+    }
+
+    function toggleRaStatus(index) {
+      var e = raAllEntries[index];
+      if(!e) return;
+      var btn = document.getElementById('ra-status-' + index);
+      if(btn) { btn.disabled = true; btn.innerText = '⏳ ...'; }
+      var newGestellt = !e.gestellt;
+      var newValue = newGestellt ? (e.amount + ' gestellt') : (e.amount + ' Reifen');
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success) {
+          e.gestellt = newGestellt;
+          e.reifen = newValue;
+          updateRaBadge();
+          renderRaTable(raAllEntries);
+        } else {
+          if(btn) { btn.disabled = false; btn.innerText = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen'; }
+          document.getElementById('raTotalBadge').innerText = 'Fehler: ' + (res.message || '?');
+        }
+      }).withFailureHandler(function(err) {
+        if(btn) { btn.disabled = false; btn.innerText = e.gestellt ? '✅ gestellt' : '⏳ noch zu stellen'; }
+      }).updateReifenGestellt(e.row, e.reifenCol, newValue);
+    }
+
+    function stelleAlleReifenHud() {
+      var offen = [];
+      for(var i = 0; i < raAllEntries.length; i++) {
+        if(!raAllEntries[i].gestellt) offen.push(raAllEntries[i]);
+      }
+      if(offen.length === 0) return;
+      var alleBtn = document.getElementById('raAlleBtn');
+      alleBtn.disabled = true;
+      alleBtn.innerText = '⏳ Stelle ' + offen.length + ' Reifen...';
+      var payload = offen.map(function(e) { return { row: e.row, reifenCol: e.reifenCol, amount: e.amount, gestellt: false }; });
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success) {
+          alleBtn.innerText = '✅ ' + res.message;
+          setTimeout(function() { refreshRaModal(); }, 1500);
+        } else {
+          alleBtn.innerText = '❌ ' + (res.message || 'Fehler');
+          alleBtn.disabled = false;
+        }
+      }).withFailureHandler(function(err) {
+        alleBtn.innerText = '❌ Fehler';
+        alleBtn.disabled = false;
+      }).stelleAlleReifen(payload);
+    }
+
+    function printRaList() {
+      var offen = [];
+      for(var i = 0; i < raAllEntries.length; i++) {
+        if(!raAllEntries[i].gestellt) offen.push(raAllEntries[i]);
+      }
+      if(offen.length === 0) { alert('Keine offenen Reifen zum Drucken.'); return; }
+      var today = new Date();
+      var dateHeader = (today.getDate()<10?'0':'') + today.getDate() + '.' + ((today.getMonth()+1)<10?'0':'') + (today.getMonth()+1) + '.' + today.getFullYear();
+      var rows = '';
+      for(var j = 0; j < offen.length; j++) {
+        var e = offen[j];
+        rows += '<tr>'
+          + '<td>' + (j+1) + '</td>'
+          + '<td>' + escapeHtml(e.date) + '</td>'
+          + '<td>' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="text-align:center;font-weight:700;">' + e.amount + '</td>'
+          + '<td style="width:60px;"></td>'
+          + '</tr>';
+      }
+      var html = '<!DOCTYPE html><html><head><title>Reifenausgabe ' + dateHeader + '</title>'
+        + '<style>'
+        + 'body{font-family:Arial,sans-serif;margin:20px;color:#111;}'
+        + 'h2{margin:0 0 4px 0;font-size:18px;}'
+        + '.sub{color:#555;font-size:12px;margin-bottom:14px;}'
+        + 'table{width:100%;border-collapse:collapse;font-size:13px;}'
+        + 'th,td{border:1px solid #999;padding:6px 10px;text-align:left;}'
+        + 'th{background:#eee;font-weight:700;}'
+        + 'tr:nth-child(even){background:#f7f7f7;}'
+        + '@media print{body{margin:10px;}@page{size:A4 portrait;margin:12mm;}}'
+        + '</style></head><body>'
+        + '<h2>Reifenausgabe — ' + dateHeader + '</h2>'
+        + '<div class="sub">' + offen.length + ' Reifen noch zu stellen</div>'
+        + '<table><thead><tr><th>#</th><th>Datum</th><th>Stock-ID</th><th>Anzahl</th><th>✓</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody></table>'
+        + '<script>window.print();<\/script>'
+        + '</body></html>';
+      var w = window.open('', '_blank');
+      w.document.write(html);
+      w.document.close();
+    }
+
+    /* ─── Nachbestellungen ─── */
     var nbAllEntries = [];
     var nbFilteredEntries = [];
     var nbSessionActive = false;
@@ -1931,6 +2343,14 @@
       return "";
     }
 
+    function getNbStatusClass(status) {
+      var s = String(status || '').toLowerCase();
+      if(s === 'nicht bestellt') return 'nb-box-status-red';
+      if(s === 'bestellt') return 'nb-box-status-yellow';
+      if(s.indexOf('angeliefert') !== -1) return 'nb-box-status-green';
+      return '';
+    }
+
     function buildNbStatusSelect(index, currentStatus, sheetRow) {
       var html = '<select class="nb-edit-input" onchange="saveNbStatus(event,' + sheetRow + ',this.value,' + index + ')" onclick="event.stopPropagation();">';
       var found = false;
@@ -1984,14 +2404,14 @@
           + '<div class="nb-detail-box"><div class="nb-detail-lbl">Artikel-Nr.</div>'
           +   '<div class="nb-detail-val">' + escapeHtml(e.artikel || '-') + '</div>'
           + '</div>'
-          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Status ändern</div>'
+          + '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
           +   buildNbStatusSelect(i, e.status, e.row)
           + '</div>'
-          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Kopieren</div>'
+          + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
           +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
           +   '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
           + '</div>'
-          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Etiketten</div>'
+          + '<div class="nb-detail-box nb-box-gold"><div class="nb-detail-lbl">Etiketten</div>'
           +   '<div class="nb-qty-stepper" style="margin-bottom:8px;">'
           +     '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',-1)">−</button>'
           +     '<input type="number" class="nb-print-input" id="nb-qty-' + i + '" value="1" min="0">'
@@ -2039,6 +2459,8 @@
           for(var k = 0; k < nbAllEntries.length; k++) {
             if(nbAllEntries[k].row === sheetRow) { nbAllEntries[k].status = value; break; }
           }
+          var box = sel ? sel.closest('.nb-detail-box') : null;
+          if(box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
           if(badge) badge.innerText = res.message || 'Gespeichert!';
           setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         } else {
@@ -2072,7 +2494,37 @@
 
     function copyNbValue(event, value) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
-      navigator.clipboard.writeText(value).catch(function() {});
+      var el = event ? event.currentTarget : null;
+      function showCopied() {
+        if(!el) return;
+        var orig = el.innerText;
+        var origBg = el.style.background;
+        var origBorder = el.style.borderColor;
+        el.innerText = '✓ Kopiert!';
+        el.style.background = 'rgba(63,185,80,0.18)';
+        el.style.borderColor = '#3fb950';
+        setTimeout(function() { el.innerText = orig; el.style.background = origBg; el.style.borderColor = origBorder; }, 1200);
+      }
+      if(navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(value).then(showCopied).catch(function() {
+          fallbackCopy(value);
+          showCopied();
+        });
+      } else {
+        fallbackCopy(value);
+        showCopied();
+      }
+    }
+
+    function fallbackCopy(text) {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
     }
 
     function printNbLabel(event, stockId, index) {
