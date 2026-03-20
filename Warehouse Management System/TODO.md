@@ -40,6 +40,8 @@
 - [x] Regal select is now a CUSTOM dropdown so no more ugly white windows native list — matches HUD dark/gold (and green branch for tagesliste)
 - [x] That regal dropdown opens UPWARD + bigger scroll height cause downward theres no space
 - [x] Carol / Auftrag beenden button: killed margin-top auto so it actually sits dead center in the gold tools panel not glued to bottom
+#- [x] The regal counting is not correctly, because we also have boxes from Tagesliste/Nachbestellungen which are stored inside a regal and these boxes dont get counted inside the system, we need to take care of these ones too.
+- [x] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box. Done and fixed too.
 -----
 
 # Offen
@@ -47,7 +49,4 @@
 
 - [ ] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
 
-- [ ] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box.
-
-- [ ] The regal counting is not correctly, because we also have boxes from Tagesliste/Nachbestellungen which are stored inside a regal and these boxes dont get counted inside the system, we need to take care of these ones too.
 - [ ] .

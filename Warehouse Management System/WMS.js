@@ -9,6 +9,182 @@ const AUFTRAG_TAB = "BLANCO Reparaturauftrag";
 const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
 const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const TAGESLISTE_TAB = "Tagesliste";
+const NACHBESTELL_REGAL_COL = 13;
+
+function normalizeRegalKeyForCount(val) {
+  if (val === "" || val == null) return "";
+  if (Object.prototype.toString.call(val) === "[object Date]" || val instanceof Date) {
+    var dm = Utilities.formatDate(new Date(val), "Europe/Berlin", "d.M");
+    var dp = dm.split(".");
+    if (dp.length >= 2) {
+      var da = parseInt(dp[0], 10);
+      var mo = parseInt(dp[1], 10);
+      if (!isNaN(da) && !isNaN(mo) && da >= 1 && da <= 9 && mo >= 1 && mo <= 8) return "Regal " + da + "." + mo;
+    }
+    return "";
+  }
+  if (typeof val === "number" && isFinite(val)) {
+    var a = Math.floor(val);
+    var rest = val - a;
+    var b = Math.round(rest * 10 + 1e-6);
+    if (a >= 1 && a <= 9 && b >= 1 && b <= 8) return "Regal " + a + "." + b;
+    return "";
+  }
+  var s = String(val || "").trim().replace(/,/g, ".");
+  if (!s) return "";
+  var low = s.toLowerCase();
+  if (low === "tagesliste" || low === "lack" || low === "exit") return "";
+  var m = s.match(/^regal\s+(\d+)\s*\.\s*(\d+)$/i);
+  if (m) return "Regal " + parseInt(m[1], 10) + "." + parseInt(m[2], 10);
+  m = s.match(/^(\d+)\s*\.\s*(\d+)$/);
+  if (m) {
+    var a2 = parseInt(m[1], 10);
+    var b2 = parseInt(m[2], 10);
+    if (a2 >= 1 && a2 <= 9 && b2 >= 1 && b2 <= 8) return "Regal " + a2 + "." + b2;
+  }
+  return "";
+}
+
+function nachbestellungRegalUiFromCell(val) {
+  var k = normalizeRegalKeyForCount(val);
+  if (k) return k.replace(/^Regal /i, "");
+  return String(val || "").trim();
+}
+
+function nachbestellungLagerortVerifyMatch(expected, cellValue) {
+  var e = String(expected || "").trim();
+  if (e === "" && (cellValue === "" || cellValue == null)) return true;
+  if (cellValue === "" || cellValue == null) return e === "";
+  if (typeof cellValue === "string" && e.toLowerCase() === cellValue.trim().toLowerCase()) return true;
+  var lowE = e.toLowerCase();
+  if ((lowE === "tagesliste" || lowE === "lack" || lowE === "exit") && String(cellValue || "").trim().toLowerCase() === lowE) return true;
+  var ne = normalizeRegalKeyForCount(e);
+  var nv = normalizeRegalKeyForCount(cellValue);
+  if (ne && nv && ne === nv) return true;
+  return false;
+}
+
+function findNachbestellungLagerortColumn(sheet) {
+  var lastRow = Math.max(1, sheet.getLastRow());
+  var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+  var headerScan = sheet.getRange(1, 1, Math.min(10, lastRow), lastCol).getValues();
+  var h;
+  for (h = 0; h < headerScan.length; h++) {
+    var colL = getColIndex(headerScan[h], ["lagerort"]);
+    if (colL !== -1) return colL;
+  }
+  for (h = 0; h < headerScan.length; h++) {
+    var row = headerScan[h];
+    var hasStock = false;
+    for (var c = 0; c < row.length; c++) {
+      if (String(row[c] || "").toLowerCase().indexOf("stock") !== -1) {
+        hasStock = true;
+        break;
+      }
+    }
+    if (hasStock) {
+      var colR = getColIndex(headerScan[h], ["lagerort", "regal"]);
+      if (colR !== -1) return colR;
+    }
+  }
+  return NACHBESTELL_REGAL_COL;
+}
+
+function nachbestellungLagerortFallbackList() {
+  var o = ["Tagesliste"];
+  for (var i = 1; i <= 5; i++) {
+    for (var j = 1; j <= 8; j++) {
+      o.push(i + "." + j);
+    }
+  }
+  o.push("LACK");
+  o.push("Exit");
+  return o;
+}
+
+function extractDataValidationList(dv) {
+  if (!dv) return null;
+  if (dv.getCriteriaType() !== SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST) return null;
+  var cv = dv.getCriteriaValues();
+  if (!cv || cv.length === 0) return null;
+  var first = cv[0];
+  var out = [];
+  if (Object.prototype.toString.call(first) === "[object Array]") {
+    for (var i = 0; i < first.length; i++) {
+      var cellVal = first[i];
+      if (cellVal !== "" && cellVal != null) out.push(String(cellVal));
+    }
+  } else if (first !== "" && first != null) {
+    out.push(String(first));
+  }
+  return out.length ? out : null;
+}
+
+function getNachbestellungLagerortAllowedList(sheet, col) {
+  var lastRow = Math.max(2, sheet.getLastRow());
+  var samples = [2, 3, 4, 5, 10, 15, 20, 50, 100, 500, 1000, 2000, 3000, 4000, 5000];
+  for (var s = 0; s < samples.length; s++) {
+    var rr = samples[s];
+    if (rr > lastRow) continue;
+    var list = extractDataValidationList(sheet.getRange(rr, col).getDataValidation());
+    if (list && list.length) return list;
+  }
+  return nachbestellungLagerortFallbackList();
+}
+
+function nachbestellungLagerortToSheetValue(raw, allowedList) {
+  raw = String(raw || "").trim();
+  if (!raw) return "";
+  var i;
+  for (i = 0; i < allowedList.length; i++) {
+    var opt = String(allowedList[i] != null ? allowedList[i] : "").trim();
+    if (raw.toLowerCase() === opt.toLowerCase()) return String(allowedList[i]);
+  }
+  var rawNorm = normalizeRegalKeyForCount(raw);
+  for (i = 0; i < allowedList.length; i++) {
+    var opt2 = String(allowedList[i] != null ? allowedList[i] : "").trim();
+    var optNorm = normalizeRegalKeyForCount(opt2);
+    if (rawNorm && optNorm && rawNorm === optNorm) return String(allowedList[i]);
+  }
+  return null;
+}
+
+function mergeNachbestellungenRegalIntoCounts(counts) {
+  try {
+    var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+    var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+    if (!sheet || !counts) return;
+    var col = findNachbestellungLagerortColumn(sheet);
+    var lastRow = Math.max(1, sheet.getLastRow());
+    var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+    if (col > lastCol) col = Math.min(NACHBESTELL_REGAL_COL, lastCol);
+    var headerScan = sheet.getRange(1, 1, Math.min(10, lastRow), lastCol).getValues();
+    var headerIdx = -1;
+    for (var h = 0; h < headerScan.length; h++) {
+      var scanRow = headerScan[h];
+      var hasStock = false;
+      for (var c = 0; c < scanRow.length; c++) {
+        if (String(scanRow[c] || "").toLowerCase().indexOf("stock") !== -1) {
+          hasStock = true;
+          break;
+        }
+      }
+      if (hasStock) {
+        headerIdx = h;
+        break;
+      }
+    }
+    if (headerIdx === -1) headerIdx = 0;
+    var startRow = headerIdx + 2;
+    var numRows = lastRow - headerIdx - 1;
+    if (numRows <= 0) return;
+    var regalColData = sheet.getRange(startRow, col, numRows, 1).getValues();
+    for (var r = 0; r < regalColData.length; r++) {
+      var key = normalizeRegalKeyForCount(regalColData[r][0]);
+      if (key && counts.hasOwnProperty(key)) counts[key]++;
+    }
+  } catch (err) {}
+}
 
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -452,8 +628,11 @@ function processReifenStock(tabName, stockId, isDelivered) {
       }
       for (var r = 1; r < regalColData.length; r++) {
         var regalVal = String(regalColData[r][0] || "").trim();
-        if (counts.hasOwnProperty(regalVal)) counts[regalVal]++;
+        var rk = normalizeRegalKeyForCount(regalVal);
+        if (rk && counts.hasOwnProperty(rk)) counts[rk]++;
       }
+
+      mergeNachbestellungenRegalIntoCounts(counts);
 
       var shelves = [];
       for (var shelf in counts) {
@@ -489,8 +668,11 @@ function processReifenStock(tabName, stockId, isDelivered) {
   
       for (var r = 1; r < regalColData.length; r++) {
         var regalVal = String(regalColData[r][0] || "").trim();
-        if (counts.hasOwnProperty(regalVal)) counts[regalVal]++;
+        var rk2 = normalizeRegalKeyForCount(regalVal);
+        if (rk2 && counts.hasOwnProperty(rk2)) counts[rk2]++;
       }
+
+      mergeNachbestellungenRegalIntoCounts(counts);
 
       for (var s = 1; s < stockColData.length; s++) {
         if (cellMatchesStockId(stockColData[s][0], stockId)) {
@@ -517,7 +699,8 @@ function processReifenStock(tabName, stockId, isDelivered) {
         result.status = String(rowData[25] || "");
         result.regal = String(rowData[27] || "");
         result.reifenStatus = String(rowData[29] || "");
-        result.currentShelfCount = counts[result.regal] || 0;
+        var curKey = normalizeRegalKeyForCount(result.regal);
+        result.currentShelfCount = (curKey && counts.hasOwnProperty(curKey)) ? counts[curKey] : (counts[result.regal] || 0);
         result.currentShelfCapacity = 5;
       } else {
         result.message = "Stock-ID in Refurbisment List nicht gefunden!";
@@ -729,7 +912,12 @@ function getNachbestellungen() {
     try {
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
-      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [] };
+      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [], lagerortOptions: [] };
+
+      var lagerortCol = findNachbestellungLagerortColumn(sheet);
+      var lastColBound = Math.max(1, Math.min(80, sheet.getLastColumn()));
+      if (lagerortCol > lastColBound) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lastColBound);
+      var lagerortOptions = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
 
       var lastRow = Math.max(2, sheet.getLastRow());
       var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
@@ -767,7 +955,7 @@ function getNachbestellungen() {
         }
       }
 
-      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
+      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [], lagerortOptions: lagerortOptions };
 
       var entries = [];
       
@@ -806,6 +994,12 @@ function getNachbestellungen() {
 
         var typ = cols.typ !== undefined ? String(data[i][cols.typ] || "").trim() : "";
 
+        var regalVal = "";
+        if (lastCol >= lagerortCol) {
+          var rawL = data[i][lagerortCol - 1];
+          regalVal = nachbestellungRegalUiFromCell(rawL);
+        }
+
         entries.push({
           row: i + 1,
           date: dateStr,
@@ -816,7 +1010,8 @@ function getNachbestellungen() {
           teil: cols.teil !== undefined ? String(data[i][cols.teil] || "").trim() : "",
           preis: cols.preis !== undefined ? String(data[i][cols.preis] || "").trim() : "",
           artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
-          status: cols.status !== undefined ? String(data[i][cols.status] || "").trim() : ""
+          status: cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "",
+          regal: regalVal
         });
       }
 
@@ -831,9 +1026,9 @@ function getNachbestellungen() {
         return b.row - a.row;
       });
 
-      return { success: true, entries: entries };
+      return { success: true, entries: entries, lagerortOptions: lagerortOptions };
     } catch (err) {
-      return { success: false, message: err.message, entries: [] };
+      return { success: false, message: err.message, entries: [], lagerortOptions: [] };
     }
   }
 
@@ -842,6 +1037,25 @@ function updateNachbestellung(sheetRow, fieldName, value) {
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
       if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
+
+      if (fieldName === "regal") {
+        var lagerortCol = findNachbestellungLagerortColumn(sheet);
+        var lcW = Math.max(1, sheet.getLastColumn());
+        if (lagerortCol > lcW) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lcW);
+        var allowedLv = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
+        var rawIn = String(value || "").trim();
+        var regalWrite = rawIn === "" ? "" : nachbestellungLagerortToSheetValue(rawIn, allowedLv);
+        if (rawIn !== "" && regalWrite === null) {
+          return { success: false, message: "Lagerort nicht in der Sheet-Liste. Bitte passenden Eintrag wählen." };
+        }
+        var lr = sheet.getRange(sheetRow, lagerortCol);
+        lr.setNumberFormat("@");
+        lr.setValue(regalWrite);
+        SpreadsheetApp.flush();
+        var verifyCell = lr.getValue();
+        if (!nachbestellungLagerortVerifyMatch(regalWrite, verifyCell)) return { success: false, message: "Lagerort konnte nicht verifiziert werden!" };
+        return { success: true, message: "Lagerort gespeichert!" };
+      }
 
       var lastCol = Math.max(1, Math.min(15, sheet.getLastColumn()));
       var headerData = sheet.getRange(1, 1, Math.min(10, sheet.getLastRow()), lastCol).getValues();

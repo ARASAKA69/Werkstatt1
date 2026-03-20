@@ -958,23 +958,23 @@
   .nb-modal {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(0, 0, 0, 0.72);
     display: none;
     align-items: center;
     justify-content: center;
     z-index: 10000;
-    padding: 24px;
+    padding: 14px;
   }
   .nb-modal.open {
     display: flex;
   }
   .nb-dialog {
-    width: min(1100px, 100%);
-    max-height: min(90vh, 960px);
+    width: min(1480px, calc(100vw - 28px));
+    max-height: min(94vh, 1200px);
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(14, 19, 26, 0.99) 100%);
     border: 1px solid #2d3642;
-    border-radius: 18px;
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    border-radius: 20px;
+    box-shadow: 0 22px 56px rgba(0, 0, 0, 0.5);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -983,13 +983,13 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 16px 18px;
+    gap: 16px;
+    padding: 20px 24px;
     border-bottom: 1px solid #242d39;
   }
   .nb-title {
     color: #f2cc60;
-    font-size: 18px;
+    font-size: 24px;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -998,17 +998,17 @@
     background: rgba(255,255,255,0.04);
     color: #f2cc60;
     border: 2px solid rgba(242, 204, 96, 0.24);
-    border-radius: 12px;
-    padding: 10px 14px;
-    font-size: 13px;
+    border-radius: 14px;
+    padding: 12px 20px;
+    font-size: 16px;
     font-weight: 800;
     cursor: pointer;
   }
   .nb-toolbar {
-    padding: 12px 18px;
+    padding: 16px 24px;
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     border-bottom: 1px solid #1d2530;
     flex-wrap: wrap;
   }
@@ -1022,8 +1022,8 @@
     background: #0f141c;
     color: #58a6ff;
     border: 1px solid #354152;
-    padding: 12px 16px;
-    font-size: 16px;
+    padding: 14px 18px;
+    font-size: 18px;
     text-transform: uppercase;
     font-weight: 700;
     border-radius: 14px;
@@ -1048,9 +1048,9 @@
     z-index: 5;
   }
   .nb-autocomplete-item {
-    padding: 10px 14px;
+    padding: 12px 16px;
     color: #c9d1d9;
-    font-size: 14px;
+    font-size: 16px;
     font-weight: 700;
     cursor: pointer;
     border-bottom: 1px solid #1d2530;
@@ -1068,10 +1068,10 @@
     border-collapse: collapse;
   }
   .nb-table th, .nb-table td {
-    padding: 10px 12px;
+    padding: 14px 16px;
     text-align: left;
     border-bottom: 1px solid #1d2530;
-    font-size: 13px;
+    font-size: 16px;
   }
   .nb-table th {
     position: sticky;
@@ -1081,6 +1081,7 @@
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.8px;
+    font-size: 14px;
     z-index: 1;
   }
   .nb-table td { color: #d0d7de; }
@@ -1101,35 +1102,36 @@
   .nb-detail { display: none; }
   .nb-detail.open { display: table-row; }
   .nb-detail td {
-    padding: 16px;
+    padding: 22px 20px;
     background: #0a0e14;
     border-bottom: 2px solid #242d39;
   }
   .nb-detail-inner {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 16px;
     align-items: flex-start;
   }
   .nb-detail-box {
-    flex: 1 1 200px;
-    min-width: 180px;
+    flex: 1 1 240px;
+    min-width: 220px;
     background: rgba(255,255,255,0.02);
     border: 1px solid #1d2530;
-    border-radius: 12px;
-    padding: 12px;
+    border-radius: 14px;
+    padding: 16px;
   }
   .nb-detail-lbl {
-    margin-bottom: 6px;
+    margin-bottom: 8px;
     color: #9da7b3;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.8px;
     text-transform: uppercase;
   }
   .nb-detail-val {
     color: #d0d7de;
-    font-size: 14px;
+    font-size: 17px;
+    line-height: 1.5;
     word-break: break-word;
   }
   .nb-edit-input {
@@ -1137,19 +1139,19 @@
     background: #0f141c;
     color: #ffffff;
     border: 1px solid #354152;
-    padding: 8px 10px;
-    font-size: 13px;
-    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 16px;
+    border-radius: 12px;
     outline: none;
   }
   .nb-save-btn {
-    margin-top: 6px;
+    margin-top: 8px;
     background: rgba(46, 160, 67, 0.14);
     color: #56d364;
     border: 1px solid rgba(86, 211, 100, 0.2);
-    border-radius: 10px;
-    padding: 7px 14px;
-    font-size: 12px;
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 15px;
     font-weight: 800;
     cursor: pointer;
   }
@@ -1157,11 +1159,11 @@
     background: rgba(163,113,247,0.10);
     border: 1px dashed #a371f7;
     color: #a371f7;
-    padding: 8px 12px;
+    padding: 12px 14px;
     text-align: center;
-    border-radius: 10px;
+    border-radius: 12px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 16px;
     font-weight: 800;
   }
   .nb-copy-box:hover { background: rgba(163,113,247,0.22); color: #d2a8ff; }
@@ -1456,20 +1458,20 @@
     background: rgba(88, 166, 255, 0.12);
     color: #58a6ff;
     border: 1px solid rgba(88, 166, 255, 0.2);
-    border-radius: 10px;
-    padding: 8px 14px;
-    font-size: 12px;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-size: 16px;
     font-weight: 800;
     cursor: pointer;
   }
   .nb-print-input {
-    width: 46px;
+    width: 56px;
     background: #0f141c;
     color: #ffffff;
     border: 1px solid #354152;
-    padding: 6px 4px;
-    font-size: 13px;
-    border-radius: 8px;
+    padding: 10px 6px;
+    font-size: 17px;
+    border-radius: 10px;
     outline: none;
     text-align: center;
     -moz-appearance: textfield;
@@ -1518,15 +1520,15 @@
   .nb-qty-stepper {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     flex-shrink: 0;
   }
   .nb-qty-btn {
-    width: 28px;
-    height: 28px;
-    font-size: 16px;
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
     font-weight: 900;
-    border-radius: 8px;
+    border-radius: 12px;
     border: 1px solid #354152;
     background: rgba(88, 166, 255, 0.1);
     color: #58a6ff;
@@ -2082,7 +2084,7 @@
     <div class="nb-dialog">
       <div class="nb-header">
         <div class="nb-title">Nachbestellungen</div>
-        <span id="nbTotalBadge" style="padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;">...</span>
+        <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
         <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
       </div>
       <div class="nb-toolbar">
@@ -2090,7 +2092,7 @@
           <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
           <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
         </div>
-        <button type="button" onclick="refreshNbModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button type="button" onclick="refreshNbModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
       </div>
       <div class="nb-body">
         <table class="nb-table">
@@ -2799,6 +2801,7 @@
 
     var nbAllEntries = [];
     var nbFilteredEntries = [];
+    var nbLagerortOptions = [];
     var nbSessionActive = false;
 
     function minimizeNbModal() {
@@ -2815,6 +2818,7 @@
       document.getElementById('nbModal').classList.remove('open');
       nbAllEntries = [];
       nbFilteredEntries = [];
+      nbLagerortOptions = [];
       nbSessionActive = false;
       var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
       if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
@@ -2839,6 +2843,7 @@
         nbAllEntries = res.entries || [];
         nbFilteredEntries = nbAllEntries;
         document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+        nbLagerortOptions = res.lagerortOptions || [];
         renderNbTable(nbAllEntries);
       }).withFailureHandler(function(err) {
         document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
@@ -2877,8 +2882,57 @@
       var s = String(status || '').toLowerCase();
       if(s === 'nicht bestellt') return 'nb-box-status-red';
       if(s === 'bestellt') return 'nb-box-status-yellow';
+      if(s === 'teilweise angeliefert') return 'nb-box-status-yellow';
       if(s.indexOf('angeliefert') !== -1) return 'nb-box-status-green';
       return '';
+    }
+
+    function nbNormalizeRegalCountKey(val) {
+      var s = String(val || "").trim().replace(/,/g, ".");
+      if(!s) return "";
+      var m = s.match(/^regal\s+(\d+)\s*\.\s*(\d+)$/i);
+      if(m) return "Regal " + parseInt(m[1], 10) + "." + parseInt(m[2], 10);
+      m = s.match(/^(\d+)\s*\.\s*(\d+)$/);
+      if(m) {
+        var a = parseInt(m[1], 10);
+        var b = parseInt(m[2], 10);
+        if(a >= 1 && a <= 9 && b >= 1 && b <= 8) return "Regal " + a + "." + b;
+      }
+      return "";
+    }
+
+    function nbLagerortOptionsMatch(stored, optVal) {
+      var a = String(stored || "").trim();
+      var b = String(optVal || "").trim();
+      if(a.toLowerCase() === b.toLowerCase()) return true;
+      var ka = nbNormalizeRegalCountKey(a);
+      var kb = nbNormalizeRegalCountKey(b);
+      return ka !== "" && kb !== "" && ka === kb;
+    }
+
+    function buildNbRegalOptions(selectedRaw, optionsList) {
+      var list = optionsList;
+      if(!list || !list.length) {
+        list = ["Tagesliste"];
+        for(var ri = 1; ri <= 5; ri++) {
+          for(var rj = 1; rj <= 8; rj++) {
+            list.push(ri + "." + rj);
+          }
+        }
+        list.push("LACK");
+        list.push("Exit");
+      }
+      var html = '<option value="">—</option>';
+      for(var k = 0; k < list.length; k++) {
+        var opt = list[k];
+        var optStr = String(opt != null ? opt : "").trim();
+        if(!optStr) continue;
+        var sel = nbLagerortOptionsMatch(selectedRaw, optStr) ? ' selected' : '';
+        var label = optStr;
+        if(/^(\d+)\.(\d+)$/.test(optStr)) label = 'Regal ' + optStr;
+        html += '<option value="' + escapeHtml(optStr) + '"' + sel + '>' + escapeHtml(label) + '</option>';
+      }
+      return html;
     }
 
     function buildNbStatusSelect(index, currentStatus, sheetRow) {
@@ -2914,6 +2968,7 @@
         var e = entries[i];
         var rowStyle = getNbTypStyle(e.typ);
         var typColor = getNbTypColor(e.typ);
+        var showNbRegal = String(e.status || '').toLowerCase() === 'teilweise angeliefert';
         html += '<tr class="nb-row" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
           + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
           + '<td style="white-space:nowrap;">' + escapeHtml(e.date) + '</td>'
@@ -2922,7 +2977,7 @@
           + '<td>' + escapeHtml(e.teil) + '</td>'
           + '<td>' + escapeHtml(e.artikel) + '</td>'
           + '<td style="font-weight:700;">' + escapeHtml(e.status || '-') + '</td>'
-          + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;">WMS</button></td>'
+          + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 16px;font-size:15px;font-weight:800;cursor:pointer;">WMS</button></td>'
           + '</tr>';
 
         html += '<tr class="nb-detail" id="nb-detail-' + i + '">'
@@ -2936,6 +2991,9 @@
           + '</div>'
           + '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
           +   buildNbStatusSelect(i, e.status, e.row)
+          + '</div>'
+          + '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
+          +   '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
           + '</div>'
           + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
           +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
@@ -2991,6 +3049,13 @@
           }
           var box = sel ? sel.closest('.nb-detail-box') : null;
           if(box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
+          var regWrap = document.getElementById('nb-regal-wrap-' + index);
+          if(regWrap) regWrap.style.display = String(value || '').toLowerCase() === 'teilweise angeliefert' ? '' : 'none';
+          var tbNb = document.getElementById('nbTableBody');
+          if(tbNb && tbNb.children[2 * index]) {
+            var cells = tbNb.children[2 * index].querySelectorAll('td');
+            if(cells.length > 6) cells[6].textContent = value;
+          }
           if(badge) badge.innerText = res.message || 'Gespeichert!';
           setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         } else {
@@ -3001,6 +3066,32 @@
         if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
         if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
       }).updateNachbestellung(sheetRow, 'status', value);
+    }
+
+    function saveNbRegal(event, sheetRow, index) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      var sel = event ? event.target : null;
+      var val = sel ? sel.value : '';
+      if(sel) sel.disabled = true;
+      var badge = document.getElementById('nbTotalBadge');
+      if(badge) badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
+      google.script.run.withSuccessHandler(function(res) {
+        if(sel) sel.disabled = false;
+        if(res.success) {
+          if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 2500); }
+          for(var k = 0; k < nbAllEntries.length; k++) {
+            if(nbAllEntries[k].row === sheetRow) { nbAllEntries[k].regal = val; break; }
+          }
+          if(badge) badge.innerText = res.message || 'Gespeichert!';
+          setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
+        } else {
+          if(sel) sel.style.borderColor = '#f85149';
+          if(badge) { badge.innerText = res.message || 'Fehler'; badge.style.color = '#f85149'; }
+        }
+      }).withFailureHandler(function(err) {
+        if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
+        if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
+      }).updateNachbestellung(sheetRow, 'regal', val);
     }
 
     function refreshNbModal() {
@@ -3016,6 +3107,7 @@
         nbAllEntries = res.entries || [];
         nbFilteredEntries = nbAllEntries;
         document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+        nbLagerortOptions = res.lagerortOptions || [];
         renderNbTable(nbAllEntries);
       }).withFailureHandler(function(err) {
         document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
