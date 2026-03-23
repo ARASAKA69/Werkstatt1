@@ -54,4 +54,4 @@
 - [ ] The entry inside search bar letters should be always upper case so even when i copy this or write in small and priunt it should print in upper case not in lower letter always be upper case cause StockID is always Uppercase, means not only visually uppercase as it is now, it also needs to be the input upper case when copy it out.
 - [ ] Nachbestelleung when EXIT is Complete, some orders doesnt change inside the sheet even they exist. Fixing the entry, re-check if its completed before telling that its saved.
 - [ ] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred.
-- [ ] 
+- [ ] Testing to cache or store all the database from Refurbisment after first load inside the HUD to prevent every new StockID or Order number search long loading time + adding an auto update in the background if anything changes inside the Refurbisment list, this should give a huge performance upgrade when working on all orders, instead of waiting several second till all the informations are loaded.
