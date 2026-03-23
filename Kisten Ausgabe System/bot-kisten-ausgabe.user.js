@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.23
+// @version      1.24
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -307,17 +307,46 @@
         let totalFiles = files.length;
         let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
 
-        let ausgabeTotal = files.filter(f => !f.name.toLowerCase().includes('retoure')).length;
-        let retoureTotal = files.filter(f => f.name.toLowerCase().includes('retoure')).length;
-        let ausgabeIdx = 1;
-        let retoureIdx = 1;
+        // Count existing uploads already on the page (from previous batches)
+        let pageText = document.body.innerText;
+        let existingAusgabe = (pageText.match(/Ausgabe \d+\/\d+/g) || []).length;
+        let existingRetoure = (pageText.match(/Retoure \d+\/\d+/g) || []).length;
+        let existingNachbestellung = (pageText.match(/Nachbestellung \d+\/\d+/g) || []).length;
+
+        // Classify new files into categories
+        let newAusgabe = files.filter(f => {
+            let n = f.name.toLowerCase();
+            return !n.includes('retoure') && !/ na\b/.test(n);
+        }).length;
+        let newRetoure = files.filter(f => f.name.toLowerCase().includes('retoure')).length;
+        let newNachbestellung = files.filter(f => {
+            let n = f.name.toLowerCase();
+            return !n.includes('retoure') && / na\b/.test(n);
+        }).length;
+
+        let ausgabeTotal = existingAusgabe + newAusgabe;
+        let retoureTotal = existingRetoure + newRetoure;
+        let nachbestellungTotal = existingNachbestellung + newNachbestellung;
+        let ausgabeIdx = existingAusgabe + 1;
+        let retoureIdx = existingRetoure + 1;
+        let nachbestellungIdx = existingNachbestellung + 1;
 
         for (let i = 0; i < totalFiles; i++) {
             if (abortMission) return;
 
             let fileInfo = files[i];
-            let isRetoure = fileInfo.name.toLowerCase().includes('retoure');
-            let currentComment = isRetoure ? `Retoure ${retoureIdx++}/${retoureTotal}` : `Ausgabe ${ausgabeIdx++}/${ausgabeTotal}`;
+            let nameLower = fileInfo.name.toLowerCase();
+            let isRetoure = nameLower.includes('retoure');
+            let isNachbestellung = !isRetoure && / na\b/.test(nameLower);
+
+            let currentComment;
+            if (isRetoure) {
+                currentComment = `Retoure ${retoureIdx++}/${retoureTotal}`;
+            } else if (isNachbestellung) {
+                currentComment = `Nachbestellung ${nachbestellungIdx++}/${nachbestellungTotal}`;
+            } else {
+                currentComment = `Ausgabe ${ausgabeIdx++}/${ausgabeTotal}`;
+            }
 
             if (document.body.innerText.includes(currentComment)) {
                 showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
