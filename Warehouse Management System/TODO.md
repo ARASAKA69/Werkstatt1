@@ -49,4 +49,6 @@
 
 - [ ] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
 
-- [ ] .
+- [ ] ESC to end an operation if needed.
+- [ ] when WSS inside Comment get added and end the order, then auto update Vasold list IF exist. if not create a new Entry with the link from refurbishment StockID on same row as stock id + add Windschutzscheibe "Vorhanden" on dropdown.
+- [ ] 
