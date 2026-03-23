@@ -52,3 +52,5 @@
 - [ ] ESC to end an operation if needed.
 - [ ] when WSS inside Comment get added and end the order, then auto update Vasold list IF exist. if not create a new Entry with the link from refurbishment StockID on same row as stock id + add Windschutzscheibe "Vorhanden" on dropdown.
 - [ ] The entry inside search bar letters should be always upper case so even when i copy this or write in small and priunt it should print in upper case not in lower letter always be upper case cause StockID is always Uppercase, means not only visually uppercase as it is now, it also needs to be the input upper case when copy it out.
+- [ ] Nachbestelleung when EXIT is Complete, some orders doesnt change inside the sheet even they exist. Fixing the entry, re-check if its completed before telling that its saved.
+- [ ] 
