@@ -42,6 +42,7 @@
 - [x] Carol / Auftrag beenden button: killed margin-top auto so it actually sits dead center in the gold tools panel not glued to bottom
 #- [x] The regal counting is not correctly, because we also have boxes from Tagesliste/Nachbestellungen which are stored inside a regal and these boxes dont get counted inside the system, we need to take care of these ones too.
 - [x] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box. Done and fixed too.
+- [x] Kisten Ausgabe System (Carol + Drive Script): NA / Ausgabe / Retoure Kommentare wie abgesprochen, Dupe-Handling mit Timestamp + gleicher Dateiname, Ordner „Kisten Duplicate Uploads“ + Logs, Bridge per POST JSON, HUD clean ohne Tech-Kram (Debug nur Konsole mit Flag). Details siehe `Kisten Ausgabe System/TODO.md`.
 -----
 
 # Offen
