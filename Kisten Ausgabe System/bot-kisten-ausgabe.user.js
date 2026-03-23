@@ -307,13 +307,11 @@
         let totalFiles = files.length;
         let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
 
-        // Count existing uploads already on the page (from previous batches)
         let pageText = document.body.innerText;
         let existingAusgabe = (pageText.match(/Ausgabe \d+\/\d+/g) || []).length;
         let existingRetoure = (pageText.match(/Retoure \d+\/\d+/g) || []).length;
         let existingNachbestellung = (pageText.match(/Nachbestellung \d+\/\d+/g) || []).length;
 
-        // Classify new files into categories
         let newAusgabe = files.filter(f => {
             let n = f.name.toLowerCase();
             return !n.includes('retoure') && !/ na\b/.test(n);
