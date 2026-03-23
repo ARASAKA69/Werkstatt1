@@ -73,6 +73,68 @@
     border: 2px solid rgba(242, 204, 96, 0.22);
     flex-shrink: 0;
   }
+  .topbar-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .topbar-brand-top {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .topbar-brand-sub {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .topbar-cache-updated {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 120, 40, 0.14);
+    border: 1px solid rgba(255, 140, 66, 0.5);
+    color: #ffb366;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+  }
+  .topbar-cache-live-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: #8b949e;
+    letter-spacing: 0.3px;
+  }
+  .topbar-cache-live-label--on {
+    color: #56d364;
+  }
+  .cache-pulse-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cache-pulse-dot--active {
+    background: #3fb950;
+    box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.55);
+    animation: cache-pulse-breathe 1.6s ease-in-out infinite;
+  }
+  .cache-pulse-dot--inactive {
+    background: #6e7681;
+    animation: none;
+    box-shadow: none;
+  }
+  @keyframes cache-pulse-breathe {
+    0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(63, 185, 80, 0.45); }
+    50% { transform: scale(1.2); opacity: 0.88; box-shadow: 0 0 10px 3px rgba(63, 185, 80, 0.35); }
+  }
   .topbar-head {
     display: flex;
     justify-content: center;
@@ -1912,7 +1974,16 @@
           <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
           <button class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
         </div>
-        <div class="topbar-credit">BY ARASAKA v1.2</div>
+        <div class="topbar-brand">
+          <div class="topbar-brand-top">
+            <div class="topbar-credit">BY ARASAKA v1.3</div>
+            <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
+          </div>
+          <div class="topbar-brand-sub">
+            <span class="cache-pulse-dot cache-pulse-dot--inactive" id="cachePulseDot" aria-hidden="true"></span>
+            <span class="topbar-cache-live-label" id="cacheStatusText">Cache not active</span>
+          </div>
+        </div>
       </div>
       <div class="topbar-head">
         <div>
@@ -2211,6 +2282,10 @@
     var currentReifenResult = null;
     var currentReifenTab = localStorage.getItem('arasaka_reifen_tab') || "";
     var cachedReifenStockIds = [];
+    var refurbCache = null;
+    var refurbCacheLoading = false;
+    var refurbBackgroundTimer = null;
+    var REFURB_CACHE_POLL_MS = 75000;
     var commentEditor = document.getElementById('editAnlieferung');
     var reifenStockInput = document.getElementById('reifenStockInput');
     var ignoredHighlightWords = {
@@ -2345,6 +2420,34 @@
     }).observe(shelfSelectEl, { childList: true, subtree: true });
     syncShelfTriggerFromNative();
 
+    function compareRegalShelfNames(nameA, nameB) {
+      var mA = String(nameA || '').match(/^Regal\s+(\d+)\.(\d+)$/i);
+      var mB = String(nameB || '').match(/^Regal\s+(\d+)\.(\d+)$/i);
+      if (mA && mB) {
+        var x1 = parseInt(mA[1], 10);
+        var x2 = parseInt(mA[2], 10);
+        var y1 = parseInt(mB[1], 10);
+        var y2 = parseInt(mB[2], 10);
+        if (x1 !== y1) return x1 - y1;
+        return x2 - y2;
+      }
+      if (mA && !mB) return -1;
+      if (!mA && mB) return 1;
+      return String(nameA || '').localeCompare(String(nameB || ''), 'de');
+    }
+
+    function forEachShelfMapKeySorted(shelfMap, fn) {
+      var keys = [];
+      var k;
+      for (k in shelfMap) {
+        if (Object.prototype.hasOwnProperty.call(shelfMap, k)) keys.push(k);
+      }
+      keys.sort(compareRegalShelfNames);
+      for (var i = 0; i < keys.length; i++) {
+        fn(keys[i], shelfMap[keys[i]]);
+      }
+    }
+
     function startShelfRefresh() {
       stopShelfRefresh();
       shelfRefreshTimer = setInterval(refreshShelfCounts, 2000);
@@ -2375,8 +2478,8 @@
 
     function refreshShelfCounts() {
       if(!currentStock || shelfDropdownOpen) return;
-      google.script.run.withSuccessHandler(function(res) {
-        if(!res.success || shelfDropdownOpen) return;
+      function applyShelfMapFromCounts(shelfMap) {
+        if(shelfDropdownOpen) return;
         var sel = document.getElementById('shelfSelect');
         var currentVal = sel.value;
         var serverRegal = (sel.dataset.serverRegal || '').trim();
@@ -2385,18 +2488,14 @@
           var labTxt = document.getElementById('currentShelfLabel').innerText.trim();
           currentRegal = labTxt.indexOf('Aktuell: ') === 0 ? labTxt.replace('Aktuell: ', '').trim() : labTxt;
         }
-        var shelfMap = {};
-        for(var i = 0; i < res.shelves.length; i++) {
-          shelfMap[res.shelves[i].name] = res.shelves[i].count;
-        }
         sel.innerHTML = '';
         if(isRegalTagesliste(currentRegal)) {
           sel.innerHTML = '<option value="Tagesliste">Tagesliste</option>';
-          for(var name in shelfMap) {
-            if(shelfMap[name] < 5) {
-              sel.innerHTML += '<option value="' + name + '">' + name + ' (' + shelfMap[name] + '/5)</option>';
+          forEachShelfMapKeySorted(shelfMap, function(name, cnt) {
+            if(cnt < 5) {
+              sel.innerHTML += '<option value="' + name + '">' + name + ' (' + cnt + '/5)</option>';
             }
-          }
+          });
           document.getElementById('currentShelfCountBadge').style.display = 'none';
           var restoredSel = false;
           if(currentVal) {
@@ -2418,11 +2517,11 @@
         } else {
           sel.innerHTML = '<option value="">-- FREIES REGAL WÄHLEN --</option>';
         }
-        for(var name in shelfMap) {
-          if(name !== currentRegal && shelfMap[name] < 5) {
-            sel.innerHTML += '<option value="' + name + '">' + name + ' (' + shelfMap[name] + '/5)</option>';
+        forEachShelfMapKeySorted(shelfMap, function(name, cnt) {
+          if(name !== currentRegal && cnt < 5) {
+            sel.innerHTML += '<option value="' + name + '">' + name + ' (' + cnt + '/5)</option>';
           }
-        }
+        });
         if(currentVal) sel.value = currentVal;
         applyTageslisteShelfUi(currentRegal);
         var badge = document.getElementById('currentShelfCountBadge');
@@ -2431,6 +2530,18 @@
           badge.style.display = 'inline-flex';
           badge.innerText = 'In ' + currentRegal + ' ' + (c === 1 ? 'ist' : 'sind') + ' ' + c + ' ' + (c === 1 ? 'Kiste' : 'Kisten');
         }
+      }
+      if (refurbCache && refurbCache.counts) {
+        applyShelfMapFromCounts(refurbCache.counts);
+        return;
+      }
+      google.script.run.withSuccessHandler(function(res) {
+        if(!res.success || shelfDropdownOpen) return;
+        var shelfMap = {};
+        for(var i = 0; i < res.shelves.length; i++) {
+          shelfMap[res.shelves[i].name] = res.shelves[i].count;
+        }
+        applyShelfMapFromCounts(shelfMap);
       }).getShelfCounts();
     }
     reifenStockInput.addEventListener('input', function() {
@@ -3467,6 +3578,7 @@
         printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge);
         statusEl.innerText = finalMessage;
         showReifenInfo(res);
+        loadRefurbishmentCache(true);
         tireSearchResults.splice(index, 1);
         var badge = document.getElementById('reifenSizeBadge');
         badge.innerText = tireSearchResults.length + ' gefunden';
@@ -3577,6 +3689,7 @@
             reifenStockInput.focus();
           }
           setReifenStatus(finalMessage, "#56d364");
+          loadRefurbishmentCache(true);
         })
         .withFailureHandler(function(err) {
           setReifenStatus("❌ Systemfehler: " + (err.message || String(err)), "#f85149");
@@ -3779,6 +3892,239 @@
       return /^[A-Z]{2}\d{3,}/i.test(val.replace(/\s+/g, ''));
     }
 
+    function normalizeStockIdJs(value) {
+      return String(value || '').replace(/\s+/g, '').toUpperCase();
+    }
+
+    function cellMatchesStockIdJs(cellVal, stockId) {
+      var cv = normalizeStockIdJs(cellVal);
+      var sid = normalizeStockIdJs(stockId);
+      return sid !== '' && cv === sid;
+    }
+
+    function normalizeRegalKeyForCountClient(val) {
+      if (val === '' || val == null) return '';
+      if (typeof val === 'number' && isFinite(val)) {
+        var a = Math.floor(val);
+        var rest = val - a;
+        var b = Math.round(rest * 10 + 1e-6);
+        if (a >= 1 && a <= 9 && b >= 1 && b <= 8) return 'Regal ' + a + '.' + b;
+        return '';
+      }
+      var s = String(val || '').trim().replace(/,/g, '.');
+      if (!s) return '';
+      var low = s.toLowerCase();
+      if (low === 'tagesliste' || low === 'lack' || low === 'exit') return '';
+      var m = s.match(/^regal\s+(\d+)\s*\.\s*(\d+)$/i);
+      if (m) return 'Regal ' + parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
+      m = s.match(/^(\d+)\s*\.\s*(\d+)$/);
+      if (m) {
+        var a2 = parseInt(m[1], 10);
+        var b2 = parseInt(m[2], 10);
+        if (a2 >= 1 && a2 <= 9 && b2 >= 1 && b2 <= 8) return 'Regal ' + a2 + '.' + b2;
+      }
+      return '';
+    }
+
+    function computeWmsFromCache(stockId, cache) {
+      if (!cache || !cache.rows || !cache.counts) return null;
+      var sid = normalizeStockIdJs(stockId);
+      if (!sid) return { success: false, message: 'Keine Stock-ID' };
+      var rows = cache.rows;
+      var counts = cache.counts;
+      var hitIdx = -1;
+      for (var s = 0; s < rows.length; s++) {
+        if (cellMatchesStockIdJs(rows[s][0], sid)) {
+          hitIdx = s;
+          break;
+        }
+      }
+      var availableShelves = [];
+      for (var shelf in counts) {
+        if (Object.prototype.hasOwnProperty.call(counts, shelf) && counts[shelf] < 5) {
+          availableShelves.push({ name: shelf, count: counts[shelf] });
+        }
+      }
+      var result = { success: false, freeShelves: availableShelves };
+      if (hitIdx >= 0) {
+        var rowData = rows[hitIdx];
+        result.success = true;
+        result.carolUrl = String(rowData[1] || '');
+        result.schaeden = String(rowData[2] || '');
+        result.kommBestellung = String(rowData[3] || '');
+        result.kommAnlieferung = String(rowData[4] || '');
+        result.status = String(rowData[5] || '');
+        result.regal = String(rowData[6] || '');
+        result.reifenStatus = String(rowData[7] || '');
+        var curKey = normalizeRegalKeyForCountClient(result.regal);
+        result.currentShelfCount = (curKey && Object.prototype.hasOwnProperty.call(counts, curKey)) ? counts[curKey] : (counts[result.regal] || 0);
+        result.currentShelfCapacity = 5;
+      } else {
+        result.message = 'Stock-ID in Refurbisment List nicht gefunden!';
+      }
+      return result;
+    }
+
+    function searchByOrderNumberFromCache(query, cache) {
+      if (!cache || !cache.rows || !cache.rows.length) return null;
+      query = String(query || '').replace(/\s+/g, '').toUpperCase();
+      if (!query) return { found: false, message: 'Keine Suchanfrage' };
+      var cleanQuery = query.replace(/^N4P/i, '');
+      if (!cleanQuery || cleanQuery.length < 4) return { found: false, message: 'Suchanfrage zu kurz (min. 4 Zeichen)' };
+      var rows = cache.rows;
+      for (var i = 0; i < rows.length; i++) {
+        var cellText = String(rows[i][3] || '').replace(/\s+/g, '').toUpperCase();
+        if (!cellText) continue;
+        if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
+          var st = String(rows[i][0] || '').trim();
+          if (st) {
+            return { found: true, stockId: st, message: 'Gefunden via Bestellnummer in Kommentar Ersatzteile Bestellung' };
+          }
+        }
+      }
+      return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
+    }
+
+    function updateRefurbCacheHud(success) {
+      var badge = document.getElementById('cacheLastUpdatedBadge');
+      var dot = document.getElementById('cachePulseDot');
+      var label = document.getElementById('cacheStatusText');
+      if (success && badge) {
+        var s = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
+        badge.textContent = 'Last updated: ' + s;
+      }
+      if (dot) {
+        dot.className = 'cache-pulse-dot' + (success ? ' cache-pulse-dot--active' : ' cache-pulse-dot--inactive');
+      }
+      if (label) {
+        label.textContent = success ? 'Cache Active' : 'Cache not active';
+        label.className = 'topbar-cache-live-label' + (success ? ' topbar-cache-live-label--on' : '');
+      }
+    }
+
+    function loadRefurbishmentCache(force, onDone) {
+      if (refurbCacheLoading && !force) {
+        if (typeof onDone === 'function') onDone();
+        return;
+      }
+      refurbCacheLoading = true;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          refurbCacheLoading = false;
+          var ok = !!(res && res.success);
+          if (ok) refurbCache = res;
+          updateRefurbCacheHud(ok);
+          if (typeof onDone === 'function') onDone();
+        })
+        .withFailureHandler(function() {
+          refurbCacheLoading = false;
+          updateRefurbCacheHud(false);
+          if (typeof onDone === 'function') onDone();
+        })
+        .getRefurbishmentCachePayload();
+    }
+
+    function startRefurbishmentBackgroundRefresh() {
+      if (refurbBackgroundTimer) clearInterval(refurbBackgroundTimer);
+      refurbBackgroundTimer = setInterval(function() {
+        loadRefurbishmentCache(true);
+      }, REFURB_CACHE_POLL_MS);
+    }
+
+    function applyFetchWmsResult(res, id) {
+      if (res.success) {
+        currentStock = id;
+        currentCarolUrl = res.carolUrl;
+        currentSchaedenText = res.schaeden || '';
+        currentBestellungText = res.kommBestellung || '';
+
+        document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText);
+        setCommentText(res.kommAnlieferung || '');
+        var shelfCountBadge = document.getElementById('currentShelfCountBadge');
+        var regalVal = (res.regal || '').trim();
+        if (isRegalTagesliste(regalVal)) {
+          document.getElementById('currentShelfLabel').innerText = '';
+          shelfCountBadge.style.display = 'none';
+        } else {
+          document.getElementById('currentShelfLabel').innerText = 'Aktuell: ' + (res.regal || 'LEER');
+          if (/^Regal\s+\d+\.\d+$/i.test(res.regal || '')) {
+            var shelfCount = res.currentShelfCount || 0;
+            var shelfWord = shelfCount === 1 ? 'Kiste' : 'Kisten';
+            var shelfVerb = shelfCount === 1 ? 'ist' : 'sind';
+            shelfCountBadge.style.display = 'inline-flex';
+            shelfCountBadge.innerText = 'In ' + res.regal + ' ' + shelfVerb + ' ' + shelfCount + ' ' + shelfWord;
+          } else {
+            shelfCountBadge.style.display = 'none';
+          }
+        }
+
+        var badge = document.getElementById('badgeReifen');
+        var reifenPattern = /(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i;
+        var sengPattern = /(Reifen Seng)/i;
+        var hasTires = reifenPattern.test(res.schaeden) || sengPattern.test(res.kommBestellung);
+
+        if (hasTires) {
+          badge.style.display = 'inline-block';
+          var rStatus = (res.reifenStatus || '').toLowerCase().replace(/\s/g, '');
+          if (rStatus === 'werkstatt1') {
+            badge.innerText = 'REIFEN: SIND DA';
+            badge.style.background = 'rgba(86, 211, 100, 0.15)';
+            badge.style.color = '#56d364';
+          } else {
+            badge.innerText = 'REIFEN: FEHLEN';
+            badge.style.background = 'rgba(248, 81, 73, 0.15)';
+            badge.style.color = '#f85149';
+          }
+        } else {
+          badge.style.display = 'none';
+        }
+
+        var sel = document.getElementById('shelfSelect');
+        var currentRegal = (res.regal || '').trim();
+        sel.dataset.serverRegal = currentRegal;
+        sel.innerHTML = '';
+        var sortedFree = (res.freeShelves || []).slice().sort(function(a, b) {
+          return compareRegalShelfNames(a.name, b.name);
+        });
+        currentShelves = sortedFree;
+        if (currentRegal) {
+          if (isRegalTagesliste(currentRegal)) {
+            sel.innerHTML = '<option value="Tagesliste" selected>Tagesliste</option>';
+            sortedFree.forEach(function(s) {
+              sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+            });
+          } else {
+            sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
+            sortedFree.forEach(function(s) {
+              if (s.name !== currentRegal) {
+                sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+              }
+            });
+          }
+        } else {
+          sel.innerHTML = '<option value="" selected>-- FREIES REGAL WÄHLEN --</option>';
+          sortedFree.forEach(function(s) {
+            sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
+          });
+        }
+        applyTageslisteShelfUi(currentRegal);
+
+        document.getElementById('btnCarol').disabled = !res.carolUrl;
+
+        if (pendingWarning) {
+          setStatus(pendingWarning.msg, pendingWarning.color);
+          pendingWarning = null;
+        } else {
+          setStatus('✅ Daten für ' + id + ' geladen!', '#56d364');
+        }
+        toggleUI(true);
+        startShelfRefresh();
+      } else {
+        setStatus('❌ FEHLER: ' + res.message, '#f85149');
+        toggleUI(true);
+      }
+    }
+
     function loadData() {
       var id = document.getElementById('searchInput').value.trim();
       if(!id) return;
@@ -3787,6 +4133,19 @@
         setStatus("🔍 Suche Bestellnummer '" + id + "'...", "#f2cc60");
         toggleUI(false);
         setHudBusy(true, 'Suche Bestellnummer…');
+        var orderLocal = searchByOrderNumberFromCache(id, refurbCache);
+        if (orderLocal !== null) {
+          if(orderLocal.found && orderLocal.stockId) {
+            setStatus("✅ " + orderLocal.message + " → " + orderLocal.stockId, "#56d364");
+            document.getElementById('searchInput').value = orderLocal.stockId;
+            setHudBusy(true, 'Lade Auftrag…');
+            setTimeout(function() { loadData(); }, 600);
+          } else {
+            setStatus("❌ " + (orderLocal.message || "Nicht gefunden"), "#f85149");
+            toggleUI(true);
+          }
+          return;
+        }
         google.script.run.withSuccessHandler(function(res) {
           if(res.found && res.stockId) {
             setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
@@ -3803,100 +4162,19 @@
         }).searchByOrderNumber(id);
         return;
       }
-      
+
       setStatus("Scanne Datenbank...", "#f2cc60");
       toggleUI(false);
       setHudBusy(true, 'Scanne Datenbank…');
 
+      var fromCache = computeWmsFromCache(id, refurbCache);
+      if (fromCache !== null) {
+        applyFetchWmsResult(fromCache, id);
+        return;
+      }
+
       google.script.run.withSuccessHandler(function(res) {
-        if(res.success) {
-          currentStock = id;
-          currentCarolUrl = res.carolUrl;
-          currentShelves = res.freeShelves;
-          currentSchaedenText = res.schaeden || "";
-          currentBestellungText = res.kommBestellung || "";
-
-          document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText);
-          setCommentText(res.kommAnlieferung || "");
-          var shelfCountBadge = document.getElementById('currentShelfCountBadge');
-          var regalVal = (res.regal || "").trim();
-          if(isRegalTagesliste(regalVal)) {
-            document.getElementById('currentShelfLabel').innerText = "";
-            shelfCountBadge.style.display = "none";
-          } else {
-            document.getElementById('currentShelfLabel').innerText = "Aktuell: " + (res.regal || "LEER");
-            if(/^Regal\s+\d+\.\d+$/i.test(res.regal || "")) {
-              var shelfCount = res.currentShelfCount || 0;
-              var shelfWord = shelfCount === 1 ? "Kiste" : "Kisten";
-              var shelfVerb = shelfCount === 1 ? "ist" : "sind";
-              shelfCountBadge.style.display = "inline-flex";
-              shelfCountBadge.innerText = "In " + res.regal + " " + shelfVerb + " " + shelfCount + " " + shelfWord;
-            } else {
-              shelfCountBadge.style.display = "none";
-            }
-          }
-
-          var badge = document.getElementById('badgeReifen');
-          var reifenPattern = /(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i;
-          var sengPattern = /(Reifen Seng)/i;
-          var hasTires = reifenPattern.test(res.schaeden) || sengPattern.test(res.kommBestellung);
-
-          if (hasTires) {
-              badge.style.display = "inline-block";
-              var rStatus = (res.reifenStatus || "").toLowerCase().replace(/\s/g, '');
-              if (rStatus === "werkstatt1") {
-                  badge.innerText = "REIFEN: SIND DA";
-                  badge.style.background = "rgba(86, 211, 100, 0.15)";
-                  badge.style.color = "#56d364";
-              } else {
-                  badge.innerText = "REIFEN: FEHLEN";
-                  badge.style.background = "rgba(248, 81, 73, 0.15)";
-                  badge.style.color = "#f85149";
-              }
-          } else {
-              badge.style.display = "none";
-          }
-
-          var sel = document.getElementById('shelfSelect');
-          var currentRegal = (res.regal || "").trim();
-          sel.dataset.serverRegal = currentRegal;
-          sel.innerHTML = '';
-          if(currentRegal) {
-            if(isRegalTagesliste(currentRegal)) {
-              sel.innerHTML = '<option value="Tagesliste" selected>Tagesliste</option>';
-              res.freeShelves.forEach(function(s) {
-                sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-              });
-            } else {
-              sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
-              res.freeShelves.forEach(function(s) {
-                if(s.name !== currentRegal) {
-                  sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-                }
-              });
-            }
-          } else {
-            sel.innerHTML = '<option value="" selected>-- FREIES REGAL WÄHLEN --</option>';
-            res.freeShelves.forEach(function(s) {
-              sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-            });
-          }
-          applyTageslisteShelfUi(currentRegal);
-
-          document.getElementById('btnCarol').disabled = !res.carolUrl;
-
-          if(pendingWarning) {
-            setStatus(pendingWarning.msg, pendingWarning.color);
-            pendingWarning = null;
-          } else {
-            setStatus("✅ Daten für " + id + " geladen!", "#56d364");
-          }
-          toggleUI(true);
-          startShelfRefresh();
-        } else {
-          setStatus("❌ FEHLER: " + res.message, "#f85149");
-          toggleUI(true);
-        }
+        applyFetchWmsResult(res, id);
       }).withFailureHandler(function(err) {
         setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
         toggleUI(true);
@@ -3908,6 +4186,7 @@
       setStatus("Speichere Kommentar...", "#f2cc60");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
+        if (res.success) loadRefurbishmentCache(true);
       }).saveKommentar(currentStock, text);
     }
 
@@ -3921,7 +4200,7 @@
           if(res.success) {
             pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#f2cc60" };
             document.getElementById('searchInput').value = currentStock;
-            loadData();
+            loadRefurbishmentCache(true, function() { loadData(); });
           } else {
             setStatus("❌ " + res.message, "#f85149");
           }
@@ -3933,7 +4212,7 @@
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
         if(res.success) {
           document.getElementById('searchInput').value = currentStock;
-          loadData();
+          loadRefurbishmentCache(true, function() { loadData(); });
         }
       }).saveKommentarUndRegal(currentStock, text, regal);
     }
@@ -3947,7 +4226,7 @@
         if(res.success) {
           document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
           document.getElementById('searchInput').value = currentStock;
-          loadData();
+          loadRefurbishmentCache(true, function() { loadData(); });
         }
       }).einlagern(currentStock, regal);
     }
@@ -4087,6 +4366,7 @@
                 setStatus(finalStatus, "#56d364");
                 setHudBusy(false);
                 toggleUI(false);
+                loadRefurbishmentCache(true);
                 document.getElementById('searchInput').value = "";
                 document.getElementById('searchInput').focus();
               } else {
@@ -4110,6 +4390,12 @@
         .saveKommentar(currentStock, text);
 
     }
+
+    loadRefurbishmentCache(true);
+    startRefurbishmentBackgroundRefresh();
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) loadRefurbishmentCache(true);
+    });
   </script>
 </body>
 </html>

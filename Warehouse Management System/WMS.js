@@ -711,7 +711,53 @@ function processReifenStock(tabName, stockId, isDelivered) {
       return { success: false, message: err.message };
     }
   }
-  
+
+function getRefurbishmentCachePayload() {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName("Refurbisment List");
+    if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var rawRows = [];
+    if (lastRow >= 2) {
+      rawRows = sheet.getRange(2, 1, lastRow, 30).getValues();
+    }
+    var rows = [];
+    var ri;
+    for (ri = 0; ri < rawRows.length; ri++) {
+      var r = rawRows[ri];
+      rows.push([
+        r[1], r[2], r[22], r[23], r[24], r[25], r[27], r[29]
+      ]);
+    }
+
+    var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
+    var counts = {};
+    for (var i = 1; i <= 9; i++) {
+      for (var j = 1; j <= 8; j++) {
+        counts["Regal " + i + "." + j] = 0;
+      }
+    }
+    for (var r = 1; r < regalColData.length; r++) {
+      var regalVal = String(regalColData[r][0] || "").trim();
+      var rk2 = normalizeRegalKeyForCount(regalVal);
+      if (rk2 && counts.hasOwnProperty(rk2)) counts[rk2]++;
+    }
+    mergeNachbestellungenRegalIntoCounts(counts);
+
+    return {
+      success: true,
+      version: Date.now(),
+      lastRow: lastRow,
+      rows: rows,
+      counts: counts
+    };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
   function saveKommentar(stockId, text) {
     try {
       stockId = normalizeStockId(stockId);
