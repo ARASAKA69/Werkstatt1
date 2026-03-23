@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.24
+// @version      1.25
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -95,6 +95,55 @@
             await new Promise(r => setTimeout(r, 500));
         }
         return false;
+    }
+
+    function basenameLower(path) {
+        const s = String(path || '').replace(/\\/g, '/');
+        const i = s.lastIndexOf('/');
+        return (i >= 0 ? s.slice(i + 1) : s).toLowerCase();
+    }
+
+    function classifyUploadFile(nameLower) {
+        const base = basenameLower(nameLower);
+        if (base.includes('retoure')) return 'retoure';
+        if (/(?:^|[\s_-])na(?:\s*\(\d+\))?\.[a-z0-9]{2,5}$/i.test(base)) return 'nachbestellung';
+        return 'ausgabe';
+    }
+
+    function dedupeFilesByName(files) {
+        const seen = new Map();
+        const unique = [];
+        const duplicates = [];
+        for (let i = 0; i < files.length; i++) {
+            const f = files[i];
+            const key = basenameLower(f.name);
+            if (seen.has(key)) {
+                duplicates.push({ file: f, firstName: seen.get(key) });
+            } else {
+                seen.set(key, f.name);
+                unique.push(f);
+            }
+        }
+        return { unique, duplicates };
+    }
+
+    function moveFileRequest(fileInfo, isRetoure, extraParams) {
+        let q = `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&isRetoure=${isRetoure}&key=${API_KEY}`;
+        if (extraParams && typeof extraParams === 'object') {
+            for (const [k, v] of Object.entries(extraParams)) {
+                if (v != null && v !== '') q += `&${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`;
+            }
+        }
+        return new Promise(resolve => {
+            GM_xmlhttpRequest({
+                method: "GET",
+                url: q,
+                timeout: 10000,
+                onload: resolve,
+                onerror: resolve,
+                ontimeout: resolve
+            });
+        });
     }
 
     function sleep(ms) {
@@ -303,24 +352,37 @@
 
     async function executeUploadsForStock(stockId) {
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
-        let files = allData[stockId];
-        let totalFiles = files.length;
+        let rawFiles = allData[stockId];
         let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
 
+        let deduped = dedupeFilesByName(rawFiles);
+        let files = deduped.unique;
+        let dupByName = deduped.duplicates;
+
+        for (let d = 0; d < dupByName.length; d++) {
+            if (abortMission) return;
+            let dup = dupByName[d];
+            let fn = dup.file.name;
+            let cls = classifyUploadFile(fn);
+            let isRetoureDup = cls === 'retoure';
+            showCustomPopup("ARASAKA SKIP", `Duplikat Dateiname (${fn}), gleiche wie ${dup.firstName}. Verschiebe ohne Upload.`, false);
+            await moveFileRequest(dup.file, isRetoureDup, {
+                logKind: 'skip_duplicate_filename',
+                logStockId: stockId,
+                logFileName: fn,
+                logDetail: 'same_name_as_' + dup.firstName
+            });
+        }
+
+        let totalFiles = files.length;
         let pageText = document.body.innerText;
         let existingAusgabe = (pageText.match(/Ausgabe \d+\/\d+/g) || []).length;
         let existingRetoure = (pageText.match(/Retoure \d+\/\d+/g) || []).length;
         let existingNachbestellung = (pageText.match(/Nachbestellung \d+\/\d+/g) || []).length;
 
-        let newAusgabe = files.filter(f => {
-            let n = f.name.toLowerCase();
-            return !n.includes('retoure') && !/ na\b/.test(n);
-        }).length;
-        let newRetoure = files.filter(f => f.name.toLowerCase().includes('retoure')).length;
-        let newNachbestellung = files.filter(f => {
-            let n = f.name.toLowerCase();
-            return !n.includes('retoure') && / na\b/.test(n);
-        }).length;
+        let newAusgabe = files.filter(f => classifyUploadFile(f.name) === 'ausgabe').length;
+        let newRetoure = files.filter(f => classifyUploadFile(f.name) === 'retoure').length;
+        let newNachbestellung = files.filter(f => classifyUploadFile(f.name) === 'nachbestellung').length;
 
         let ausgabeTotal = existingAusgabe + newAusgabe;
         let retoureTotal = existingRetoure + newRetoure;
@@ -328,36 +390,45 @@
         let ausgabeIdx = existingAusgabe + 1;
         let retoureIdx = existingRetoure + 1;
         let nachbestellungIdx = existingNachbestellung + 1;
+        let skipCommentCount = 0;
+        let skipCommentLines = [];
 
         for (let i = 0; i < totalFiles; i++) {
             if (abortMission) return;
 
             let fileInfo = files[i];
-            let nameLower = fileInfo.name.toLowerCase();
-            let isRetoure = nameLower.includes('retoure');
-            let isNachbestellung = !isRetoure && / na\b/.test(nameLower);
+            let cls = classifyUploadFile(fileInfo.name);
+            let isRetoure = cls === 'retoure';
+            let isNachbestellung = cls === 'nachbestellung';
 
             let currentComment;
             if (isRetoure) {
-                currentComment = `Retoure ${retoureIdx++}/${retoureTotal}`;
+                currentComment = `Retoure ${retoureIdx}/${retoureTotal}`;
             } else if (isNachbestellung) {
-                currentComment = `Nachbestellung ${nachbestellungIdx++}/${nachbestellungTotal}`;
+                currentComment = `Nachbestellung ${nachbestellungIdx}/${nachbestellungTotal}`;
             } else {
-                currentComment = `Ausgabe ${ausgabeIdx++}/${ausgabeTotal}`;
+                currentComment = `Ausgabe ${ausgabeIdx}/${ausgabeTotal}`;
             }
 
             if (document.body.innerText.includes(currentComment)) {
+                skipCommentCount++;
+                skipCommentLines.push(fileInfo.name + ' [' + currentComment + ']');
                 showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
-                await new Promise(resolve => {
-                    GM_xmlhttpRequest({
-                        method: "GET",
-                        url: `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&isRetoure=${isRetoure}&key=${API_KEY}`,
-                        timeout: 10000,
-                        onload: resolve, onerror: resolve, ontimeout: resolve
-                    });
+                if (isRetoure) retoureIdx++;
+                else if (isNachbestellung) nachbestellungIdx++;
+                else ausgabeIdx++;
+                await moveFileRequest(fileInfo, isRetoure, {
+                    logKind: 'skip_comment_exists',
+                    logStockId: stockId,
+                    logFileName: fileInfo.name,
+                    logDetail: currentComment
                 });
                 continue;
             }
+
+            if (isRetoure) retoureIdx++;
+            else if (isNachbestellung) nachbestellungIdx++;
+            else ausgabeIdx++;
 
             showCustomPopup("ARASAKA DOWNLOAD", `Lade Bild ${i + 1} von ${totalFiles} für ${stockId} aus Drive...`, false);
             let b64 = await new Promise((resolve) => {
@@ -440,18 +511,20 @@
                 await sleep(2000);
             }
 
-            await new Promise(resolve => {
-                if (abortMission) return resolve();
-                GM_xmlhttpRequest({
-                    method: "GET",
-                    url: `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&isRetoure=${isRetoure}&key=${API_KEY}`,
-                    timeout: 10000,
-                    onload: resolve, onerror: resolve, ontimeout: resolve
-                });
-            });
+            if (abortMission) return;
+            await moveFileRequest(fileInfo, isRetoure);
         }
 
         if (abortMission) return;
+
+        function truncateLogParam(s, maxLen) {
+            if (!s) return '';
+            if (s.length <= maxLen) return s;
+            return s.slice(0, maxLen - 3) + '...';
+        }
+
+        let dupLogLine = dupByName.map(d => d.file.name + ' (wie ' + d.firstName + ')').join(' | ');
+        let commentLogLine = skipCommentLines.join(' | ');
 
         showCustomPopup("ARASAKA SYNC", `Setze Haken in der Tagesliste...`, false);
 
@@ -465,7 +538,7 @@
         let syncStatus = await new Promise(resolve => {
             GM_xmlhttpRequest({
                 method: "GET",
-                url: `${DRIVE_WEB_APP_URL}?action=markSheet&stockId=${stockId}&key=${API_KEY}`,
+                url: `${DRIVE_WEB_APP_URL}?action=markSheet&stockId=${stockId}&key=${API_KEY}&skippedDup=${dupByName.length}&skippedComment=${skipCommentCount}&batchFiles=${rawFiles.length}&uniqueFiles=${files.length}&skipDupDetail=${encodeURIComponent(truncateLogParam(dupLogLine, 1800))}&skipCommentDetail=${encodeURIComponent(truncateLogParam(commentLogLine, 1800))}`,
                 timeout: 45000,
                 onload: (res) => resolve(res.responseText),
                 onerror: () => resolve("HTTP_ERROR"),
