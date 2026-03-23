@@ -1,11 +1,14 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.25
+// @version      1.36
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
+// @connect      googleusercontent.com
 // ==/UserScript==
 
 (function() {
@@ -13,6 +16,64 @@
 
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
+    const ARASAKA_DEBUG = false;
+
+    function dbg() {
+        if (!ARASAKA_DEBUG) return;
+        var a = ['[ARASAKA]'];
+        for (var i = 0; i < arguments.length; i++) a.push(arguments[i]);
+        console.log.apply(console, a);
+    }
+
+    function bridgeBodyLooksLikeHtml(t) {
+        var s = String(t || '').trim();
+        return s.length > 0 && (s.slice(0, 9).toLowerCase() === '<!doctype' || s.slice(0, 5).toLowerCase() === '<html' || s.slice(0, 6).toLowerCase() === '<head>');
+    }
+
+    function bridgeHtmlErrorHint(html) {
+        var h = String(html || '');
+        var out = '';
+        var mt = h.match(/<title[^>]*>([^<]+)<\/title>/i);
+        if (mt) out = mt[1].trim();
+        var me = h.match(/class="errorMessage"[^>]*>([^<]+)/i);
+        if (me) out = (out ? out + ' — ' : '') + me[1].trim();
+        if (!out) out = h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+        return out;
+    }
+
+    function bridgeAppsScriptHtmlPopupText() {
+        return 'Die Web-App antwortet mit einer Google-Fehlerseite (HTML), nicht mit JSON.\n\n'
+            + 'Typisch: Deployment-Zugriff, fehlende Autorisierung, oder falscher Google-Account.\n\n'
+            + '1) Im Browser mit dem Workspace-Konto einloggen (z. B. @autohero.com).\n'
+            + '2) Apps Script öffnen → Deploy → Verwaltung → neue Version, Zugriff z. B. "Alle innerhalb der Domain" oder "Jeder".\n'
+            + '3) Die /exec-URL einmal im gleichen Browser öffnen und Berechtigungen erlauben.\n'
+            + '4) Falls im Skript eine E-Mail-Whitelist aktiv ist: actor-Parameter setzen oder Liste prüfen.\n'
+            + '5) Neues Apps-Skript deployen (doPost muss enthalten sein — aktueller drive-bridge.gs).';
+    }
+
+    function bridgeExtraHintForDriveError(msg) {
+        var m = String(msg || '');
+        if (/angegebenen ID|specified ID|kein Element|not have the required permission|Berechtigung|permission/i.test(m)) {
+            return '\n\nDrive: In Apps Script die Variable folderOffenId (Kisten-Ordner) prüfen — ID aus der Browser-URL des Ordners kopieren. Ordner für das Konto aus "Deploy → Als ausführen" freigeben.';
+        }
+        return '';
+    }
+
+    function bridgePostJson(payload, timeoutMs) {
+        var body = JSON.stringify(Object.assign({ key: API_KEY }, payload));
+        return new Promise(function(resolve) {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: DRIVE_WEB_APP_URL,
+                headers: { 'Content-Type': 'application/json' },
+                data: body,
+                timeout: timeoutMs || 15000,
+                onload: function(r) { resolve(r); },
+                onerror: function() { resolve(null); },
+                ontimeout: function() { resolve(null); }
+            });
+        });
+    }
 
     let isProcessing = false;
     let abortMission = false;
@@ -50,7 +111,7 @@
         try {
             let audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
             audio.volume = 0.8;
-            audio.play().catch(e => console.log('Audio Autoplay blockiert', e));
+            audio.play().catch(function(e) { dbg('audio', 'autoplay', e); });
         } catch (e) {}
     }
 
@@ -103,46 +164,64 @@
         return (i >= 0 ? s.slice(i + 1) : s).toLowerCase();
     }
 
+    function isDocumentFileNameAlreadyOnPage(fileName) {
+        const base = basenameLower(fileName);
+        if (!base) return false;
+        return (document.body.innerText || '').toLowerCase().includes(base);
+    }
+
     function classifyUploadFile(nameLower) {
         const base = basenameLower(nameLower);
         if (base.includes('retoure')) return 'retoure';
         if (/(?:^|[\s_-])na(?:\s*\(\d+\))?\.[a-z0-9]{2,5}$/i.test(base)) return 'nachbestellung';
+        if (/ na\b/.test(base)) return 'nachbestellung';
         return 'ausgabe';
     }
 
     function dedupeFilesByName(files) {
-        const seen = new Map();
-        const unique = [];
+        const byKey = new Map();
         const duplicates = [];
         for (let i = 0; i < files.length; i++) {
             const f = files[i];
             const key = basenameLower(f.name);
-            if (seen.has(key)) {
-                duplicates.push({ file: f, firstName: seen.get(key) });
+            const mt = f.modifiedTime != null ? Number(f.modifiedTime) : 0;
+            if (!byKey.has(key)) {
+                byKey.set(key, f);
+                continue;
+            }
+            const prev = byKey.get(key);
+            const prevMt = prev.modifiedTime != null ? Number(prev.modifiedTime) : 0;
+            if (mt > prevMt) {
+                duplicates.push({ file: prev, firstName: prev.name, reason: 'batch_older_mtime' });
+                byKey.set(key, f);
+            } else if (mt < prevMt) {
+                duplicates.push({ file: f, firstName: prev.name, reason: 'batch_older_mtime' });
             } else {
-                seen.set(key, f.name);
-                unique.push(f);
+                duplicates.push({ file: f, firstName: prev.name, reason: 'batch_same_mtime' });
             }
         }
+        const unique = Array.from(byKey.values());
         return { unique, duplicates };
     }
 
     function moveFileRequest(fileInfo, isRetoure, extraParams) {
-        let q = `${DRIVE_WEB_APP_URL}?action=moveFile&fileId=${fileInfo.id}&isRetoure=${isRetoure}&key=${API_KEY}`;
+        const maxParamLen = 450;
+        let payload = { action: 'moveFile', fileId: fileInfo.id, isRetoure: isRetoure };
         if (extraParams && typeof extraParams === 'object') {
             for (const [k, v] of Object.entries(extraParams)) {
-                if (v != null && v !== '') q += `&${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`;
+                if (v === true || v === false) {
+                    payload[k] = v;
+                } else if (v != null && v !== '') {
+                    let s = String(v);
+                    if (s.length > maxParamLen) s = s.slice(0, maxParamLen - 3) + '...';
+                    payload[k] = s;
+                }
             }
         }
-        return new Promise(resolve => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: q,
-                timeout: 10000,
-                onload: resolve,
-                onerror: resolve,
-                ontimeout: resolve
-            });
+        return bridgePostJson(payload, 10000).then(function(r) {
+            if (!r) { dbg('moveFile', 'noResponse', fileInfo.id); return r; }
+            dbg('moveFile', 'http', r.status, 'id', fileInfo.id, 'body', String(r.responseText || '').slice(0, 160));
+            return r;
         });
     }
 
@@ -180,18 +259,18 @@
     }
 
     async function handleStockError(stockId, idx, message) {
+        dbg('handleStockError', 'stockId', stockId, 'idx', idx, 'message', message);
         showCustomPopup("ARASAKA FEHLER", `${message}\nVerschiebe in Kisten Falsche Stock Ordner...`, false);
         let allData = JSON.parse(sessionStorage.getItem('arasaka_batch_data'));
         let files = allData[stockId];
-        let movePromises = files.map(f => new Promise(resolve => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `${DRIVE_WEB_APP_URL}?action=moveFileError&fileId=${f.id}&stockId=${stockId}&reason=${encodeURIComponent(message)}&key=${API_KEY}`,
-                timeout: 10000,
-                onload: resolve,
-                onerror: resolve,
-                ontimeout: resolve
-            });
+        let movePromises = files.map(f => bridgePostJson({
+            action: 'moveFileError',
+            fileId: f.id,
+            stockId: stockId,
+            reason: message
+        }, 10000).then(function(r) {
+            if (!r) { dbg('moveFileError', 'noResponse', f.id); return; }
+            dbg('moveFileError', 'http', r.status, 'fileId', f.id, 'body', String(r.responseText || '').slice(0, 120));
         }));
         await Promise.all(movePromises);
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
@@ -199,71 +278,110 @@
     }
 
     async function startBatchProcess() {
+        dbg('startBatchProcess');
         showCustomPopup("ARASAKA ONLINE", "Prüfe Kisten im Google Drive...", false);
-        GM_xmlhttpRequest({
-            method: "GET",
-            url: `${DRIVE_WEB_APP_URL}?action=getBatch&key=${API_KEY}`,
-            timeout: 15000,
-            onload: async function(response) {
-                if (abortMission) return;
-                try {
-                    let data = JSON.parse(response.responseText);
-                    let stockIds = Object.keys(data);
-                    if (stockIds.length === 0) {
-                        playSuccessSound();
-                        showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine neuen Bilder gefunden.\n\n[ALT + B] drücken, um später neu zu scannen.\nZeit, den Falsche Stock-Ordner zu checken!", true);
-                        isProcessing = false;
-                        return;
-                    }
-                    sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
-                    sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
-                    sessionStorage.setItem('arasaka_batch_current_idx', '0');
-                    processNextStock();
-                } catch (err) {
-                    showCustomPopup("FEHLER", "Google Drive antwortet nicht richtig. Skript-URL und API-Key prüfen!", true);
-                    isProcessing = false;
-                }
-            },
-            onerror: function() { showCustomPopup("FEHLER", "Keine Verbindung zu Google Drive möglich.", true); isProcessing = false; },
-            ontimeout: function() { showCustomPopup("FEHLER", "Zeitüberschreitung bei Google Drive.", true); isProcessing = false; }
-        });
+        if (abortMission) return;
+        let response = await bridgePostJson({ action: 'getBatch' }, 15000);
+        if (!response) {
+            dbg('getBatch', 'noResponse');
+            showCustomPopup("FEHLER", "Keine Verbindung zu Google Drive möglich.", true);
+            isProcessing = false;
+            return;
+        }
+        var rt = response.responseText || '';
+        dbg('getBatch', 'http', response.status, 'finalUrl', response.finalUrl || '', 'len', rt.length, 'head', rt.slice(0, 240));
+        if (bridgeBodyLooksLikeHtml(rt)) {
+            dbg('getBatch', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
+            dbg('getBatch', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
+            showCustomPopup("FEHLER", "Die Verbindung zur Google-Web-App ist fehlgeschlagen (HTML statt Daten). Bei Bedarf Konsole (F12) für Details.", true);
+            isProcessing = false;
+            return;
+        }
+        var parsedErr = null;
+        try { parsedErr = JSON.parse(rt); } catch (e0) {}
+        if (parsedErr && typeof parsedErr.error === 'string') {
+            dbg('getBatch', 'serverError', parsedErr.error, bridgeExtraHintForDriveError(parsedErr.error));
+            showCustomPopup("FEHLER", "Server- oder Drive-Fehler. Konsole (F12) für den genauen Text.", true);
+            isProcessing = false;
+            return;
+        }
+        try {
+            let data = JSON.parse(rt);
+            let stockIds = Object.keys(data);
+            dbg('getBatch', 'parsed', 'stockCount', stockIds.length, 'keys', stockIds);
+            if (stockIds.length === 0) {
+                playSuccessSound();
+                showCustomPopup("Mahlzeit!", "Kisten Offen ist leer. Keine neuen Bilder gefunden.\n\n[ALT + B] drücken, um später neu zu scannen.\nZeit, den Falsche Stock-Ordner zu checken!", true);
+                isProcessing = false;
+                return;
+            }
+            sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
+            sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
+            sessionStorage.setItem('arasaka_batch_current_idx', '0');
+            processNextStock();
+        } catch (err) {
+            dbg('getBatch', 'parseError', err && err.message, 'rawHead', rt.slice(0, 400));
+            showCustomPopup("FEHLER", "Google Drive antwortet nicht richtig. Skript-URL und API-Key prüfen!", true);
+            isProcessing = false;
+        }
     }
 
     async function processNextStock() {
         if (abortMission) return;
         let keys = JSON.parse(sessionStorage.getItem('arasaka_batch_keys') || "[]");
         let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
+        dbg('processNextStock', 'idx', idx, 'totalKeys', keys.length, 'keys', keys);
 
         if (idx >= keys.length) {
             sessionStorage.removeItem('arasaka_batch_data');
             sessionStorage.removeItem('arasaka_batch_keys');
             sessionStorage.removeItem('arasaka_batch_current_idx');
             showCustomPopup("ARASAKA", "Stapel fertig. Kurzer Check im Drive...", false);
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `${DRIVE_WEB_APP_URL}?action=getBatch&key=${API_KEY}`,
-                timeout: 15000,
-                onload: async function(response) {
-                    if (abortMission) return;
-                    try {
-                        let data = JSON.parse(response.responseText);
-                        let stockIds = Object.keys(data);
-                        if (stockIds.length === 0) {
-                            playSuccessSound();
-                            showCustomPopup("Mahlzeit!", "Alle Bilder sind sauber hochgeladen!\n\nKeine Kisten mehr da.\n\n[ALT + B] für den nächsten Scan.", true);
-                            isProcessing = false;
-                        } else {
-                            sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
-                            sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
-                            sessionStorage.setItem('arasaka_batch_current_idx', '0');
-                            processNextStock();
-                        }
-                    } catch (err) {
-                        showCustomPopup("FEHLER", "Fehler beim Auto-Recheck.", true);
-                        isProcessing = false;
-                    }
+            (async function() {
+                if (abortMission) return;
+                let response = await bridgePostJson({ action: 'getBatch' }, 15000);
+                if (!response) {
+                    dbg('getBatchRecheck', 'noResponse');
+                    isProcessing = false;
+                    return;
                 }
-            });
+                var rt = response.responseText || '';
+                dbg('getBatchRecheck', 'http', response.status, 'finalUrl', response.finalUrl || '', 'len', rt.length, 'head', rt.slice(0, 240));
+                if (bridgeBodyLooksLikeHtml(rt)) {
+                    dbg('getBatchRecheck', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
+                    dbg('getBatchRecheck', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
+                    showCustomPopup("FEHLER", "Die Verbindung zur Google-Web-App ist fehlgeschlagen (HTML statt Daten). Bei Bedarf Konsole (F12) für Details.", true);
+                    isProcessing = false;
+                    return;
+                }
+                var parsedErr2 = null;
+                try { parsedErr2 = JSON.parse(rt); } catch (e1) {}
+                if (parsedErr2 && typeof parsedErr2.error === 'string') {
+                    dbg('getBatchRecheck', 'serverError', parsedErr2.error, bridgeExtraHintForDriveError(parsedErr2.error));
+                    showCustomPopup("FEHLER", "Server- oder Drive-Fehler. Konsole (F12) für den genauen Text.", true);
+                    isProcessing = false;
+                    return;
+                }
+                try {
+                    let data = JSON.parse(rt);
+                    let stockIds = Object.keys(data);
+                    dbg('getBatchRecheck', 'parsed', 'stockCount', stockIds.length);
+                    if (stockIds.length === 0) {
+                        playSuccessSound();
+                        showCustomPopup("Mahlzeit!", "Alle Bilder sind sauber hochgeladen!\n\nKeine Kisten mehr da.\n\n[ALT + B] für den nächsten Scan.", true);
+                        isProcessing = false;
+                    } else {
+                        sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
+                        sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
+                        sessionStorage.setItem('arasaka_batch_current_idx', '0');
+                        processNextStock();
+                    }
+                } catch (err) {
+                    dbg('getBatchRecheck', 'parseError', err && err.message);
+                    showCustomPopup("FEHLER", "Fehler beim Auto-Recheck.", true);
+                    isProcessing = false;
+                }
+            })();
             return;
         }
 
@@ -272,6 +390,7 @@
 
         let searchInput = await findSearchBar();
         if (!searchInput) {
+            dbg('findSearchBar', 'null');
             await handleStockError(stockId, idx, "Suchleiste auf Startseite nicht gefunden");
             return;
         }
@@ -329,6 +448,7 @@
         if (abortMission) return;
 
         if (resultRow) {
+            dbg('searchResult', 'rowFound', true);
             showCustomPopup("ARASAKA NAVIGATION", `Öffne Auftrag...`, false);
             forceClick(resultRow);
             let uploadReady = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 15000);
@@ -337,15 +457,18 @@
             if (uploadReady) {
                 showCustomPopup("ARASAKA VERIFIKATION", `Prüfe, ob Auftrag ${stockId} der richtige ist...`, false);
                 let isCorrectPage = await waitForText(stockId, 5000);
+                dbg('pageVerify', 'stockId', stockId, 'isCorrectPage', isCorrectPage);
                 if (isCorrectPage) {
                     executeUploadsForStock(stockId);
                 } else {
                     await handleStockError(stockId, idx, "Falscher Auftrag geladen (Stock-ID fehlt im Auftrag)");
                 }
             } else {
+                dbg('uploadButton', 'missing');
                 await handleStockError(stockId, idx, "Auftrag hat nicht geöffnet oder Upload Button fehlt");
             }
         } else {
+            dbg('searchResult', 'rowFound', false);
             await handleStockError(stockId, idx, "Auftrag nicht gefunden");
         }
     }
@@ -358,6 +481,7 @@
         let deduped = dedupeFilesByName(rawFiles);
         let files = deduped.unique;
         let dupByName = deduped.duplicates;
+        dbg('executeUploadsForStock', 'stockId', stockId, 'batchIdx', idx, 'rawCount', rawFiles.length, 'uniqueCount', files.length, 'dupCount', dupByName.length);
 
         for (let d = 0; d < dupByName.length; d++) {
             if (abortMission) return;
@@ -365,12 +489,14 @@
             let fn = dup.file.name;
             let cls = classifyUploadFile(fn);
             let isRetoureDup = cls === 'retoure';
-            showCustomPopup("ARASAKA SKIP", `Duplikat Dateiname (${fn}), gleiche wie ${dup.firstName}. Verschiebe ohne Upload.`, false);
+            dbg('dupFilename', fn, 'first', dup.firstName, 'reason', dup.reason);
+            showCustomPopup("ARASAKA SKIP", "Doppelter Dateiname in dieser Ladung — wird übersprungen und verschoben.", false);
             await moveFileRequest(dup.file, isRetoureDup, {
+                toDuplicate: true,
                 logKind: 'skip_duplicate_filename',
                 logStockId: stockId,
                 logFileName: fn,
-                logDetail: 'same_name_as_' + dup.firstName
+                logDetail: (dup.reason || 'same_name') + '_vs_' + dup.firstName
             });
         }
 
@@ -391,7 +517,8 @@
         let retoureIdx = existingRetoure + 1;
         let nachbestellungIdx = existingNachbestellung + 1;
         let skipCommentCount = 0;
-        let skipCommentLines = [];
+        let skipFilenameOnPageCount = 0;
+        dbg('commentPlan', 'existingA/R/N', existingAusgabe, existingRetoure, existingNachbestellung, 'newA/R/N', newAusgabe, newRetoure, newNachbestellung, 'totalA/R/N', ausgabeTotal, retoureTotal, nachbestellungTotal);
 
         for (let i = 0; i < totalFiles; i++) {
             if (abortMission) return;
@@ -410,14 +537,64 @@
                 currentComment = `Ausgabe ${ausgabeIdx}/${ausgabeTotal}`;
             }
 
+            const mt = fileInfo.modifiedTime != null ? Number(fileInfo.modifiedTime) : 0;
+            const stored = fileInfo.lastUploadedStored != null ? Number(fileInfo.lastUploadedStored) : null;
+
+            if (stored != null && mt === stored) {
+                skipFilenameOnPageCount++;
+                dbg('skipSameMtimeAsStored', fileInfo.name, 'mt', mt, 'stored', stored);
+                showCustomPopup("ARASAKA SKIP", "Gleicher Zeitstempel wie beim letzten Upload — Duplikat, übersprungen.", false);
+                await moveFileRequest(fileInfo, isRetoure, {
+                    toDuplicate: true,
+                    logKind: 'skip_same_mtime_as_stored',
+                    logStockId: stockId,
+                    logFileName: fileInfo.name,
+                    logDetail: currentComment
+                });
+                continue;
+            }
+
+            if (stored != null && mt < stored) {
+                skipFilenameOnPageCount++;
+                dbg('skipOlderThanStored', fileInfo.name, 'mt', mt, 'stored', stored);
+                showCustomPopup("ARASAKA SKIP", "Datei ist älter als der letzte Upload — übersprungen.", false);
+                await moveFileRequest(fileInfo, isRetoure, {
+                    toDuplicate: true,
+                    logKind: 'skip_older_than_stored',
+                    logStockId: stockId,
+                    logFileName: fileInfo.name,
+                    logDetail: currentComment
+                });
+                continue;
+            }
+
+            if (stored == null && isDocumentFileNameAlreadyOnPage(fileInfo.name)) {
+                skipFilenameOnPageCount++;
+                dbg('skipFilenameOnPageNoStored', fileInfo.name, 'planned', currentComment);
+                showCustomPopup("ARASAKA SKIP", `Dateiname ${fileInfo.name} steht schon in der Dokumentenliste. Überspringe...`, false);
+                await moveFileRequest(fileInfo, isRetoure, {
+                    toDuplicate: true,
+                    logKind: 'skip_filename_on_page',
+                    logStockId: stockId,
+                    logFileName: fileInfo.name,
+                    logDetail: currentComment
+                });
+                continue;
+            }
+
+            if (stored != null && mt > stored && isDocumentFileNameAlreadyOnPage(fileInfo.name)) {
+                dbg('uploadNewerDespiteFilenameOnPage', fileInfo.name, 'mt', mt, 'stored', stored);
+            }
+
             if (document.body.innerText.includes(currentComment)) {
                 skipCommentCount++;
-                skipCommentLines.push(fileInfo.name + ' [' + currentComment + ']');
-                showCustomPopup("ARASAKA SKIP", `Bild ${i + 1} (${currentComment}) existiert bereits. Überspringe...`, false);
+                dbg('skipExistingComment', currentComment, fileInfo.name);
+                showCustomPopup("ARASAKA SKIP", "Dieser Kommentar existiert bereits — übersprungen.", false);
                 if (isRetoure) retoureIdx++;
                 else if (isNachbestellung) nachbestellungIdx++;
                 else ausgabeIdx++;
                 await moveFileRequest(fileInfo, isRetoure, {
+                    toDuplicate: true,
                     logKind: 'skip_comment_exists',
                     logStockId: stockId,
                     logFileName: fileInfo.name,
@@ -430,24 +607,23 @@
             else if (isNachbestellung) nachbestellungIdx++;
             else ausgabeIdx++;
 
-            showCustomPopup("ARASAKA DOWNLOAD", `Lade Bild ${i + 1} von ${totalFiles} für ${stockId} aus Drive...`, false);
+            dbg('uploadStep', i + 1, totalFiles, cls, currentComment, fileInfo.name, 'stockId', stockId);
+            showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild " + (i + 1) + " von " + totalFiles + " aus Drive...", false);
             let b64 = await new Promise((resolve) => {
-                GM_xmlhttpRequest({
-                    method: "GET",
-                    url: `${DRIVE_WEB_APP_URL}?action=getFileData&fileId=${fileInfo.id}&key=${API_KEY}`,
-                    timeout: 45000,
-                    onload: (res) => resolve(res.responseText),
-                    onerror: () => resolve(null),
-                    ontimeout: () => resolve(null)
+                bridgePostJson({ action: 'getFileData', fileId: fileInfo.id }, 45000).then(function(res) {
+                    if (!res) { dbg('getFileData', 'noResponse', fileInfo.id); resolve(null); return; }
+                    dbg('getFileData', 'http', res.status, 'fileId', fileInfo.id, 'b64len', (res.responseText || '').length);
+                    resolve(res.responseText);
                 });
             });
 
-            if (!b64) {
+            if (!b64 || bridgeBodyLooksLikeHtml(b64)) {
+                dbg('getFileData', 'emptyOrHtml', fileInfo.id);
                 await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
                 return;
             }
 
-            showCustomPopup("ARASAKA UPLOAD", `Lade Bild ${i + 1} (${currentComment}) hoch...`, false);
+            showCustomPopup("ARASAKA UPLOAD", "Lade Bild " + (i + 1) + " hoch...", false);
 
             let uploadBtn = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 10000);
             if (abortMission) return;
@@ -505,26 +681,23 @@
 
             showCustomPopup("ARASAKA VERIFIKATION", `Warte auf Bestätigung im System...`, false);
             let verifySuccess = await waitForText(currentComment, 20000);
+            dbg('postUploadVerify', 'comment', currentComment, 'verifySuccess', verifySuccess);
             if (abortMission) return;
 
             if(!verifySuccess) {
+                dbg('postUploadVerify', 'noMatchExtraWait');
                 await sleep(2000);
             }
 
             if (abortMission) return;
-            await moveFileRequest(fileInfo, isRetoure);
+            await moveFileRequest(fileInfo, isRetoure, {
+                recordLastUpload: true,
+                logStockId: stockId,
+                logFileName: fileInfo.name
+            });
         }
 
         if (abortMission) return;
-
-        function truncateLogParam(s, maxLen) {
-            if (!s) return '';
-            if (s.length <= maxLen) return s;
-            return s.slice(0, maxLen - 3) + '...';
-        }
-
-        let dupLogLine = dupByName.map(d => d.file.name + ' (wie ' + d.firstName + ')').join(' | ');
-        let commentLogLine = skipCommentLines.join(' | ');
 
         showCustomPopup("ARASAKA SYNC", `Setze Haken in der Tagesliste...`, false);
 
@@ -535,28 +708,47 @@
             }
         }, 5000);
 
-        let syncStatus = await new Promise(resolve => {
-            GM_xmlhttpRequest({
-                method: "GET",
-                url: `${DRIVE_WEB_APP_URL}?action=markSheet&stockId=${stockId}&key=${API_KEY}&skippedDup=${dupByName.length}&skippedComment=${skipCommentCount}&batchFiles=${rawFiles.length}&uniqueFiles=${files.length}&skipDupDetail=${encodeURIComponent(truncateLogParam(dupLogLine, 1800))}&skipCommentDetail=${encodeURIComponent(truncateLogParam(commentLogLine, 1800))}`,
-                timeout: 45000,
-                onload: (res) => resolve(res.responseText),
-                onerror: () => resolve("HTTP_ERROR"),
-                ontimeout: () => resolve("TIMEOUT")
-            });
-        });
+        dbg('markSheet', 'post', 'skippedDup', dupByName.length, 'skippedComment', skipCommentCount, 'skippedFilenamePage', skipFilenameOnPageCount);
+        let markRes = await bridgePostJson({
+            action: 'markSheet',
+            stockId: stockId,
+            skippedDup: String(dupByName.length),
+            skippedComment: String(skipCommentCount),
+            skippedFilenamePage: String(skipFilenameOnPageCount),
+            batchFiles: String(rawFiles.length),
+            uniqueFiles: String(files.length)
+        }, 45000);
+        let syncStatus = 'HTTP_ERROR';
+        if (markRes) {
+            var mrt = String(markRes.responseText || '').trim();
+            dbg('markSheet', 'http', markRes.status, 'body', mrt.slice(0, 200));
+            if (bridgeBodyLooksLikeHtml(mrt)) {
+                syncStatus = 'HTML_FEHLER';
+                dbg('markSheet', 'appsScriptHtml', bridgeHtmlErrorHint(mrt));
+            } else {
+                syncStatus = mrt;
+            }
+        } else {
+            dbg('markSheet', 'noResponse');
+            syncStatus = 'HTTP_ERROR';
+        }
 
         syncDone = true;
         clearTimeout(warningTimer);
 
+        dbg('markSheet', 'syncStatus', syncStatus);
+
         if (syncStatus === "OK") {
-            showCustomPopup("ARASAKA", `${stockId} hochgeladen & in Tagesliste abgehakt! Kannst aber gerne gegen checken zur Sicherheit... Lade nächste Seite...`, false);
+            dbg('markSheetOk', stockId);
+            showCustomPopup("ARASAKA", "Fertig — Tagesliste aktualisiert. Nächste Seite...", false);
             await sleep(1500);
         } else {
-            showCustomPopup("ARASAKA WARNUNG", `${stockId} hochgeladen, ABER Haken fehlgeschlagen (${syncStatus})! Lade nächste Seite...`, false);
+            dbg('markSheetHudWarn', 'stockId', stockId, 'syncStatus', syncStatus);
+            showCustomPopup("ARASAKA WARNUNG", "Upload fertig, aber der Haken in der Tagesliste konnte nicht gesetzt werden. Konsole (F12) für Details. Nächste Seite...", false);
             await sleep(4000);
         }
 
+        dbg('executeUploadsForStock', 'done', 'nextIdx', idx + 1);
         sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
         window.location.href = '/';
     }
