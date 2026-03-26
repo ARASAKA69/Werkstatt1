@@ -253,28 +253,153 @@ function getReifenSheetTab(tabName) {
     return null;
   }
 
+function parseReifenTabDateMsFromName(name) {
+    var trimmed = String(name || "").trim();
+    var all = trimmed.match(/\d{2}\.\d{2}\.\d{4}/g);
+    if (!all || !all.length) return null;
+    var dateStr = all[all.length - 1];
+    var p = dateStr.split(".");
+    if (p.length !== 3) return null;
+    var t = new Date(parseInt(p[2], 10), parseInt(p[1], 10) - 1, parseInt(p[0], 10)).getTime();
+    return isNaN(t) ? null : t;
+  }
+
+function filterReifenSheetNamesByTabDateRange(startBound, endBound) {
+    var ss = getReifenSheet();
+    var sheetNames = ss.getSheets().map(function(sheet) {
+      return sheet.getName();
+    });
+    var filtered = [];
+    var i;
+    for (i = 0; i < sheetNames.length; i++) {
+      var name = sheetNames[i];
+      var tabDate = parseReifenTabDateMsFromName(name);
+      if (tabDate === null) continue;
+      if (tabDate < startBound || tabDate > endBound) continue;
+      filtered.push(name);
+    }
+    filtered.sort(function(a, b) {
+      var ta = parseReifenTabDateMsFromName(a);
+      var tb = parseReifenTabDateMsFromName(b);
+      if (ta === null || tb === null) return 0;
+      return tb - ta;
+    });
+    return filtered;
+  }
+
+function getReifenTabNamesForStockHudWindow() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var mo = now.getMonth();
+    var d = now.getDate();
+    var endBound = new Date(y, mo, d, 23, 59, 59, 999).getTime();
+    var startBound = new Date(y, mo, d - 3, 0, 0, 0, 0).getTime();
+    return filterReifenSheetNamesByTabDateRange(startBound, endBound);
+  }
+
+function getReifenTabNamesForPaketHudWindow() {
+    var now = new Date();
+    var y = now.getFullYear();
+    var mo = now.getMonth();
+    var d = now.getDate();
+    var endBound = new Date(y, mo, d, 23, 59, 59, 999).getTime();
+    var startBound = new Date(y, mo, d - 21, 0, 0, 0, 0).getTime();
+    return filterReifenSheetNamesByTabDateRange(startBound, endBound);
+  }
+
 function getReifenTabOptions() {
     try {
-      var ss = getReifenSheet();
-      var sheets = ss.getSheets().map(function(sheet) {
-        return sheet.getName();
-      });
-      sheets.sort(function(a, b) {
-        var matchA = String(a).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
-        var matchB = String(b).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (matchA && matchB) {
-          var dateA = new Date(parseInt(matchA[3], 10), parseInt(matchA[2], 10) - 1, parseInt(matchA[1], 10)).getTime();
-          var dateB = new Date(parseInt(matchB[3], 10), parseInt(matchB[2], 10) - 1, parseInt(matchB[1], 10)).getTime();
-          return dateB - dateA;
-        }
-        if (matchA) return -1;
-        if (matchB) return 1;
-        return String(a).localeCompare(String(b), "de");
-      });
-      return { success: true, tabs: sheets };
+      return { success: true, tabs: getReifenTabNamesForStockHudWindow() };
     } catch (err) {
       return { success: false, message: err.message, tabs: [] };
     }
+  }
+
+function appendPaketdienstRowsFromSheet_(sh, results) {
+    var tabName = sh.getName();
+    var lastRow = Math.max(1, sh.getLastRow());
+    var lastCol = Math.max(1, Math.min(80, sh.getLastColumn()));
+    if (lastRow < 3) return;
+
+    var headerData = sh.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
+    var headerIdx = findHeaderRow(headerData, ["stockid", "stock"]);
+    if (headerIdx === -1) return;
+    var header = headerData[headerIdx];
+
+    var stockCol = getColIndex(header, ["stockid", "stock"]);
+    var groesseCol = getColIndex(header, ["größe", "groesse"]);
+    var lastIndexCol = getColIndex(header, ["lastindex", "last"]);
+    var gwIndexCol = getColIndex(header, ["gwindex", "gw"]);
+    var mengeCol = getColIndex(header, ["menge", "anzahl"]);
+    var angeliefertCol = getColIndex(header, ["angeliefert"]);
+    if (stockCol === -1 || groesseCol === -1) return;
+
+    var startRow = headerIdx + 2;
+    var numRows = lastRow - startRow + 1;
+    if (numRows <= 0) return;
+    var data = sh.getRange(startRow, 1, numRows, lastCol).getValues();
+
+    var i;
+    for (i = 0; i < data.length; i++) {
+      var row = data[i];
+      var hasPaket = false;
+      var c;
+      for (c = 0; c < row.length; c++) {
+        if (String(row[c] || "").toLowerCase().indexOf("paketdienst") !== -1) { hasPaket = true; break; }
+      }
+      if (!hasPaket) continue;
+
+      if (angeliefertCol !== -1) {
+        var aStatus = String(row[angeliefertCol - 1] || "").trim().toLowerCase();
+        if (aStatus === "ja" || aStatus === "nein") continue;
+      }
+
+      var cellGroesse = String(row[groesseCol - 1] || "").trim();
+      var cellLast = lastIndexCol !== -1 ? String(row[lastIndexCol - 1] || "").trim() : "";
+      var cellGw = gwIndexCol !== -1 ? String(row[gwIndexCol - 1] || "").trim() : "";
+      var cellStock = stockCol !== -1 ? normalizeStockId(row[stockCol - 1]) : "";
+      var cellMenge = mengeCol !== -1 ? (parseInt(row[mengeCol - 1], 10) || 1) : 1;
+      if (!cellStock) continue;
+
+      results.push({
+        tabName: tabName,
+        stockId: cellStock,
+        groesse: cellGroesse,
+        lastindex: cellLast,
+        gwIndex: cellGw,
+        menge: cellMenge,
+        row: startRow + i
+      });
+    }
+  }
+
+function sortPaketdienstResults_(results) {
+    results.sort(function(a, b) {
+      var ma = String(a.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+      var mb = String(b.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
+      if (ma && mb) {
+        var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
+        var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
+        return db - da;
+      }
+      return 0;
+    });
+  }
+
+function collectPaketdienstReifenRowsForTabNames(tabNames) {
+    var results = [];
+    var si;
+    for (si = 0; si < tabNames.length; si++) {
+      var sh = getReifenSheetTab(tabNames[si]);
+      if (!sh) continue;
+      appendPaketdienstRowsFromSheet_(sh, results);
+    }
+    sortPaketdienstResults_(results);
+    return results;
+  }
+
+function collectPaketdienstReifenRows() {
+    return collectPaketdienstReifenRowsForTabNames(getReifenTabNamesForPaketHudWindow());
   }
 
 function searchReifenBySize(query) {
@@ -301,94 +426,51 @@ function searchReifenBySize(query) {
       if (!sizeQuery) sizeQuery = query;
       var sizeNorm = sizeQuery.replace(/\s+/g, '').toUpperCase();
 
-      var ss = getReifenSheet();
-      var allSheets = ss.getSheets();
+      var all = collectPaketdienstReifenRows();
       var results = [];
-      var now = new Date();
-      var cutoff = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate()).getTime();
-
-      for (var s = 0; s < allSheets.length; s++) {
-        var sh = allSheets[s];
-        var tabName = sh.getName();
-        var dateMatch = String(tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (!dateMatch) continue;
-        var tabDate = new Date(parseInt(dateMatch[3], 10), parseInt(dateMatch[2], 10) - 1, parseInt(dateMatch[1], 10)).getTime();
-        if (tabDate < cutoff) continue;
-        var lastRow = Math.max(1, sh.getLastRow());
-        var lastCol = Math.max(1, Math.min(80, sh.getLastColumn()));
-        if (lastRow < 3) continue;
-
-        var headerData = sh.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
-        var headerIdx = findHeaderRow(headerData, ["stockid", "stock"]);
-        if (headerIdx === -1) continue;
-        var header = headerData[headerIdx];
-
-        var stockCol = getColIndex(header, ["stockid", "stock"]);
-        var groesseCol = getColIndex(header, ["größe", "groesse"]);
-        var lastIndexCol = getColIndex(header, ["lastindex", "last"]);
-        var gwIndexCol = getColIndex(header, ["gwindex", "gw"]);
-        var mengeCol = getColIndex(header, ["menge", "anzahl"]);
-        var angeliefertCol = getColIndex(header, ["angeliefert"]);
-        var kommentarCol = getColIndex(header, ["kommentar"]);
-        if (stockCol === -1 || groesseCol === -1) continue;
-
-        var startRow = headerIdx + 2;
-        var numRows = lastRow - startRow + 1;
-        if (numRows <= 0) continue;
-        var data = sh.getRange(startRow, 1, numRows, lastCol).getValues();
-
-        for (var i = 0; i < data.length; i++) {
-          var row = data[i];
-          var hasPaket = false;
-          for (var c = 0; c < row.length; c++) {
-            if (String(row[c] || "").toLowerCase().indexOf("paketdienst") !== -1) { hasPaket = true; break; }
-          }
-          if (!hasPaket) continue;
-
-          if (angeliefertCol !== -1) {
-            var status = String(row[angeliefertCol - 1] || "").trim().toLowerCase();
-            if (status === "ja" || status === "nein") continue;
-          }
-
-          var cellGroesse = String(row[groesseCol - 1] || "").trim();
-          var cellGroesseNorm = cellGroesse.replace(/\s+/g, '').toUpperCase();
-          if (cellGroesseNorm.indexOf(sizeNorm) === -1) continue;
-
-          var cellLast = lastIndexCol !== -1 ? String(row[lastIndexCol - 1] || "").trim() : "";
-          var cellGw = gwIndexCol !== -1 ? String(row[gwIndexCol - 1] || "").trim() : "";
-          if (lastQuery && cellLast.indexOf(lastQuery) === -1) continue;
-          if (gwQuery && cellGw.toUpperCase().indexOf(gwQuery) === -1) continue;
-
-          var cellStock = stockCol !== -1 ? normalizeStockId(row[stockCol - 1]) : "";
-          var cellMenge = mengeCol !== -1 ? (parseInt(row[mengeCol - 1], 10) || 1) : 1;
-          if (!cellStock) continue;
-
-          results.push({
-            tabName: tabName,
-            stockId: cellStock,
-            groesse: cellGroesse,
-            lastindex: cellLast,
-            gwIndex: cellGw,
-            menge: cellMenge,
-            row: startRow + i
-          });
-        }
+      for (var ri = 0; ri < all.length; ri++) {
+        var item = all[ri];
+        var cellGroesseNorm = String(item.groesse || "").replace(/\s+/g, '').toUpperCase();
+        if (cellGroesseNorm.indexOf(sizeNorm) === -1) continue;
+        var cellLast = String(item.lastindex || "").trim();
+        var cellGw = String(item.gwIndex || "").trim();
+        if (lastQuery && cellLast.indexOf(lastQuery) === -1) continue;
+        if (gwQuery && cellGw.toUpperCase().indexOf(gwQuery) === -1) continue;
+        results.push(item);
       }
-
-      results.sort(function(a, b) {
-        var ma = String(a.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
-        var mb = String(b.tabName).match(/(\d{2})\.(\d{2})\.(\d{4})$/);
-        if (ma && mb) {
-          var da = new Date(parseInt(ma[3], 10), parseInt(ma[2], 10) - 1, parseInt(ma[1], 10)).getTime();
-          var db = new Date(parseInt(mb[3], 10), parseInt(mb[2], 10) - 1, parseInt(mb[1], 10)).getTime();
-          return db - da;
-        }
-        return 0;
-      });
 
       return { success: true, results: results, message: results.length + " Reifen gefunden" };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message, results: [] };
+    }
+  }
+
+function getPaketdienstReifenCachePayload() {
+    try {
+      var rows = collectPaketdienstReifenRows();
+      return { success: true, version: Date.now(), paketdienstRows: rows };
+    } catch (err) {
+      return { success: false, message: err.message, paketdienstRows: [] };
+    }
+  }
+
+function getReifenWindowStocksCachePayload() {
+    try {
+      var tabsRes = getReifenTabOptions();
+      if (!tabsRes.success) {
+        return { success: false, message: tabsRes.message || "Tabs", tabs: [], stocksByTab: {} };
+      }
+      var tabs = tabsRes.tabs || [];
+      var stocksByTab = {};
+      var ti;
+      for (ti = 0; ti < tabs.length; ti++) {
+        var tn = tabs[ti];
+        var idRes = getAvailableReifenStockIds(tn);
+        stocksByTab[tn] = (idRes.success && idRes.ids) ? idRes.ids : [];
+      }
+      return { success: true, version: Date.now(), tabs: tabs, stocksByTab: stocksByTab };
+    } catch (err) {
+      return { success: false, message: err.message, tabs: [], stocksByTab: {} };
     }
   }
 
