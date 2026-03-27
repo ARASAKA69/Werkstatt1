@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.36
+// @version      1.37
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -16,7 +16,7 @@
 
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
-    const ARASAKA_DEBUG = false;
+    const ARASAKA_DEBUG = true;
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -59,6 +59,30 @@
         return '';
     }
 
+    function bridgeGetJson(payload, timeoutMs) {
+        var params = Object.assign({ key: API_KEY }, payload);
+        var qs = Object.keys(params).map(function(k) {
+            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
+        }).join('&');
+        var url = DRIVE_WEB_APP_URL + '?' + qs;
+        return new Promise(function(resolve) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                timeout: timeoutMs || 15000,
+                onload: function(r) { resolve(r); },
+                onerror: function(err) {
+                    dbg('bridgeGetJson', 'onerror', 'status', err && err.status, 'statusText', err && err.statusText, 'finalUrl', err && err.finalUrl, 'responseText', err && String(err.responseText || '').slice(0, 300));
+                    resolve(null);
+                },
+                ontimeout: function(err) {
+                    dbg('bridgeGetJson', 'ontimeout', 'status', err && err.status, 'finalUrl', err && err.finalUrl);
+                    resolve(null);
+                }
+            });
+        });
+    }
+
     function bridgePostJson(payload, timeoutMs) {
         var body = JSON.stringify(Object.assign({ key: API_KEY }, payload));
         return new Promise(function(resolve) {
@@ -69,8 +93,14 @@
                 data: body,
                 timeout: timeoutMs || 15000,
                 onload: function(r) { resolve(r); },
-                onerror: function() { resolve(null); },
-                ontimeout: function() { resolve(null); }
+                onerror: function(err) {
+                    dbg('bridgePostJson', 'onerror', 'status', err && err.status, 'statusText', err && err.statusText, 'finalUrl', err && err.finalUrl, 'responseText', err && String(err.responseText || '').slice(0, 300));
+                    resolve(null);
+                },
+                ontimeout: function(err) {
+                    dbg('bridgePostJson', 'ontimeout', 'status', err && err.status, 'finalUrl', err && err.finalUrl);
+                    resolve(null);
+                }
             });
         });
     }
@@ -281,7 +311,7 @@
         dbg('startBatchProcess');
         showCustomPopup("ARASAKA ONLINE", "Prüfe Kisten im Google Drive...", false);
         if (abortMission) return;
-        let response = await bridgePostJson({ action: 'getBatch' }, 15000);
+        let response = await bridgeGetJson({ action: 'getBatch' }, 30000);
         if (!response) {
             dbg('getBatch', 'noResponse');
             showCustomPopup("FEHLER", "Keine Verbindung zu Google Drive möglich.", true);
@@ -339,7 +369,7 @@
             showCustomPopup("ARASAKA", "Stapel fertig. Kurzer Check im Drive...", false);
             (async function() {
                 if (abortMission) return;
-                let response = await bridgePostJson({ action: 'getBatch' }, 15000);
+                let response = await bridgeGetJson({ action: 'getBatch' }, 30000);
                 if (!response) {
                     dbg('getBatchRecheck', 'noResponse');
                     isProcessing = false;
