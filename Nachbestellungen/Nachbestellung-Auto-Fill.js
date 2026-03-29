@@ -6,12 +6,7 @@ function onEdit(e) {
   const row = e.range.getRow();
   const col = e.range.getColumn();
 
-  // -----------------------------
-  // 1️⃣ Nachbestellungen Logik
-  // -----------------------------
   if (sheetName === "Nachbestellungen" && row >= 2) {
-
-    // Datum in A bei Änderung in B
     if (col === 2) {
       var valB = e.range.getValue();
       if (valB !== "" && valB != null) {
@@ -30,14 +25,6 @@ function onEdit(e) {
       var J = (valJ || "").toString().toLowerCase();
       var L = (valL || "").toString().toLowerCase();
 
-      if (col === 4) {
-        if (D.includes("exit bestellung")) {
-          sheet.getRange(row, 2).setBackground("#FFC4C4");
-        } else {
-          sheet.getRange(row, 2).setBackground(null);
-        }
-      }
-
       var color = null;
       if (L.includes("angeliefert") || L.includes("bereit für tagesliste")) color = "#D4FFD4";
       else if (J.includes("anfrage alfah")) color = "#FFD8A8";
@@ -45,8 +32,15 @@ function onEdit(e) {
       else if (L.includes("nicht bestellt")) color = "#ffd4d4";
       else if (J.includes("push to senior")) color = "#E5D4FF";
 
-      sheet.getRange(row, 1).setBackground(color);
-      sheet.getRange(row, 3, 1, 12).setBackgrounds([Array(12).fill(color)]);
+      sheet.getRange(row, 1, 1, 14).setBackground(color);
+
+      if (col === 4) {
+        if (D.includes("exit bestellung")) {
+          sheet.getRange(row, 2).setBackground("#FFC4C4");
+        } else {
+          sheet.getRange(row, 2).setBackground(null);
+        }
+      }
     }
   }
 }
