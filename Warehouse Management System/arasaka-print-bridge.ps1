@@ -1,17 +1,23 @@
 # ARASAKA PRINT BRIDGE v1.1
 # Commands:
-#   .\arasaka-print-bridge.ps1 stop
-#   .\arasaka-print-bridge.ps1 restart
-#   .\arasaka-print-bridge.ps1 debug
-#   .\arasaka-print-bridge.ps1 install   (add to Windows Startup)
-#   .\arasaka-print-bridge.ps1 uninstall (remove from Startup)
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 stop
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 restart
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 debug
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 install
+#   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 uninstall
+#
+# Or just double-click: arasaka-print-bridge.bat
 
 param([string]$Action)
 
+
 if ((Get-ExecutionPolicy -Scope Process) -ne 'Bypass') {
-    $a = @("-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$($MyInvocation.MyCommand.Path)`"")
-    if ($Action) { $a += $Action }
-    Start-Process powershell -ArgumentList $a
+    $scriptFile = $MyInvocation.MyCommand.Path
+    if (-not $scriptFile) { $scriptFile = $PSCommandPath }
+    $cmd = "Set-ExecutionPolicy Bypass -Scope Process -Force; & '$($scriptFile -replace "'","''")'"
+    if ($Action) { $cmd += " '$Action'" }
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", $cmd
     exit 0
 }
 
@@ -36,7 +42,8 @@ if ($Action) {
         "restart" {
             try { Invoke-RestMethod "$BridgeUrl/shutdown" -Method POST -TimeoutSec 3 | Out-Null } catch { }
             Start-Sleep -Seconds 2
-            Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -NoExit -File `"$ScriptPath`""
+            $cmd = "Set-ExecutionPolicy Bypass -Scope Process -Force; & '$($ScriptPath -replace "'","''")'"
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", $cmd
             Write-Host "Bridge restarted." -ForegroundColor Green
             exit 0
         }
@@ -50,7 +57,8 @@ if ($Action) {
             $ws = New-Object -ComObject WScript.Shell
             $sc = $ws.CreateShortcut($StartupLink)
             $sc.TargetPath = "powershell.exe"
-            $sc.Arguments = "-ExecutionPolicy Bypass -WindowStyle Minimized -File `"$ScriptPath`""
+            $escapedPath = $ScriptPath -replace "'", "''"
+            $sc.Arguments = "-NoExit -Command `"Set-ExecutionPolicy Bypass -Scope Process -Force; & '$escapedPath'`""
             $sc.WorkingDirectory = $PSScriptRoot
             $sc.WindowStyle = 7
             $sc.Save()
@@ -142,10 +150,31 @@ $running = $true
 Write-Host ""
 Write-Host "  ARASAKA PRINT BRIDGE v1.1" -ForegroundColor Cyan
 Write-Host "  Port $Port | Chrome headless" -ForegroundColor Cyan
-if ($config.printer) { Write-Host "  Printer: $($config.printer)" -ForegroundColor Green }
-else { Write-Host "  No printer set" -ForegroundColor Yellow }
+
+$allPrinters = Get-PrinterList
+
+if (-not $config.printer -or ($allPrinters -notcontains $config.printer)) {
+    Write-Host ""
+    Write-Host "  Kein Drucker konfiguriert. Bitte waehlen:" -ForegroundColor Yellow
+    Write-Host ""
+    for ($i = 0; $i -lt $allPrinters.Count; $i++) {
+        Write-Host "    [$($i+1)] $($allPrinters[$i])" -ForegroundColor White
+    }
+    Write-Host ""
+    $choice = 0
+    while ($choice -lt 1 -or $choice -gt $allPrinters.Count) {
+        $input = Read-Host "  Nummer eingeben (1-$($allPrinters.Count))"
+        try { $choice = [int]$input } catch { $choice = 0 }
+    }
+    $config.printer = $allPrinters[$choice - 1]
+    Save-Config $config
+    Write-Host ""
+    Write-Host "  Drucker gesetzt: $($config.printer)" -ForegroundColor Green
+}
+
+Write-Host "  Printer: $($config.printer)" -ForegroundColor Green
 Write-Host "  Printers:" -ForegroundColor DarkGray
-foreach ($p in (Get-PrinterList)) {
+foreach ($p in $allPrinters) {
     if ($p -eq $config.printer) { Write-Host "    > $p" -ForegroundColor Green }
     else { Write-Host "    - $p" -ForegroundColor DarkGray }
 }
