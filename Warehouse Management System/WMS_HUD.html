@@ -2137,6 +2137,22 @@
           </div>
         </div>
 
+        <div class="tools-panel primary" id="printerPanel">
+          <div class="tools-panel-title">🖨️ Brother Drucker</div>
+          <div class="dymo-fields">
+            <div class="dymo-field">
+              <div class="field-label">Drucker für Werkstattauftrag</div>
+              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(242,204,96,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+                <option value="">Bridge nicht verbunden</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="bridgeStatusDot" style="width:10px;height:10px;border-radius:50%;background:#f85149;display:inline-block;"></span>
+              <span id="bridgeStatusText" style="color:#9da7b3;font-size:11px;font-weight:700;letter-spacing:0.5px;">Offline</span>
+            </div>
+          </div>
+        </div>
+
         <div class="tools-panel secondary">
           <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
         </div>
@@ -2386,6 +2402,46 @@
 
     var savedInitials = localStorage.getItem('arasaka_dymo_initials');
     if(savedInitials) document.getElementById('dymoInitials').value = savedInitials;
+
+    var BRIDGE_URL = 'http://localhost:9150';
+    function initBrotherPrinter() {
+      var sel = document.getElementById('brotherPrinterSelect');
+      var dot = document.getElementById('bridgeStatusDot');
+      var txt = document.getElementById('bridgeStatusText');
+      fetch(BRIDGE_URL + '/printers').then(function(r){ return r.json(); }).then(function(data) {
+        if(!data.success) throw new Error('no printers');
+        dot.style.background = '#56d364';
+        txt.textContent = 'Online';
+        sel.innerHTML = '';
+        var saved = localStorage.getItem('arasaka_brother_printer') || '';
+        data.printers.forEach(function(p) {
+          var opt = document.createElement('option');
+          opt.value = p; opt.textContent = p;
+          if(p === saved) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        if(!saved && sel.value) {
+          localStorage.setItem('arasaka_brother_printer', sel.value);
+          setBridgePrinter(sel.value);
+        }
+        if(saved) setBridgePrinter(saved);
+      }).catch(function() {
+        dot.style.background = '#f85149';
+        txt.textContent = 'Offline - Bridge starten!';
+      });
+      sel.addEventListener('change', function() {
+        localStorage.setItem('arasaka_brother_printer', sel.value);
+        setBridgePrinter(sel.value);
+      });
+    }
+    function setBridgePrinter(name) {
+      fetch(BRIDGE_URL + '/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ printer: name })
+      }).catch(function(){});
+    }
+    initBrotherPrinter();
 
     document.getElementById('searchInput').addEventListener('keypress', function(e) {
       if(e.key === 'Enter') loadData();
