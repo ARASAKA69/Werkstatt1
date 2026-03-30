@@ -1017,6 +1017,44 @@
   .ov-detail-val .highlight-green {
     font-weight: 800;
   }
+  .ov-check-cell {
+    width: 36px;
+    text-align: center;
+    padding: 8px 6px !important;
+  }
+  .ov-check-cell input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border: 2px solid #3d4752;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    cursor: pointer;
+    position: relative;
+    vertical-align: middle;
+    transition: 0.15s;
+  }
+  .ov-check-cell input[type="checkbox"]:checked {
+    background: rgba(46,160,67,0.22);
+    border-color: #3fb950;
+  }
+  .ov-check-cell input[type="checkbox"]:checked::after {
+    content: '\2714';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: #56d364;
+    font-size: 14px;
+    font-weight: 800;
+  }
+  .ov-row-done td {
+    opacity: 0.45;
+  }
+  .ov-row-done .ov-check-cell {
+    opacity: 1;
+  }
   .nb-modal {
     position: fixed;
     inset: 0;
@@ -2166,7 +2204,8 @@
     <div class="overview-dialog">
       <div class="overview-header">
         <div class="overview-title">Stock-ID + Regal Übersicht</div>
-        <button class="overview-close" onclick="closeStockOverview()">Schließen</button>
+        <button type="button" onclick="refreshStockOverview()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
       </div>
       <div class="overview-body">
         <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
@@ -2174,6 +2213,7 @@
           <table class="overview-table">
             <thead>
               <tr>
+                <th style="width:36px;">✔</th>
                 <th></th>
                 <th>Stock-ID</th>
                 <th>Regalplatz</th>
@@ -2183,7 +2223,7 @@
               </tr>
             </thead>
             <tbody id="overviewTableBody">
-              <tr><td colspan="6" style="text-align:center;color:#9da7b3;">Lade Übersicht...</td></tr>
+              <tr><td colspan="7" style="text-align:center;color:#9da7b3;">Lade Übersicht...</td></tr>
             </tbody>
           </table>
         </div>
@@ -2730,8 +2770,47 @@
     }
     toggleUI(false);
 
+    var ovAllEntries = [];
+    var ovSessionActive = false;
+
+    function getOverviewDoneMap() {
+      try { return JSON.parse(localStorage.getItem('arasaka_overview_done') || '{}'); } catch(e) { return {}; }
+    }
+    function saveOverviewDoneMap(map) {
+      localStorage.setItem('arasaka_overview_done', JSON.stringify(map));
+    }
+
+    function minimizeStockOverview() {
+      document.getElementById('overviewModal').classList.remove('open');
+      var btn = document.querySelector('.topbar-action[onclick*="openStockOverview"]');
+      if(btn && ovSessionActive && ovAllEntries.length > 0) {
+        btn.style.background = 'rgba(88,166,255,0.18)';
+        btn.style.borderColor = '#58a6ff';
+        btn.style.color = '#58a6ff';
+      }
+    }
+
     function closeStockOverview() {
       document.getElementById('overviewModal').classList.remove('open');
+      ovAllEntries = [];
+      ovSessionActive = false;
+      var btn = document.querySelector('.topbar-action[onclick*="openStockOverview"]');
+      if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
+    }
+
+    function refreshStockOverview() {
+      ovSessionActive = false;
+      ovAllEntries = [];
+      openStockOverview();
+    }
+
+    function toggleOverviewDone(index, stockId, cb) {
+      if(!cb) return;
+      var map = getOverviewDoneMap();
+      if(cb.checked) { map[stockId] = true; } else { delete map[stockId]; }
+      saveOverviewDoneMap(map);
+      var row = cb.closest('tr');
+      if(row) { if(cb.checked) row.classList.add('ov-row-done'); else row.classList.remove('ov-row-done'); }
     }
 
     function getStatusStyle(status) {
@@ -2758,17 +2837,20 @@
     function renderStockOverview(entries) {
       var body = document.getElementById('overviewTableBody');
       if(!entries || !entries.length) {
-        body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9da7b3;padding:18px;">Keine Einträge gefunden.</td></tr>';
+        body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#9da7b3;padding:18px;">Keine Einträge gefunden.</td></tr>';
         return;
       }
+      var doneMap = getOverviewDoneMap();
       var html = '';
       for(var i = 0; i < entries.length; i++) {
         var e = entries[i];
+        var isDone = !!doneMap[e.stockId];
         var statusStyle = getStatusStyle(e.status);
         var reifenStyle = getReifenStyle(e.regalReifen);
         var bestellHtml = formatOverviewComment(e.kommBestellung, e.kommAnlieferung);
         var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
-        html += '<tr class="ov-row" onclick="toggleOverviewEntry(' + i + ')">'
+        html += '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + '" onclick="toggleOverviewEntry(' + i + ')">'  
+          + '<td class="ov-check-cell" onclick="event.stopPropagation();"><input type="checkbox"' + (isDone ? ' checked' : '') + ' onchange="toggleOverviewDone(' + i + ',\'' + escapeJs(e.stockId) + '\',this)"></td>'
           + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
           + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
           + '<td style="color:#e3b341;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
@@ -2777,7 +2859,7 @@
           + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
           + '</tr>';
         html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
-          + '<td colspan="6">'
+          + '<td colspan="7">'
           + '<div class="ov-detail-inner">'
           + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Bestellung</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
           + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Anlieferung</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
@@ -2811,7 +2893,7 @@
 
     function openOverviewStock(event, stockId) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
-      closeStockOverview();
+      minimizeStockOverview();
       document.getElementById('searchInput').value = stockId;
       loadData();
     }
@@ -2820,13 +2902,19 @@
       var modal = document.getElementById('overviewModal');
       var body = document.getElementById('overviewTableBody');
       modal.classList.add('open');
-      body.innerHTML = hudLoadingRowHtml(6, 'Lade Übersicht…');
+      if(ovSessionActive && ovAllEntries.length > 0) {
+        renderStockOverview(ovAllEntries);
+        return;
+      }
+      ovSessionActive = true;
+      body.innerHTML = hudLoadingRowHtml(7, 'Lade Übersicht…');
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
-          body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
+          body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
           return;
         }
         var entries = res.entries || [];
+        ovAllEntries = entries;
         var count = entries.length;
         var kistenWord = count === 1 ? "Kiste" : "Kisten";
         document.getElementById('overviewTotalBadge').innerText = "Insgesamt: " + count + " " + kistenWord + " im Lager";
