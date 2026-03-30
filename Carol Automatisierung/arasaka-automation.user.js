@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.4
-// @description ARASAKA v3.4 - Fallback PDF Scanner & Bigger HUD & Auto-Start
+// @version 3.5
+// @description ARASAKA v3.5
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -11,6 +11,7 @@
 // @grant GM_getValue
 // @grant GM_registerMenuCommand
 // @grant GM_xmlhttpRequest
+// @connect localhost
 // ==/UserScript==
 
 (function () {
@@ -467,6 +468,36 @@
         });
     }
 
+    function extractPdfUrl(el) {
+        if (el.tagName === 'A' && el.href) return el.href;
+        const link = el.closest('a');
+        if (link && link.href) return link.href;
+        if (el.href) return el.href;
+        const child = el.querySelector('a[href]');
+        if (child) return child.href;
+        return null;
+    }
+
+    function sendToBridge(url) {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: 'http://localhost:9150/print',
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({ url: url, copies: 1 }),
+                timeout: 30000,
+                onload: r => {
+                    try {
+                        const res = JSON.parse(r.responseText);
+                        resolve(res.success ? { ok: true, printer: res.printer } : { ok: false, error: res.message });
+                    } catch { resolve({ ok: false, error: 'Parse error' }); }
+                },
+                onerror: () => resolve({ ok: false, error: 'Bridge nicht erreichbar' }),
+                ontimeout: () => resolve({ ok: false, error: 'Timeout' })
+            });
+        });
+    }
+
     async function sucheUndOeffnePdf() {
         updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
         await sleep(4000);
@@ -519,10 +550,25 @@
         if (pdfElement) {
             pdfElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
             await sleep(800);
-            forceClick(pdfElement);
-            
-            updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P', '#00ff00', true);
-            playDing('success');
+
+            const pdfUrl = extractPdfUrl(pdfElement);
+            if (pdfUrl) {
+                updateHUD('Sende PDF an Drucker...', '#ffff00', true);
+                const result = await sendToBridge(pdfUrl);
+                if (result.ok) {
+                    updateHUD(`PDF GEDRUCKT ─ ${result.printer}`, '#00ff00', true);
+                    playDing('success');
+                } else {
+                    updateHUD(`Druck fehlgeschlagen: ${result.error}`, '#ff4444', true);
+                    playDing('error');
+                    forceClick(pdfElement);
+                    updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (Fallback)', '#ffaa00', true);
+                }
+            } else {
+                forceClick(pdfElement);
+                updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (kein Link)', '#ffaa00', true);
+                playDing('success');
+            }
             
             const oldRegal = sessionStorage.getItem('arasaka_old_regal');
             if (oldRegal) {
