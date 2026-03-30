@@ -206,7 +206,7 @@ function dplProcessDownFromSelection() {
 
   var name = sh.getName();
 
-  if (name !== 'Tagesliste' && name !== 'Nachbestellungen') return;
+  if (name !== 'Tagesliste') return;
 
   var row = ss.getActiveRange().getRow();
 
@@ -235,7 +235,7 @@ function dplOnEdit(e) {
 
   var col = e.range.getColumn();
 
-  if ((sheetName !== 'Tagesliste' && sheetName !== 'Nachbestellungen') || col !== 5 || row < 2) return;
+  if (sheetName !== 'Tagesliste' || col !== 5 || row < 2) return;
 
   var inputValue = String(e.range.getValue() || '').trim();
 
