@@ -26,11 +26,11 @@ function onEdit(e) {
       var L = (valL || "").toString().toLowerCase();
 
       var color = null;
-      if (L.includes("angeliefert") || L.includes("bereit für tagesliste")) color = "#D4FFD4";
-      else if (J.includes("anfrage alfah")) color = "#FFD8A8";
+      if (J.includes("push to senior")) color = "#e5d4ff";
+      else if (L.includes("angeliefert") || L.includes("bereit für tagesliste")) color = "#d4ffd4";
+      else if (J.includes("anfrage alfah")) color = "#ffd8a8";
+      else if (L.includes("nicht bestellt")) color = "#ffffff";
       else if (L.includes("bestellt")) color = "#fff5a5";
-      else if (L.includes("nicht bestellt")) color = "#ffd4d4";
-      else if (J.includes("push to senior")) color = "#E5D4FF";
 
       sheet.getRange(row, 1, 1, 14).setBackground(color);
 
