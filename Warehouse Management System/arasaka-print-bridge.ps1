@@ -8,6 +8,13 @@
 
 param([string]$Action)
 
+if ((Get-ExecutionPolicy -Scope Process) -ne 'Bypass') {
+    $a = @("-ExecutionPolicy", "Bypass", "-NoExit", "-File", "`"$($MyInvocation.MyCommand.Path)`"")
+    if ($Action) { $a += $Action }
+    Start-Process powershell -ArgumentList $a
+    exit 0
+}
+
 $Port = 9150
 $BridgeUrl = "http://localhost:$Port"
 $ScriptPath = $MyInvocation.MyCommand.Path
