@@ -157,6 +157,31 @@ function Download-Pdf($url) {
     } catch { return $null }
 }
 
+function Find-Chrome {
+    $candidates = @(
+        (Join-Path ${env:ProgramFiles} "Google\Chrome\Application\chrome.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Google\Chrome\Application\chrome.exe"),
+        (Join-Path $env:LOCALAPPDATA "Google\Chrome\Application\chrome.exe")
+    )
+    foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
+    $inPath = Get-Command chrome -ErrorAction SilentlyContinue
+    if ($inPath) { return $inPath.Source }
+    return $null
+}
+$ChromePath = Find-Chrome
+
+function Convert-HtmlToPdf($htmlPath) {
+    if (-not $ChromePath) { return $null }
+    $pdfPath = [System.IO.Path]::ChangeExtension($htmlPath, ".pdf")
+    try {
+        $p = Start-Process -FilePath $ChromePath -ArgumentList "--headless --disable-gpu --no-pdf-header-footer --print-to-pdf=`"$pdfPath`" `"$htmlPath`"" -PassThru -WindowStyle Hidden
+        $null = $p.WaitForExit(20000)
+        if (-not $p.HasExited) { $p.Kill() }
+        if (Test-Path $pdfPath) { return $pdfPath }
+    } catch { }
+    return $null
+}
+
 function Print-Pdf($filePath, $printerName, $copies) {
     if (-not $copies) { $copies = 1 }
     if (-not (Test-Path $SumatraPath)) { return "SumatraPDF not found at $SumatraPath" }
@@ -228,6 +253,8 @@ if (-not (Ensure-SumatraPDF)) {
     exit 1
 }
 Write-Host "  SumatraPDF: $SumatraPath" -ForegroundColor DarkGray
+if ($ChromePath) { Write-Host "  Chrome: $ChromePath" -ForegroundColor DarkGray }
+else { Write-Host "  Chrome: NOT FOUND (HTML printing disabled)" -ForegroundColor Yellow }
 
 Write-Host "  Printer: $($config.printer)" -ForegroundColor Green
 Write-Host "  Printers:" -ForegroundColor DarkGray
@@ -282,6 +309,22 @@ try {
                 $pe = Print-Pdf $fp $config.printer $cp
                 if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
                 else { Log "Print OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
+            }
+            elseif ($m -eq "POST" -and $pa -eq "/print-html") {
+                if (-not $config.printer) { Err $st 400 "No printer set"; $client.Close(); continue }
+                if (-not $ChromePath) { Err $st 500 "Chrome not found for HTML-to-PDF"; $client.Close(); continue }
+                try { $d = $req.Body | ConvertFrom-Json } catch { Err $st 400 "Bad JSON"; $client.Close(); continue }
+                $htmlContent = $d.html; $cp = 1; if($d.copies){ $cp = [int]$d.copies }
+                if (-not $htmlContent) { Err $st 400 "Missing html"; $client.Close(); continue }
+                Log "PRINT-HTML x$cp"
+                $htmlFile = Join-Path $TempDir "arasaka_$(Get-Date -Format 'yyyyMMdd_HHmmss').html"
+                [System.IO.File]::WriteAllText($htmlFile, $htmlContent, [System.Text.Encoding]::UTF8)
+                $pdfFile = Convert-HtmlToPdf $htmlFile
+                Remove-Item $htmlFile -Force -ErrorAction SilentlyContinue
+                if (-not $pdfFile) { Log "HTML-to-PDF FAIL"; Err $st 500 "HTML to PDF conversion failed"; $client.Close(); continue }
+                $pe = Print-Pdf $pdfFile $config.printer $cp
+                if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
+                else { Log "Print-HTML OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
             }
             elseif ($m -eq "POST" -and $pa -eq "/shutdown") {
                 Log "Shutdown"; Ok $st @{ success=$true; message="Bye" }; $running = $false
