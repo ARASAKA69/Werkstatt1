@@ -96,7 +96,6 @@ if (-not (Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | 
 function Ensure-SumatraPDF {
     if (Test-Path $script:SumatraPath) { return $true }
 
-  
     $searchPaths = @(
         (Join-Path $env:LOCALAPPDATA "SumatraPDF\SumatraPDF.exe"),
         (Join-Path ${env:ProgramFiles} "SumatraPDF\SumatraPDF.exe")
@@ -113,7 +112,6 @@ function Ensure-SumatraPDF {
         }
     }
 
-   
     $inPath = Get-Command SumatraPDF -ErrorAction SilentlyContinue
     if ($inPath) {
         $script:SumatraPath = $inPath.Source
@@ -163,7 +161,7 @@ function Print-Pdf($filePath, $printerName, $copies) {
     if (-not $copies) { $copies = 1 }
     if (-not (Test-Path $SumatraPath)) { return "SumatraPDF not found at $SumatraPath" }
     for ($i = 0; $i -lt $copies; $i++) {
-        $p = Start-Process -FilePath $SumatraPath -ArgumentList "-print-to `"$printerName`" -silent `"$filePath`"" -PassThru -WindowStyle Hidden
+        $p = Start-Process -FilePath $SumatraPath -ArgumentList "-print-to `"$printerName`" -print-settings `"simplex`" -silent `"$filePath`"" -PassThru -WindowStyle Hidden
         $null = $p.WaitForExit(30000)
         if (-not $p.HasExited) { $p.Kill() }
     }
