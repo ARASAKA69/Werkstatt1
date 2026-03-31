@@ -93,6 +93,57 @@ function Save-Config($cfg) { $cfg | ConvertTo-Json | Set-Content $ConfigFile -En
 
 if (-not (Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | Out-Null }
 
+function Ensure-SumatraPDF {
+    if (Test-Path $script:SumatraPath) { return $true }
+
+  
+    $searchPaths = @(
+        (Join-Path $env:LOCALAPPDATA "SumatraPDF\SumatraPDF.exe"),
+        (Join-Path ${env:ProgramFiles} "SumatraPDF\SumatraPDF.exe")
+    )
+    if ($env:ProgramW6432) { $searchPaths += Join-Path $env:ProgramW6432 "SumatraPDF\SumatraPDF.exe" }
+    if (${env:ProgramFiles(x86)}) { $searchPaths += Join-Path ${env:ProgramFiles(x86)} "SumatraPDF\SumatraPDF.exe" }
+    $searchPaths += Join-Path $PSScriptRoot "SumatraPDF.exe"
+
+    foreach ($sp in $searchPaths) {
+        if ($sp -and (Test-Path $sp)) {
+            $script:SumatraPath = $sp
+            Write-Host "  SumatraPDF found: $sp" -ForegroundColor Green
+            return $true
+        }
+    }
+
+   
+    $inPath = Get-Command SumatraPDF -ErrorAction SilentlyContinue
+    if ($inPath) {
+        $script:SumatraPath = $inPath.Source
+        Write-Host "  SumatraPDF found in PATH: $($inPath.Source)" -ForegroundColor Green
+        return $true
+    }
+
+    Write-Host "  SumatraPDF not found. Downloading portable version..." -ForegroundColor Yellow
+    $toolsDir = Split-Path $script:SumatraPath -Parent
+    if (-not (Test-Path $toolsDir)) { New-Item $toolsDir -ItemType Directory -Force | Out-Null }
+
+    $dlUrl = "https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64.exe"
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $wc = New-Object System.Net.WebClient
+        $wc.DownloadFile($dlUrl, $script:SumatraPath)
+        $wc.Dispose()
+        if (Test-Path $script:SumatraPath) {
+            Write-Host "  SumatraPDF downloaded OK -> $($script:SumatraPath)" -ForegroundColor Green
+            return $true
+        }
+    } catch {
+        Write-Host "  Auto-download failed: $($_.Exception.Message)" -ForegroundColor Red
+    }
+
+    Write-Host "  ERROR: SumatraPDF could not be found or downloaded." -ForegroundColor Red
+    Write-Host "  Install it manually from https://www.sumatrapdfreader.org/download-free-pdf-viewer" -ForegroundColor Yellow
+    return $false
+}
+
 function Get-PrinterList {
     try { @(Get-CimInstance Win32_Printer | Select-Object -ExpandProperty Name) } catch { @() }
 }
@@ -171,6 +222,14 @@ if (-not $config.printer -or ($allPrinters -notcontains $config.printer)) {
     Write-Host ""
     Write-Host "  Drucker gesetzt: $($config.printer)" -ForegroundColor Green
 }
+
+if (-not (Ensure-SumatraPDF)) {
+    Write-Host "" 
+    Write-Host "  Bridge cannot start without SumatraPDF." -ForegroundColor Red
+    Read-Host "  Enter to exit"
+    exit 1
+}
+Write-Host "  SumatraPDF: $SumatraPath" -ForegroundColor DarkGray
 
 Write-Host "  Printer: $($config.printer)" -ForegroundColor Green
 Write-Host "  Printers:" -ForegroundColor DarkGray
