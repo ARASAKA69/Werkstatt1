@@ -1,4 +1,4 @@
-# ARASAKA PRINT BRIDGE v1.1
+# ARASAKA PRINT BRIDGE v1.2
 # Commands:
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 stop
@@ -197,7 +197,7 @@ $config = Load-Config
 $running = $true
 
 Write-Host ""
-Write-Host "  ARASAKA PRINT BRIDGE v1.1" -ForegroundColor Cyan
+Write-Host "  ARASAKA PRINT BRIDGE v1.2" -ForegroundColor Cyan
 Write-Host "  Port $Port | Chrome headless" -ForegroundColor Cyan
 
 $allPrinters = Get-PrinterList
@@ -257,7 +257,7 @@ try {
             if ($m -eq "OPTIONS") { Send-Response $st 204 "No Content" "" }
             elseif ($m -eq "GET" -and $pa -eq "/status") {
                 Log "GET /status"
-                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.1"; printer=$config.printer; configured=[bool]$config.printer }
+                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.2"; printer=$config.printer; configured=[bool]$config.printer }
             }
             elseif ($m -eq "GET" -and $pa -eq "/printers") {
                 Log "GET /printers"
