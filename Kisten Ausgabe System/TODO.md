@@ -8,7 +8,7 @@
 - [x] Logs fetter gemacht: skipped counts, warum skipped, moveFile-Zeilen; Summary bei Skips auch im Ordner **Kisten Duplicate Uploads** + normales Log bleibt wo es hingehört.
 - [x] Bridge läuft per **POST + JSON** (kein HTML-Fehler mehr von zu langen URLs), `getBatch` schickt **modifiedTime** + **lastUploadedStored** fürs Timestamp-Vergleichen.
 - [x] HUD ohne Tech-Sprech für User — alles Detaillierte nur noch in der **Konsole** wenn `ARASAKA_DEBUG` auf true; default false damit’s clean bleibt.
-
+- [x] Fixing Duplicate issue, when any of these uploaded with the same name, it shpuld skip them.
+- [ ] 
 # Offen
 
-- Fixing Duplicate issue, when any of these uploaded with the same name, it shpuld skip them.
