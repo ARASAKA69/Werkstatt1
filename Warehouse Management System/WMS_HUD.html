@@ -3080,14 +3080,7 @@
       }).stelleAlleReifen(payload);
     }
 
-    function printRaList() {
-      var offen = [];
-      for(var i = 0; i < raAllEntries.length; i++) {
-        if(!raAllEntries[i].gestellt) offen.push(raAllEntries[i]);
-      }
-      if(offen.length === 0) { alert('Keine offenen Reifen zum Drucken.'); return; }
-      var today = new Date();
-      var dateHeader = (today.getDate()<10?'0':'') + today.getDate() + '.' + ((today.getMonth()+1)<10?'0':'') + (today.getMonth()+1) + '.' + today.getFullYear();
+    function buildRaHtml(offen, dateHeader) {
       var rows = '';
       for(var j = 0; j < offen.length; j++) {
         var e = offen[j];
@@ -3099,7 +3092,7 @@
           + '<td style="width:60px;"></td>'
           + '</tr>';
       }
-      var html = '<!DOCTYPE html><html><head><title>Reifenausgabe ' + dateHeader + '</title>'
+      return '<!DOCTYPE html><html><head><title>Reifenausgabe ' + dateHeader + '</title>'
         + '<style>'
         + 'body{font-family:Arial,sans-serif;margin:20px;color:#111;}'
         + 'h2{margin:0 0 4px 0;font-size:18px;}'
@@ -3110,15 +3103,46 @@
         + 'tr:nth-child(even){background:#f7f7f7;}'
         + '@media print{body{margin:10px;}@page{size:A4 portrait;margin:12mm;}}'
         + '</style></head><body>'
-        + '<h2>Reifenausgabe — ' + dateHeader + '</h2>'
+        + '<h2>Reifenausgabe \u2014 ' + dateHeader + '</h2>'
         + '<div class="sub">' + offen.length + ' Reifen noch zu stellen</div>'
-        + '<table><thead><tr><th>#</th><th>Datum</th><th>Stock-ID</th><th>Anzahl</th><th>✓</th></tr></thead>'
+        + '<table><thead><tr><th>#</th><th>Datum</th><th>Stock-ID</th><th>Anzahl</th><th>\u2713</th></tr></thead>'
         + '<tbody>' + rows + '</tbody></table>'
-        + '<script>window.print();<\/script>'
         + '</body></html>';
+    }
+
+    function printRaFallback(html) {
       var w = window.open('', '_blank');
-      w.document.write(html);
+      w.document.write(html + '<script>window.print();<\/script>');
       w.document.close();
+    }
+
+    function printRaList() {
+      var offen = [];
+      for(var i = 0; i < raAllEntries.length; i++) {
+        if(!raAllEntries[i].gestellt) offen.push(raAllEntries[i]);
+      }
+      if(offen.length === 0) { alert('Keine offenen Reifen zum Drucken.'); return; }
+      var today = new Date();
+      var dateHeader = (today.getDate()<10?'0':'') + today.getDate() + '.' + ((today.getMonth()+1)<10?'0':'') + (today.getMonth()+1) + '.' + today.getFullYear();
+      var html = buildRaHtml(offen, dateHeader);
+
+      var btn = document.querySelector('.ra-btn-print');
+      if(btn) { btn.disabled = true; btn.textContent = '⏳ Drucke...'; }
+
+      fetch(BRIDGE_URL + '/print-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: html })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if(data.success) {
+          if(btn) { btn.textContent = '✅ Gedruckt!'; setTimeout(function(){ btn.disabled = false; btn.textContent = '🖨️ Drucken'; }, 2000); }
+        } else {
+          throw new Error(data.error || 'Bridge error');
+        }
+      }).catch(function() {
+        if(btn) { btn.disabled = false; btn.textContent = '🖨️ Drucken'; }
+        printRaFallback(html);
+      });
     }
 
     var nbAllEntries = [];
