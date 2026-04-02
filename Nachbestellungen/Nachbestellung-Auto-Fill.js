@@ -36,7 +36,7 @@ function onEdit(e) {
 
       if (col === 4) {
         if (D.includes("exit bestellung")) {
-          sheet.getRange(row, 2).setBackground("#FFC4C4");
+          sheet.getRange(row, 2).setBackground("#e06666");
         } else {
           sheet.getRange(row, 2).setBackground(null);
         }
