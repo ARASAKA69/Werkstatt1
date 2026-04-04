@@ -675,6 +675,44 @@
     border: 1px solid rgba(227, 179, 65, 0.18);
     white-space: nowrap;
   }
+  .b2a1-kandidat-badge-wrap {
+    width: 100%;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0 4px;
+  }
+  .b2a1-kandidat-hint {
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #c9d1d9;
+    background: rgba(88, 166, 255, 0.08);
+    border: 1px solid rgba(88, 166, 255, 0.22);
+    letter-spacing: 0.02em;
+  }
+  .b2a1-kandidat-badge {
+    max-width: 100%;
+    box-sizing: border-box;
+    text-align: center;
+    padding: 14px 22px;
+    border-radius: 16px;
+    font-size: 20px;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #fff;
+    background: linear-gradient(180deg, rgba(248,81,73,0.95) 0%, rgba(180,40,35,0.98) 100%);
+    border: 2px solid rgba(255,255,255,0.22);
+    box-shadow: 0 6px 24px rgba(248,81,73,0.35), inset 0 1px 0 rgba(255,255,255,0.12);
+  }
   .shelf-dd-wrap {
     position: relative;
     width: 100%;
@@ -2433,6 +2471,10 @@
               <div class="shelf-dd-scroll" id="shelfDdScroll"></div>
             </div>
             <select id="shelfSelect" class="shelf-dd-native"><option value="">Lade Regale...</option></select>
+          </div>
+          <div class="b2a1-kandidat-badge-wrap" id="b2a1KandidatBadgeWrap">
+            <div class="b2a1-kandidat-badge" id="b2a1KandidatBadge">B2A1 Kandidat</div>
+            <div class="b2a1-kandidat-hint" id="b2a1KandidatHint">Bitte in Carol gegen kontrollieren ob Auto B2A1 ist!</div>
           </div>
         </div>
       </div>
@@ -5349,6 +5391,14 @@
       }, REFURB_CACHE_POLL_MS);
     }
 
+    function updateB2a1KandidatBadgeFromSchaeden(schaedenText) {
+      var wrap = document.getElementById('b2a1KandidatBadgeWrap');
+      if(!wrap) return;
+      var compact = String(schaedenText || '').replace(/\s+/g, ' ').trim();
+      var show = /b2a1\s+kandidat/i.test(compact);
+      wrap.style.display = show ? 'flex' : 'none';
+    }
+
     function applyFetchWmsResult(res, id) {
       if (res.success) {
         currentStock = id;
@@ -5420,6 +5470,8 @@
           wssAct.style.display = 'none';
         }
 
+        updateB2a1KandidatBadgeFromSchaeden(res.schaeden || '');
+
         var sel = document.getElementById('shelfSelect');
         var currentRegal = (res.regal || '').trim();
         sel.dataset.serverRegal = currentRegal;
@@ -5461,6 +5513,7 @@
         toggleUI(true);
         startShelfRefresh();
       } else {
+        updateB2a1KandidatBadgeFromSchaeden('');
         setStatus('❌ FEHLER: ' + res.message, '#f85149');
         toggleUI(true);
       }
