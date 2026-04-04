@@ -2,7 +2,7 @@
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
 // @version 3.5
-// @description ARASAKA v3.5
+// @description ARASAKA v3.5 - Silent Print via Bridge & Fallback PDF Scanner
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -526,7 +526,7 @@
         if (!pdfElement) {
             updateHUD('Fallback: Suche direkt nach PDF-Datei...', '#ffaa00', true);
             const allPdfEls = [];
-            
+
             for (const el of document.querySelectorAll('*')) {
                 if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY', 'svg', 'path'].includes(el.tagName)) continue;
                 if (el.textContent?.toLowerCase().includes('.pdf')) {
@@ -569,7 +569,7 @@
                 updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (kein Link)', '#ffaa00', true);
                 playDing('success');
             }
-            
+
             const oldRegal = sessionStorage.getItem('arasaka_old_regal');
             if (oldRegal) {
                 showArasakaRegalHUD(oldRegal);
