@@ -1,4 +1,4 @@
-# ARASAKA PRINT BRIDGE v1.2
+# ARASAKA PRINT BRIDGE v1.3
 # Commands:
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 stop
@@ -34,7 +34,7 @@ if ($Action) {
     switch ($Action.ToLower()) {
         "stop" {
             try {
-                $r = Invoke-RestMethod "$BridgeUrl/shutdown" -Method POST -TimeoutSec 3
+                Invoke-RestMethod "$BridgeUrl/shutdown" -Method POST -TimeoutSec 3 | Out-Null
                 Write-Host "Bridge stopped." -ForegroundColor Green
             } catch { Write-Host "Bridge not running." -ForegroundColor Yellow }
             exit 0
@@ -82,18 +82,18 @@ function Log($msg) {
     Add-Content $LogFile $line -ErrorAction SilentlyContinue
 }
 
-function Load-Config {
+function Import-Config {
     if (Test-Path $ConfigFile) {
         try { return (Get-Content $ConfigFile -Raw | ConvertFrom-Json) } catch { }
     }
     return [PSCustomObject]@{ printer = "" }
 }
 
-function Save-Config($cfg) { $cfg | ConvertTo-Json | Set-Content $ConfigFile -Encoding UTF8 }
+function Export-Config($cfg) { $cfg | ConvertTo-Json | Set-Content $ConfigFile -Encoding UTF8 }
 
 if (-not (Test-Path $TempDir)) { New-Item $TempDir -ItemType Directory -Force | Out-Null }
 
-function Ensure-SumatraPDF {
+function Initialize-SumatraPDF {
     if (Test-Path $script:SumatraPath) { return $true }
 
     $searchPaths = @(
@@ -146,7 +146,7 @@ function Get-PrinterList {
     try { @(Get-CimInstance Win32_Printer | Select-Object -ExpandProperty Name) } catch { @() }
 }
 
-function Download-Pdf($url) {
+function Receive-Pdf($url) {
     $fp = Join-Path $TempDir "arasaka_$(Get-Date -Format 'yyyyMMdd_HHmmss').pdf"
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -182,7 +182,7 @@ function Convert-HtmlToPdf($htmlPath) {
     return $null
 }
 
-function Print-Pdf($filePath, $printerName, $copies) {
+function Invoke-PdfPrint($filePath, $printerName, $copies) {
     if (-not $copies) { $copies = 1 }
     if (-not (Test-Path $SumatraPath)) { return "SumatraPDF not found at $SumatraPath" }
     for ($i = 0; $i -lt $copies; $i++) {
@@ -204,7 +204,7 @@ function Send-Response($stream, $code, $status, $body) {
 function Ok($s, $o) { Send-Response $s 200 "OK" ($o | ConvertTo-Json -Compress) }
 function Err($s, $c, $m) { Send-Response $s $c "Error" (@{success=$false;error=$m} | ConvertTo-Json -Compress) }
 
-function Parse-Request($client) {
+function Read-Request($client) {
     $s = $client.GetStream(); $s.ReadTimeout = 5000
     $buf = New-Object byte[] 65536; $raw = ""
     try { do { $n = $s.Read($buf,0,$buf.Length); if($n -gt 0){ $raw += [System.Text.Encoding]::UTF8.GetString($buf,0,$n) } } while($s.DataAvailable) } catch {}
@@ -218,11 +218,11 @@ trap { Log "FATAL: $($_.Exception.Message)"; Read-Host "Enter to exit"; exit 1 }
 
 if (Test-Path $LogFile) { Clear-Content $LogFile -ErrorAction SilentlyContinue }
 
-$config = Load-Config
+$config = Import-Config
 $running = $true
 
 Write-Host ""
-Write-Host "  ARASAKA PRINT BRIDGE v1.2" -ForegroundColor Cyan
+Write-Host "  ARASAKA PRINT BRIDGE v1.3" -ForegroundColor Cyan
 Write-Host "  Port $Port | Chrome headless" -ForegroundColor Cyan
 
 $allPrinters = Get-PrinterList
@@ -237,16 +237,16 @@ if (-not $config.printer -or ($allPrinters -notcontains $config.printer)) {
     Write-Host ""
     $choice = 0
     while ($choice -lt 1 -or $choice -gt $allPrinters.Count) {
-        $input = Read-Host "  Nummer eingeben (1-$($allPrinters.Count))"
-        try { $choice = [int]$input } catch { $choice = 0 }
+        $userInput = Read-Host "  Nummer eingeben (1-$($allPrinters.Count))"
+        try { $choice = [int]$userInput } catch { $choice = 0 }
     }
     $config.printer = $allPrinters[$choice - 1]
-    Save-Config $config
+    Export-Config $config
     Write-Host ""
     Write-Host "  Drucker gesetzt: $($config.printer)" -ForegroundColor Green
 }
 
-if (-not (Ensure-SumatraPDF)) {
+if (-not (Initialize-SumatraPDF)) {
     Write-Host "" 
     Write-Host "  Bridge cannot start without SumatraPDF." -ForegroundColor Red
     Read-Host "  Enter to exit"
@@ -277,14 +277,14 @@ try {
     while ($running) {
         if (-not $listener.Pending()) { Start-Sleep -Milliseconds 100; continue }
         $client = $listener.AcceptTcpClient()
-        $req = Parse-Request $client
+        $req = Read-Request $client
         if (-not $req) { $client.Close(); continue }
         $m = $req.Method; $pa = $req.Path; $st = $req.Stream
         try {
             if ($m -eq "OPTIONS") { Send-Response $st 204 "No Content" "" }
             elseif ($m -eq "GET" -and $pa -eq "/status") {
                 Log "GET /status"
-                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.2"; printer=$config.printer; configured=[bool]$config.printer }
+                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.3"; printer=$config.printer; configured=[bool]$config.printer }
             }
             elseif ($m -eq "GET" -and $pa -eq "/printers") {
                 Log "GET /printers"
@@ -294,7 +294,7 @@ try {
                 try { $d = $req.Body | ConvertFrom-Json; $np = $d.printer } catch { Err $st 400 "Bad JSON"; $client.Close(); continue }
                 if (-not $np) { Err $st 400 "Missing printer"; $client.Close(); continue }
                 if ((Get-PrinterList) -notcontains $np) { Err $st 400 "Printer not found"; $client.Close(); continue }
-                $config.printer = $np; Save-Config $config
+                $config.printer = $np; Export-Config $config
                 Log "Printer set: $np"
                 Ok $st @{ success=$true; printer=$np }
             }
@@ -304,9 +304,9 @@ try {
                 $url = $d.url; $cp = 1; if($d.copies){ $cp = [int]$d.copies }
                 if (-not $url) { Err $st 400 "Missing url"; $client.Close(); continue }
                 Log "PRINT $url x$cp"
-                $fp = Download-Pdf $url
+                $fp = Receive-Pdf $url
                 if (-not $fp) { Log "Download FAIL"; Err $st 500 "Download failed"; $client.Close(); continue }
-                $pe = Print-Pdf $fp $config.printer $cp
+                $pe = Invoke-PdfPrint $fp $config.printer $cp
                 if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
                 else { Log "Print OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
             }
@@ -322,7 +322,7 @@ try {
                 $pdfFile = Convert-HtmlToPdf $htmlFile
                 Remove-Item $htmlFile -Force -ErrorAction SilentlyContinue
                 if (-not $pdfFile) { Log "HTML-to-PDF FAIL"; Err $st 500 "HTML to PDF conversion failed"; $client.Close(); continue }
-                $pe = Print-Pdf $pdfFile $config.printer $cp
+                $pe = Invoke-PdfPrint $pdfFile $config.printer $cp
                 if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
                 else { Log "Print-HTML OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
             }
