@@ -9,6 +9,7 @@ const AUFTRAG_TAB = "BLANCO Reparaturauftrag";
 const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
 const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const TAGESLISTE_TAB = "Tagesliste";
+const VASOLD_WSS_TAB = "Vasold WSS";
 const NACHBESTELL_REGAL_COL = 13;
 
 function normalizeRegalKeyForCount(val) {
@@ -622,6 +623,254 @@ function processReifenStock(tabName, stockId, isDelivered) {
     }
   }
 
+function extractHuDateOnlyFromNachuntersuchungSegment(segment) {
+  var s = String(segment || "").trim();
+  if (!s) return "";
+  var mNum = s.match(/(\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4})/);
+  if (mNum) {
+    var p = mNum[1].match(/(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{2,4})/);
+    if (p) return p[1] + "." + p[2] + "." + p[3];
+  }
+  var reDotMo = /(\d{1,2}\.\s*(?:Jan|Feb|Mär|Mrz|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez|Januar|Februar|März|April|Juni|Juli|September|Oktober|November|Dezember)[a-zä]*\.?\s*\d{4})/i;
+  var mDot = s.match(reDotMo);
+  if (mDot) return mDot[1].replace(/\s+/g, " ").trim();
+  var reSpMo = /(\d{1,2}\s+(?:Jan|Feb|Mär|Mrz|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez|Januar|Februar|März|April|Juni|Juli|September|Oktober|November|Dezember)[a-zä]*\.?\s*\d{4})/i;
+  var mSp = s.match(reSpMo);
+  if (mSp) return mSp[1].replace(/\s+/g, " ").trim();
+  return "";
+}
+
+function huVasoldValueFromSchaedenText(wText) {
+  var dash = "---------------";
+  var m = String(wText || "").match(/Nachuntersuchung\s*bis\s*:\s*([^\n\r]+)/i);
+  if (!m) return dash;
+  var rest = String(m[1] || "").trim();
+  if (!rest) return dash;
+  var dateOnly = extractHuDateOnlyFromNachuntersuchungSegment(rest);
+  if (!dateOnly) return dash;
+  return dateOnly;
+}
+
+function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    carolUrlOpt = String(carolUrlOpt || "").trim();
+    markeOpt = String(markeOpt || "").trim();
+    var gummiYes = gummiVorhanden === true || gummiVorhanden === "true";
+
+    var sheetRef = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheetRef) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+    var lastRef = Math.max(2, sheetRef.getLastRow());
+    var stockCol = sheetRef.getRange(1, 2, lastRef, 1).getValues();
+    var refurbRow = -1;
+    for (var ir = 1; ir < stockCol.length; ir++) {
+      if (cellMatchesStockId(stockCol[ir][0], stockId)) {
+        refurbRow = ir + 1;
+        break;
+      }
+    }
+    if (refurbRow === -1) return { success: false, message: "Stock-ID in Refurbisment List nicht gefunden!" };
+
+    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
+    if (!/wss\s*ers/i.test(wText)) {
+      return { success: false, message: "Kein „WSS ers“ in Schaden (Spalte W)." };
+    }
+
+    var carol = carolUrlOpt || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var marke = markeOpt || String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
+    if (!carol) return { success: false, message: "Carol-Link fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
+    if (!marke) return { success: false, message: "Marke & Model fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
+
+    var huVasold = huVasoldValueFromSchaedenText(wText);
+
+    var ssV = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheetV = ssV.getSheetByName(VASOLD_WSS_TAB);
+    if (!sheetV) return { success: false, message: "Tab „" + VASOLD_WSS_TAB + "“ in Hemau Tageslisten nicht gefunden!" };
+
+    var searchV = findRowFast(sheetV, ["stockid", "stock"], stockId);
+    if (searchV.headerIdx === -1) {
+      return { success: false, message: "Vasold WSS: Kopfzeile mit Stock-ID nicht gefunden!" };
+    }
+
+    var hdr1 = searchV.headerIdx + 1;
+    var targetRow;
+    var isNew = false;
+    if (searchV.row === -1) {
+      isNew = true;
+      var lrV = sheetV.getLastRow();
+      targetRow = Math.max(lrV, hdr1) + 1;
+    } else {
+      targetRow = searchV.row;
+    }
+
+    sheetV.getRange(targetRow, 1).setValue(stockId);
+    sheetV.getRange(targetRow, 2).setValue(carol);
+    sheetV.getRange(targetRow, 3).setValue(marke);
+    sheetV.getRange(targetRow, 4).setValue(huVasold);
+    sheetV.getRange(targetRow, 5).setValue("Ja");
+    if (gummiYes) sheetV.getRange(targetRow, 6).setValue("Vorhanden");
+
+    var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
+    if (!/wss\s+da\b/i.test(curCom)) {
+      sheetRef.getRange(refurbRow, 25).setValue(curCom ? "WSS da // " + curCom : "WSS da // ");
+    }
+
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      message: (isNew ? "Vasold WSS: neue Zeile. " : "Vasold WSS: Zeile aktualisiert. ") + "Kommentar Anlieferung: WSS da //",
+      stockId: stockId,
+      isNew: isNew,
+      row: targetRow
+    };
+  } catch (err) {
+    return { success: false, message: "Fehler: " + err.message };
+  }
+}
+
+function getVasoldWssSyncState(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, rowFound: false, message: "Keine Stock-ID" };
+
+    var ssV = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheetV = ssV.getSheetByName(VASOLD_WSS_TAB);
+    if (!sheetV) return { success: false, rowFound: false, message: "Tab fehlt" };
+
+    var searchV = findRowFast(sheetV, ["stockid", "stock"], stockId);
+    if (searchV.headerIdx === -1) {
+      return { success: true, rowFound: false, frontscheibeJa: false, gummileisteDa: false };
+    }
+    if (searchV.row === -1) {
+      return { success: true, rowFound: false, frontscheibeJa: false, gummileisteDa: false };
+    }
+
+    var eRaw = sheetV.getRange(searchV.row, 5).getValue();
+    var fRaw = sheetV.getRange(searchV.row, 6).getValue();
+    var eVal = String(eRaw != null ? eRaw : "").trim().toLowerCase();
+    var fVal = String(fRaw != null ? fRaw : "").trim().toLowerCase();
+
+    var frontscheibeJa = eVal === "ja";
+    var gummileisteDa = fVal === "vorhanden" || fVal === "da" || fVal.indexOf("vorhanden") !== -1;
+
+    return {
+      success: true,
+      rowFound: true,
+      frontscheibeJa: frontscheibeJa,
+      gummileisteDa: gummileisteDa
+    };
+  } catch (err) {
+    return { success: false, rowFound: false, message: err.message };
+  }
+}
+
+function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var wssYes = toggleWssJa === true || toggleWssJa === "true";
+    var gummiYes = toggleGummi === true || toggleGummi === "true";
+    if (!wssYes && !gummiYes) {
+      return { success: false, message: "Keine Option zum Übernehmen gewählt." };
+    }
+
+    var sheetRef = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheetRef) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+    var lastRef = Math.max(2, sheetRef.getLastRow());
+    var stockCol = sheetRef.getRange(1, 2, lastRef, 1).getValues();
+    var refurbRow = -1;
+    for (var ir = 1; ir < stockCol.length; ir++) {
+      if (cellMatchesStockId(stockCol[ir][0], stockId)) {
+        refurbRow = ir + 1;
+        break;
+      }
+    }
+    if (refurbRow === -1) return { success: false, message: "Stock-ID in Refurbisment List nicht gefunden!" };
+
+    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
+    var carol = String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var marke = String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
+    if (!carol) return { success: false, message: "Carol-Link fehlt in Refurbishment." };
+    if (!marke) return { success: false, message: "Marke & Model fehlt in Refurbishment." };
+
+    var huVasold = huVasoldValueFromSchaedenText(wText);
+
+    var ssV = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheetV = ssV.getSheetByName(VASOLD_WSS_TAB);
+    if (!sheetV) return { success: false, message: "Tab „" + VASOLD_WSS_TAB + "“ in Hemau Tageslisten nicht gefunden!" };
+
+    var searchV = findRowFast(sheetV, ["stockid", "stock"], stockId);
+    if (searchV.headerIdx === -1) {
+      return { success: false, message: "Vasold WSS: Kopfzeile mit Stock-ID nicht gefunden!" };
+    }
+
+    var hdr1 = searchV.headerIdx + 1;
+    var targetRow;
+    var isNew = false;
+    if (searchV.row === -1) {
+      isNew = true;
+      var lrV = sheetV.getLastRow();
+      targetRow = Math.max(lrV, hdr1) + 1;
+    } else {
+      targetRow = searchV.row;
+    }
+
+    var eRaw = sheetV.getRange(targetRow, 5).getValue();
+    var fRaw = sheetV.getRange(targetRow, 6).getValue();
+    var eVal = String(eRaw != null ? eRaw : "").trim().toLowerCase();
+    var fVal = String(fRaw != null ? fRaw : "").trim().toLowerCase();
+    var eHasJa = eVal === "ja";
+    var fHasGummi = fVal === "vorhanden" || fVal === "da" || fVal.indexOf("vorhanden") !== -1;
+
+    var needWssWrite = wssYes && (isNew || !eHasJa);
+    var needGummiWrite = gummiYes && (isNew || !fHasGummi);
+    if (!needWssWrite && !needGummiWrite) {
+      return {
+        success: true,
+        skipped: true,
+        message: "Vasold hatte die gewählten Werte bereits — nichts geändert."
+      };
+    }
+
+    sheetV.getRange(targetRow, 1).setValue(stockId);
+    sheetV.getRange(targetRow, 2).setValue(carol);
+    sheetV.getRange(targetRow, 3).setValue(marke);
+    sheetV.getRange(targetRow, 4).setValue(huVasold);
+    if (needWssWrite) {
+      sheetV.getRange(targetRow, 5).setValue("Ja");
+    }
+    if (needGummiWrite) {
+      sheetV.getRange(targetRow, 6).setValue("Vorhanden");
+    }
+
+    var wroteEJa = needWssWrite;
+    if (wroteEJa) {
+      var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
+      if (!/wss\s+da\b/i.test(curCom)) {
+        sheetRef.getRange(refurbRow, 25).setValue(curCom ? "WSS da // " + curCom : "WSS da // ");
+      }
+    }
+
+    SpreadsheetApp.flush();
+    var parts = [];
+    if (needWssWrite) parts.push("WSS Ja");
+    if (needGummiWrite) parts.push("Gummileiste");
+    return {
+      success: true,
+      skipped: false,
+      message: "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert"),
+      stockId: stockId,
+      isNew: isNew,
+      row: targetRow
+    };
+  } catch (err) {
+    return { success: false, message: "Fehler: " + err.message };
+  }
+}
+
   function onOpen() {
     SpreadsheetApp.getUi().createMenu('WMS')
       .addItem('Öffne Warehouse Management System', 'openWMS')
@@ -781,6 +1030,7 @@ function processReifenStock(tabName, stockId, isDelivered) {
         result.status = String(rowData[25] || "");
         result.regal = String(rowData[27] || "");
         result.reifenStatus = String(rowData[29] || "");
+        result.markeModel = String(rowData[12] || "");
         var curKey = normalizeRegalKeyForCount(result.regal);
         result.currentShelfCount = (curKey && counts.hasOwnProperty(curKey)) ? counts[curKey] : (counts[result.regal] || 0);
         result.currentShelfCapacity = 5;
@@ -810,7 +1060,7 @@ function getRefurbishmentCachePayload() {
     for (ri = 0; ri < rawRows.length; ri++) {
       var r = rawRows[ri];
       rows.push([
-        r[1], r[2], r[22], r[23], r[24], r[25], r[27], r[29]
+        r[1], r[2], r[22], r[23], r[24], r[25], r[27], r[29], r[12]
       ]);
     }
 

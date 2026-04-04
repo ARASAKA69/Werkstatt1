@@ -433,6 +433,236 @@
     white-space: nowrap;
     letter-spacing: 0.8px;
   }
+  .badge-wss {
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    display: none;
+    white-space: nowrap;
+    letter-spacing: 0.8px;
+  }
+  .card-header-badges {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+  .wss-card-action {
+    margin-top: 12px;
+    display: none;
+    justify-content: center;
+  }
+  .wss-card-action .btn-wss-open {
+    background: linear-gradient(180deg, rgba(88, 166, 255, 0.22) 0%, rgba(56, 139, 253, 0.14) 100%);
+    color: #79c0ff;
+    border: 1.5px solid rgba(88, 166, 255, 0.35);
+    border-radius: 14px;
+    padding: 12px 20px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.6px;
+  }
+  .wss-card-action .btn-wss-open:hover {
+    transform: translateY(-1px);
+  }
+  #wssModal .wss-modal-body {
+    align-items: center;
+    text-align: center;
+  }
+  #wssModal .wss-modal-body .reifen-field {
+    align-items: center;
+    width: 100%;
+    max-width: 540px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  #wssModal .wss-modal-body .field-label {
+    text-align: center;
+    width: 100%;
+  }
+  #wssModal .wss-modal-body #wssModalStock {
+    text-align: center;
+    width: 100%;
+    color: #f2cc60;
+    font-size: 30px;
+    font-weight: 800;
+    letter-spacing: 2px;
+    line-height: 1.25;
+    text-transform: uppercase;
+    text-shadow: 0 0 28px rgba(242, 204, 96, 0.35);
+  }
+  #wssModal .wss-modal-hu-value {
+    text-align: center;
+    width: 100%;
+    color: #e6edf3;
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    line-height: 1.35;
+    padding: 10px 14px;
+    border-radius: 14px;
+    border: 2px solid rgba(242, 204, 96, 0.28);
+    background: rgba(15, 20, 28, 0.65);
+  }
+  #wssModal .wss-modal-body #wssCarolInput,
+  #wssModal .wss-modal-body #wssMarkeInput {
+    text-align: center;
+    width: 100%;
+    max-width: 540px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  #wssModal .wss-modal-body .reifen-status {
+    text-align: center;
+    width: 100%;
+    max-width: 540px;
+  }
+  #wssModal .wss-modal-body .reifen-actions {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    max-width: 540px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .wss-gummi-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    margin: 10px 0 14px;
+    width: 100%;
+    max-width: 540px;
+    margin-left: auto;
+    margin-right: auto;
+    position: relative;
+  }
+  .wss-gummi-block.wss-gummi-block--hidden {
+    display: none !important;
+  }
+  .wss-gummi-toggle {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    border: 3px solid rgba(242, 204, 96, 0.38);
+    background: rgba(13, 17, 23, 0.96);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: border-color 0.2s, background 0.224s, box-shadow 0.2s;
+    padding: 0;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .wss-gummi-toggle:hover {
+    border-color: rgba(242, 204, 96, 0.55);
+  }
+  .wss-gummi-toggle-mark {
+    font-size: 36px;
+    font-weight: 800;
+    line-height: 1;
+    color: rgba(72, 79, 88, 0.55);
+    transition: color 0.2s, transform 0.2s;
+  }
+  .wss-gummi-toggle.is-on .wss-gummi-toggle-mark {
+    color: #56d364;
+    transform: scale(1.06);
+  }
+  .wss-gummi-toggle.is-on {
+    border-color: rgba(86, 211, 100, 0.65);
+    background: rgba(86, 211, 100, 0.14);
+    box-shadow: 0 0 0 1px rgba(86, 211, 100, 0.2);
+  }
+  .wss-gummi-toggle.is-locked.is-on {
+    opacity: 0.58;
+    cursor: not-allowed;
+    filter: grayscale(0.15);
+  }
+  .wss-gummi-toggle.is-locked:hover {
+    border-color: rgba(86, 211, 100, 0.65);
+  }
+  .wss-gummi-toggle:disabled {
+    cursor: not-allowed;
+  }
+  #wssModal .reifen-body-outer {
+    position: relative;
+  }
+  .wss-modal-sync-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 95;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: rgba(9, 13, 19, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-radius: 0 0 18px 18px;
+  }
+  .wss-modal-sync-overlay.is-open {
+    display: flex;
+  }
+  .wss-modal-sync-text {
+    color: #f2cc60;
+    font-size: 15px;
+    font-weight: 800;
+    text-align: center;
+    max-width: 280px;
+    line-height: 1.45;
+  }
+  #wssModal .wss-submit-actions {
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+  #wssModal #wssSubmitBtn.wss-submit-wss-done:disabled,
+  #wssModal #wssSubmitBtn.is-vasold-synced:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    filter: grayscale(0.45);
+  }
+  #wssModal #wssSubmitBtnGummi {
+    display: none;
+  }
+  #wssModal #wssSubmitBtnGummi.wss-gummi-submit-visible {
+    display: inline-flex !important;
+  }
+  .wss-gummi-label {
+    color: #d0d7de;
+    font-weight: 800;
+    font-size: 15px;
+    letter-spacing: 0.3px;
+  }
+  #wssModal .reifen-header {
+    justify-content: center;
+    position: relative;
+  }
+  #wssModal .reifen-title {
+    text-align: center;
+  }
+  #wssModal .reifen-close {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  #wssGummiCheck {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+    pointer-events: none;
+    margin: 0;
+  }
   .shelf-pill {
     margin: 0;
     text-transform: none;
@@ -1272,6 +1502,63 @@
     border-color: rgba(163,113,247,0.35);
   }
   .nb-box-purple .nb-detail-lbl { color: #a371f7; }
+  .nb-box-vasold {
+    background: rgba(57, 208, 216, 0.06);
+    border-color: rgba(57, 208, 216, 0.38);
+    flex: 1 1 100%;
+    min-width: 280px;
+  }
+  .nb-box-vasold .nb-detail-lbl { color: #39d0d8; }
+  .nb-vasold-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    font-size: 16px;
+    color: #d0d7de;
+    font-weight: 700;
+  }
+  .nb-vasold-toggle-row input {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+  }
+  .nb-vasold-toggle-row input:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+  .nb-vasold-loading {
+    color: #9da7b3;
+    font-size: 15px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .nb-vasold-msg {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #9da7b3;
+    min-height: 1.2em;
+  }
+  .nb-vasold-btn {
+    margin-top: 10px;
+    width: 100%;
+    background: rgba(57, 208, 216, 0.14);
+    color: #39d0d8;
+    border: 1px solid rgba(57, 208, 216, 0.35);
+    border-radius: 12px;
+    padding: 12px 16px;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .nb-vasold-btn:hover:not(:disabled) {
+    background: rgba(57, 208, 216, 0.26);
+  }
+  .nb-vasold-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
   .nb-box-gold {
     background: rgba(227,180,60,0.06);
     border: 2px solid rgba(227,180,60,0.42);
@@ -2102,7 +2389,10 @@
     <div class="card">
       <div class="card-header">
         <h3 class="card-title">🔍 Auftrags Infos</h3>
-        <div id="badgeReifen" class="badge-reifen card-header-meta">REIFEN: ?</div>
+        <div class="card-header-badges">
+          <div id="badgeReifen" class="badge-reifen">REIFEN: ?</div>
+          <div id="badgeWss" class="badge-wss">WSS: ?</div>
+        </div>
       </div>
       
       <div class="sub-title">Schäden (Manueller Input)</div>
@@ -2110,6 +2400,9 @@
       
       <div class="sub-title">Ersatzteile Bestellung</div>
       <div class="info-box schaeden-list" id="infoBestellung">-</div>
+      <div class="wss-card-action" id="wssCardAction">
+        <button type="button" class="btn-wss-open" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
+      </div>
     </div>
 
     <div class="card">
@@ -2383,6 +2676,60 @@
     </div>
   </div>
 
+  <div class="reifen-confirm" id="wssFetchWarnModal">
+    <div class="reifen-confirm-dialog" style="max-width:460px;">
+      <div class="reifen-confirm-text" id="wssFetchWarnText"></div>
+      <div class="reifen-actions" style="margin-top:4px;">
+        <button type="button" class="reifen-action-btn active-ja" onclick="closeWssFetchWarn()">Verstanden</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-modal" id="wssModal">
+    <div class="reifen-dialog">
+      <div class="reifen-header">
+        <div class="reifen-title">WSS · Vasold</div>
+        <button type="button" class="reifen-close" id="wssModalCloseBtn" onclick="closeWssModal()">Zurück</button>
+      </div>
+      <div class="reifen-body-outer">
+        <div id="wssModalSyncOverlay" class="wss-modal-sync-overlay" aria-hidden="true">
+          <div class="hud-spin hud-spin--lg"></div>
+          <div class="wss-modal-sync-text">Vasold-Status wird geladen…</div>
+        </div>
+        <div class="reifen-body wss-modal-body">
+          <div class="reifen-field">
+            <div class="field-label">Stock-ID</div>
+            <div id="wssModalStock">—</div>
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Carol-Link</div>
+            <input type="text" id="wssCarolInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Marke &amp; Model</div>
+            <input type="text" id="wssMarkeInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Nachuntersuchung</div>
+            <div id="wssModalHuNachuntersuchung" class="wss-modal-hu-value">—</div>
+          </div>
+          <div class="wss-gummi-block" id="wssGummiBlock">
+            <input type="checkbox" id="wssGummiCheck" tabindex="-1">
+            <button type="button" class="wss-gummi-toggle" id="wssGummiToggle" aria-pressed="false" onclick="toggleWssGummi()">
+              <span class="wss-gummi-toggle-mark" aria-hidden="true">✓</span>
+            </button>
+            <div class="wss-gummi-label">Gummileiste DA ?</div>
+          </div>
+          <div class="reifen-status" id="wssModalStatus"></div>
+          <div class="reifen-actions wss-submit-actions" style="margin-top:8px;">
+            <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtn" onclick="submitWssVasold()">✅ Vasold Liste + WSS da //</button>
+            <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtnGummi" onclick="submitWssGummiOnly()">✅ Gummileiste in Vasold erfassen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="hudBusyOverlay" class="hud-busy-overlay" aria-hidden="true">
     <div class="hud-busy-card">
       <div class="hud-spin hud-spin--lg"></div>
@@ -2397,6 +2744,7 @@
     var currentSchaedenText = "";
     var pendingWarning = null;
     var currentBestellungText = "";
+    var currentMarkeModel = "";
     var shelfRefreshTimer = null;
     var shelfDropdownOpen = false;
     var currentVerifiedReifenStock = "";
@@ -2434,7 +2782,6 @@
       "knoll": true,
       "sta": true,
       "alfah": true,
-      "wss": true,
       "va": true,
       "ha": true,
       "seng": true
@@ -3147,6 +3494,7 @@
 
     var nbAllEntries = [];
     var nbFilteredEntries = [];
+    var nbDisplayEntries = [];
     var nbLagerortOptions = [];
     var nbSessionActive = false;
 
@@ -3164,6 +3512,7 @@
       document.getElementById('nbModal').classList.remove('open');
       nbAllEntries = [];
       nbFilteredEntries = [];
+      nbDisplayEntries = [];
       nbLagerortOptions = [];
       nbSessionActive = false;
       var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
@@ -3306,15 +3655,32 @@
     function renderNbTable(entries) {
       var body = document.getElementById('nbTableBody');
       if(!entries || !entries.length) {
+        nbDisplayEntries = [];
         body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Keine offenen Nachbestellungen gefunden.</td></tr>';
         return;
       }
+      nbDisplayEntries = entries;
       var html = '';
       for(var i = 0; i < entries.length; i++) {
         var e = entries[i];
         var rowStyle = getNbTypStyle(e.typ);
         var typColor = getNbTypColor(e.typ);
         var showNbRegal = String(e.status || '').toLowerCase() === 'teilweise angeliefert';
+        var showNbVasold = /\bwss\b/i.test(String(e.teil || ''));
+        var showNbGummiInVasold = /gummi/i.test(String(e.teil || ''));
+        var nbVasoldHtml = '';
+        if(showNbVasold) {
+          nbVasoldHtml = '<div class="nb-detail-box nb-box-vasold" id="nb-vasold-wrap-' + i + '">'
+            + '<div class="nb-detail-lbl">Vasold WSS</div>'
+            + '<div class="nb-vasold-loading" id="nb-vasold-loading-' + i + '"><span class="hud-spin hud-spin--sm"></span> Vasold-Status…</div>'
+            + '<div id="nb-vasold-body-' + i + '" style="display:none;">'
+            + '<div class="nb-vasold-toggle-row"><input type="checkbox" id="nb-vasold-wss-' + i + '" onclick="event.stopPropagation();"><label for="nb-vasold-wss-' + i + '" style="cursor:pointer;">WSS da ?</label></div>'
+            + '<div class="nb-vasold-toggle-row" id="nb-vasold-gummi-row-' + i + '"' + (showNbGummiInVasold ? '' : ' style="display:none;"') + '><input type="checkbox" id="nb-vasold-gummi-' + i + '" onclick="event.stopPropagation();"><label for="nb-vasold-gummi-' + i + '" style="cursor:pointer;">Gummileiste da //</label></div>'
+            + '<button type="button" class="nb-vasold-btn" id="nb-vasold-btn-' + i + '" onclick="submitNbVasold(event,' + i + ')">In Vasold übernehmen</button>'
+            + '<div class="nb-vasold-msg" id="nb-vasold-msg-' + i + '"></div>'
+            + '</div>'
+            + '</div>';
+        }
         html += '<tr class="nb-row" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
           + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
           + '<td style="white-space:nowrap;">' + escapeHtml(e.date) + '</td>'
@@ -3341,6 +3707,7 @@
           + '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
           +   '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
           + '</div>'
+          + nbVasoldHtml
           + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
           +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
           +   '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
@@ -3370,7 +3737,129 @@
       } else {
         detail.classList.add('open');
         if(chev) chev.innerText = '▼';
+        if(document.getElementById('nb-vasold-wrap-' + index)) loadNbVasoldForDetail(index);
       }
+    }
+
+    function loadNbVasoldForDetail(index) {
+      var wrap = document.getElementById('nb-vasold-wrap-' + index);
+      if(!wrap) return;
+      var ent = nbDisplayEntries[index];
+      if(!ent) return;
+      var loading = document.getElementById('nb-vasold-loading-' + index);
+      var bodyEl = document.getElementById('nb-vasold-body-' + index);
+      var msgEl = document.getElementById('nb-vasold-msg-' + index);
+      if(loading) {
+        loading.style.display = '';
+        loading.innerHTML = '<span class="hud-spin hud-spin--sm"></span> Vasold-Status…';
+      }
+      if(bodyEl) bodyEl.style.display = 'none';
+      if(msgEl) { msgEl.textContent = ''; msgEl.style.color = ''; }
+      google.script.run.withSuccessHandler(function(res) {
+        applyNbVasoldUi(index, res);
+      }).withFailureHandler(function(err) {
+        applyNbVasoldUi(index, { success: false, message: err.message || String(err) });
+      }).getVasoldWssSyncState(ent.stockId);
+    }
+
+    function applyNbVasoldUi(index, res) {
+      var loading = document.getElementById('nb-vasold-loading-' + index);
+      var bodyEl = document.getElementById('nb-vasold-body-' + index);
+      var wssCb = document.getElementById('nb-vasold-wss-' + index);
+      var gummiCb = document.getElementById('nb-vasold-gummi-' + index);
+      var gRow = document.getElementById('nb-vasold-gummi-row-' + index);
+      var btn = document.getElementById('nb-vasold-btn-' + index);
+      var msgEl = document.getElementById('nb-vasold-msg-' + index);
+      if(loading) loading.style.display = 'none';
+      if(bodyEl) bodyEl.style.display = '';
+      if(!wssCb) return;
+      var gummiVisible = !!(gRow && gRow.style.display !== 'none');
+      if(!res || !res.success) {
+        wssCb.disabled = false;
+        wssCb.checked = false;
+        if(gummiCb && gummiVisible) {
+          gummiCb.disabled = false;
+          gummiCb.checked = false;
+        }
+        if(btn) btn.disabled = false;
+        if(msgEl) {
+          msgEl.textContent = (res && res.message) ? res.message : 'Vasold-Status konnte nicht geladen werden.';
+          msgEl.style.color = '#f85149';
+        }
+        return;
+      }
+      if(res.frontscheibeJa) {
+        wssCb.disabled = true;
+        wssCb.checked = true;
+      } else {
+        wssCb.disabled = false;
+        wssCb.checked = false;
+      }
+      if(gummiCb && gummiVisible) {
+        if(res.gummileisteDa) {
+          gummiCb.disabled = true;
+          gummiCb.checked = true;
+        } else {
+          gummiCb.disabled = false;
+          gummiCb.checked = false;
+        }
+      }
+      var allSynced = !!res.frontscheibeJa && (!gummiVisible || !!res.gummileisteDa);
+      if(btn) btn.disabled = allSynced;
+      if(allSynced && msgEl && !String(msgEl.textContent || '').trim()) {
+        msgEl.textContent = 'Bereits vollständig in Vasold erfasst.';
+        msgEl.style.color = '#9da7b3';
+      }
+    }
+
+    function submitNbVasold(event, index) {
+      if(event) { event.stopPropagation(); event.preventDefault(); }
+      var ent = nbDisplayEntries[index];
+      if(!ent) return;
+      var wssCb = document.getElementById('nb-vasold-wss-' + index);
+      var gummiCb = document.getElementById('nb-vasold-gummi-' + index);
+      var gRow = document.getElementById('nb-vasold-gummi-row-' + index);
+      var gummiVisible = !!(gRow && gRow.style.display !== 'none');
+      var wantWss = !!(wssCb && wssCb.checked && !wssCb.disabled);
+      var wantGummi = !!(gummiVisible && gummiCb && gummiCb.checked && !gummiCb.disabled);
+      var msgEl = document.getElementById('nb-vasold-msg-' + index);
+      var btn = document.getElementById('nb-vasold-btn-' + index);
+      if(!wantWss && !wantGummi) {
+        if(msgEl) msgEl.textContent = 'Bitte mindestens eine Option wählen, die noch nicht in Vasold steht.';
+        return;
+      }
+      if(btn) btn.disabled = true;
+      if(msgEl) msgEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span> Speichern…';
+      google.script.run.withSuccessHandler(function(res) {
+        if(res.success) {
+          if(msgEl) {
+            msgEl.textContent = res.message || 'OK';
+            msgEl.style.color = res.skipped ? '#9da7b3' : '#56d364';
+          }
+          google.script.run.withSuccessHandler(function(sync) {
+            if(btn) btn.disabled = false;
+            applyNbVasoldUi(index, sync);
+          }).withFailureHandler(function(err) {
+            if(btn) btn.disabled = false;
+            if(msgEl) {
+              msgEl.textContent = 'Vasold OK, Status lesen fehlgeschlagen: ' + (err.message || String(err));
+              msgEl.style.color = '#e3935b';
+            }
+          }).getVasoldWssSyncState(ent.stockId);
+        } else {
+          if(btn) btn.disabled = false;
+          if(msgEl) {
+            msgEl.textContent = res.message || 'Fehler';
+            msgEl.style.color = '#f85149';
+          }
+        }
+      }).withFailureHandler(function(err) {
+        if(btn) btn.disabled = false;
+        if(msgEl) {
+          msgEl.textContent = 'Fehler: ' + (err.message || String(err));
+          msgEl.style.color = '#f85149';
+        }
+      }).processNachbestellVasoldWss(ent.stockId, wantWss, wantGummi);
     }
 
     function openNbInWms(event, stockId) {
@@ -3868,6 +4357,315 @@
       setReifenStatus("Bitte Tabellenblatt auswählen und Stock-ID eingeben...", "#8b949e");
     }
 
+    function setWssModalSyncLoading(on) {
+      var ov = document.getElementById('wssModalSyncOverlay');
+      if (!ov) return;
+      ov.classList.toggle('is-open', !!on);
+      ov.setAttribute('aria-hidden', on ? 'false' : 'true');
+    }
+
+    function resetWssModalVasoldLocks() {
+      var sb = document.getElementById('wssSubmitBtn');
+      var sgm = document.getElementById('wssSubmitBtnGummi');
+      var gtb = document.getElementById('wssGummiToggle');
+      if (sb) {
+        sb.disabled = false;
+        sb.classList.remove('is-vasold-synced', 'wss-submit-wss-done');
+        sb.textContent = '✅ Vasold Liste + WSS da //';
+      }
+      if (sgm) {
+        sgm.disabled = false;
+        sgm.classList.remove('wss-gummi-submit-visible');
+        sgm.textContent = '✅ Gummileiste in Vasold erfassen';
+        sgm.style.display = 'none';
+      }
+      if (gtb) {
+        gtb.disabled = false;
+        gtb.classList.remove('is-locked');
+      }
+      var gb = document.getElementById('wssGummiBlock');
+      if (gb) gb.classList.remove('wss-gummi-block--hidden');
+    }
+
+    function closeWssModal() {
+      setWssModalSyncLoading(false);
+      document.getElementById('wssModal').classList.remove('open');
+      var st = document.getElementById('wssModalStatus');
+      if (st) st.textContent = '';
+      resetWssModalVasoldLocks();
+    }
+
+    function applyVasoldWssSyncToModal(res, updateStatus) {
+      var sb = document.getElementById('wssSubmitBtn');
+      var sgm = document.getElementById('wssSubmitBtnGummi');
+      var gtb = document.getElementById('wssGummiToggle');
+      var st = document.getElementById('wssModalStatus');
+      if (!sb || !sgm || !gtb) return;
+
+      sb.classList.remove('is-vasold-synced', 'wss-submit-wss-done');
+      sb.disabled = false;
+      sb.textContent = '✅ Vasold Liste + WSS da //';
+      sgm.classList.remove('wss-gummi-submit-visible');
+      sgm.disabled = false;
+      sgm.textContent = '✅ Gummileiste in Vasold erfassen';
+      sgm.style.display = 'none';
+
+      if (!res || !res.success || !res.rowFound) {
+        return;
+      }
+
+      var gummiBlock = document.getElementById('wssGummiBlock');
+      if (gummiBlock) gummiBlock.classList.remove('wss-gummi-block--hidden');
+
+      if (res.gummileisteDa) {
+        setWssGummiToggleUi(true);
+        gtb.disabled = true;
+        gtb.classList.add('is-locked');
+      }
+
+      var hints = [];
+      if (res.frontscheibeJa && res.gummileisteDa) {
+        sb.disabled = true;
+        sb.classList.add('is-vasold-synced');
+        sb.textContent = '✅ In Vasold vollständig erfasst';
+        hints.push('Frontscheibe und Gummileiste sind in Vasold bereits vollständig — Buchung nicht nötig.');
+      } else if (res.frontscheibeJa && !res.gummileisteDa) {
+        sb.disabled = true;
+        sb.classList.add('wss-submit-wss-done');
+        sb.textContent = '✅ WSS in Vasold bereits „Ja“';
+        sgm.classList.add('wss-gummi-submit-visible');
+        sgm.style.display = '';
+        if (gummiBlock) gummiBlock.classList.add('wss-gummi-block--hidden');
+        hints.push('Frontscheibe in Vasold ist bereits „Ja“. Gummileiste über den grünen Button in Vasold speichern.');
+      } else if (!res.frontscheibeJa && res.gummileisteDa) {
+        hints.push('Gummileiste in Vasold ist bereits gesetzt.');
+      }
+
+      if (hints.length && st && updateStatus !== false) {
+        st.textContent = hints.join(' ');
+        st.style.color = '#8b949e';
+      }
+    }
+
+    function closeWssFetchWarn() {
+      document.getElementById('wssFetchWarnModal').classList.remove('open');
+    }
+
+    function buildWssFetchWarnText(missingCarol, missingMarke) {
+      if (missingCarol && missingMarke) {
+        return "Carol-Link und Marke & Model konnten nicht aus der Refurbishment-Liste gelesen werden oder sind leer. Bitte das Fahrzeug in Carol öffnen und beide Angaben manuell in die Felder dieses Fensters einfügen.";
+      }
+      if (missingCarol) {
+        return "Der Carol-Link konnte nicht aus der Refurbishment-Liste gelesen werden oder ist leer. Bitte das Fahrzeug in Carol öffnen und den Link manuell in das Feld einfügen.";
+      }
+      return "Marke & Model konnte nicht aus der Refurbishment-Liste gelesen werden oder ist leer. Bitte das Fahrzeug in Carol öffnen und die Angabe manuell in das Feld einfügen.";
+    }
+
+    function openWssFetchWarn(missingCarol, missingMarke) {
+      document.getElementById('wssFetchWarnText').textContent = buildWssFetchWarnText(!!missingCarol, !!missingMarke);
+      document.getElementById('wssFetchWarnModal').classList.add('open');
+    }
+
+    function openWssFetchWarnMitHinweis(serverMsg) {
+      var hint = "Falls der Carol-Link oder Marke & Model fehlt oder nicht gelesen werden konnte: Fahrzeug in Carol öffnen und die Angaben manuell in die Felder dieses Dialogs einfügen.";
+      document.getElementById('wssFetchWarnText').textContent = serverMsg ? String(serverMsg).trim() + "\n\n" + hint : hint;
+      document.getElementById('wssFetchWarnModal').classList.add('open');
+    }
+
+    function setWssGummiToggleUi(on) {
+      var cb = document.getElementById('wssGummiCheck');
+      var btn = document.getElementById('wssGummiToggle');
+      if (cb) cb.checked = !!on;
+      if (btn) {
+        btn.classList.toggle('is-on', !!on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      }
+    }
+
+    function toggleWssGummi() {
+      var gtb = document.getElementById('wssGummiToggle');
+      if (!gtb || gtb.disabled || gtb.classList.contains('is-locked')) return;
+      var cb = document.getElementById('wssGummiCheck');
+      setWssGummiToggleUi(!(cb && cb.checked));
+    }
+
+    function extractHuDateOnlyFromNachuntersuchungSegmentClient(segment) {
+      var s = String(segment || "").trim();
+      if (!s) return "";
+      var mNum = s.match(/(\d{1,2}\.\s*\d{1,2}\.\s*\d{2,4})/);
+      if (mNum) {
+        var p = mNum[1].match(/(\d{1,2})\s*\.\s*(\d{1,2})\s*\.\s*(\d{2,4})/);
+        if (p) return p[1] + "." + p[2] + "." + p[3];
+      }
+      var reDotMo = /(\d{1,2}\.\s*(?:Jan|Feb|Mär|Mrz|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez|Januar|Februar|März|April|Juni|Juli|September|Oktober|November|Dezember)[a-zä]*\.?\s*\d{4})/i;
+      var mDot = s.match(reDotMo);
+      if (mDot) return mDot[1].replace(/\s+/g, " ").trim();
+      var reSpMo = /(\d{1,2}\s+(?:Jan|Feb|Mär|Mrz|Apr|Mai|Jun|Jul|Aug|Sep|Okt|Nov|Dez|Januar|Februar|März|April|Juni|Juli|September|Oktober|November|Dezember)[a-zä]*\.?\s*\d{4})/i;
+      var mSp = s.match(reSpMo);
+      if (mSp) return mSp[1].replace(/\s+/g, " ").trim();
+      return "";
+    }
+
+    function huVasoldValueFromSchaedenTextClient(wText) {
+      var dash = "---------------";
+      var m = String(wText || "").match(/Nachuntersuchung\s*bis\s*:\s*([^\n\r]+)/i);
+      if (!m) return dash;
+      var rest = String(m[1] || "").trim();
+      if (!rest) return dash;
+      var dateOnly = extractHuDateOnlyFromNachuntersuchungSegmentClient(rest);
+      if (!dateOnly) return dash;
+      return dateOnly;
+    }
+
+    function openWssModal() {
+      if (!currentStock) {
+        setStatus('❌ Zuerst eine Stock-ID laden.', '#f85149');
+        return;
+      }
+      if (!/wss\s*ers/i.test(currentSchaedenText || '')) {
+        setStatus('❌ Kein WSS ers in Schäden (Sp. W) für diese ID.', '#f85149');
+        return;
+      }
+      resetWssModalVasoldLocks();
+      document.getElementById('wssModalStock').textContent = currentStock;
+      var carolPrefill = String(currentCarolUrl || '').trim();
+      var markePrefill = String(currentMarkeModel || '').trim();
+      document.getElementById('wssCarolInput').value = carolPrefill;
+      document.getElementById('wssMarkeInput').value = markePrefill;
+      document.getElementById('wssModalHuNachuntersuchung').textContent = huVasoldValueFromSchaedenTextClient(currentSchaedenText || '');
+      setWssGummiToggleUi(/gummileiste/i.test(currentSchaedenText || ''));
+      document.getElementById('wssModalStatus').textContent = '';
+      document.getElementById('wssModal').classList.add('open');
+      setWssModalSyncLoading(true);
+      if (!carolPrefill || !markePrefill) {
+        openWssFetchWarn(!carolPrefill, !markePrefill);
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setWssModalSyncLoading(false);
+          applyVasoldWssSyncToModal(res);
+        })
+        .withFailureHandler(function() {
+          setWssModalSyncLoading(false);
+          applyVasoldWssSyncToModal({ success: false });
+        })
+        .getVasoldWssSyncState(currentStock);
+    }
+
+    function submitWssGummiOnly() {
+      if (!currentStock) return;
+      var sg = document.getElementById('wssSubmitBtnGummi');
+      if (!sg || !sg.classList.contains('wss-gummi-submit-visible')) return;
+      var carol = document.getElementById('wssCarolInput').value.trim();
+      var marke = document.getElementById('wssMarkeInput').value.trim();
+      var st = document.getElementById('wssModalStatus');
+      if (!carol || !marke) {
+        openWssFetchWarn(!carol, !marke);
+        st.textContent = !carol && !marke ? 'Carol-Link und Marke & Model fehlen noch.' : (!carol ? 'Carol-Link fehlt noch.' : 'Marke & Model fehlt noch.');
+        st.style.color = '#f85149';
+        return;
+      }
+      sg.disabled = true;
+      st.textContent = 'Speichere Gummileiste in Vasold…';
+      st.style.color = '#f2cc60';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          sg.disabled = false;
+          if (!res || !res.success) {
+            var errMsg = res && res.message ? res.message : 'Vorgang fehlgeschlagen.';
+            st.textContent = '❌ ' + errMsg;
+            st.style.color = '#f85149';
+            var zumCarol = /Carol|Marke|Dialog|Refurbisment List nicht gefunden|Vasold WSS|Kopfzeile/i.test(errMsg);
+            if (zumCarol) openWssFetchWarnMitHinweis(errMsg);
+            google.script.run
+              .withSuccessHandler(function(r) { applyVasoldWssSyncToModal(r, false); })
+              .withFailureHandler(function() {})
+              .getVasoldWssSyncState(currentStock);
+            return;
+          }
+          st.textContent = '✅ ' + res.message;
+          st.style.color = '#56d364';
+          setStatus('✅ ' + res.message, '#56d364');
+          closeWssModal();
+          loadRefurbishmentCache(true, function() {
+            document.getElementById('searchInput').value = currentStock;
+            loadData();
+          });
+        })
+        .withFailureHandler(function(err) {
+          sg.disabled = false;
+          var errMsg = err.message || String(err);
+          st.textContent = '❌ ' + errMsg;
+          st.style.color = '#f85149';
+          openWssFetchWarnMitHinweis(errMsg);
+          google.script.run
+            .withSuccessHandler(function(r) { applyVasoldWssSyncToModal(r, false); })
+            .withFailureHandler(function() {})
+            .getVasoldWssSyncState(currentStock);
+        })
+        .processWssVasoldBooking(currentStock, carol, marke, true);
+    }
+
+    function submitWssVasold() {
+      if (!currentStock) return;
+      var sb0 = document.getElementById('wssSubmitBtn');
+      if (!sb0 || sb0.disabled || sb0.classList.contains('wss-submit-wss-done') || sb0.classList.contains('is-vasold-synced')) return;
+      var carol = document.getElementById('wssCarolInput').value.trim();
+      var marke = document.getElementById('wssMarkeInput').value.trim();
+      var gummi = !!document.getElementById('wssGummiCheck').checked;
+      var st = document.getElementById('wssModalStatus');
+      var sb = document.getElementById('wssSubmitBtn');
+      if (!carol || !marke) {
+        openWssFetchWarn(!carol, !marke);
+        st.textContent = !carol && !marke ? "Carol-Link und Marke & Model fehlen noch." : (!carol ? "Carol-Link fehlt noch." : "Marke & Model fehlt noch.");
+        st.style.color = "#f85149";
+        return;
+      }
+      sb.disabled = true;
+      st.textContent = 'Speichere Vasold + Kommentar…';
+      st.style.color = '#f2cc60';
+      google.script.run
+        .withSuccessHandler(function(res) {
+          sb.disabled = false;
+          var sg = document.getElementById('wssSubmitBtnGummi');
+          if (sg) sg.disabled = false;
+          if (!res || !res.success) {
+            var errMsg = res && res.message ? res.message : "Vorgang fehlgeschlagen.";
+            st.textContent = "❌ " + errMsg;
+            st.style.color = "#f85149";
+            var zumCarol = /Carol|Marke|Dialog|Refurbisment List nicht gefunden|Vasold WSS|Kopfzeile/i.test(errMsg);
+            if (zumCarol) openWssFetchWarnMitHinweis(errMsg);
+            google.script.run
+              .withSuccessHandler(function(r) { applyVasoldWssSyncToModal(r, false); })
+              .withFailureHandler(function() {})
+              .getVasoldWssSyncState(currentStock);
+            return;
+          }
+          st.textContent = '✅ ' + res.message;
+          st.style.color = '#56d364';
+          setStatus('✅ ' + res.message, '#56d364');
+          closeWssModal();
+          loadRefurbishmentCache(true, function() {
+            document.getElementById('searchInput').value = currentStock;
+            loadData();
+          });
+        })
+        .withFailureHandler(function(err) {
+          sb.disabled = false;
+          var sg2 = document.getElementById('wssSubmitBtnGummi');
+          if (sg2) sg2.disabled = false;
+          var errMsg = err.message || String(err);
+          st.textContent = "❌ " + errMsg;
+          st.style.color = "#f85149";
+          openWssFetchWarnMitHinweis(errMsg);
+          google.script.run
+            .withSuccessHandler(function(r) { applyVasoldWssSyncToModal(r, false); })
+            .withFailureHandler(function() {})
+            .getVasoldWssSyncState(currentStock);
+        })
+        .processWssVasoldBooking(currentStock, carol, marke, gummi);
+    }
+
     function openReifenModal() {
       document.getElementById('reifenModal').classList.add('open');
       if (reifenHudCacheLoading) {
@@ -4275,11 +5073,23 @@
       return matched;
     }
 
+    function commentHasWssDaMarker() {
+      return /wss\s+da\b/i.test(getCommentText());
+    }
+
     function applyWordHighlightsToHtml(html, matchedWords) {
       return html.split(/(<[^>]+>)/g).map(function(part) {
         if(part.indexOf('<') === 0) return part;
         return part.replace(/[A-Za-z0-9ÄÖÜäöüß]+/g, function(word) {
           var normalized = normalizeMatchWord(word);
+          if(normalized === 'wss') {
+            if(/wss\s*ers/i.test(currentSchaedenText || '')) {
+              return commentHasWssDaMarker()
+                ? '<span class="highlight-green">' + word + '</span>'
+                : '<span class="highlight-red">' + word + '</span>';
+            }
+            return '<span class="highlight-green">' + word + '</span>';
+          }
           if(forcedGreenWords[normalized]) return '<span class="highlight-green">' + word + '</span>';
           return isHighlightableWord(word) && matchedWords[normalized] ? '<span class="highlight-green">' + word + '</span>' : word;
         });
@@ -4463,6 +5273,7 @@
         result.status = String(rowData[5] || '');
         result.regal = String(rowData[6] || '');
         result.reifenStatus = String(rowData[7] || '');
+        result.markeModel = String(rowData[8] || '');
         var curKey = normalizeRegalKeyForCountClient(result.regal);
         result.currentShelfCount = (curKey && Object.prototype.hasOwnProperty.call(counts, curKey)) ? counts[curKey] : (counts[result.regal] || 0);
         result.currentShelfCapacity = 5;
@@ -4544,8 +5355,8 @@
         currentCarolUrl = res.carolUrl;
         currentSchaedenText = res.schaeden || '';
         currentBestellungText = res.kommBestellung || '';
+        currentMarkeModel = res.markeModel || '';
 
-        document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText);
         setCommentText(res.kommAnlieferung || '');
         var shelfCountBadge = document.getElementById('currentShelfCountBadge');
         var regalVal = (res.regal || '').trim();
@@ -4584,6 +5395,29 @@
           }
         } else {
           badge.style.display = 'none';
+        }
+
+        var badgeWss = document.getElementById('badgeWss');
+        var wssAct = document.getElementById('wssCardAction');
+        var wssPat = /wss\s*ers/i;
+        var hasWss = wssPat.test(res.schaeden || '');
+        var anl = String(res.kommAnlieferung || '');
+        var wssBooked = /wss\s+da\b/i.test(anl);
+        if (hasWss) {
+          badgeWss.style.display = 'inline-block';
+          wssAct.style.display = 'flex';
+          if (wssBooked) {
+            badgeWss.innerText = 'WSS: EINGETRAGEN';
+            badgeWss.style.background = 'rgba(86, 211, 100, 0.15)';
+            badgeWss.style.color = '#56d364';
+          } else {
+            badgeWss.innerText = 'WSS: VASOLD OFFEN';
+            badgeWss.style.background = 'rgba(242, 204, 96, 0.14)';
+            badgeWss.style.color = '#f2cc60';
+          }
+        } else {
+          badgeWss.style.display = 'none';
+          wssAct.style.display = 'none';
         }
 
         var sel = document.getElementById('shelfSelect');
