@@ -294,7 +294,7 @@ function getReifenTabNamesForStockHudWindow() {
     var mo = now.getMonth();
     var d = now.getDate();
     var endBound = new Date(y, mo, d, 23, 59, 59, 999).getTime();
-    var startBound = new Date(y, mo, d - 3, 0, 0, 0, 0).getTime();
+    var startBound = new Date(y, mo, d - 7, 0, 0, 0, 0).getTime();
     return filterReifenSheetNamesByTabDateRange(startBound, endBound);
   }
 

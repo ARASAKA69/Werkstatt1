@@ -4307,7 +4307,7 @@
       reifenHudCacheLoading = true;
       ensureReifenHudShape();
       reifenHudCache.paketdienstRows = [];
-      if (showOverlay) setReifenModalBusy(true, 'Lade Tabellen & Stock-IDs (heute + 3 Tage)…');
+      if (showOverlay) setReifenModalBusy(true, 'Lade Tabellen & Stock-IDs (heute + 7 Tage)…');
       google.script.run
         .withSuccessHandler(function(res) {
           reifenHudCacheLoading = false;
@@ -4324,10 +4324,10 @@
           reifenHudCache.version = res.version || Date.now();
           if (!reifenHudCache.tabs.length) {
             reifenHudCache.paketdienstRows = [];
-            document.getElementById('reifenTabSelect').innerHTML = '<option value="">Keine Blätter (4 Tage)</option>';
+            document.getElementById('reifenTabSelect').innerHTML = '<option value="">Keine Blätter (8 Tage)</option>';
             cachedReifenStockIds = [];
             updateReifenCacheHud(true);
-            setReifenStatus('Kein Blatt im Zeitfenster (heute + 3 Tage zurück, Datum im Namen).', '#f2cc60');
+            setReifenStatus('Kein Blatt im Zeitfenster (heute + 7 Tage zurück, Datum im Namen).', '#f2cc60');
             if (typeof onDone === 'function') onDone(true);
             return;
           }
@@ -4711,7 +4711,7 @@
     function openReifenModal() {
       document.getElementById('reifenModal').classList.add('open');
       if (reifenHudCacheLoading) {
-        setReifenModalBusy(true, 'Lade Tabellen & Stock-IDs (heute + 3 Tage)…');
+        setReifenModalBusy(true, 'Lade Tabellen & Stock-IDs (heute + 7 Tage)…');
         return;
       }
       if(reifenSessionActive && currentReifenTab && reifenHudCache && reifenHudCache.tabs && reifenHudCache.tabs.length) {
