@@ -7,7 +7,8 @@
   html, body { margin: 0; padding: 0; height: 100%; width: 100%; overflow: hidden; }
   body {
     background:
-      radial-gradient(circle at top, rgba(255, 215, 0, 0.08), transparent 28%),
+      radial-gradient(circle at top, rgba(0, 61, 107, 0.14), transparent 32%),
+      radial-gradient(circle at 85% 0%, rgba(242, 116, 32, 0.06), transparent 26%),
       linear-gradient(180deg, #090d13 0%, #0d1117 100%);
     color: #c9d1d9;
     font-family: 'Segoe UI', sans-serif;
@@ -43,34 +44,34 @@
     flex-shrink: 0;
   }
   .topbar-action {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 12px;
     font-weight: 800;
     letter-spacing: 1px;
     text-transform: uppercase;
     padding: 10px 16px;
     border-radius: 12px;
-    background: rgba(242, 204, 96, 0.08);
-    border: 2px solid rgba(242, 204, 96, 0.26);
+    background: rgba(242, 116, 32, 0.08);
+    border: 2px solid rgba(242, 116, 32, 0.26);
     cursor: pointer;
     transition: 0.2s;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
   }
   .topbar-action:hover {
-    background: rgba(242, 204, 96, 0.2);
+    background: rgba(242, 116, 32, 0.2);
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(242, 204, 96, 0.12);
+    box-shadow: 0 6px 16px rgba(242, 116, 32, 0.12);
   }
   .topbar-credit {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 11px;
     font-weight: 800;
     letter-spacing: 1.6px;
     text-transform: uppercase;
     padding: 6px 10px;
     border-radius: 999px;
-    background: rgba(242, 204, 96, 0.08);
-    border: 2px solid rgba(242, 204, 96, 0.22);
+    background: rgba(242, 116, 32, 0.08);
+    border: 2px solid rgba(242, 116, 32, 0.22);
     flex-shrink: 0;
   }
   .topbar-brand {
@@ -82,10 +83,23 @@
   }
   .topbar-brand-top {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 8px;
+  }
+  .topbar-brand-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+  }
+  .topbar-client-logo {
+    display: block;
+    height: 34px;
+    width: auto;
+    max-width: 220px;
+    object-fit: contain;
   }
   .topbar-brand-sub {
     display: flex;
@@ -95,12 +109,13 @@
     flex-wrap: wrap;
   }
   .topbar-cache-updated {
+    align-self: center;
     display: inline-block;
     padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(255, 120, 40, 0.14);
-    border: 1px solid rgba(255, 140, 66, 0.5);
-    color: #ffb366;
+    background: rgba(242, 116, 32, 0.14);
+    border: 1px solid rgba(242, 116, 32, 0.45);
+    color: #ff9f4d;
     font-size: 15px;
     font-weight: 800;
     letter-spacing: 0.4px;
@@ -143,7 +158,7 @@
   }
   .eyebrow {
     text-align: center;
-    color: #f2cc60;
+    color: #F27420;
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 2.2px;
@@ -165,7 +180,7 @@
   .search-box input {
     flex: 1;
     background: #0f141c;
-    color: #58a6ff;
+    color: #3FA0DB;
     border: 1px solid #354152;
     padding: 14px 18px;
     font-size: 20px;
@@ -181,8 +196,8 @@
   .input-row input:focus,
   select:focus,
   .comment-editor:focus {
-    border-color: #58a6ff;
-    box-shadow: 0 0 0 3px rgba(88,166,255,0.18);
+    border-color: #3FA0DB;
+    box-shadow: 0 0 0 3px rgba(61,158,220,0.18);
   }
   .search-box input::placeholder,
   .input-row input::placeholder,
@@ -192,7 +207,7 @@
   .btn-search {
     min-width: 134px;
     background: linear-gradient(180deg, #313b49 0%, #232b37 100%);
-    color: #f2cc60;
+    color: #F27420;
     border: 1px solid #4a5567;
     padding: 0 30px;
     font-size: 17px;
@@ -202,7 +217,7 @@
     transition: 0.2s;
     letter-spacing: 1px;
   }
-  .btn-search:hover { background: linear-gradient(180deg, #58a6ff 0%, #3479d6 100%); }
+  .btn-search:hover { background: linear-gradient(180deg, #3FA0DB 0%, #286B98 100%); }
   .status-row {
     display: flex;
     justify-content: center;
@@ -214,12 +229,12 @@
     justify-content: center;
     padding: 7px 12px;
     border-radius: 999px;
-    background: rgba(88, 166, 255, 0.08);
-    border: 1px solid rgba(88, 166, 255, 0.15);
+    background: rgba(61, 158, 220, 0.08);
+    border: 1px solid rgba(61, 158, 220, 0.15);
     text-align: center;
     font-weight: 700;
     font-size: 14px;
-    color: #58a6ff;
+    color: #3FA0DB;
   }
   .dashboard-grid {
     display: grid;
@@ -235,7 +250,7 @@
   }
   .card {
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
-    border: 3px solid rgba(242, 204, 96, 0.45);
+    border: 3px solid rgba(242, 116, 32, 0.45);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -260,7 +275,7 @@
   }
   .card-title {
     font-size: 17px;
-    color: #f2cc60;
+    color: #F27420;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 1.2px;
@@ -282,12 +297,12 @@
     border-radius: 14px;
     font-size: 17px;
     font-weight: 500;
-    color: #e3b341;
+    color: #E88435;
     flex: 1;
     min-height: 120px;
     word-wrap: break-word;
     overflow: auto;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     line-height: 1.55;
     display: flex;
     flex-direction: column;
@@ -310,7 +325,7 @@
     min-height: 120px;
     background: #0d1117;
     color: #ffffff;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     border-radius: 14px;
     padding: 14px 16px;
     font-size: 15px;
@@ -335,7 +350,7 @@
   .input-row input {
     background: #0d1117;
     color: #fff;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -346,8 +361,8 @@
   select {
     width: 100%;
     background: #0d1117;
-    color: #e3b341;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    color: #E88435;
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     padding: 14px 16px;
     font-size: 18px;
     font-weight: 800;
@@ -379,20 +394,20 @@
   }
   .btn-green:hover { transform: translateY(-1px); }
   .btn-yellow {
-    background: linear-gradient(180deg, #f2cc60 0%, #e3b341 100%);
+    background: linear-gradient(180deg, #F27420 0%, #E88435 100%);
     color: #0d1117;
     box-shadow: 0 8px 16px rgba(227, 179, 65, 0.2);
   }
   .btn-yellow:hover { transform: translateY(-1px); }
   .btn-blue {
-    background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
+    background: linear-gradient(180deg, #2B8BC4 0%, #003D6B 100%);
     color: #0d1117;
     box-shadow: 0 8px 16px rgba(31, 111, 235, 0.2);
   }
   .btn-blue:hover { transform: translateY(-1px); }
   .btn-carol {
     background: linear-gradient(180deg, #b06ad1 0%, #9B59B6 100%);
-    background: linear-gradient(180deg, #f2cc60 0%, #e3b341 100%);
+    background: linear-gradient(180deg, #F27420 0%, #E88435 100%);
     color: #0d1117;
     padding: 18px;
     font-size: 15px;
@@ -458,9 +473,9 @@
     justify-content: center;
   }
   .wss-card-action .btn-wss-open {
-    background: linear-gradient(180deg, rgba(88, 166, 255, 0.22) 0%, rgba(56, 139, 253, 0.14) 100%);
-    color: #79c0ff;
-    border: 1.5px solid rgba(88, 166, 255, 0.35);
+    background: linear-gradient(180deg, rgba(61, 158, 220, 0.22) 0%, rgba(0, 61, 107, 0.2) 100%);
+    color: #6BB8E8;
+    border: 1.5px solid rgba(61, 158, 220, 0.35);
     border-radius: 14px;
     padding: 12px 20px;
     font-size: 14px;
@@ -490,13 +505,13 @@
   #wssModal .wss-modal-body #wssModalStock {
     text-align: center;
     width: 100%;
-    color: #f2cc60;
+    color: #F27420;
     font-size: 30px;
     font-weight: 800;
     letter-spacing: 2px;
     line-height: 1.25;
     text-transform: uppercase;
-    text-shadow: 0 0 28px rgba(242, 204, 96, 0.35);
+    text-shadow: 0 0 28px rgba(242, 116, 32, 0.35);
   }
   #wssModal .wss-modal-hu-value {
     text-align: center;
@@ -508,7 +523,7 @@
     line-height: 1.35;
     padding: 10px 14px;
     border-radius: 14px;
-    border: 2px solid rgba(242, 204, 96, 0.28);
+    border: 2px solid rgba(242, 116, 32, 0.28);
     background: rgba(15, 20, 28, 0.65);
   }
   #wssModal .wss-modal-body #wssCarolInput,
@@ -551,7 +566,7 @@
     width: 64px;
     height: 64px;
     border-radius: 16px;
-    border: 3px solid rgba(242, 204, 96, 0.38);
+    border: 3px solid rgba(242, 116, 32, 0.38);
     background: rgba(13, 17, 23, 0.96);
     cursor: pointer;
     display: flex;
@@ -562,7 +577,7 @@
     box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
   }
   .wss-gummi-toggle:hover {
-    border-color: rgba(242, 204, 96, 0.55);
+    border-color: rgba(242, 116, 32, 0.55);
   }
   .wss-gummi-toggle-mark {
     font-size: 36px;
@@ -612,7 +627,7 @@
     display: flex;
   }
   .wss-modal-sync-text {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 15px;
     font-weight: 800;
     text-align: center;
@@ -666,7 +681,7 @@
   .shelf-pill {
     margin: 0;
     text-transform: none;
-    color: #e3b341;
+    color: #E88435;
     font-size: 17px;
     font-weight: 800;
     padding: 10px 18px;
@@ -694,8 +709,8 @@
     font-weight: 700;
     line-height: 1.35;
     color: #c9d1d9;
-    background: rgba(88, 166, 255, 0.08);
-    border: 1px solid rgba(88, 166, 255, 0.22);
+    background: rgba(61, 158, 220, 0.08);
+    border: 1px solid rgba(61, 158, 220, 0.22);
     letter-spacing: 0.02em;
   }
   .b2a1-kandidat-badge {
@@ -737,8 +752,8 @@
     gap: 12px;
     margin: 0;
     background: #0d1117;
-    color: #e3b341;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    color: #E88435;
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     padding: 15px 17px;
     font-size: 21px;
     font-weight: 800;
@@ -750,12 +765,12 @@
     transition: border-color 0.15s, box-shadow 0.15s;
   }
   .shelf-dd-trigger:hover {
-    border-color: rgba(242, 204, 96, 0.48);
+    border-color: rgba(242, 116, 32, 0.48);
   }
   .shelf-dd-trigger:focus {
     outline: none;
-    border-color: #58a6ff;
-    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+    border-color: #3FA0DB;
+    box-shadow: 0 0 0 3px rgba(61, 158, 220, 0.2);
   }
   .shelf-dd-trigger-text {
     flex: 1;
@@ -782,7 +797,7 @@
     top: auto;
     z-index: 20050;
     background: linear-gradient(180deg, rgba(21,27,35,0.99) 0%, rgba(14,19,26,0.99) 100%);
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     border-radius: 14px;
     box-shadow: 0 -14px 40px rgba(0,0,0,0.55);
     overflow: hidden;
@@ -807,50 +822,50 @@
     font-weight: 800;
   }
   .shelf-dd-count--open {
-    color: #f2cc60;
+    color: #F27420;
   }
   .shelf-dd-count--full {
     color: #f85149;
   }
   .shelf-dd-item:hover .shelf-dd-count--open {
-    color: #ffd866;
+    color: #ffc56a;
   }
   .shelf-dd-item:hover .shelf-dd-count--full {
     color: #ff7b72;
   }
   .shelf-dd-item.is-selected .shelf-dd-count--open {
-    color: #f2cc60;
+    color: #F27420;
   }
   .shelf-dd-item.is-selected .shelf-dd-count--full {
     color: #ff7b72;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger .shelf-dd-count--open {
-    color: #f2cc60;
+    color: #F27420;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger .shelf-dd-count--full {
     color: #f85149;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item .shelf-dd-count--open {
-    color: #f2cc60;
+    color: #F27420;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item .shelf-dd-count--full {
     color: #f85149;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item:hover .shelf-dd-count--open {
-    color: #ffd866;
+    color: #ffc56a;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item:hover .shelf-dd-count--full {
     color: #ff7b72;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item.is-selected .shelf-dd-count--open {
-    color: #f2cc60;
+    color: #F27420;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-item.is-selected .shelf-dd-count--full {
     color: #ff7b72;
   }
   .shelf-dd-item {
     padding: 15px 17px;
-    color: #e3b341;
+    color: #E88435;
     font-size: 19px;
     font-weight: 700;
     cursor: pointer;
@@ -862,12 +877,12 @@
     border-bottom: none;
   }
   .shelf-dd-item:hover {
-    background: rgba(88, 166, 255, 0.14);
-    color: #58a6ff;
+    background: rgba(61, 158, 220, 0.14);
+    color: #3FA0DB;
   }
   .shelf-dd-item.is-selected {
-    background: rgba(242, 204, 96, 0.12);
-    color: #f2cc60;
+    background: rgba(242, 116, 32, 0.12);
+    color: #F27420;
   }
   .shelf-dd-wrap.shelf-dd-tagesliste .shelf-dd-trigger {
     color: #56d364;
@@ -898,7 +913,7 @@
     border-radius: 999px;
     background: rgba(227, 179, 65, 0.12);
     border: 1px solid rgba(227, 179, 65, 0.18);
-    color: #f2cc60;
+    color: #F27420;
     font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.3px;
@@ -949,7 +964,7 @@
   }
   .tools-panel {
     background: rgba(13, 17, 23, 0.55);
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     border-radius: 16px;
     padding: 14px;
     display: flex;
@@ -969,7 +984,7 @@
     align-items: center;
   }
   .tools-panel-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 14px;
     font-weight: 800;
     text-transform: uppercase;
@@ -1005,7 +1020,7 @@
     width: 100%;
     background: #0d1117;
     color: #fff;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     padding: 13px 14px;
     font-size: 15px;
     border-radius: 14px;
@@ -1085,11 +1100,11 @@
     padding: 30px 44px;
     border-radius: 20px;
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.96) 0%, rgba(14, 19, 26, 0.96) 100%);
-    border: 2px solid rgba(242, 204, 96, 0.4);
+    border: 2px solid rgba(242, 116, 32, 0.4);
     box-shadow: 0 24px 56px rgba(0, 0, 0, 0.5);
   }
   .hud-busy-text {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 16px;
     font-weight: 800;
     letter-spacing: 0.4px;
@@ -1101,8 +1116,8 @@
     display: inline-block;
     width: 40px;
     height: 40px;
-    border: 3px solid rgba(242, 204, 96, 0.22);
-    border-top-color: #f2cc60;
+    border: 3px solid rgba(242, 116, 32, 0.22);
+    border-top-color: #F27420;
     border-radius: 50%;
     animation: hudSpin 0.72s linear infinite;
     box-sizing: border-box;
@@ -1174,7 +1189,7 @@
     border-bottom: 1px solid #242d39;
   }
   .overview-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 18px;
     font-weight: 800;
     text-transform: uppercase;
@@ -1182,8 +1197,8 @@
   }
   .overview-close {
     background: rgba(255,255,255,0.04);
-    color: #f2cc60;
-    border: 2px solid rgba(242, 204, 96, 0.24);
+    color: #F27420;
+    border: 2px solid rgba(242, 116, 32, 0.24);
     border-radius: 12px;
     padding: 10px 14px;
     font-size: 13px;
@@ -1223,7 +1238,7 @@
     position: sticky;
     top: 0;
     background: #111722;
-    color: #f2cc60;
+    color: #F27420;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -1356,7 +1371,7 @@
     border-bottom: 1px solid #242d39;
   }
   .nb-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 24px;
     font-weight: 800;
     text-transform: uppercase;
@@ -1364,8 +1379,8 @@
   }
   .nb-close {
     background: rgba(255,255,255,0.04);
-    color: #f2cc60;
-    border: 2px solid rgba(242, 204, 96, 0.24);
+    color: #F27420;
+    border: 2px solid rgba(242, 116, 32, 0.24);
     border-radius: 14px;
     padding: 12px 20px;
     font-size: 16px;
@@ -1388,7 +1403,7 @@
   #nbSearchInput {
     width: 100%;
     background: #0f141c;
-    color: #58a6ff;
+    color: #3FA0DB;
     border: 1px solid #354152;
     padding: 14px 18px;
     font-size: 18px;
@@ -1445,7 +1460,7 @@
     position: sticky;
     top: 0;
     background: #111722;
-    color: #f2cc60;
+    color: #F27420;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -1460,11 +1475,11 @@
     font-weight: 800;
   }
   .nb-typ-mechanik {
-    color: #58a6ff;
+    color: #3FA0DB;
     font-weight: 800;
   }
   .nb-typ-qcheck {
-    color: #f2cc60;
+    color: #F27420;
     font-weight: 800;
   }
   .nb-detail { display: none; }
@@ -1681,7 +1696,7 @@
     gap: 10px 12px;
   }
   .ra-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 18px;
     font-weight: 900;
     letter-spacing: 1px;
@@ -1706,9 +1721,9 @@
     color: #9da7b3;
   }
   .ra-total-mixed {
-    background: rgba(242,204,96,0.12);
-    border-color: rgba(242,204,96,0.32);
-    color: #f2cc60;
+    background: rgba(242,116,32,0.12);
+    border-color: rgba(242,116,32,0.32);
+    color: #F27420;
   }
   .ra-total-complete {
     background: rgba(63,185,80,0.12);
@@ -1739,9 +1754,9 @@
     filter: brightness(1.12);
   }
   .ra-btn-refresh {
-    background: rgba(88,166,255,0.12);
-    color: #58a6ff;
-    border-color: rgba(88,166,255,0.2);
+    background: rgba(61,158,220,0.12);
+    color: #3FA0DB;
+    border-color: rgba(61,158,220,0.2);
   }
   .ra-btn-refresh:hover {
     filter: brightness(1.12);
@@ -1788,7 +1803,7 @@
   .ra-col-qty { width: 14%; text-align: center; }
   .ra-col-status { width: 24%; text-align: center; }
   .ra-cell-stock {
-    color: #58a6ff;
+    color: #3FA0DB;
     font-weight: 800;
     font-size: 15px;
     letter-spacing: 0.04em;
@@ -1827,7 +1842,7 @@
     border: 1px solid rgba(255,200,170,0.3);
   }
   .ra-date-today {
-    color: #58a6ff;
+    color: #3FA0DB;
     font-weight: 800;
   }
   .ra-date-tomorrow {
@@ -1880,9 +1895,9 @@
     margin-top: 6px;
   }
   .nb-print-btn {
-    background: rgba(88, 166, 255, 0.12);
-    color: #58a6ff;
-    border: 1px solid rgba(88, 166, 255, 0.2);
+    background: rgba(61, 158, 220, 0.12);
+    color: #3FA0DB;
+    border: 1px solid rgba(61, 158, 220, 0.2);
     border-radius: 12px;
     padding: 12px 18px;
     font-size: 16px;
@@ -1930,8 +1945,8 @@
     font-weight: 900;
     border-radius: 12px;
     border: 1px solid #354152;
-    background: rgba(88, 166, 255, 0.1);
-    color: #58a6ff;
+    background: rgba(61, 158, 220, 0.1);
+    color: #3FA0DB;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1940,7 +1955,7 @@
     transition: 0.15s;
   }
   .qty-btn:hover {
-    background: rgba(88, 166, 255, 0.2);
+    background: rgba(61, 158, 220, 0.2);
   }
   .nb-qty-stepper {
     display: flex;
@@ -1955,8 +1970,8 @@
     font-weight: 900;
     border-radius: 12px;
     border: 1px solid #354152;
-    background: rgba(88, 166, 255, 0.1);
-    color: #58a6ff;
+    background: rgba(61, 158, 220, 0.1);
+    color: #3FA0DB;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1965,7 +1980,7 @@
     padding: 0;
   }
   .nb-qty-btn:hover {
-    background: rgba(88, 166, 255, 0.2);
+    background: rgba(61, 158, 220, 0.2);
   }
   .reifen-modal {
     position: fixed;
@@ -2022,11 +2037,11 @@
     padding: 26px 36px;
     border-radius: 16px;
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
-    border: 2px solid rgba(242, 204, 96, 0.35);
+    border: 2px solid rgba(242, 116, 32, 0.35);
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   }
   .reifen-busy-text {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 15px;
     font-weight: 800;
     text-align: center;
@@ -2054,7 +2069,7 @@
     background: linear-gradient(180deg, rgba(21, 27, 35, 0.99) 0%, rgba(18, 23, 30, 0.99) 100%);
   }
   .reifen-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 22px;
     font-weight: 800;
     text-transform: uppercase;
@@ -2062,8 +2077,8 @@
   }
   .reifen-close {
     background: rgba(255,255,255,0.04);
-    color: #f2cc60;
-    border: 1px solid rgba(242, 204, 96, 0.14);
+    color: #F27420;
+    border: 1px solid rgba(242, 116, 32, 0.14);
     border-radius: 12px;
     padding: 10px 14px;
     font-size: 13px;
@@ -2095,7 +2110,7 @@
   #reifenStockInput {
     width: 100%;
     background: #0f141c;
-    color: #58a6ff;
+    color: #3FA0DB;
     border: 1px solid #354152;
     padding: 16px 20px;
     font-size: 22px;
@@ -2152,7 +2167,7 @@
     color: #56d364;
   }
   .reifen-autocomplete-hit {
-    color: #58a6ff;
+    color: #3FA0DB;
   }
   .reifen-autocomplete-status {
     flex-shrink: 0;
@@ -2215,12 +2230,12 @@
     gap: 10px;
   }
   .reifen-location {
-    color: #e3b341;
+    color: #E88435;
     font-size: 14px;
     font-weight: 700;
     text-align: center;
     background: #2d230e;
-    border: 1px solid #e3b341;
+    border: 1px solid #E88435;
     border-radius: 10px;
     padding: 10px 12px;
   }
@@ -2234,8 +2249,8 @@
   }
   .reifen-copy-box {
     background: #21262d;
-    border: 1px dashed #58a6ff;
-    color: #58a6ff;
+    border: 1px dashed #3FA0DB;
+    color: #3FA0DB;
     padding: 14px 16px;
     text-align: center;
     border-radius: 12px;
@@ -2285,12 +2300,12 @@
     font-weight: 500;
   }
   .reifen-size-section {
-    border-top: 3px solid rgba(242, 204, 96, 0.35);
+    border-top: 3px solid rgba(242, 116, 32, 0.35);
     padding-top: 18px;
     margin-top: 4px;
   }
   .reifen-size-title {
-    color: #f2cc60;
+    color: #F27420;
     font-size: 16px;
     font-weight: 800;
     text-transform: uppercase;
@@ -2306,8 +2321,8 @@
   .reifen-size-input {
     flex: 1;
     background: #0f141c;
-    color: #58a6ff;
-    border: 2.5px solid rgba(242, 204, 96, 0.34);
+    color: #3FA0DB;
+    border: 2.5px solid rgba(242, 116, 32, 0.34);
     padding: 14px 18px;
     font-size: 18px;
     font-weight: 700;
@@ -2317,7 +2332,7 @@
   }
   .reifen-size-input::placeholder { color: #6e7681; }
   .reifen-size-btn {
-    background: linear-gradient(180deg, #388bfd 0%, #1f6feb 100%);
+    background: linear-gradient(180deg, #2B8BC4 0%, #003D6B 100%);
     color: #0d1117;
     border: none;
     border-radius: 14px;
@@ -2349,7 +2364,7 @@
     position: sticky;
     top: 0;
     background: #111722;
-    color: #f2cc60;
+    color: #F27420;
     font-weight: 800;
     text-transform: uppercase;
     letter-spacing: 0.8px;
@@ -2374,9 +2389,9 @@
     display: inline-block;
     padding: 4px 10px;
     border-radius: 999px;
-    background: rgba(242,204,96,0.12);
-    border: 1px solid rgba(242,204,96,0.18);
-    color: #f2cc60;
+    background: rgba(242,116,32,0.12);
+    border: 1px solid rgba(242,116,32,0.18);
+    color: #F27420;
     font-weight: 800;
     font-size: 12px;
     margin-left: 8px;
@@ -2395,7 +2410,10 @@
         </div>
         <div class="topbar-brand">
           <div class="topbar-brand-top">
-            <div class="topbar-credit">BY ARASAKA v1.5</div>
+            <div class="topbar-brand-meta">
+              <div class="topbar-credit">BY ARASAKA v1.5</div>
+              <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/main/Warehouse%20Management%20System/autohero-logo.png" alt="AUTOHERO">
+            </div>
             <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
           </div>
           <div class="topbar-brand-sub">
@@ -2515,7 +2533,7 @@
           <div class="dymo-fields">
             <div class="dymo-field">
               <div class="field-label">Drucker für Werkstattauftrag</div>
-              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(242,204,96,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(242,116,32,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
                 <option value="">Bridge nicht verbunden</option>
               </select>
             </div>
@@ -2539,11 +2557,11 @@
     <div class="overview-dialog">
       <div class="overview-header">
         <div class="overview-title">Stock-ID + Regal Übersicht</div>
-        <button type="button" onclick="refreshStockOverview()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button type="button" onclick="refreshStockOverview()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
         <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
       </div>
       <div class="overview-body">
-        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
+        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
         <div class="overview-table-wrap">
           <table class="overview-table">
             <thead>
@@ -2602,7 +2620,7 @@
     <div class="nb-dialog">
       <div class="nb-header">
         <div class="nb-title">Nachbestellungen</div>
-        <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,204,96,0.12);border:2px solid rgba(242,204,96,0.26);color:#f2cc60;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
+        <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
         <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
       </div>
       <div class="nb-toolbar">
@@ -2610,7 +2628,7 @@
           <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
           <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
         </div>
-        <button type="button" onclick="refreshNbModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button type="button" onclick="refreshNbModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
       </div>
       <div class="nb-body">
         <table class="nb-table">
@@ -2639,7 +2657,7 @@
       <div class="reifen-header">
         <div class="reifen-title">Reifen Annahme</div>
         <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
-        <button type="button" onclick="refreshReifenModal()" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
+        <button type="button" onclick="refreshReifenModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
         <button type="button" class="reifen-close" id="reifenMinimizeBtn" onclick="minimizeReifenModal()">Zurück</button>
       </div>
       <div class="reifen-body-outer">
@@ -3125,7 +3143,7 @@
     function setStatus(msg, color) {
       var el = document.getElementById('globalStatus');
       el.innerText = msg;
-      el.style.color = color || "#58a6ff";
+      el.style.color = color || "#3FA0DB";
     }
 
     function setHudBusy(active, message) {
@@ -3173,9 +3191,9 @@
       document.getElementById('overviewModal').classList.remove('open');
       var btn = document.querySelector('.topbar-action[onclick*="openStockOverview"]');
       if(btn && ovSessionActive && ovAllEntries.length > 0) {
-        btn.style.background = 'rgba(88,166,255,0.18)';
-        btn.style.borderColor = '#58a6ff';
-        btn.style.color = '#58a6ff';
+        btn.style.background = 'rgba(61,158,220,0.18)';
+        btn.style.borderColor = '#3FA0DB';
+        btn.style.color = '#3FA0DB';
       }
     }
 
@@ -3205,7 +3223,7 @@
     function getStatusStyle(status) {
       var n = String(status || "").trim().toLowerCase();
       if(n === "herausgegeben") return "color:#56d364;background:rgba(46,160,67,0.14);border-color:rgba(86,211,100,0.2);";
-      if(n === "teilweise angeliefert") return "color:#f2cc60;background:rgba(242,204,96,0.14);border-color:rgba(242,204,96,0.2);";
+      if(n === "teilweise angeliefert") return "color:#F27420;background:rgba(242,116,32,0.14);border-color:rgba(242,116,32,0.2);";
       return "color:#9da7b3;";
     }
 
@@ -3240,12 +3258,12 @@
         var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
         html += '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + '" onclick="toggleOverviewEntry(' + i + ')">'  
           + '<td class="ov-check-cell" onclick="event.stopPropagation();"><input type="checkbox"' + (isDone ? ' checked' : '') + ' onchange="toggleOverviewDone(' + i + ',\'' + escapeJs(e.stockId) + '\',this)"></td>'
-          + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
-          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
-          + '<td style="color:#e3b341;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
+          + '<td style="color:#F27420;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
+          + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="color:#E88435;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
           + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
           + '<td><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></td>'
-          + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
+          + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
           + '</tr>';
         html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
           + '<td colspan="7">'
@@ -3365,9 +3383,9 @@
       document.getElementById('raModal').classList.remove('open');
       var btn = document.querySelector('.topbar-action[onclick*="openRaModal"]');
       if(btn && raAllEntries.length > 0) {
-        btn.style.background = 'rgba(88,166,255,0.18)';
-        btn.style.borderColor = '#58a6ff';
-        btn.style.color = '#58a6ff';
+        btn.style.background = 'rgba(61,158,220,0.18)';
+        btn.style.borderColor = '#3FA0DB';
+        btn.style.color = '#3FA0DB';
       }
     }
 
@@ -3544,9 +3562,9 @@
       document.getElementById('nbModal').classList.remove('open');
       var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
       if(btn && nbAllEntries.length > 0) {
-        btn.style.background = 'rgba(88,166,255,0.18)';
-        btn.style.borderColor = '#58a6ff';
-        btn.style.color = '#58a6ff';
+        btn.style.background = 'rgba(61,158,220,0.18)';
+        btn.style.borderColor = '#3FA0DB';
+        btn.style.color = '#3FA0DB';
       }
     }
 
@@ -3592,8 +3610,8 @@
     function getNbTypStyle(typ) {
       var t = String(typ || "").toLowerCase();
       if(t.indexOf("exit") !== -1) return "border-left:4px solid #f85149;";
-      if(t.indexOf("mechanik") !== -1) return "border-left:4px solid #58a6ff;";
-      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "border-left:4px solid #f2cc60;";
+      if(t.indexOf("mechanik") !== -1) return "border-left:4px solid #3FA0DB;";
+      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "border-left:4px solid #F27420;";
       if(t.indexOf("verschwunden") !== -1) return "border-left:4px solid #e3935b;";
       if(t.indexOf("falsch") !== -1) return "border-left:4px solid #d972b0;";
       if(t.indexOf("aufgenommen") !== -1 || t.indexOf("entry") !== -1) return "border-left:4px solid #a371f7;";
@@ -3605,8 +3623,8 @@
     function getNbTypColor(typ) {
       var t = String(typ || "").toLowerCase();
       if(t.indexOf("exit") !== -1) return "color:#f85149;font-weight:800;";
-      if(t.indexOf("mechanik") !== -1) return "color:#58a6ff;font-weight:800;";
-      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "color:#f2cc60;font-weight:800;";
+      if(t.indexOf("mechanik") !== -1) return "color:#3FA0DB;font-weight:800;";
+      if(t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return "color:#F27420;font-weight:800;";
       if(t.indexOf("verschwunden") !== -1) return "color:#e3935b;font-weight:800;";
       if(t.indexOf("falsch") !== -1) return "color:#d972b0;font-weight:800;";
       if(t.indexOf("aufgenommen") !== -1 || t.indexOf("entry") !== -1) return "color:#a371f7;font-weight:800;";
@@ -3724,14 +3742,14 @@
             + '</div>';
         }
         html += '<tr class="nb-row" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
-          + '<td style="color:#f2cc60;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
+          + '<td style="color:#F27420;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
           + '<td style="white-space:nowrap;">' + escapeHtml(e.date) + '</td>'
-          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
           + '<td style="' + typColor + '">' + escapeHtml(e.typ) + '</td>'
           + '<td>' + escapeHtml(e.teil) + '</td>'
           + '<td>' + escapeHtml(e.artikel) + '</td>'
           + '<td style="font-weight:700;">' + escapeHtml(e.status || '-') + '</td>'
-          + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.2);border-radius:12px;padding:10px 16px;font-size:15px;font-weight:800;cursor:pointer;">WMS</button></td>'
+          + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 16px;font-size:15px;font-weight:800;cursor:pointer;">WMS</button></td>'
           + '</tr>';
 
         html += '<tr class="nb-detail" id="nb-detail-' + i + '">'
@@ -4077,7 +4095,7 @@
       if(matches.length > 0) {
         var list = document.getElementById('nbAutocompleteList');
         list.innerHTML = matches.map(function(m) {
-          return '<div class="nb-autocomplete-item" data-value="' + escapeHtml(m) + '">' + escapeHtml(m).replace(search, '<span style="color:#58a6ff;">' + search + '</span>') + '</div>';
+          return '<div class="nb-autocomplete-item" data-value="' + escapeHtml(m) + '">' + escapeHtml(m).replace(search, '<span style="color:#3FA0DB;">' + search + '</span>') + '</div>';
         }).join('');
         list.style.display = 'block';
         Array.prototype.forEach.call(list.children, function(node) {
@@ -4210,9 +4228,9 @@
         cachedReifenStockIds = reifenHudCache.stocksByTab[tabName];
         return;
       }
-      setReifenStatus("Lade Stock-IDs…", "#f2cc60", true);
+      setReifenStatus("Lade Stock-IDs…", "#F27420", true);
       loadStockIdsForTab(tabName, function() {
-        setReifenStatus("Tab '" + tabName + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+        setReifenStatus("Tab '" + tabName + "' gewählt. Jetzt Stock-ID scannen.", "#3FA0DB");
       });
     }
 
@@ -4327,7 +4345,7 @@
             document.getElementById('reifenTabSelect').innerHTML = '<option value="">Keine Blätter (8 Tage)</option>';
             cachedReifenStockIds = [];
             updateReifenCacheHud(true);
-            setReifenStatus('Kein Blatt im Zeitfenster (heute + 7 Tage zurück, Datum im Namen).', '#f2cc60');
+            setReifenStatus('Kein Blatt im Zeitfenster (heute + 7 Tage zurück, Datum im Namen).', '#F27420');
             if (typeof onDone === 'function') onDone(true);
             return;
           }
@@ -4337,7 +4355,7 @@
           localStorage.setItem('arasaka_reifen_tab', selected);
           applyReifenHudCacheToUi();
           updateReifenCacheHud(true);
-          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#3FA0DB");
           reifenStockInput.focus();
           if (typeof onDone === 'function') onDone(true);
           google.script.run
@@ -4381,9 +4399,9 @@
       closeReifenConfirm();
       var btn = document.querySelector('.topbar-action[onclick*="openReifenModal"]');
       if(btn && reifenSessionActive) {
-        btn.style.background = 'rgba(88,166,255,0.18)';
-        btn.style.borderColor = '#58a6ff';
-        btn.style.color = '#58a6ff';
+        btn.style.background = 'rgba(61,158,220,0.18)';
+        btn.style.borderColor = '#3FA0DB';
+        btn.style.color = '#3FA0DB';
       }
     }
 
@@ -4609,7 +4627,7 @@
       }
       sg.disabled = true;
       st.textContent = 'Speichere Gummileiste in Vasold…';
-      st.style.color = '#f2cc60';
+      st.style.color = '#F27420';
       google.script.run
         .withSuccessHandler(function(res) {
           sg.disabled = false;
@@ -4665,7 +4683,7 @@
       }
       sb.disabled = true;
       st.textContent = 'Speichere Vasold + Kommentar…';
-      st.style.color = '#f2cc60';
+      st.style.color = '#F27420';
       google.script.run
         .withSuccessHandler(function(res) {
           sb.disabled = false;
@@ -4717,7 +4735,7 @@
       if(reifenSessionActive && currentReifenTab && reifenHudCache && reifenHudCache.tabs && reifenHudCache.tabs.length) {
         applyReifenHudCacheToUi();
         loadStockIdsForTab(currentReifenTab, function() {
-          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#3FA0DB");
           reifenStockInput.focus();
         });
         return;
@@ -4727,14 +4745,14 @@
         resetReifenState(false);
         applyReifenHudCacheToUi();
         loadStockIdsForTab(currentReifenTab, function() {
-          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+          setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#3FA0DB");
           reifenStockInput.focus();
         });
         return;
       }
       resetReifenState(false);
       document.getElementById('reifenTabSelect').innerHTML = '<option value="">Lade…</option>';
-      setReifenStatus("Lade Tabellen & Cache…", "#f2cc60", true);
+      setReifenStatus("Lade Tabellen & Cache…", "#F27420", true);
       loadReifenHudCache(function(ok) {
         if(!ok || !reifenHudCache || !reifenHudCache.tabs || !reifenHudCache.tabs.length) {
           var select = document.getElementById('reifenTabSelect');
@@ -4749,7 +4767,7 @@
       resetReifenState(false);
       ensureReifenHudShape();
       if (reifenHudCache.stocksByTab) reifenHudCache.stocksByTab = {};
-      setReifenStatus("Aktualisiere Cache…", "#f2cc60", true);
+      setReifenStatus("Aktualisiere Cache…", "#F27420", true);
       reifenSessionActive = true;
       loadReifenHudCache(function(ok) {
         if(!ok || !reifenHudCache || !reifenHudCache.tabs || !reifenHudCache.tabs.length) {
@@ -4849,7 +4867,7 @@
         return;
       }
       statusEl.style.display = 'block';
-      statusEl.style.color = '#f2cc60';
+      statusEl.style.color = '#F27420';
       statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('Suche "' + query + '" (Paketdienst-Cache leer, Server…)') + '</span></span>';
       resultsEl.style.display = 'none';
       badge.style.display = 'none';
@@ -4884,7 +4902,7 @@
         var r = tireSearchResults[i];
         html += '<tr>'
           + '<td style="white-space:nowrap;">' + escapeHtml(getTabDate(r.tabName)) + '</td>'
-          + '<td style="color:#58a6ff;font-weight:800;">' + escapeHtml(r.stockId) + '</td>'
+          + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(r.stockId) + '</td>'
           + '<td style="font-weight:700;">' + escapeHtml(r.groesse) + '</td>'
           + '<td>' + escapeHtml(r.lastindex) + '</td>'
           + '<td>' + escapeHtml(r.gwIndex) + '</td>'
@@ -4902,7 +4920,7 @@
       if(btn) { btn.disabled = true; btn.innerText = 'Buche...'; }
       var statusEl = document.getElementById('reifenSizeStatus');
       statusEl.style.display = 'block';
-      statusEl.style.color = '#f2cc60';
+      statusEl.style.color = '#F27420';
       statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('Buche ' + tire.stockId + ' aus ' + tire.tabName + '…') + '</span></span>';
       google.script.run.withSuccessHandler(function(res) {
         if(!res.success) {
@@ -4940,7 +4958,7 @@
       if(currentReifenTab) {
         localStorage.setItem('arasaka_reifen_tab', currentReifenTab);
         loadReifenStockIds(currentReifenTab);
-        setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#58a6ff");
+        setReifenStatus("Tab '" + currentReifenTab + "' gewählt. Jetzt Stock-ID scannen.", "#3FA0DB");
       } else {
         cachedReifenStockIds = [];
         setReifenStatus("❌ Bitte ein Tabellenblatt auswählen.", "#f85149");
@@ -4988,7 +5006,7 @@
         }
         return;
       }
-      setReifenStatus("Suche " + stockId + " in '" + tab + "'…", "#f2cc60", true);
+      setReifenStatus("Suche " + stockId + " in '" + tab + "'…", "#F27420", true);
       google.script.run
         .withSuccessHandler(function(res) {
           if(res.found) {
@@ -5012,7 +5030,7 @@
       if(!tab) return setReifenStatus("❌ Bitte zuerst ein Tabellenblatt auswählen.", "#f85149");
       if(!stockId) return setReifenStatus("❌ Bitte zuerst eine Stock-ID prüfen.", "#f85149");
       setReifenActionState(false);
-      setReifenStatus((isDelivered ? "Buche Reifen als DA…" : "Buche Reifen als FEHLT…"), "#f2cc60", true);
+      setReifenStatus((isDelivered ? "Buche Reifen als DA…" : "Buche Reifen als FEHLT…"), "#F27420", true);
       google.script.run
         .withSuccessHandler(function(res) {
           if(!res.success) {
@@ -5048,7 +5066,7 @@
       var value = String(element.innerText || "").trim();
       if(!value) return;
       navigator.clipboard.writeText(value).then(function() {
-        setReifenStatus("📋 Kopiert: " + value, "#58a6ff");
+        setReifenStatus("📋 Kopiert: " + value, "#3FA0DB");
       }).catch(function() {
         setReifenStatus("❌ Kopieren fehlgeschlagen.", "#f85149");
       });
@@ -5073,7 +5091,7 @@
         loadData();
         return;
       }
-      setReifenStatus("Nächste Stock-ID scannen...", "#58a6ff");
+      setReifenStatus("Nächste Stock-ID scannen...", "#3FA0DB");
       reifenStockInput.focus();
     }
 
@@ -5462,8 +5480,8 @@
             badgeWss.style.color = '#56d364';
           } else {
             badgeWss.innerText = 'WSS: VASOLD OFFEN';
-            badgeWss.style.background = 'rgba(242, 204, 96, 0.14)';
-            badgeWss.style.color = '#f2cc60';
+            badgeWss.style.background = 'rgba(242, 116, 32, 0.14)';
+            badgeWss.style.color = '#F27420';
           }
         } else {
           badgeWss.style.display = 'none';
@@ -5524,7 +5542,7 @@
       if(!id) return;
 
       if(!isStockIdFormat(id)) {
-        setStatus("🔍 Suche Bestellnummer '" + id + "'...", "#f2cc60");
+        setStatus("🔍 Suche Bestellnummer '" + id + "'...", "#F27420");
         toggleUI(false);
         setHudBusy(true, 'Suche Bestellnummer…');
         var orderLocal = searchByOrderNumberFromCache(id, refurbCache);
@@ -5557,7 +5575,7 @@
         return;
       }
 
-      setStatus("Scanne Datenbank...", "#f2cc60");
+      setStatus("Scanne Datenbank...", "#F27420");
       toggleUI(false);
       setHudBusy(true, 'Scanne Datenbank…');
 
@@ -5577,7 +5595,7 @@
 
     function saveKomm() {
       var text = getCommentText();
-      setStatus("Speichere Kommentar...", "#f2cc60");
+      setStatus("Speichere Kommentar...", "#F27420");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
         if (res.success) loadRefurbishmentCache(true);
@@ -5589,10 +5607,10 @@
       var regal = document.getElementById('shelfSelect').value;
       if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
       if(!regal) {
-        setStatus("💾 Speichere nur Kommentar (kein Regal gewählt)...", "#f2cc60");
+        setStatus("💾 Speichere nur Kommentar (kein Regal gewählt)...", "#F27420");
         google.script.run.withSuccessHandler(function(res) {
           if(res.success) {
-            pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#f2cc60" };
+            pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#F27420" };
             document.getElementById('searchInput').value = currentStock;
             loadRefurbishmentCache(true, function() { loadData(); });
           } else {
@@ -5601,7 +5619,7 @@
         }).saveKommentarUndRegal(currentStock, text, "");
         return;
       }
-      setStatus("💾 Speichere Kommentar + Regal...", "#f2cc60");
+      setStatus("💾 Speichere Kommentar + Regal...", "#F27420");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
         if(res.success) {
@@ -5614,7 +5632,7 @@
     function saveRegal() {
       var regal = document.getElementById('shelfSelect').value;
       if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
-      setStatus("Buche Regal...", "#f2cc60");
+      setStatus("Buche Regal...", "#F27420");
       google.script.run.withSuccessHandler(function(res) {
         setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
         if(res.success) {
@@ -5640,7 +5658,7 @@
       var initials = typedInitials || "LAGER";
       localStorage.setItem('arasaka_dymo_initials', initials);
       if(!opts.silent) {
-        setStatus("🖨️ Sende an Dymo...", "#58a6ff");
+        setStatus("🖨️ Sende an Dymo...", "#3FA0DB");
       }
       try {
         if (typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
@@ -5737,7 +5755,7 @@
       document.getElementById('btnCarol').disabled = true;
       toggleUI(false);
       setHudBusy(true, 'Speichere & Carol…');
-      setStatus("🚀 Carol gestartet. Sheet wird im Hintergrund aktualisiert...", "#58a6ff");
+      setStatus("🚀 Carol gestartet. Sheet wird im Hintergrund aktualisiert...", "#3FA0DB");
       google.script.run
         .withSuccessHandler(function(res) {
           if(!res.success) {
