@@ -33,24 +33,28 @@
     position: relative;
   }
   .topbar-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr) minmax(0, max-content);
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 6px;
+    column-gap: 16px;
+    margin-bottom: 8px;
+    min-height: 0;
   }
   .topbar-actions {
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
     flex-shrink: 0;
   }
   .topbar-action {
     color: #F27420;
-    font-size: 12px;
+    font-size: 15px;
     font-weight: 800;
-    letter-spacing: 1px;
+    letter-spacing: 0.85px;
     text-transform: uppercase;
-    padding: 10px 16px;
-    border-radius: 12px;
+    padding: 13px 20px;
+    border-radius: 14px;
     background: rgba(242, 116, 32, 0.08);
     border: 2px solid rgba(242, 116, 32, 0.26);
     cursor: pointer;
@@ -62,77 +66,93 @@
     transform: translateY(-1px);
     box-shadow: 0 6px 16px rgba(242, 116, 32, 0.12);
   }
+  .topbar-brand-center {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-self: center;
+    gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+    text-align: center;
+  }
   .topbar-credit {
     color: #F27420;
-    font-size: 11px;
+    font-size: 14px;
     font-weight: 800;
-    letter-spacing: 1.6px;
+    letter-spacing: 1.8px;
     text-transform: uppercase;
-    padding: 6px 10px;
+    padding: 9px 18px;
     border-radius: 999px;
     background: rgba(242, 116, 32, 0.08);
     border: 2px solid rgba(242, 116, 32, 0.22);
     flex-shrink: 0;
   }
-  .topbar-brand {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-  .topbar-brand-top {
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .topbar-brand-meta {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 6px;
-  }
   .topbar-client-logo {
     display: block;
-    height: 34px;
+    height: 54px;
     width: auto;
-    max-width: 220px;
+    max-width: min(360px, 100%);
     object-fit: contain;
   }
-  .topbar-brand-sub {
+  .topbar-cache-cluster {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-self: end;
+    justify-content: flex-start;
+    gap: 8px;
+    align-self: start;
+    padding-top: 2px;
+    text-align: right;
+  }
+  .topbar-cache-sub {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: 10px;
     flex-wrap: wrap;
   }
   .topbar-cache-updated {
-    align-self: center;
     display: inline-block;
-    padding: 4px 10px;
+    padding: 8px 16px;
     border-radius: 999px;
     background: rgba(242, 116, 32, 0.14);
     border: 1px solid rgba(242, 116, 32, 0.45);
     color: #ff9f4d;
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 800;
-    letter-spacing: 0.4px;
+    letter-spacing: 0.35px;
     white-space: nowrap;
   }
   .topbar-cache-live-label {
-    font-size: 15px;
+    font-size: 18px;
     font-weight: 700;
     color: #8b949e;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.35px;
   }
   .topbar-cache-live-label--on {
     color: #56d364;
   }
+  .topbar-cache-live-label--loading {
+    color: #3FA0DB;
+  }
+  .cache-load-spinner {
+    width: 20px;
+    height: 20px;
+    box-sizing: border-box;
+    border: 3px solid rgba(61, 158, 220, 0.22);
+    border-top-color: #3FA0DB;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: cache-load-spin 0.72s linear infinite;
+  }
+  @keyframes cache-load-spin {
+    to { transform: rotate(360deg); }
+  }
   .cache-pulse-dot {
-    width: 9px;
-    height: 9px;
+    width: 11px;
+    height: 11px;
     border-radius: 50%;
     flex-shrink: 0;
   }
@@ -953,11 +973,12 @@
   }
   .tools-card {
     justify-content: stretch;
+    min-width: 0;
   }
   .tools-layout {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
     flex: 1;
     min-height: 0;
     justify-content: center;
@@ -976,6 +997,92 @@
     min-height: 0;
     justify-content: center;
     align-items: center;
+  }
+  .tools-panel--dymo {
+    align-items: stretch;
+    justify-content: flex-start;
+    flex-shrink: 0;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .dymo-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 18px;
+    row-gap: 0;
+    align-items: end;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .dymo-row > .dymo-field.dymo-field--initials {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    align-self: end;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+  }
+  .dymo-field--initials .field-label {
+    text-align: left;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .dymo-field--initials input {
+    width: 3.4em;
+    max-width: 92px;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 10px 8px;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  .dymo-row > .dymo-field.dymo-field--qty {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: end;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+  }
+  .dymo-field--qty .field-label {
+    text-align: right;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .qty-stepper--dymo {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    justify-content: flex-end;
+    flex-wrap: nowrap;
+    box-sizing: border-box;
+  }
+  .tools-panel--dymo .qty-stepper--dymo .qty-btn {
+    width: 38px;
+    height: 38px;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .qty-stepper--dymo input {
+    flex: 0 1 48px;
+    min-width: 40px;
+    max-width: 56px;
+    width: 48px;
+    box-sizing: border-box;
+  }
+  .dymo-print-wrap {
+    width: 100%;
+    margin-top: 12px;
+  }
+  .dymo-print-wrap .btn-blue {
+    width: 100%;
   }
   .tools-panel.secondary {
     flex: 1;
@@ -2408,15 +2515,14 @@
           <button class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
           <button class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
         </div>
-        <div class="topbar-brand">
-          <div class="topbar-brand-top">
-            <div class="topbar-brand-meta">
-              <div class="topbar-credit">BY ARASAKA v1.5</div>
-              <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/main/Warehouse%20Management%20System/autohero-logo.png" alt="AUTOHERO">
-            </div>
-            <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
-          </div>
-          <div class="topbar-brand-sub">
+        <div class="topbar-brand-center">
+          <div class="topbar-credit">BY ARASAKA v1.6</div>
+          <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/main/Warehouse%20Management%20System/autohero-logo.png" alt="AUTOHERO">
+        </div>
+        <div class="topbar-cache-cluster">
+          <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
+          <div class="topbar-cache-sub">
+            <span class="cache-load-spinner" id="cacheLoadSpinner" hidden></span>
             <span class="cache-pulse-dot cache-pulse-dot--inactive" id="cachePulseDot" aria-hidden="true"></span>
             <span class="topbar-cache-live-label" id="cacheStatusText">Cache not active</span>
           </div>
@@ -2509,22 +2615,24 @@
       </div>
 
       <div class="tools-layout">
-        <div class="tools-panel primary">
+        <div class="tools-panel primary tools-panel--dymo">
           <div class="tools-panel-title">DYMO Etikettendruck</div>
-          <div class="dymo-fields">
-            <div class="dymo-field">
+          <div class="dymo-row">
+            <div class="dymo-field dymo-field--initials">
               <div class="field-label">Kürzel auf Label</div>
-              <input type="text" id="dymoInitials" placeholder="z. B. FB">
+              <input type="text" id="dymoInitials" placeholder="FB" maxlength="3" autocomplete="off">
             </div>
-            <div class="dymo-field">
+            <div class="dymo-field dymo-field--qty">
               <div class="field-label">Stückzahl</div>
-              <div class="qty-stepper">
+              <div class="qty-stepper qty-stepper--dymo">
                 <button type="button" class="qty-btn" onclick="stepQty('dymoCount',-1)">−</button>
                 <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
                 <button type="button" class="qty-btn" onclick="stepQty('dymoCount',1)">+</button>
               </div>
             </div>
-            <button class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
+          </div>
+          <div class="dymo-print-wrap">
+            <button type="button" class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
           </div>
         </div>
 
@@ -2815,6 +2923,7 @@
     var reifenHudCacheLoading = false;
     var refurbCache = null;
     var refurbCacheLoading = false;
+    var refurbCacheProgressTimer = null;
     var refurbBackgroundTimer = null;
     var REFURB_CACHE_POLL_MS = 75000;
     var commentEditor = document.getElementById('editAnlieferung');
@@ -5088,7 +5197,7 @@
       if(openInWms && stockId) {
         closeReifenModal();
         document.getElementById('searchInput').value = stockId;
-        loadData();
+        loadRefurbishmentCache(true, function() { loadData(); });
         return;
       }
       setReifenStatus("Nächste Stock-ID scannen...", "#3FA0DB");
@@ -5363,10 +5472,60 @@
       return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
     }
 
+    function clearRefurbCacheProgressTimer() {
+      if (refurbCacheProgressTimer) {
+        clearInterval(refurbCacheProgressTimer);
+        refurbCacheProgressTimer = null;
+      }
+    }
+
+    function startRefurbCacheProgressUi() {
+      clearRefurbCacheProgressTimer();
+      var spin = document.getElementById('cacheLoadSpinner');
+      var dot = document.getElementById('cachePulseDot');
+      var label = document.getElementById('cacheStatusText');
+      if (spin) spin.hidden = false;
+      if (dot) dot.style.visibility = 'hidden';
+      if (label) {
+        label.textContent = 'Cache lädt 0%';
+        label.className = 'topbar-cache-live-label topbar-cache-live-label--loading';
+      }
+      var pct = 0;
+      refurbCacheProgressTimer = setInterval(function() {
+        var delta = (94 - pct) * (0.1 + Math.random() * 0.07);
+        pct = Math.min(94, pct + delta);
+        var r = Math.round(pct);
+        if (label) label.textContent = 'Cache lädt ' + r + '%';
+      }, 90);
+    }
+
+    function finishRefurbCacheProgressUi(ok, onDone) {
+      clearRefurbCacheProgressTimer();
+      var spin = document.getElementById('cacheLoadSpinner');
+      var dot = document.getElementById('cachePulseDot');
+      var label = document.getElementById('cacheStatusText');
+      if (spin) spin.hidden = true;
+      if (dot) dot.style.visibility = '';
+      if (ok && label) {
+        label.textContent = '100%';
+        label.className = 'topbar-cache-live-label topbar-cache-live-label--on';
+        setTimeout(function() {
+          if (typeof onDone === 'function') onDone();
+        }, 200);
+      } else {
+        if (label) label.className = 'topbar-cache-live-label';
+        if (typeof onDone === 'function') onDone();
+      }
+    }
+
     function updateRefurbCacheHud(success) {
+      clearRefurbCacheProgressTimer();
+      var spin = document.getElementById('cacheLoadSpinner');
       var badge = document.getElementById('cacheLastUpdatedBadge');
       var dot = document.getElementById('cachePulseDot');
       var label = document.getElementById('cacheStatusText');
+      if (spin) spin.hidden = true;
+      if (dot) dot.style.visibility = '';
       if (success && badge) {
         var s = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Europe/Berlin' });
         badge.textContent = 'Last updated: ' + s;
@@ -5385,19 +5544,35 @@
         if (typeof onDone === 'function') onDone();
         return;
       }
+      var showLoadUi = !refurbCache;
       refurbCacheLoading = true;
+      if (showLoadUi) startRefurbCacheProgressUi();
       google.script.run
         .withSuccessHandler(function(res) {
           refurbCacheLoading = false;
           var ok = !!(res && res.success);
           if (ok) refurbCache = res;
-          updateRefurbCacheHud(ok);
-          if (typeof onDone === 'function') onDone();
+          if (showLoadUi) {
+            finishRefurbCacheProgressUi(ok, function() {
+              updateRefurbCacheHud(ok);
+              if (typeof onDone === 'function') onDone();
+            });
+          } else {
+            updateRefurbCacheHud(ok);
+            if (typeof onDone === 'function') onDone();
+          }
         })
         .withFailureHandler(function() {
           refurbCacheLoading = false;
-          updateRefurbCacheHud(false);
-          if (typeof onDone === 'function') onDone();
+          if (showLoadUi) {
+            finishRefurbCacheProgressUi(false, function() {
+              updateRefurbCacheHud(false);
+              if (typeof onDone === 'function') onDone();
+            });
+          } else {
+            updateRefurbCacheHud(false);
+            if (typeof onDone === 'function') onDone();
+          }
         })
         .getRefurbishmentCachePayload();
     }
