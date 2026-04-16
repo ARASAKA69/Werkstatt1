@@ -3261,4 +3261,891 @@
     document.addEventListener('visibilitychange', function() {
       if (!document.hidden) loadRefurbishmentCache(true);
     });
+
+    (function initWmsStandaloneExtras() {
+      if (!document.body || !document.body.classList.contains('wms-standalone')) return;
+
+      var LS_BOUNDS    = 'wms_win_bounds_v1';
+      var LS_COLLAPSE  = 'wms_card_collapse_v1';
+      var LS_THEME     = 'wms_theme_v1';
+      var LS_LAST_ORD  = 'wms_last_order_v1';
+      var LS_OV_DONE_T = 'arasaka_overview_done_ts';
+      var LS_OV_DONE   = 'arasaka_overview_done';
+      var Z_BASE       = 9990;
+      var NAV_CLEARANCE = 100;
+      var SNAP_EDGE = 60;
+      var SNAP_CORNER = 120;
+
+      function warn() { try { console.warn.apply(console, ['[WMS]'].concat([].slice.call(arguments))); } catch(e) {} }
+      function lsGet(k, fb) { try { var v = localStorage.getItem(k); return v != null ? JSON.parse(v) : fb; } catch(e) { return fb; } }
+      function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) { warn('lsSet failed', k, e); } }
+      function byId(id) { return document.getElementById(id); }
+
+      var winConfigs = [
+        { id: 'overview', modalId: 'overviewModal', dialogCls: 'overview-dialog', headerCls: 'overview-header', title: 'Übersicht', icon: '📋',
+          defaultSize: { w: 1280, h: 820 }, openFn: 'openStockOverview', minFn: 'minimizeStockOverview', closeFn: 'closeStockOverview',
+          session: function() { try { return (typeof ovSessionActive !== 'undefined' && ovSessionActive) && (typeof ovAllEntries !== 'undefined' && ovAllEntries && ovAllEntries.length > 0); } catch(e) { return false; } } },
+        { id: 'ra', modalId: 'raModal', dialogCls: 'ra-dialog', headerCls: 'ra-header', title: 'Heutige Reifenausgabe', icon: '🛞',
+          defaultSize: { w: 1200, h: 800 }, openFn: 'openRaModal', minFn: 'minimizeRaModal', closeFn: null,
+          session: function() { try { return (typeof raSessionActive !== 'undefined' && raSessionActive) && (typeof raAllEntries !== 'undefined' && raAllEntries && raAllEntries.length > 0); } catch(e) { return false; } } },
+        { id: 'nb', modalId: 'nbModal', dialogCls: 'nb-dialog', headerCls: 'nb-header', title: 'Nachbestellungen', icon: '📦',
+          defaultSize: { w: 1480, h: 900 }, openFn: 'openNbModal', minFn: 'minimizeNbModal', closeFn: 'closeNbModal',
+          session: function() { try { return (typeof nbSessionActive !== 'undefined' && nbSessionActive) && (typeof nbAllEntries !== 'undefined' && nbAllEntries && nbAllEntries.length > 0); } catch(e) { return false; } } },
+        { id: 'reifen', modalId: 'reifenModal', dialogCls: 'reifen-dialog', headerCls: 'reifen-header', title: 'Reifen Annahme', icon: '🔧',
+          defaultSize: { w: 1180, h: 820 }, openFn: 'openReifenModal', minFn: 'minimizeReifenModal', closeFn: 'closeReifenModal',
+          session: function() { try { return (typeof reifenSessionActive !== 'undefined' && reifenSessionActive); } catch(e) { return false; } } },
+        { id: 'wss', modalId: 'wssModal', dialogCls: 'reifen-dialog', headerCls: 'reifen-header', title: 'WSS Vasold', icon: '🪟',
+          defaultSize: { w: 760, h: 720 }, openFn: null, minFn: null, closeFn: 'closeWssModal', hideFromMenu: true, hideFromTaskbar: true }
+      ];
+
+      var zTop = Z_BASE;
+      var Z_MAX = 10040;
+      var activeDialog = null;
+      function modalForDialog(dialog) {
+        if (!dialog) return null;
+        var p = dialog.parentElement;
+        while (p && p !== document.body) {
+          if (p.classList && (p.classList.contains('overview-modal') || p.classList.contains('ra-modal') || p.classList.contains('nb-modal') || p.classList.contains('reifen-modal'))) return p;
+          p = p.parentElement;
+        }
+        return null;
+      }
+      function setActiveDialog(dialog) {
+        if (activeDialog && activeDialog !== dialog) activeDialog.classList.remove('is-active-window');
+        activeDialog = dialog || null;
+        if (activeDialog) activeDialog.classList.add('is-active-window');
+      }
+      function bringToFront(elOrDialog) {
+        if (!elOrDialog) return;
+        var dialog = elOrDialog;
+        var isDialog = dialog.classList && (dialog.classList.contains('overview-dialog') || dialog.classList.contains('ra-dialog') || dialog.classList.contains('nb-dialog') || dialog.classList.contains('reifen-dialog'));
+        if (!isDialog) {
+          var d = dialog.querySelector && dialog.querySelector('.overview-dialog, .ra-dialog, .nb-dialog, .reifen-dialog');
+          if (d) dialog = d;
+        }
+        var modal = modalForDialog(dialog);
+        zTop++;
+        if (zTop > Z_MAX) {
+          zTop = Z_BASE + 1;
+          winConfigs.forEach(function(c) {
+            var m = byId(c.modalId);
+            if (m) { try { m.style.removeProperty('z-index'); } catch(e) {} }
+            if (m) {
+              var dd = m.querySelector('.' + c.dialogCls);
+              if (dd) { try { dd.style.removeProperty('z-index'); } catch(e) {} }
+            }
+          });
+        }
+        if (modal) { try { modal.style.setProperty('z-index', zTop, 'important'); } catch(e) { modal.style.zIndex = zTop; } }
+        if (dialog) { try { dialog.style.setProperty('z-index', zTop, 'important'); } catch(e) { dialog.style.zIndex = zTop; } }
+        setActiveDialog(dialog);
+      }
+      function getBoundsMap() { return lsGet(LS_BOUNDS, {}) || {}; }
+      function saveBoundsFor(id, b) { var m = getBoundsMap(); m[id] = b; lsSet(LS_BOUNDS, m); }
+      function boundsFor(id) { var m = getBoundsMap(); return m[id] || null; }
+
+      function defaultBounds(cfg) {
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var w = Math.min(cfg.defaultSize.w, Math.max(520, vw - 40));
+        var h = Math.min(cfg.defaultSize.h, Math.max(380, vh - NAV_CLEARANCE - 40));
+        return {
+          left: Math.max(20, Math.round((vw - w) / 2)),
+          top: Math.max(NAV_CLEARANCE + 8, Math.round((vh - h) / 2)),
+          width: w,
+          height: h
+        };
+      }
+      function clampBounds(b) {
+        var vw = window.innerWidth, vh = window.innerHeight;
+        b.width  = Math.max(480, Math.min(b.width,  vw - 8));
+        b.height = Math.max(260, Math.min(b.height, vh - 16));
+        b.left   = Math.max(0, Math.min(b.left, vw - b.width));
+        b.top    = Math.max(4, Math.min(b.top,  vh - b.height));
+      }
+      function applyBounds(dialog, b) {
+        clampBounds(b);
+        dialog.style.position  = 'absolute';
+        dialog.style.left      = Math.round(b.left)   + 'px';
+        dialog.style.top       = Math.round(b.top)    + 'px';
+        dialog.style.width     = Math.round(b.width)  + 'px';
+        dialog.style.height    = Math.round(b.height) + 'px';
+        dialog.style.maxHeight = 'none';
+        dialog.style.maxWidth  = 'none';
+        dialog.style.margin    = '0';
+      }
+      function openWindow(cfg) {
+        var modal = byId(cfg.modalId);
+        if (!modal) return;
+        var dialog = modal.querySelector('.' + cfg.dialogCls);
+        if (!dialog) return;
+        var b = boundsFor(cfg.id) || defaultBounds(cfg);
+        applyBounds(dialog, b);
+        bringToFront(dialog);
+      }
+
+      var snapZone = null;
+      var snapLabel = null;
+      function ensureSnap() {
+        if (snapZone) return snapZone;
+        snapZone = document.createElement('div');
+        snapZone.className = 'wms-snap-preview';
+        snapZone.hidden = true;
+        snapLabel = document.createElement('span');
+        snapLabel.className = 'wms-snap-preview-label';
+        snapZone.appendChild(snapLabel);
+        document.body.appendChild(snapZone);
+        return snapZone;
+      }
+      function computeSnap(x, y) {
+        var vw = window.innerWidth, vh = window.innerHeight;
+        var halfW = Math.floor(vw / 2);
+        var availTop = NAV_CLEARANCE + 4;
+        var availH = vh - availTop - 10;
+        var halfH = Math.floor(availH / 2);
+        var inTopBand = y < NAV_CLEARANCE + SNAP_CORNER;
+        var inBottomBand = y > vh - SNAP_CORNER;
+        var onLeft = x < SNAP_CORNER;
+        var onRight = x > vw - SNAP_CORNER;
+        if (onLeft && inTopBand)    return { left: 4, top: availTop, width: halfW - 6, height: halfH, label: 'Oben links' };
+        if (onRight && inTopBand)   return { left: halfW + 2, top: availTop, width: halfW - 6, height: halfH, label: 'Oben rechts' };
+        if (onLeft && inBottomBand) return { left: 4, top: availTop + halfH + 2, width: halfW - 6, height: halfH - 4, label: 'Unten links' };
+        if (onRight && inBottomBand)return { left: halfW + 2, top: availTop + halfH + 2, width: halfW - 6, height: halfH - 4, label: 'Unten rechts' };
+        if (y < NAV_CLEARANCE + SNAP_EDGE) return { left: 4, top: availTop, width: vw - 8, height: availH - 6, label: 'Maximieren' };
+        if (x < SNAP_EDGE)           return { left: 4, top: availTop, width: halfW - 6, height: availH - 6, label: 'Linke Hälfte' };
+        if (x > vw - SNAP_EDGE)      return { left: halfW + 2, top: availTop, width: halfW - 6, height: availH - 6, label: 'Rechte Hälfte' };
+        return null;
+      }
+
+      function startDrag(e, dialog, cfg) {
+        var rect = dialog.getBoundingClientRect();
+        var sx = e.clientX, sy = e.clientY;
+        var ox = rect.left,   oy = rect.top;
+        var snap = null;
+        ensureSnap();
+        document.body.classList.add('wms-window-is-dragging');
+        function move(ev) {
+          dialog.style.left = Math.round(ox + (ev.clientX - sx)) + 'px';
+          dialog.style.top  = Math.round(oy + (ev.clientY - sy)) + 'px';
+          snap = computeSnap(ev.clientX, ev.clientY);
+          if (snap) {
+            snapZone.hidden = false;
+            snapZone.style.left   = snap.left + 'px';
+            snapZone.style.top    = snap.top + 'px';
+            snapZone.style.width  = snap.width + 'px';
+            snapZone.style.height = snap.height + 'px';
+            if (snapLabel) snapLabel.textContent = snap.label || '';
+          } else if (snapZone) {
+            snapZone.hidden = true;
+          }
+        }
+        function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          document.body.classList.remove('wms-window-is-dragging');
+          if (snapZone) snapZone.hidden = true;
+          if (snap) applyBounds(dialog, snap);
+          var r = dialog.getBoundingClientRect();
+          saveBoundsFor(cfg.id, { left: r.left, top: r.top, width: r.width, height: r.height });
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      }
+
+      function startResize(e, dialog, cfg, dir) {
+        var rect = dialog.getBoundingClientRect();
+        var sx = e.clientX, sy = e.clientY;
+        var ow = rect.width,  oh = rect.height;
+        var oLeft = rect.left, oTop = rect.top;
+        var MIN_W = 480, MIN_H = 260;
+        var d = dir || 'se';
+        var hasN = d.indexOf('n') !== -1;
+        var hasS = d.indexOf('s') !== -1;
+        var hasE = d.indexOf('e') !== -1;
+        var hasW = d.indexOf('w') !== -1;
+        var cursorMap = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize', ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
+        document.body.classList.add('wms-window-is-resizing');
+        document.body.setAttribute('data-wms-resize-dir', d);
+        function move(ev) {
+          var dx = ev.clientX - sx;
+          var dy = ev.clientY - sy;
+          var newLeft = oLeft, newTop = oTop, newW = ow, newH = oh;
+          if (hasE) newW = Math.max(MIN_W, Math.round(ow + dx));
+          if (hasS) newH = Math.max(MIN_H, Math.round(oh + dy));
+          if (hasW) {
+            newW = Math.max(MIN_W, Math.round(ow - dx));
+            newLeft = Math.round(oLeft + (ow - newW));
+          }
+          if (hasN) {
+            newH = Math.max(MIN_H, Math.round(oh - dy));
+            newTop = Math.round(oTop + (oh - newH));
+          }
+          var vw = window.innerWidth, vh = window.innerHeight;
+          if (newLeft < 0) { newW += newLeft; newLeft = 0; }
+          if (newTop < NAV_CLEARANCE + 4) { newH += (newTop - (NAV_CLEARANCE + 4)); newTop = NAV_CLEARANCE + 4; }
+          if (newLeft + newW > vw - 4) newW = vw - 4 - newLeft;
+          if (newTop + newH > vh - 4) newH = vh - 4 - newTop;
+          newW = Math.max(MIN_W, newW);
+          newH = Math.max(MIN_H, newH);
+          dialog.style.left   = newLeft + 'px';
+          dialog.style.top    = newTop + 'px';
+          dialog.style.width  = newW + 'px';
+          dialog.style.height = newH + 'px';
+        }
+        function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          document.body.classList.remove('wms-window-is-resizing');
+          document.body.removeAttribute('data-wms-resize-dir');
+          var r = dialog.getBoundingClientRect();
+          saveBoundsFor(cfg.id, { left: r.left, top: r.top, width: r.width, height: r.height });
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      }
+
+      function installWindowChrome(cfg) {
+        var modal = byId(cfg.modalId);
+        if (!modal) return;
+        var dialog = modal.querySelector('.' + cfg.dialogCls);
+        if (!dialog) return;
+        var header = dialog.querySelector('.' + cfg.headerCls);
+        if (!dialog.querySelector('.wms-window-resize-handles')) {
+          var dirs = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+          dirs.forEach(function(d) {
+            var rh = document.createElement('div');
+            rh.className = 'wms-window-resize wms-window-resize--' + d;
+            rh.setAttribute('data-dir', d);
+            rh.setAttribute('aria-hidden', 'true');
+            dialog.appendChild(rh);
+            rh.addEventListener('mousedown', function(ev) {
+              if (ev.button !== 0) return;
+              if (dialog.classList.contains('is-maximized')) return;
+              ev.preventDefault();
+              ev.stopPropagation();
+              bringToFront(dialog);
+              startResize(ev, dialog, cfg, d);
+            });
+          });
+          var marker = document.createElement('div');
+          marker.className = 'wms-window-resize-handles';
+          marker.setAttribute('aria-hidden', 'true');
+          marker.style.display = 'none';
+          dialog.appendChild(marker);
+        }
+        dialog.addEventListener('mousedown', function() { bringToFront(dialog); }, true);
+        dialog.addEventListener('pointerdown', function() { bringToFront(dialog); }, true);
+        dialog.addEventListener('focusin', function() { bringToFront(dialog); });
+        if (modal) {
+          modal.addEventListener('mousedown', function(ev) {
+            if (ev.target === modal) return;
+            bringToFront(dialog);
+          }, true);
+        }
+
+        var idleDot = dialog.querySelector('.wms-window-dot--idle');
+        if (idleDot && !idleDot.getAttribute('data-wms-wired')) {
+          idleDot.setAttribute('data-wms-wired', '1');
+          idleDot.setAttribute('title', 'Maximieren / Wiederherstellen');
+          idleDot.style.cursor = 'pointer';
+          idleDot.addEventListener('click', function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            toggleMaximize(dialog, cfg);
+          });
+        }
+        if (header) {
+          header.addEventListener('mousedown', function(ev) {
+            if (ev.button !== 0) return;
+            var t = ev.target;
+            if (t.closest && t.closest('button, input, select, .wms-window-dot, .ra-total-badge, .reifen-cache-hud, [contenteditable]')) return;
+            ev.preventDefault();
+            startDrag(ev, dialog, cfg);
+          });
+          header.addEventListener('dblclick', function(ev) {
+            var t = ev.target;
+            if (t.closest && t.closest('button, input, select, .wms-window-dot, .ra-total-badge, .reifen-cache-hud, [contenteditable]')) return;
+            ev.preventDefault();
+            toggleMaximize(dialog, cfg);
+          });
+        }
+      }
+
+      function maxBounds() {
+        var vw = window.innerWidth, vh = window.innerHeight;
+        return { left: 4, top: NAV_CLEARANCE + 4, width: vw - 8, height: vh - NAV_CLEARANCE - 14 };
+      }
+      function toggleMaximize(dialog, cfg) {
+        if (dialog.classList.contains('is-maximized')) {
+          var prev = null;
+          try { prev = JSON.parse(dialog.getAttribute('data-prev-bounds') || 'null'); } catch(e) { prev = null; }
+          if (!prev) prev = defaultBounds(cfg);
+          applyBounds(dialog, prev);
+          dialog.classList.remove('is-maximized');
+          saveBoundsFor(cfg.id, prev);
+        } else {
+          var r = dialog.getBoundingClientRect();
+          dialog.setAttribute('data-prev-bounds', JSON.stringify({ left: r.left, top: r.top, width: r.width, height: r.height }));
+          applyBounds(dialog, maxBounds());
+          dialog.classList.add('is-maximized');
+        }
+        bringToFront(dialog);
+      }
+      winConfigs.forEach(installWindowChrome);
+
+      var active = {};
+      var opened = {};
+
+      function shouldShowPill(cfg) {
+        try { return typeof cfg.session === 'function' ? !!cfg.session() : false; }
+        catch(e) { warn('session check failed', cfg.id, e); return false; }
+      }
+
+      function updateMenuBadge() {
+        var trig = byId('wmsMainMenuTrigger');
+        if (!trig) return;
+        var badge = trig.querySelector('.wms-menu-badge');
+        var n = Object.keys(active).length;
+        if (!n) { if (badge) badge.remove(); return; }
+        if (!badge) {
+          badge = document.createElement('span');
+          badge.className = 'wms-menu-badge';
+          trig.appendChild(badge);
+        }
+        badge.innerText = String(n);
+      }
+      function updateMenuActive() {
+        try {
+          var items = document.querySelectorAll('#wmsMainMenuPanel .wms-menuitem[data-window]');
+          for (var i = 0; i < items.length; i++) {
+            var it = items[i];
+            var id = it.getAttribute('data-window');
+            it.classList.toggle('is-active-window', !!active[id]);
+          }
+        } catch(e) { warn('menu active refresh failed', e); }
+      }
+
+      var bar = byId('wmsTaskbar');
+      var listEl = byId('wmsTaskbarList');
+      var taskbarHandle = null;
+      var taskbarHideTimer = null;
+
+      function ensureTaskbarHandle() {
+        if (taskbarHandle) return taskbarHandle;
+        taskbarHandle = document.createElement('div');
+        taskbarHandle.className = 'wms-taskbar-handle';
+        taskbarHandle.setAttribute('role', 'button');
+        taskbarHandle.setAttribute('aria-label', 'Minimierte Fenster anzeigen');
+        taskbarHandle.setAttribute('title', 'Minimierte Fenster · hier hovern');
+        taskbarHandle.innerHTML = '<span class="wms-taskbar-handle-count" id="wmsTaskbarHandleCount"></span>';
+        document.body.appendChild(taskbarHandle);
+        taskbarHandle.addEventListener('mouseenter', revealTaskbar);
+        taskbarHandle.addEventListener('mouseleave', scheduleHideTaskbar);
+        taskbarHandle.addEventListener('click', revealTaskbar);
+        taskbarHandle.addEventListener('focus', revealTaskbar);
+        if (bar) {
+          bar.addEventListener('mouseenter', revealTaskbar);
+          bar.addEventListener('mouseleave', scheduleHideTaskbar);
+        }
+        return taskbarHandle;
+      }
+      function revealTaskbar() {
+        if (taskbarHideTimer) { clearTimeout(taskbarHideTimer); taskbarHideTimer = null; }
+        if (bar && !bar.hidden) bar.classList.add('is-revealed');
+        if (taskbarHandle) taskbarHandle.classList.add('is-hidden');
+      }
+      function scheduleHideTaskbar() {
+        if (taskbarHideTimer) clearTimeout(taskbarHideTimer);
+        taskbarHideTimer = setTimeout(function() {
+          if (bar) bar.classList.remove('is-revealed');
+          if (taskbarHandle) taskbarHandle.classList.remove('is-hidden');
+          taskbarHideTimer = null;
+        }, 260);
+      }
+      function refreshTaskbarHandle(pillCount, showBar) {
+        ensureTaskbarHandle();
+        if (!taskbarHandle) return;
+        var countEl = byId('wmsTaskbarHandleCount');
+        if (showBar) {
+          taskbarHandle.classList.add('is-active');
+          if (countEl) countEl.textContent = pillCount > 0 ? String(pillCount) : '';
+        } else {
+          taskbarHandle.classList.remove('is-active', 'is-hidden');
+          if (countEl) countEl.textContent = '';
+          if (bar) bar.classList.remove('is-revealed');
+          if (taskbarHideTimer) { clearTimeout(taskbarHideTimer); taskbarHideTimer = null; }
+        }
+      }
+
+      function openPillContext(e, cfg) {
+        closePillContext();
+        var menu = document.createElement('div');
+        menu.className = 'wms-context-menu';
+        menu.setAttribute('role', 'menu');
+        menu.innerHTML =
+          '<div class="wms-context-head"><span class="wms-context-head-icon">' + cfg.icon + '</span>' +
+          '<span class="wms-context-head-title">' + cfg.title + '</span></div>' +
+          '<button type="button" class="wms-context-item" data-action="restore">↗ Wiederherstellen</button>' +
+          (cfg.closeFn ? '<button type="button" class="wms-context-item wms-context-item--danger" data-action="close">🗑 Cache leeren &amp; schließen</button>' : '') +
+          '<button type="button" class="wms-context-item" data-action="newtab">🗔 In neuem Tab öffnen</button>';
+        document.body.appendChild(menu);
+        var px = e.clientX, py = e.clientY;
+        var mw = menu.offsetWidth || 240;
+        var mh = menu.offsetHeight || 160;
+        if (px + mw > window.innerWidth - 8) px = window.innerWidth - mw - 8;
+        if (py + mh > window.innerHeight - 8) py = window.innerHeight - mh - 8;
+        menu.style.left = Math.max(8, px) + 'px';
+        menu.style.top  = Math.max(8, py) + 'px';
+        menu.addEventListener('click', function(ev) {
+          var b = ev.target.closest('[data-action]');
+          if (!b) return;
+          var act = b.getAttribute('data-action');
+          closePillContext();
+          if (act === 'restore') {
+            try { if (cfg.openFn && typeof window[cfg.openFn] === 'function') window[cfg.openFn](); }
+            catch(e2) { warn('ctx restore failed', cfg.id, e2); }
+          } else if (act === 'close') {
+            try { if (cfg.closeFn && typeof window[cfg.closeFn] === 'function') window[cfg.closeFn](); }
+            catch(e2) { warn('ctx close failed', cfg.id, e2); }
+          } else if (act === 'newtab') {
+            try {
+              var u = new URL(window.location.href);
+              u.searchParams.set('wms_open', cfg.id);
+              window.open(u.toString(), '_blank');
+            } catch(e2) { warn('ctx newtab failed', cfg.id, e2); }
+          }
+        });
+        setTimeout(function() { document.addEventListener('mousedown', closePillContext, { once: true }); }, 0);
+      }
+      function closePillContext() {
+        var m = document.querySelector('.wms-context-menu');
+        if (m) m.remove();
+      }
+
+      function renderTaskbar() {
+        if (!bar || !listEl) return;
+        listEl.innerHTML = '';
+        var ids = Object.keys(active);
+        var openIds = Object.keys(opened);
+        if (ids.length === 0 && openIds.length <= 1) {
+          bar.hidden = true;
+          refreshTaskbarHandle(0, false);
+          return;
+        }
+        bar.hidden = false;
+        refreshTaskbarHandle(ids.length, true);
+        ids.forEach(function(id) {
+          var cfg = active[id];
+          if (!cfg || cfg.hideFromTaskbar) return;
+          var pill = document.createElement('button');
+          pill.type = 'button';
+          pill.className = 'wms-taskbar-pill';
+          pill.setAttribute('data-wms-window', id);
+          pill.title = 'Fenster wiederherstellen: ' + cfg.title;
+          pill.innerHTML = '<span class="wms-taskbar-pill-icon">' + cfg.icon + '</span>' +
+                          '<span class="wms-taskbar-pill-title">' + cfg.title + '</span>' +
+                          '<span class="wms-taskbar-pill-hint">Wiederherstellen</span>';
+          (function(c) {
+            pill.addEventListener('click', function() {
+              try { if (c.openFn && typeof window[c.openFn] === 'function') window[c.openFn](); }
+              catch(e) { warn('pill restore failed', c.id, e); }
+            });
+            pill.addEventListener('contextmenu', function(ev) {
+              ev.preventDefault();
+              openPillContext(ev, c);
+            });
+          })(cfg);
+          if (cfg.closeFn) {
+            var x = document.createElement('span');
+            x.className = 'wms-taskbar-pill-close';
+            x.setAttribute('role', 'button');
+            x.setAttribute('aria-label', 'Fenster vollständig schließen');
+            x.title = 'Session beenden (Cache leeren)';
+            x.innerText = '×';
+            (function(c) {
+              x.addEventListener('click', function(ev) {
+                ev.stopPropagation();
+                try { if (c.closeFn && typeof window[c.closeFn] === 'function') window[c.closeFn](); }
+                catch(e) { warn('pill close failed', c.id, e); }
+              });
+            })(cfg);
+            pill.appendChild(x);
+          }
+          listEl.appendChild(pill);
+        });
+        if (openIds.length >= 2) {
+          var allBtn = document.createElement('button');
+          allBtn.type = 'button';
+          allBtn.className = 'wms-taskbar-action';
+          allBtn.title = 'Alle offenen Fenster minimieren (Cache bleibt)';
+          allBtn.innerText = '⤓ Alle minimieren';
+          allBtn.addEventListener('click', minimizeAll);
+          listEl.appendChild(allBtn);
+        }
+      }
+
+      function minimizeAll() {
+        for (var i = 0; i < winConfigs.length; i++) {
+          var cfg = winConfigs[i];
+          if (!cfg.minFn) continue;
+          if (opened[cfg.id]) {
+            try {
+              var f = window[cfg.minFn];
+              if (typeof f === 'function') f();
+            } catch(e) { warn('minimizeAll failed for ' + cfg.id, e); }
+          }
+        }
+      }
+
+      function updateAll() {
+        renderTaskbar();
+        updateMenuBadge();
+        updateMenuActive();
+      }
+
+      function wrapWindowFns(cfg) {
+        if (cfg.openFn && typeof window[cfg.openFn] === 'function') {
+          var origO = window[cfg.openFn];
+          window[cfg.openFn] = function() {
+            var r;
+            try { r = origO.apply(this, arguments); }
+            catch(e) {
+              warn('original threw: ' + cfg.openFn + ' (windowId=' + cfg.id + ')', e);
+              try { updateAll(); } catch(e2) {}
+              throw e;
+            }
+            try {
+              openWindow(cfg);
+              opened[cfg.id] = cfg;
+              delete active[cfg.id];
+              updateAll();
+            } catch(e3) { warn('open post-hook failed: ' + cfg.id, e3); }
+            return r;
+          };
+        }
+        if (cfg.minFn && typeof window[cfg.minFn] === 'function') {
+          var origM = window[cfg.minFn];
+          window[cfg.minFn] = function() {
+            var r;
+            try { r = origM.apply(this, arguments); }
+            catch(e) {
+              warn('original threw: ' + cfg.minFn + ' (windowId=' + cfg.id + ')', e);
+              try { updateAll(); } catch(e2) {}
+              throw e;
+            }
+            try {
+              if (opened[cfg.id] && shouldShowPill(cfg)) active[cfg.id] = cfg;
+              delete opened[cfg.id];
+              var mdlM = byId(cfg.modalId);
+              var dlgM = mdlM && mdlM.querySelector('.' + cfg.dialogCls);
+              if (dlgM && activeDialog === dlgM) setActiveDialog(null);
+              updateAll();
+            } catch(e3) { warn('min post-hook failed: ' + cfg.id, e3); }
+            return r;
+          };
+        }
+        if (cfg.closeFn && typeof window[cfg.closeFn] === 'function') {
+          var origC = window[cfg.closeFn];
+          window[cfg.closeFn] = function() {
+            var r;
+            try { r = origC.apply(this, arguments); }
+            catch(e) {
+              warn('original threw: ' + cfg.closeFn + ' (windowId=' + cfg.id + ')', e);
+              try { updateAll(); } catch(e2) {}
+              throw e;
+            }
+            try {
+              delete active[cfg.id];
+              delete opened[cfg.id];
+              var mdlC = byId(cfg.modalId);
+              var dlgC = mdlC && mdlC.querySelector('.' + cfg.dialogCls);
+              if (dlgC && activeDialog === dlgC) setActiveDialog(null);
+              updateAll();
+            } catch(e3) { warn('close post-hook failed: ' + cfg.id, e3); }
+            return r;
+          };
+        }
+      }
+      winConfigs.forEach(wrapWindowFns);
+
+      window.addEventListener('resize', function() {
+        winConfigs.forEach(function(cfg) {
+          var m = byId(cfg.modalId);
+          if (!m) return;
+          var d = m.querySelector('.' + cfg.dialogCls);
+          if (!d) return;
+          if (!d.style.left) return;
+          var b = {
+            left:   parseFloat(d.style.left)   || 0,
+            top:    parseFloat(d.style.top)    || NAV_CLEARANCE,
+            width:  parseFloat(d.style.width)  || 800,
+            height: parseFloat(d.style.height) || 600
+          };
+          applyBounds(d, b);
+        });
+      });
+
+      var origLoadData = window.loadData;
+      if (typeof origLoadData === 'function') {
+        window.loadData = function() {
+          try {
+            var inp = byId('searchInput');
+            var v = inp && inp.value ? inp.value.trim() : '';
+            if (v) lsSet(LS_LAST_ORD, v);
+          } catch(e) { warn('loadData before-hook', e); }
+          try { return origLoadData.apply(this, arguments); }
+          catch(e) { warn('loadData threw', e); throw e; }
+        };
+      }
+
+      window.wmsReloadLastOrder = function() {
+        try {
+          var inp = byId('searchInput');
+          var curr = inp && inp.value ? inp.value.trim() : '';
+          var last = curr || (typeof currentStock !== 'undefined' && currentStock) || lsGet(LS_LAST_ORD, '') || '';
+          if (!last) {
+            if (typeof setStatus === 'function') setStatus('⚠️ Kein letzter Auftrag im Zwischenspeicher.', '#f85149');
+            return;
+          }
+          if (inp) inp.value = last;
+          if (typeof loadData === 'function') loadData();
+        } catch(e) { warn('reloadLastOrder', e); }
+      };
+
+      function showCacheRebuildUi() {
+        try {
+          if (typeof startRefurbCacheProgressUi === 'function') startRefurbCacheProgressUi();
+          var b = byId('cacheLastUpdatedBadge');
+          if (b) {
+            b.classList.add('is-rebuilding');
+            b.setAttribute('data-prev', b.textContent || '');
+            b.textContent = '🔁 Cache wird neu aufgebaut…';
+          }
+        } catch(e) { warn('showCacheRebuildUi', e); }
+      }
+      function finishCacheRebuildUi(ok) {
+        try {
+          if (typeof finishRefurbCacheProgressUi === 'function') {
+            finishRefurbCacheProgressUi(!!ok, function() {
+              if (typeof updateRefurbCacheHud === 'function') updateRefurbCacheHud(!!ok);
+              var b = byId('cacheLastUpdatedBadge');
+              if (b) b.classList.remove('is-rebuilding');
+            });
+          } else if (typeof updateRefurbCacheHud === 'function') {
+            updateRefurbCacheHud(!!ok);
+            var b2 = byId('cacheLastUpdatedBadge');
+            if (b2) b2.classList.remove('is-rebuilding');
+          }
+        } catch(e) { warn('finishCacheRebuildUi', e); }
+      }
+
+      window.wmsRebuildCache = function() {
+        try {
+          if (typeof loadRefurbishmentCache !== 'function') { warn('loadRefurbishmentCache not available'); return; }
+          showCacheRebuildUi();
+          if (typeof setStatus === 'function') setStatus('🔁 Cache wird neu aufgebaut…', '#3FA0DB');
+          loadRefurbishmentCache(true, function() {
+            finishCacheRebuildUi(true);
+            if (typeof setStatus === 'function') setStatus('✅ Cache fertig neu aufgebaut.', '#56d364');
+          });
+        } catch(e) { warn('rebuildCache', e); finishCacheRebuildUi(false); }
+      };
+
+      window.wmsTestDymoPrint = function() {
+        try {
+          if (typeof currentStock === 'undefined' || !currentStock) {
+            if (typeof setStatus === 'function') setStatus('⚠️ Bitte zuerst einen Auftrag laden für DYMO Test.', '#f85149');
+            else alert('Bitte zuerst einen Auftrag laden für DYMO Test.');
+            return;
+          }
+          if (typeof printDymo === 'function') printDymo();
+          else warn('printDymo not available');
+        } catch(e) { warn('testDymo', e); }
+      };
+
+      window.wmsPanicReload = function() {
+        try {
+          try { if (typeof ovSessionActive !== 'undefined') ovSessionActive = false; } catch(e) {}
+          try { if (typeof ovAllEntries !== 'undefined') ovAllEntries = []; } catch(e) {}
+          try { if (typeof ovOverviewReady !== 'undefined') ovOverviewReady = false; } catch(e) {}
+          try { if (typeof raSessionActive !== 'undefined') raSessionActive = false; } catch(e) {}
+          try { if (typeof raAllEntries !== 'undefined') raAllEntries = []; } catch(e) {}
+          try { if (typeof raDataReady !== 'undefined') raDataReady = false; } catch(e) {}
+          try { if (typeof nbSessionActive !== 'undefined') nbSessionActive = false; } catch(e) {}
+          try { if (typeof nbAllEntries !== 'undefined') nbAllEntries = []; } catch(e) {}
+          try { if (typeof nbDataReady !== 'undefined') nbDataReady = false; } catch(e) {}
+          try { if (typeof reifenSessionActive !== 'undefined') reifenSessionActive = false; } catch(e) {}
+          for (var i = 0; i < winConfigs.length; i++) {
+            var m = byId(winConfigs[i].modalId);
+            if (m) m.classList.remove('open');
+          }
+          active = {}; opened = {};
+          updateAll();
+          showCacheRebuildUi();
+          if (typeof setStatus === 'function') setStatus('🔄 Panic-Reload · alle Sessions verworfen, Cache wird neu aufgebaut…', '#3FA0DB');
+          if (typeof loadRefurbishmentCache === 'function') {
+            loadRefurbishmentCache(true, function() {
+              finishCacheRebuildUi(true);
+              if (typeof setStatus === 'function') setStatus('✅ Panic-Reload abgeschlossen.', '#56d364');
+            });
+          } else {
+            finishCacheRebuildUi(false);
+          }
+        } catch(e) { warn('panicReload', e); }
+      };
+
+      (function initBridgeMonitor() {
+        var banner = byId('wmsBridgeBanner');
+        var retry = byId('wmsBridgeBannerRetry');
+        var hide = byId('wmsBridgeBannerHide');
+        if (!banner) return;
+        var BRIDGE = (typeof BRIDGE_URL !== 'undefined') ? BRIDGE_URL : 'http://localhost:9150';
+        var hidden = false;
+        var LAST_STATE = null;
+
+        function setVisible(on) {
+          if (on && !hidden) {
+            banner.hidden = false;
+            banner.classList.add('is-visible');
+          } else {
+            banner.classList.remove('is-visible');
+            banner.hidden = true;
+          }
+        }
+        function check() {
+          var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+          var t = setTimeout(function() { if (ctrl) ctrl.abort(); }, 3000);
+          fetch(BRIDGE + '/printers', { method: 'GET', signal: ctrl ? ctrl.signal : undefined })
+            .then(function(r) { return r && r.ok; })
+            .catch(function() { return false; })
+            .then(function(ok) {
+              clearTimeout(t);
+              if (ok === LAST_STATE) return;
+              LAST_STATE = ok;
+              if (ok) { hidden = false; setVisible(false); }
+              else setVisible(true);
+            });
+        }
+        if (retry) retry.addEventListener('click', function() { hidden = false; LAST_STATE = null; check(); });
+        if (hide) hide.addEventListener('click', function() { hidden = true; setVisible(false); });
+        setTimeout(check, 1500);
+        setInterval(check, 25000);
+      })();
+
+      (function initThemeToggle() {
+        var sw = byId('wmsThemeSwitch');
+        if (!sw) return;
+        var root = document.documentElement;
+        function apply(mode) {
+          if (mode === 'light') {
+            root.setAttribute('data-theme', 'light');
+            sw.classList.add('is-light');
+            sw.setAttribute('aria-checked', 'true');
+          } else {
+            root.setAttribute('data-theme', 'dark');
+            sw.classList.remove('is-light');
+            sw.setAttribute('aria-checked', 'false');
+          }
+        }
+        apply('dark');
+        try { localStorage.removeItem(LS_THEME); } catch(e) {}
+        sw.addEventListener('click', function() {
+          var next = sw.classList.contains('is-light') ? 'dark' : 'light';
+          apply(next);
+        });
+      })();
+
+      (function initCollapsibleCards() {
+        var cards = document.querySelectorAll('body.wms-standalone .dashboard-grid > .card');
+        if (!cards || !cards.length) return;
+        var saved = lsGet(LS_COLLAPSE, {});
+        cards.forEach(function(card, idx) {
+          var header = card.querySelector(':scope > .card-header');
+          if (!header) return;
+          var title = (header.querySelector('.card-title') || {}).innerText || ('card-' + idx);
+          var key = title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+          if (saved[key]) card.classList.add('is-collapsed');
+          if (header.querySelector('.card-collapse-btn')) return;
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'card-collapse-btn';
+          btn.setAttribute('aria-label', 'Karte ein-/ausklappen');
+          btn.title = 'Karte ein-/ausklappen';
+          btn.innerText = '▾';
+          btn.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            card.classList.toggle('is-collapsed');
+            var s = lsGet(LS_COLLAPSE, {});
+            s[key] = card.classList.contains('is-collapsed');
+            lsSet(LS_COLLAPSE, s);
+          });
+          header.appendChild(btn);
+        });
+      })();
+
+      (function initAutoMinimizeOnScan() {
+        var inp = byId('searchInput');
+        if (!inp) return;
+        inp.addEventListener('focus', function() {
+          var openIds = Object.keys(opened);
+          if (!openIds.length) return;
+          for (var i = 0; i < openIds.length; i++) {
+            var cfg = opened[openIds[i]];
+            if (!cfg || !cfg.minFn) continue;
+            try {
+              var f = window[cfg.minFn];
+              if (typeof f === 'function') f();
+            } catch(e) { warn('auto-minimize failed: ' + cfg.id, e); }
+          }
+        });
+      })();
+
+      (function initOverviewDoneCleanup() {
+        try {
+          var ts = lsGet(LS_OV_DONE_T, null);
+          var now = Date.now();
+          var THIRTY_D = 30 * 24 * 60 * 60 * 1000;
+          if (!ts || (now - ts) > THIRTY_D) {
+            localStorage.removeItem(LS_OV_DONE);
+            lsSet(LS_OV_DONE_T, now);
+          }
+        } catch(e) { warn('done-map cleanup', e); }
+      })();
+
+      (function initAutoOpenFromUrl() {
+        try {
+          var u = new URL(window.location.href);
+          var w = u.searchParams.get('wms_open');
+          if (!w) return;
+          var cfg = null;
+          for (var i = 0; i < winConfigs.length; i++) if (winConfigs[i].id === w) { cfg = winConfigs[i]; break; }
+          if (!cfg || !cfg.openFn) return;
+          setTimeout(function() {
+            try {
+              var f = window[cfg.openFn];
+              if (typeof f === 'function') f();
+            } catch(e) { warn('autoopen failed: ' + w, e); }
+          }, 400);
+        } catch(e) { warn('autoopen parse', e); }
+      })();
+
+      window.addEventListener('keydown', function(ev) {
+        if (ev.key === 'Escape') closePillContext();
+      });
+
+      window.wmsStandalone = {
+        minimizeAll: minimizeAll,
+        openWindow: function(id) {
+          for (var i = 0; i < winConfigs.length; i++)
+            if (winConfigs[i].id === id && winConfigs[i].openFn) {
+              try { window[winConfigs[i].openFn](); } catch(e) { warn('openWindow', e); }
+              return;
+            }
+        },
+        getActive: function() { return Object.keys(active); },
+        getOpened: function() { return Object.keys(opened); },
+        _active: active,
+        _opened: opened,
+        _configs: winConfigs
+      };
+    })();
 </script>

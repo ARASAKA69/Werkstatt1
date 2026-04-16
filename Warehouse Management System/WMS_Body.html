@@ -15,10 +15,87 @@
               <span class="wms-menutrigger-chevron" aria-hidden="true">▾</span>
             </button>
             <div class="wms-menupanel" id="wmsMainMenuPanel" role="menu" hidden>
-              <button type="button" class="wms-menuitem topbar-action" role="menuitem" onclick="openStockOverview(); closeWmsMainMenu();">📋 Übersicht</button>
-              <button type="button" class="wms-menuitem" role="menuitem" onclick="openReifenModal(); closeWmsMainMenu();">🛞 Reifen Annahme</button>
-              <button type="button" class="wms-menuitem" role="menuitem" onclick="openNbModal(); closeWmsMainMenu();">📦 Nachbestellungen</button>
-              <button type="button" class="wms-menuitem" role="menuitem" onclick="openRaModal(); closeWmsMainMenu();">🛞 Heutige Reifenausgabe</button>
+              <div class="wms-menupanel-head">
+                <span class="wms-menupanel-eyebrow">Arbeitsbereich</span>
+                <span class="wms-menupanel-title">WMS · Submenüs</span>
+              </div>
+              <div class="wms-menugroup" role="presentation">
+                <div class="wms-menugroup-label">Lager &amp; Überblick</div>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="overview" role="menuitem" onclick="openStockOverview(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">📋</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Übersicht</span>
+                    <span class="wms-menuitem-sub">Stock-ID &amp; Regalplätze</span>
+                  </span>
+                </button>
+              </div>
+              <div class="wms-menugroup" role="presentation">
+                <div class="wms-menugroup-label">Reifen</div>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="reifen" role="menuitem" onclick="openReifenModal(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">🛞</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Reifen Annahme</span>
+                    <span class="wms-menuitem-sub">Scannen &amp; Buchen</span>
+                  </span>
+                </button>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="ra" role="menuitem" onclick="openRaModal(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">🚚</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Heutige Reifenausgabe</span>
+                    <span class="wms-menuitem-sub">Heute &amp; Morgen</span>
+                  </span>
+                </button>
+              </div>
+              <div class="wms-menugroup" role="presentation">
+                <div class="wms-menugroup-label">Bestellungen</div>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="nb" role="menuitem" onclick="openNbModal(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">📦</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Nachbestellungen</span>
+                    <span class="wms-menuitem-sub">Offene Positionen</span>
+                  </span>
+                </button>
+              </div>
+              <div class="wms-menugroup wms-menugroup--actions" role="presentation">
+                <div class="wms-menugroup-label">Schnellaktionen</div>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsReloadLastOrder(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">↻</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Letzten Auftrag erneut laden</span>
+                    <span class="wms-menuitem-sub">Re-Scan aus Zwischenspeicher</span>
+                  </span>
+                </button>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsRebuildCache(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">🔁</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Cache jetzt neu aufbauen</span>
+                    <span class="wms-menuitem-sub">Refurbishment-Daten frisch holen</span>
+                  </span>
+                </button>
+                <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsTestDymoPrint(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">🖨️</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">DYMO Test drucken</span>
+                    <span class="wms-menuitem-sub">Aktuellen Auftrag als Etikett</span>
+                  </span>
+                </button>
+                <button type="button" class="wms-menuitem wms-menuitem--flat wms-menuitem--panic" role="menuitem" onclick="wmsPanicReload(); closeWmsMainMenu();">
+                  <span class="wms-menuitem-icon">🔄</span>
+                  <span class="wms-menuitem-body">
+                    <span class="wms-menuitem-title">Alles neu laden</span>
+                    <span class="wms-menuitem-sub">Panic-Button · alle Sessions verwerfen</span>
+                  </span>
+                </button>
+              </div>
+              <div class="wms-menugroup" role="presentation">
+                <div class="wms-menugroup-label">Darstellung</div>
+                <div class="wms-theme-toggle">
+                  <span class="wms-theme-toggle-label">Dark / Light</span>
+                  <button type="button" class="wms-theme-switch" id="wmsThemeSwitch" role="switch" aria-checked="false" aria-label="Design umschalten">
+                    <span class="wms-theme-thumb" aria-hidden="true"></span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </nav>
@@ -37,6 +114,11 @@
             <span class="topbar-cache-live-label" id="cacheStatusText">Cache not active</span>
           </div>
         </div>
+      </div>
+      <div class="wms-bridge-banner" id="wmsBridgeBanner" role="alert" hidden>
+        <span class="wms-bridge-banner-text"><strong>⚠️ Print Bridge offline</strong> · Drucker-Befehle werden gerade nicht verarbeitet.</span>
+        <button type="button" class="wms-bridge-banner-btn" id="wmsBridgeBannerRetry">Erneut prüfen</button>
+        <button type="button" class="wms-bridge-banner-btn wms-bridge-banner-btn--ghost" id="wmsBridgeBannerHide">Ausblenden</button>
       </div>
       <div class="wms-hero">
         <div class="search-container">
@@ -183,9 +265,19 @@
     </main>
   </div>
 
+  <div class="wms-taskbar" id="wmsTaskbar" hidden aria-label="Minimierte Fenster">
+    <div class="wms-taskbar-label">Minimierte Fenster</div>
+    <div class="wms-taskbar-list" id="wmsTaskbarList"></div>
+  </div>
+
   <div class="overview-modal" id="overviewModal">
     <div class="overview-dialog">
       <div class="overview-header">
+        <div class="wms-window-dots" aria-hidden="true" data-window="overview">
+          <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeStockOverview()"></span>
+          <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeStockOverview()"></span>
+          <span class="wms-window-dot wms-window-dot--idle"></span>
+        </div>
         <div class="overview-title">Stock-ID + Regal Übersicht</div>
         <button type="button" onclick="refreshStockOverview()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
         <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
@@ -217,6 +309,11 @@
   <div class="ra-modal" id="raModal">
     <div class="ra-dialog">
       <div class="ra-header">
+        <div class="wms-window-dots" aria-hidden="true" data-window="ra">
+          <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="minimizeRaModal()"></span>
+          <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeRaModal()"></span>
+          <span class="wms-window-dot wms-window-dot--idle"></span>
+        </div>
         <div class="ra-header-top">
           <div class="ra-title">🛞 Heutige Reifenausgabe</div>
           <span id="raTotalBadge" class="ra-total-badge ra-total-loading">...</span>
@@ -249,6 +346,11 @@
   <div class="nb-modal" id="nbModal">
     <div class="nb-dialog">
       <div class="nb-header">
+        <div class="wms-window-dots" aria-hidden="true" data-window="nb">
+          <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeNbModal()"></span>
+          <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeNbModal()"></span>
+          <span class="wms-window-dot wms-window-dot--idle"></span>
+        </div>
         <div class="nb-title">Nachbestellungen</div>
         <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
         <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
@@ -285,6 +387,11 @@
   <div class="reifen-modal" id="reifenModal">
     <div class="reifen-dialog">
       <div class="reifen-header">
+        <div class="wms-window-dots" aria-hidden="true" data-window="reifen">
+          <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeReifenModal()"></span>
+          <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeReifenModal()"></span>
+          <span class="wms-window-dot wms-window-dot--idle"></span>
+        </div>
         <div class="reifen-title">Reifen Annahme</div>
         <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
         <button type="button" onclick="refreshReifenModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
