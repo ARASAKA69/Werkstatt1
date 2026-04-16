@@ -1,0 +1,436 @@
+﻿  <div class="app-shell">
+    <header class="wms-header">
+      <div class="wms-nav-bar">
+        <nav class="wms-nav-tools" aria-label="WMS Schnellzugriff">
+          <div class="wms-nav-inline wms-nav-inline--overlay">
+            <button type="button" class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
+            <button type="button" class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
+            <button type="button" class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
+            <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
+          </div>
+          <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
+            <button type="button" class="wms-menutrigger" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
+              <span class="wms-menutrigger-icon" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span class="wms-menutrigger-text">Menü</span>
+              <span class="wms-menutrigger-chevron" aria-hidden="true">▾</span>
+            </button>
+            <div class="wms-menupanel" id="wmsMainMenuPanel" role="menu" hidden>
+              <button type="button" class="wms-menuitem topbar-action" role="menuitem" onclick="openStockOverview(); closeWmsMainMenu();">📋 Übersicht</button>
+              <button type="button" class="wms-menuitem" role="menuitem" onclick="openReifenModal(); closeWmsMainMenu();">🛞 Reifen Annahme</button>
+              <button type="button" class="wms-menuitem" role="menuitem" onclick="openNbModal(); closeWmsMainMenu();">📦 Nachbestellungen</button>
+              <button type="button" class="wms-menuitem" role="menuitem" onclick="openRaModal(); closeWmsMainMenu();">🛞 Heutige Reifenausgabe</button>
+            </div>
+          </div>
+        </nav>
+        <div class="wms-nav-brand">
+          <div class="wms-brand-mid">
+            <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/main/Warehouse%20Management%20System/autohero-logo.png" alt="AUTOHERO">
+            <span class="eyebrow">Warehouse Management System</span>
+          </div>
+          <span class="topbar-credit">BY ARASAKA v1.7</span>
+        </div>
+        <div class="topbar-cache-cluster">
+          <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
+          <div class="topbar-cache-sub">
+            <span class="cache-load-spinner" id="cacheLoadSpinner" hidden></span>
+            <span class="cache-pulse-dot cache-pulse-dot--inactive" id="cachePulseDot" aria-hidden="true"></span>
+            <span class="topbar-cache-live-label" id="cacheStatusText">Cache not active</span>
+          </div>
+        </div>
+      </div>
+      <div class="wms-hero">
+        <div class="search-container">
+          <div class="search-box">
+            <input type="text" id="searchInput" placeholder="STOCK-ID / BESTELLNUMMER SCAN..." autocomplete="off">
+            <button type="button" class="btn-search" onclick="loadData()">LADEN</button>
+          </div>
+        </div>
+        <div class="status-row">
+          <div id="globalStatus">System bereit.</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="wms-main">
+    <div class="dashboard-grid overlay-block" id="mainGrid">
+    
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">🔍 Auftrags Infos</h3>
+        <div class="card-header-badges">
+          <div id="badgeReifen" class="badge-reifen">REIFEN: ?</div>
+          <div id="badgeWss" class="badge-wss">WSS: ?</div>
+        </div>
+      </div>
+      
+      <div class="sub-title">Schäden (Manueller Input)</div>
+      <div class="info-box schaeden-list" id="infoSchaeden">-</div>
+      
+      <div class="sub-title">Ersatzteile Bestellung</div>
+      <div class="info-box schaeden-list" id="infoBestellung">-</div>
+      <div class="wss-card-action" id="wssCardAction">
+        <button type="button" class="btn-wss-open" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">✏️ Workspace</h3>
+      </div>
+
+      <div class="workspace-split">
+        <div class="workspace-panel">
+          <div class="sub-title">Kommentar Anlieferung</div>
+          <div id="editAnlieferung" class="comment-editor" contenteditable="true" spellcheck="false" data-placeholder="Notizen..." title="Strg+S: Nur Kommentar speichern (ohne Status oder Regal)"></div>
+        </div>
+
+        <div class="workspace-panel">
+          <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
+            <h3 class="card-title">📦 Einlagern</h3>
+          </div>
+          <div style="display:flex;justify-content:center;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
+            <span class="shelf-pill" id="currentShelfLabel">Aktuell: -</span>
+            <span class="shelf-count-badge" id="currentShelfCountBadge" style="display:none;">-</span>
+          </div>
+          <div class="shelf-dd-wrap" id="shelfDdWrap">
+            <button type="button" class="shelf-dd-trigger" id="shelfDdTrigger" aria-haspopup="listbox" aria-expanded="false">
+              <span class="shelf-dd-trigger-text" id="shelfDdTriggerText">Lade Regale…</span>
+              <span class="shelf-dd-chevron">▼</span>
+            </button>
+            <div class="shelf-dd-panel" id="shelfDdPanel" role="listbox" hidden>
+              <div class="shelf-dd-scroll" id="shelfDdScroll"></div>
+            </div>
+            <select id="shelfSelect" class="shelf-dd-native"><option value="">Lade Regale...</option></select>
+          </div>
+          <div class="b2a1-kandidat-badge-wrap" id="b2a1KandidatBadgeWrap">
+            <div class="b2a1-kandidat-badge" id="b2a1KandidatBadge">B2A1 Kandidat</div>
+            <div class="b2a1-kandidat-hint" id="b2a1KandidatHint">Bitte in Carol gegen kontrollieren ob Auto B2A1 ist!</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="workspace-merge-action">
+        <div style="color:#9da7b3;font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
+        <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
+      </div>
+    </div>
+
+    <div class="card tools-card">
+      <div class="card-header">
+        <h3 class="card-title">🛠️ DYMO Druck & Auftrag Rausgeben</h3>
+      </div>
+
+      <div class="tools-layout">
+        <div class="tools-panel primary tools-panel--dymo">
+          <div class="tools-panel-title">DYMO Etikettendruck</div>
+          <div class="dymo-row">
+            <div class="dymo-field dymo-field--initials">
+              <div class="field-label">Kürzel auf Label</div>
+              <input type="text" id="dymoInitials" placeholder="FB" maxlength="3" autocomplete="off">
+            </div>
+            <div class="dymo-field dymo-field--qty">
+              <div class="field-label">Stückzahl</div>
+              <div class="qty-stepper qty-stepper--dymo">
+                <button type="button" class="qty-btn" onclick="stepQty('dymoCount',-1)">−</button>
+                <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
+                <button type="button" class="qty-btn" onclick="stepQty('dymoCount',1)">+</button>
+              </div>
+            </div>
+          </div>
+          <div class="dymo-print-wrap">
+            <button type="button" class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
+          </div>
+        </div>
+
+        <div class="tools-panel primary" id="printerPanel">
+          <div class="tools-panel-title">🖨️ Brother Drucker</div>
+          <div class="dymo-fields">
+            <div class="dymo-field">
+              <div class="field-label">Drucker für Werkstattauftrag</div>
+              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(242,116,32,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+                <option value="">Bridge nicht verbunden</option>
+              </select>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span id="bridgeStatusDot" style="width:10px;height:10px;border-radius:50%;background:#f85149;display:inline-block;"></span>
+              <span id="bridgeStatusText" style="color:#9da7b3;font-size:11px;font-weight:700;letter-spacing:0.5px;">Offline</span>
+            </div>
+            <div id="bridgeHelpBox" class="bridge-help-box" hidden>
+              <div class="bridge-help-title">ARASAKA Print Bridge</div>
+              <p class="bridge-help-lead">So richtest du die Bridge auf diesem PC ein (nur nötig wenn oben rot / kein Drucker):</p>
+              <ol class="bridge-help-steps">
+                <li>Die beiden orangen Buttons antippen – die Dateien landen direkt im Download-Ordner. Beide in <strong>denselben Ordner</strong> verschieben (z.&nbsp;B. neuer Ordner auf dem Desktop).</li>
+                <li>Den Ordner im Windows-Explorer öffnen.</li>
+                <li>Die <code class="bridge-help-code">arasaka-print-bridge.bat</code> per Doppelklick starten.</li>
+                <li>Im Fenster das sich öffnet die Nummer des Brother-Druckers eingeben und mit Enter bestätigen.</li>
+                <li>Fertig – diese Seite neu laden oder kurz warten, bis „Online“ erscheint.</li>
+              </ol>
+              <div class="bridge-help-dl">
+                <button type="button" class="bridge-help-btn" onclick="downloadBridgeFile(BRIDGE_DOWNLOAD_PS1, 'arasaka-print-bridge.ps1')">arasaka-print-bridge.ps1 herunterladen</button>
+                <button type="button" class="bridge-help-btn" onclick="downloadBridgeFile(BRIDGE_DOWNLOAD_BAT, 'arasaka-print-bridge.bat')">arasaka-print-bridge.bat herunterladen</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tools-panel secondary">
+          <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
+        </div>
+      </div>
+    </div>
+
+    </div>
+    </main>
+  </div>
+
+  <div class="overview-modal" id="overviewModal">
+    <div class="overview-dialog">
+      <div class="overview-header">
+        <div class="overview-title">Stock-ID + Regal Übersicht</div>
+        <button type="button" onclick="refreshStockOverview()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+        <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
+      </div>
+      <div class="overview-body">
+        <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
+        <div class="overview-table-wrap">
+          <table class="overview-table">
+            <thead>
+              <tr>
+                <th style="width:36px;">✔</th>
+                <th></th>
+                <th>Stock-ID</th>
+                <th>Regalplatz</th>
+                <th>Status</th>
+                <th>Reifen</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="overviewTableBody">
+              <tr><td colspan="7" style="text-align:center;color:#9da7b3;">Lade Übersicht...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ra-modal" id="raModal">
+    <div class="ra-dialog">
+      <div class="ra-header">
+        <div class="ra-header-top">
+          <div class="ra-title">🛞 Heutige Reifenausgabe</div>
+          <span id="raTotalBadge" class="ra-total-badge ra-total-loading">...</span>
+        </div>
+        <div class="ra-toolbar">
+          <button type="button" class="ra-alle-btn" id="raAlleBtn" onclick="stelleAlleReifenHud()">✅ Alle Reifen Stellen</button>
+          <button type="button" class="ra-btn ra-btn-print" onclick="printRaList()">🖨️ Drucken</button>
+          <button type="button" class="ra-btn ra-btn-refresh" onclick="refreshRaModal()">🔄 Refresh</button>
+          <button class="ra-close" onclick="minimizeRaModal()">Zurück</button>
+        </div>
+      </div>
+      <div class="ra-body">
+        <table class="ra-table">
+          <thead>
+            <tr>
+              <th class="ra-col-date">Datum</th>
+              <th class="ra-col-stock">Stock-ID</th>
+              <th class="ra-col-qty">Anzahl</th>
+              <th class="ra-col-status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="raTableBody">
+            <tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="nb-modal" id="nbModal">
+    <div class="nb-dialog">
+      <div class="nb-header">
+        <div class="nb-title">Nachbestellungen</div>
+        <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
+        <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
+      </div>
+      <div class="nb-toolbar">
+        <div class="nb-search-wrap">
+          <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
+          <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
+        </div>
+        <button type="button" onclick="refreshNbModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      </div>
+      <div class="nb-body">
+        <table class="nb-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Datum</th>
+              <th>Stock-ID</th>
+              <th>Typ</th>
+              <th>Beschreibung</th>
+              <th>Artikel-Nr.</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="nbTableBody">
+            <tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-modal" id="reifenModal">
+    <div class="reifen-dialog">
+      <div class="reifen-header">
+        <div class="reifen-title">Reifen Annahme</div>
+        <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
+        <button type="button" onclick="refreshReifenModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
+        <button type="button" class="reifen-close" id="reifenMinimizeBtn" onclick="minimizeReifenModal()">Zurück</button>
+      </div>
+      <div class="reifen-body-outer">
+      <div class="reifen-body">
+        <div class="reifen-field">
+          <div class="field-label">Tabellenblatt wählen</div>
+          <select id="reifenTabSelect" onchange="onReifenTabChange()">
+            <option value="">Lade Tabellenblätter...</option>
+          </select>
+        </div>
+        <div class="reifen-field">
+          <div class="field-label">Stock-ID scannen</div>
+          <div class="reifen-autocomplete">
+            <input type="text" id="reifenStockInput" placeholder="Stock-ID eingeben" autocomplete="off">
+            <div class="reifen-autocomplete-list" id="reifenAutocompleteList"></div>
+          </div>
+        </div>
+        <button class="btn btn-blue" onclick="verifyReifenStock()">ID prüfen</button>
+        <div class="reifen-actions">
+          <button class="reifen-action-btn" id="reifenBtnJa" onclick="executeReifenAction(true)">✅ DA (JA)</button>
+          <button class="reifen-action-btn" id="reifenBtnNein" onclick="executeReifenAction(false)">❌ FEHLT (NEIN)</button>
+        </div>
+        <div class="reifen-status" id="reifenStatus">Bitte Tabellenblatt auswählen und Stock-ID eingeben...</div>
+        <div class="reifen-info-box" id="reifenInfoBox">
+          <div class="reifen-location" id="reifenLocationInfo"></div>
+          <div class="reifen-copy-title">Falls Auto-Druck fehlschlägt</div>
+          <div class="reifen-copy-box" id="reifenCopyStock" onclick="copyReifenValue(this)"></div>
+          <div class="reifen-copy-box" id="reifenCopyTire" onclick="copyReifenValue(this)"></div>
+        </div>
+
+        <div class="reifen-size-section">
+          <div class="reifen-size-title">Reifensuche nach Größe (Paketdienst)<span class="reifen-size-badge" id="reifenSizeBadge" style="display:none;">0</span></div>
+          <div class="reifen-size-search">
+            <input type="text" class="reifen-size-input" id="reifenSizeInput" placeholder="z.B. 225/50 R17 103 H" autocomplete="off">
+            <button class="reifen-size-btn" onclick="searchTireBySize()">Suchen</button>
+          </div>
+          <div id="reifenSizeStatus" style="text-align:center;font-size:14px;color:#8b949e;margin-bottom:10px;display:none;"></div>
+          <div class="reifen-size-results" id="reifenSizeResults" style="display:none;">
+            <table class="reifen-size-table">
+              <thead>
+                <tr>
+                  <th>Datum</th>
+                  <th>Stock-ID</th>
+                  <th>Größe</th>
+                  <th>Last</th>
+                  <th>GW</th>
+                  <th>Menge</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="reifenSizeBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div id="reifenBusyOverlay" class="reifen-busy-overlay" aria-hidden="true">
+        <div class="reifen-busy-card">
+          <div class="hud-spin hud-spin--lg"></div>
+          <div class="reifen-busy-text" id="reifenBusyText"></div>
+        </div>
+      </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-confirm" id="reifenConfirmModal">
+    <div class="reifen-confirm-dialog">
+      <div class="reifen-confirm-text">
+        Auftrag checken ob er fertig ist?<br>
+        <span class="reifen-confirm-sub">(Bitte Refurbishment Liste checken)</span>
+      </div>
+      <div class="reifen-actions">
+        <button class="reifen-action-btn active-ja" onclick="confirmReifenFinished(true)">✅ JA</button>
+        <button class="reifen-action-btn active-nein" onclick="confirmReifenFinished(false)">❌ NEIN</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-confirm" id="wssFetchWarnModal">
+    <div class="reifen-confirm-dialog" style="max-width:460px;">
+      <div class="reifen-confirm-text" id="wssFetchWarnText"></div>
+      <div class="reifen-actions" style="margin-top:4px;">
+        <button type="button" class="reifen-action-btn active-ja" onclick="closeWssFetchWarn()">Verstanden</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="reifen-modal" id="wssModal">
+    <div class="reifen-dialog">
+      <div class="reifen-header">
+        <div class="reifen-title">WSS · Vasold</div>
+        <button type="button" class="reifen-close" id="wssModalCloseBtn" onclick="closeWssModal()">Zurück</button>
+      </div>
+      <div class="reifen-body-outer">
+        <div id="wssModalSyncOverlay" class="wss-modal-sync-overlay" aria-hidden="true">
+          <div class="hud-spin hud-spin--lg"></div>
+          <div class="wss-modal-sync-text">Vasold-Status wird geladen…</div>
+        </div>
+        <div class="reifen-body wss-modal-body">
+          <div class="reifen-field">
+            <div class="field-label">Stock-ID</div>
+            <div id="wssModalStock">—</div>
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Carol-Link</div>
+            <input type="text" id="wssCarolInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Marke &amp; Model</div>
+            <input type="text" id="wssMarkeInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Nachuntersuchung</div>
+            <div id="wssModalHuNachuntersuchung" class="wss-modal-hu-value">—</div>
+          </div>
+          <div class="reifen-field wss-dymo-field">
+            <div class="field-label">DYMO-Etiketten</div>
+            <div class="wss-dymo-row">
+              <label class="wss-dymo-qty-label" for="wssDymoCount">Anzahl</label>
+              <input type="number" id="wssDymoCount" class="wss-dymo-count-input" min="1" max="99" value="1">
+              <button type="button" class="reifen-action-btn wss-dymo-print-btn" onclick="printWssModalDymo()">🖨️ Label drucken</button>
+            </div>
+          </div>
+          <div class="wss-gummi-block" id="wssGummiBlock">
+            <input type="checkbox" id="wssGummiCheck" tabindex="-1">
+            <button type="button" class="wss-gummi-toggle" id="wssGummiToggle" aria-pressed="false" onclick="toggleWssGummi()">
+              <span class="wss-gummi-toggle-mark" aria-hidden="true">✓</span>
+            </button>
+            <div class="wss-gummi-label">Gummileiste DA ?</div>
+          </div>
+          <div class="reifen-status" id="wssModalStatus"></div>
+          <div class="reifen-actions wss-submit-actions" style="margin-top:8px;">
+            <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtn" onclick="submitWssVasold()">✅ Vasold Liste + WSS da //</button>
+            <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtnGummi" onclick="submitWssGummiOnly()">✅ Gummileiste in Vasold erfassen</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hudBusyOverlay" class="hud-busy-overlay" aria-hidden="true">
+    <div class="hud-busy-card">
+      <div class="hud-spin hud-spin--lg"></div>
+      <div class="hud-busy-text" id="hudBusyText"></div>
+    </div>
+  </div>

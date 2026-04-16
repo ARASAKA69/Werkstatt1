@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.jsdelivr.net/gh/dymosoftware/dymo-connect-framework@master/dymo.connect.framework.js"></script>
+<style>
+<?!= include('WMS_Styles') ?>
+</style>
+</head>
+<body class="<?= String(mode) === 'standalone' ? 'wms-standalone' : 'wms-overlay' ?>">
+<?!= include('WMS_Body') ?>
+<?!= include('WMS_Script') ?>
+</body>
+</html>

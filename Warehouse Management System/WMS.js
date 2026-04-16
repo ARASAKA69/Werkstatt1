@@ -877,8 +877,26 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       .addToUi();
   }
   
+  function include(filename) {
+    return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  }
+
+  function doGet(e) {
+    var p = e && e.parameter || {};
+    var mode = String(p.mode || 'standalone').toLowerCase();
+    if (mode !== 'overlay' && mode !== 'standalone') mode = 'standalone';
+    var t = HtmlService.createTemplateFromFile('WMS_App');
+    t.mode = mode;
+    return t.evaluate()
+      .setTitle('Warehouse Management System')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+
   function openWMS() {
-    var html = HtmlService.createHtmlOutputFromFile('WMS_HUD')
+    var t = HtmlService.createTemplateFromFile('WMS_App');
+    t.mode = 'overlay';
+    var html = t.evaluate()
       .setWidth(2400)
       .setHeight(1600);
     SpreadsheetApp.getUi().showModelessDialog(html, 'Warehouse Management System');
