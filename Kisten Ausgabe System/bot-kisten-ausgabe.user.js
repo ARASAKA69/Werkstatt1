@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.37
+// @version      1.38
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,6 +17,9 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
+    const ARASAKA_BOT_VERSION = "1.38";
+    const ARASAKA_BRIDGE_VERSION = "13";
+    const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -798,32 +801,367 @@
         return new Blob(byteArrays, {type: contentType});
     }
 
+    function hudEscape(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function hudMessageHtml(message) {
+        return hudEscape(message).replace(/\n/g, '<br>');
+    }
+
+    function hudTone(title, message, isEnd) {
+        var text = String(title || '') + ' ' + String(message || '');
+        var lower = text.toLowerCase();
+        if (/fehler|error|konnte nicht|keine verbindung|nicht richtig|html_fehler|http_error|fehlgeschlagen/.test(lower)) return 'error';
+        if (/warnung|wartet|länger/.test(lower)) return 'warn';
+        if (/skip|übersprungen|duplicate|duplikat|doppelt/.test(lower)) return 'skip';
+        if (/mahlzeit|fertig|sauber|gestoppt/.test(lower) || isEnd) return 'done';
+        if (/download|upload|sync|prüfe|suche|warte|läuft|online|navigation|verifikation|stapel|drive/.test(lower)) return 'active';
+        return 'neutral';
+    }
+
+    function hudToneLabel(tone) {
+        if (tone === 'error') return 'FEHLER';
+        if (tone === 'warn') return 'WARNUNG';
+        if (tone === 'skip') return 'SKIP';
+        if (tone === 'done') return 'FERTIG';
+        if (tone === 'active') return 'LÄUFT';
+        return 'INFO';
+    }
+
+    function hudProgressChips(message) {
+        var chips = [];
+        try {
+            var keys = JSON.parse(sessionStorage.getItem('arasaka_batch_keys') || '[]');
+            var idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || '0', 10);
+            if (keys.length > 0 && idx < keys.length) {
+                chips.push('Stock ' + (idx + 1) + '/' + keys.length + ' · ' + keys[idx]);
+            } else if (keys.length > 0) {
+                chips.push('Recheck · ' + keys.length + ' offen');
+            }
+        } catch (e) {}
+        var img = String(message || '').match(/Bild\s+(\d+)\s+von\s+(\d+)/i);
+        if (img) chips.push('Bild ' + img[1] + '/' + img[2]);
+        if (ARASAKA_DEBUG) chips.push('Debug an');
+        return chips;
+    }
+
+    function hudPosition() {
+        try {
+            var raw = localStorage.getItem(ARASAKA_HUD_POS_KEY);
+            if (!raw) return null;
+            var pos = JSON.parse(raw);
+            if (typeof pos.left !== 'number' || typeof pos.top !== 'number') return null;
+            return pos;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function hudClamp(value, min, max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    function hudApplyPosition(popup) {
+        var pos = hudPosition();
+        if (!pos) {
+            popup.style.left = '50%';
+            popup.style.top = '50%';
+            popup.style.transform = 'translate(-50%, -50%)';
+            return;
+        }
+        requestAnimationFrame(function() {
+            var maxLeft = Math.max(12, window.innerWidth - popup.offsetWidth - 12);
+            var maxTop = Math.max(12, window.innerHeight - popup.offsetHeight - 12);
+            popup.style.left = hudClamp(pos.left, 12, maxLeft) + 'px';
+            popup.style.top = hudClamp(pos.top, 12, maxTop) + 'px';
+            popup.style.transform = 'none';
+        });
+    }
+
+    function hudSavePosition(left, top) {
+        try {
+            localStorage.setItem(ARASAKA_HUD_POS_KEY, JSON.stringify({ left: left, top: top }));
+        } catch (e) {}
+    }
+
+    function hudStopProcess() {
+        abortMission = true;
+        isProcessing = false;
+        sessionStorage.removeItem('arasaka_batch_data');
+        sessionStorage.removeItem('arasaka_batch_keys');
+        sessionStorage.removeItem('arasaka_batch_current_idx');
+        showCustomPopup("ARASAKA STOP", "Prozess gestoppt. Speicher gelöscht.", true);
+    }
+
+    function hudEnsureStyles() {
+        if (document.getElementById('arasaka-hud-style')) return;
+        var style = document.createElement('style');
+        style.id = 'arasaka-hud-style';
+        style.textContent = `
+            #arasaka-batch-popup {
+                position: fixed;
+                z-index: 9999999;
+                width: min(560px, calc(100vw - 32px));
+                color: #c9d1d9;
+                font-family: "Segoe UI", Arial, sans-serif;
+                border-radius: 22px;
+                overflow: hidden;
+                background:
+                    radial-gradient(circle at top left, rgba(61, 158, 220, 0.14), transparent 34%),
+                    radial-gradient(circle at top right, rgba(242, 116, 32, 0.1), transparent 32%),
+                    linear-gradient(180deg, rgba(21, 27, 35, 0.98) 0%, rgba(14, 19, 26, 0.98) 100%);
+                border: 1px solid #2d3642;
+                box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                user-select: none;
+            }
+            #arasaka-batch-popup[data-tone="active"] { border-color: rgba(61, 158, 220, 0.52); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 0 34px rgba(61, 158, 220, 0.18); }
+            #arasaka-batch-popup[data-tone="done"] { border-color: rgba(86, 211, 100, 0.55); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 0 34px rgba(86, 211, 100, 0.16); }
+            #arasaka-batch-popup[data-tone="skip"] { border-color: rgba(242, 116, 32, 0.62); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 0 34px rgba(242, 116, 32, 0.18); }
+            #arasaka-batch-popup[data-tone="warn"] { border-color: rgba(227, 180, 60, 0.64); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 0 34px rgba(227, 180, 60, 0.16); }
+            #arasaka-batch-popup[data-tone="error"] { border-color: rgba(248, 81, 73, 0.68); box-shadow: 0 24px 56px rgba(0, 0, 0, 0.52), 0 0 38px rgba(248, 81, 73, 0.22); }
+            .arasaka-hud-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 18px;
+                padding: 18px 20px 16px;
+                background: linear-gradient(180deg, rgba(22, 27, 34, 0.99) 0%, rgba(18, 23, 30, 0.99) 100%);
+                border-bottom: 1px solid #242d39;
+                cursor: move;
+            }
+            .arasaka-hud-eyebrow {
+                color: #8b949e;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 1.6px;
+                text-transform: uppercase;
+                margin-bottom: 4px;
+            }
+            .arasaka-hud-title {
+                color: #f0f6fc;
+                font-size: 20px;
+                font-weight: 900;
+                letter-spacing: 0.5px;
+                line-height: 1.15;
+                text-transform: uppercase;
+            }
+            .arasaka-hud-actions {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+            .arasaka-hud-btn {
+                border: 1px solid rgba(255,255,255,0.12);
+                border-radius: 14px;
+                background: rgba(13, 17, 23, 0.72);
+                color: #c9d1d9;
+                min-width: 42px;
+                height: 40px;
+                padding: 0 14px;
+                font-size: 13px;
+                font-weight: 900;
+                cursor: pointer;
+                transition: transform 0.14s, border-color 0.14s, background 0.14s;
+            }
+            .arasaka-hud-btn:hover {
+                transform: translateY(-1px);
+                border-color: rgba(61, 158, 220, 0.46);
+                background: rgba(61, 158, 220, 0.14);
+            }
+            .arasaka-hud-stop:hover {
+                border-color: rgba(248, 81, 73, 0.48);
+                background: rgba(248, 81, 73, 0.14);
+                color: #ff7b72;
+            }
+            .arasaka-hud-body {
+                padding: 22px;
+            }
+            .arasaka-hud-main {
+                display: flex;
+                flex-direction: column;
+                gap: 16px;
+                align-items: start;
+            }
+            .arasaka-hud-badge {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 10px;
+                min-height: 40px;
+                padding: 9px 16px;
+                border-radius: 999px;
+                background: rgba(13, 17, 23, 0.7);
+                border: 2px solid rgba(61, 158, 220, 0.38);
+                color: #3FA0DB;
+                font-size: 13px;
+                font-weight: 900;
+                letter-spacing: 1.2px;
+                text-transform: uppercase;
+                box-shadow: inset 0 0 0 1px rgba(255,255,255,0.03);
+            }
+            .arasaka-hud-badge::before {
+                content: "";
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                background: currentColor;
+                box-shadow: 0 0 16px currentColor;
+            }
+            #arasaka-batch-popup[data-tone="active"] .arasaka-hud-badge { animation: arasakaHudPulse 1.35s ease-in-out infinite; }
+            #arasaka-batch-popup[data-tone="done"] .arasaka-hud-badge { color: #56d364; border-color: rgba(86, 211, 100, 0.48); }
+            #arasaka-batch-popup[data-tone="skip"] .arasaka-hud-badge { color: #F27420; border-color: rgba(242, 116, 32, 0.54); }
+            #arasaka-batch-popup[data-tone="warn"] .arasaka-hud-badge { color: #e3b43c; border-color: rgba(227, 180, 60, 0.54); }
+            #arasaka-batch-popup[data-tone="error"] .arasaka-hud-badge { color: #ff7b72; border-color: rgba(248, 81, 73, 0.58); }
+            .arasaka-hud-message {
+                color: #d7dee8;
+                font-size: 16px;
+                font-weight: 700;
+                line-height: 1.52;
+                white-space: normal;
+                word-break: break-word;
+                user-select: text;
+            }
+            .arasaka-hud-chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 18px;
+            }
+            .arasaka-hud-chip {
+                display: inline-flex;
+                align-items: center;
+                min-height: 32px;
+                padding: 6px 12px;
+                border-radius: 999px;
+                border: 1px solid rgba(61, 158, 220, 0.24);
+                background: rgba(13, 17, 23, 0.56);
+                color: #8bcef7;
+                font-size: 13px;
+                font-weight: 850;
+                letter-spacing: 0.15px;
+            }
+            .arasaka-hud-reset {
+                margin-top: 16px;
+                padding: 12px 13px;
+                border-radius: 14px;
+                border: 1px solid rgba(248, 81, 73, 0.28);
+                background: rgba(248, 81, 73, 0.09);
+                color: #ffb3ad;
+                font-size: 14px;
+                font-weight: 800;
+                line-height: 1.42;
+                user-select: text;
+            }
+            .arasaka-hud-footer {
+                display: flex;
+                justify-content: space-between;
+                gap: 10px;
+                margin-top: 16px;
+                padding-top: 12px;
+                border-top: 1px solid rgba(255,255,255,0.07);
+                color: #8b949e;
+                font-size: 12px;
+                font-weight: 800;
+                letter-spacing: 0.25px;
+            }
+            @keyframes arasakaHudPulse {
+                0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(61, 158, 220, 0.32); }
+                50% { transform: scale(1.06); box-shadow: 0 0 18px 4px rgba(61, 158, 220, 0.22); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function hudEnableDrag(popup, handle) {
+        var state = null;
+        function move(e) {
+            if (!state) return;
+            var maxLeft = Math.max(12, window.innerWidth - popup.offsetWidth - 12);
+            var maxTop = Math.max(12, window.innerHeight - popup.offsetHeight - 12);
+            var left = hudClamp(e.clientX - state.dx, 12, maxLeft);
+            var top = hudClamp(e.clientY - state.dy, 12, maxTop);
+            popup.style.left = left + 'px';
+            popup.style.top = top + 'px';
+            popup.style.transform = 'none';
+            state.left = left;
+            state.top = top;
+        }
+        function up() {
+            if (state) hudSavePosition(state.left, state.top);
+            state = null;
+            document.removeEventListener('pointermove', move);
+        }
+        handle.addEventListener('pointerdown', function(e) {
+            if (e.button !== 0 || e.target.closest('button')) return;
+            var rect = popup.getBoundingClientRect();
+            state = { dx: e.clientX - rect.left, dy: e.clientY - rect.top, left: rect.left, top: rect.top };
+            popup.style.left = rect.left + 'px';
+            popup.style.top = rect.top + 'px';
+            popup.style.transform = 'none';
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', up, { once: true });
+            e.preventDefault();
+        });
+    }
+
     function showCustomPopup(title, message, isEnd) {
+        hudEnsureStyles();
         let existing = document.getElementById('arasaka-batch-popup');
         if (existing) existing.remove();
+        let tone = hudTone(title, message, isEnd);
+        let chips = hudProgressChips(message);
+        let chipHtml = chips.map(function(chip) {
+            return '<span class="arasaka-hud-chip">' + hudEscape(chip) + '</span>';
+        }).join('');
+        let resetHtml = tone === 'error'
+            ? '<div class="arasaka-hud-reset">Erst hart neu laden: Strg+F5 oder Ctrl+Shift+R. Danach ALT+B nochmal versuchen. Wenn es wieder kommt, Konsole (F12) offen lassen.</div>'
+            : '';
         let popup = document.createElement('div');
         popup.id = 'arasaka-batch-popup';
-        popup.style.position = 'fixed';
-        popup.style.top = '20px';
-        popup.style.right = '20px';
-        popup.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
-        popup.style.border = isEnd ? '2px solid #00FF00' : '2px solid #00ffcc';
-        popup.style.color = isEnd ? '#00FF00' : '#00ffcc';
-        popup.style.padding = '20px';
-        popup.style.borderRadius = '10px';
-        popup.style.zIndex = '9999999';
-        popup.style.fontFamily = 'monospace';
-        popup.style.boxShadow = isEnd ? '0 0 20px #00FF00' : '0 0 20px #00ffcc';
-        popup.style.whiteSpace = 'pre-wrap';
+        popup.setAttribute('data-tone', tone);
         popup.innerHTML = `
-            <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px;">[ ${title} ]</div>
-            <div style="font-size: 14px; max-width: 300px; line-height: 1.5;">${message}</div>
-            ${isEnd ? '<div style="margin-top: 15px; font-size: 12px; opacity: 0.7;">(Klick zum Schließen)</div>' : ''}
+            <div class="arasaka-hud-head" id="arasaka-hud-drag">
+                <div>
+                    <div class="arasaka-hud-eyebrow">Kisten Ausgabe · ${hudEscape(hudToneLabel(tone))}</div>
+                    <div class="arasaka-hud-title">${hudEscape(title)}</div>
+                </div>
+                <div class="arasaka-hud-actions">
+                    <button type="button" class="arasaka-hud-btn arasaka-hud-stop" id="arasaka-hud-stop">STOP</button>
+                    <button type="button" class="arasaka-hud-btn" id="arasaka-hud-close">X</button>
+                </div>
+            </div>
+            <div class="arasaka-hud-body">
+                <div class="arasaka-hud-main">
+                    <div class="arasaka-hud-badge">${hudEscape(hudToneLabel(tone))}</div>
+                    <div class="arasaka-hud-message">${hudMessageHtml(message)}</div>
+                </div>
+                ${chipHtml ? '<div class="arasaka-hud-chips">' + chipHtml + '</div>' : ''}
+                ${resetHtml}
+                <div class="arasaka-hud-footer">
+                    <span>Bot v${hudEscape(ARASAKA_BOT_VERSION)} · Bridge v${hudEscape(ARASAKA_BRIDGE_VERSION)}</span>
+                    <span>ALT+B Start · ESC Stop</span>
+                </div>
+            </div>
         `;
-        if (isEnd) {
-            popup.style.cursor = 'pointer';
-            popup.onclick = () => popup.remove();
-        }
         document.body.appendChild(popup);
+        hudApplyPosition(popup);
+        hudEnableDrag(popup, popup.querySelector('#arasaka-hud-drag'));
+        popup.querySelector('#arasaka-hud-close').addEventListener('click', function(e) {
+            e.stopPropagation();
+            popup.remove();
+        });
+        popup.querySelector('#arasaka-hud-stop').addEventListener('click', function(e) {
+            e.stopPropagation();
+            hudStopProcess();
+        });
     }
 })();
