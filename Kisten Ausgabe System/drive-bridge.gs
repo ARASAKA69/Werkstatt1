@@ -162,25 +162,15 @@ function handleRequest_(e) {
 
             var data = sheet.getDataRange().getValues();
             var matchRow = -1;
-            var latestDate = -1;
+            var matchCount = 0;
+            var matchRows = [];
 
-            for (var i = 1; i < data.length; i++) {
+            for (var i = data.length - 1; i >= 1; i--) {
                 var rowStock = String(data[i][4] || "").toUpperCase().replace(/\s+/g, '');
                 if (rowStock === stockToMark) {
-                    var dateVal = data[i][1];
-                    var timeMs = 0;
-                    if (dateVal instanceof Date) {
-                        timeMs = dateVal.getTime();
-                    } else if (dateVal) {
-                        var parts = String(dateVal).split('.');
-                        if (parts.length === 3) {
-                            timeMs = new Date(parts[2], parts[1] - 1, parts[0]).getTime();
-                        }
-                    }
-                    if (timeMs >= latestDate) {
-                        latestDate = timeMs;
-                        matchRow = i + 1;
-                    }
+                    matchCount++;
+                    if (matchRows.length < 8) matchRows.push(i + 1);
+                    if (matchRow === -1) matchRow = i + 1;
                 }
             }
 
@@ -190,7 +180,7 @@ function handleRequest_(e) {
                 markResult = "OK";
             }
 
-            var markLogLine = "markSheet | " + stockToMark + " | " + markResult + " | dup_skipped=" + skippedDup + " | comment_skip=" + skippedComment + " | filename_page_skip=" + skippedFilenamePage + " | batch=" + batchFiles + " | unique=" + uniqueFiles;
+            var markLogLine = "markSheet | " + stockToMark + " | " + markResult + " | row=" + matchRow + " | matches=" + matchCount + " | recent_rows=" + matchRows.join(",") + " | dup_skipped=" + skippedDup + " | comment_skip=" + skippedComment + " | filename_page_skip=" + skippedFilenamePage + " | batch=" + batchFiles + " | unique=" + uniqueFiles;
             if (skipDupDetail) markLogLine += " | dup_detail=" + skipDupDetail;
             if (skipCommentDetail) markLogLine += " | comment_skip_detail=" + skipCommentDetail;
             appendTextLogInFolder_(folderErledigtId, kistenLogName, markLogLine);
