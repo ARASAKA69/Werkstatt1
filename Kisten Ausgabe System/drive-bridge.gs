@@ -142,6 +142,30 @@ function handleRequest_(e) {
         return ContentService.createTextOutput("OK");
     }
 
+    if (action === "checkSheetMark") {
+        try {
+            var stockToCheck = String(e.parameter.stockId).toUpperCase().replace(/\s+/g, '');
+            var ssCheck = SpreadsheetApp.openById(sheetId);
+            var sheetCheck = ssCheck.getSheetByName("Tagesliste");
+            if (!sheetCheck) return ContentService.createTextOutput("SHEET_NOT_FOUND");
+            var checkData = sheetCheck.getDataRange().getValues();
+            var checkRow = -1;
+            for (var c = checkData.length - 1; c >= 1; c--) {
+                var checkStock = String(checkData[c][4] || "").toUpperCase().replace(/\s+/g, '');
+                if (checkStock === stockToCheck) {
+                    checkRow = c + 1;
+                    break;
+                }
+            }
+            if (checkRow === -1) return ContentService.createTextOutput("STOCK_NOT_FOUND");
+            var checkValue = sheetCheck.getRange(checkRow, 14).getValue();
+            var checked = checkValue === true || String(checkValue).toUpperCase() === "TRUE";
+            return ContentService.createTextOutput(checked ? "OK" : "UNCHECKED");
+        } catch (err) {
+            return ContentService.createTextOutput("ERROR_" + err.message);
+        }
+    }
+
     if (action === "markSheet") {
         try {
             var stockToMark = String(e.parameter.stockId).toUpperCase().replace(/\s+/g, '');
@@ -177,6 +201,7 @@ function handleRequest_(e) {
             var markResult = "STOCK_NOT_FOUND";
             if (matchRow !== -1) {
                 sheet.getRange(matchRow, 14).setValue(true);
+                SpreadsheetApp.flush();
                 markResult = "OK";
             }
 
