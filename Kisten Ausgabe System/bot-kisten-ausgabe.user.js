@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.38
+// @version      1.40
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,8 +17,8 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.38";
-    const ARASAKA_BRIDGE_VERSION = "13";
+    const ARASAKA_BOT_VERSION = "1.40";
+    const ARASAKA_BRIDGE_VERSION = "14";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
 
     function dbg() {
@@ -59,6 +59,35 @@
         if (/angegebenen ID|specified ID|kein Element|not have the required permission|Berechtigung|permission/i.test(m)) {
             return '\n\nDrive: In Apps Script die Variable folderOffenId (Kisten-Ordner) prüfen — ID aus der Browser-URL des Ordners kopieren. Ordner für das Konto aus "Deploy → Als ausführen" freigeben.';
         }
+        return '';
+    }
+
+    function normalizeBase64Response(value) {
+        var s = String(value || '').trim().replace(/\s+/g, '');
+        if (/[-_]/.test(s) && /^[A-Za-z0-9_-]+={0,2}$/.test(s)) {
+            s = s.replace(/-/g, '+').replace(/_/g, '/');
+        }
+        var mod = s.length % 4;
+        if (mod > 1) s += new Array(5 - mod).join('=');
+        return s;
+    }
+
+    function base64ResponseProblem(value) {
+        var raw = String(value || '').trim();
+        if (!raw) return 'EMPTY_RESPONSE';
+        if (bridgeBodyLooksLikeHtml(raw)) return 'HTML_RESPONSE: ' + bridgeHtmlErrorHint(raw);
+        if (raw.charAt(0) === '{') {
+            try {
+                var parsed = JSON.parse(raw);
+                if (parsed && typeof parsed.error === 'string') return 'BRIDGE_ERROR: ' + parsed.error;
+            } catch (e) {
+                return 'JSON_PARSE_ERROR: ' + e.message;
+            }
+        }
+        var b64 = normalizeBase64Response(raw);
+        if (b64.length < 64) return 'BASE64_TOO_SHORT';
+        if (b64.length % 4 === 1) return 'BASE64_BAD_LENGTH';
+        if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return 'BASE64_BAD_CHARS';
         return '';
     }
 
@@ -237,7 +266,7 @@
         return { unique, duplicates };
     }
 
-    function moveFileRequest(fileInfo, isRetoure, extraParams) {
+    async function moveFileRequest(fileInfo, isRetoure, extraParams) {
         const maxParamLen = 450;
         let payload = { action: 'moveFile', fileId: fileInfo.id, isRetoure: isRetoure };
         if (extraParams && typeof extraParams === 'object') {
@@ -251,11 +280,39 @@
                 }
             }
         }
-        return bridgePostJson(payload, 10000).then(function(r) {
-            if (!r) { dbg('moveFile', 'noResponse', fileInfo.id); return r; }
-            dbg('moveFile', 'http', r.status, 'id', fileInfo.id, 'body', String(r.responseText || '').slice(0, 160));
-            return r;
-        });
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            let r = await bridgePostJson(payload, 20000);
+            if (!r) {
+                dbg('moveFile', 'noResponse', fileInfo.id, 'attempt', attempt);
+            } else {
+                let body = String(r.responseText || '').trim();
+                dbg('moveFile', 'http', r.status, 'id', fileInfo.id, 'attempt', attempt, 'body', body.slice(0, 160));
+                if (r.status >= 200 && r.status < 300 && body === 'OK') return r;
+            }
+            if (attempt < 3) await sleep(1000 * attempt);
+        }
+        return null;
+    }
+
+    async function moveFileOrStop(fileInfo, isRetoure, extraParams) {
+        let moved = await moveFileRequest(fileInfo, isRetoure, extraParams);
+        if (moved) return true;
+        showCustomPopup("ARASAKA FEHLER", "Drive-Datei konnte nach dem Upload nicht verschoben werden. Stoppe, damit nichts doppelt hochgeladen wird. Konsole (F12) für Details.", true);
+        isProcessing = false;
+        return false;
+    }
+
+    function continueWithNextStock(nextIdx) {
+        sessionStorage.setItem('arasaka_batch_current_idx', String(nextIdx));
+        if (window.location.pathname === '/' || window.location.pathname === '') {
+            setTimeout(processNextStock, 1000);
+            return;
+        }
+        let target = window.location.origin + '/';
+        window.location.assign(target);
+        setTimeout(function() {
+            if (!abortMission && window.location.pathname !== '/') window.location.replace(target);
+        }, 4000);
     }
 
     function sleep(ms) {
@@ -306,8 +363,7 @@
             dbg('moveFileError', 'http', r.status, 'fileId', f.id, 'body', String(r.responseText || '').slice(0, 120));
         }));
         await Promise.all(movePromises);
-        sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
-        window.location.href = '/';
+        continueWithNextStock(idx + 1);
     }
 
     async function startBatchProcess() {
@@ -492,7 +548,13 @@
                 let isCorrectPage = await waitForText(stockId, 5000);
                 dbg('pageVerify', 'stockId', stockId, 'isCorrectPage', isCorrectPage);
                 if (isCorrectPage) {
-                    executeUploadsForStock(stockId);
+                    try {
+                        await executeUploadsForStock(stockId);
+                    } catch (err) {
+                        dbg('executeUploadsForStock', 'unhandledError', err && err.message);
+                        showCustomPopup("ARASAKA FEHLER", "Unerwarteter Fehler beim Upload. Stoppe, damit nichts doppelt hochgeladen wird. Konsole (F12) prüfen.", true);
+                        isProcessing = false;
+                    }
                 } else {
                     await handleStockError(stockId, idx, "Falscher Auftrag geladen (Stock-ID fehlt im Auftrag)");
                 }
@@ -524,13 +586,13 @@
             let isRetoureDup = cls === 'retoure';
             dbg('dupFilename', fn, 'first', dup.firstName, 'reason', dup.reason);
             showCustomPopup("ARASAKA SKIP", "Doppelter Dateiname in dieser Ladung — wird übersprungen und verschoben.", false);
-            await moveFileRequest(dup.file, isRetoureDup, {
+            if (!await moveFileOrStop(dup.file, isRetoureDup, {
                 toDuplicate: true,
                 logKind: 'skip_duplicate_filename',
                 logStockId: stockId,
                 logFileName: fn,
                 logDetail: (dup.reason || 'same_name') + '_vs_' + dup.firstName
-            });
+            })) return;
         }
 
         let totalFiles = files.length;
@@ -577,13 +639,13 @@
                 skipFilenameOnPageCount++;
                 dbg('skipSameMtimeAsStored', fileInfo.name, 'mt', mt, 'stored', stored);
                 showCustomPopup("ARASAKA SKIP", "Gleicher Zeitstempel wie beim letzten Upload — Duplikat, übersprungen.", false);
-                await moveFileRequest(fileInfo, isRetoure, {
+                if (!await moveFileOrStop(fileInfo, isRetoure, {
                     toDuplicate: true,
                     logKind: 'skip_same_mtime_as_stored',
                     logStockId: stockId,
                     logFileName: fileInfo.name,
                     logDetail: currentComment
-                });
+                })) return;
                 continue;
             }
 
@@ -591,13 +653,13 @@
                 skipFilenameOnPageCount++;
                 dbg('skipOlderThanStored', fileInfo.name, 'mt', mt, 'stored', stored);
                 showCustomPopup("ARASAKA SKIP", "Datei ist älter als der letzte Upload — übersprungen.", false);
-                await moveFileRequest(fileInfo, isRetoure, {
+                if (!await moveFileOrStop(fileInfo, isRetoure, {
                     toDuplicate: true,
                     logKind: 'skip_older_than_stored',
                     logStockId: stockId,
                     logFileName: fileInfo.name,
                     logDetail: currentComment
-                });
+                })) return;
                 continue;
             }
 
@@ -605,13 +667,13 @@
                 skipFilenameOnPageCount++;
                 dbg('skipFilenameOnPageNoStored', fileInfo.name, 'planned', currentComment);
                 showCustomPopup("ARASAKA SKIP", `Dateiname ${fileInfo.name} steht schon in der Dokumentenliste. Überspringe...`, false);
-                await moveFileRequest(fileInfo, isRetoure, {
+                if (!await moveFileOrStop(fileInfo, isRetoure, {
                     toDuplicate: true,
                     logKind: 'skip_filename_on_page',
                     logStockId: stockId,
                     logFileName: fileInfo.name,
                     logDetail: currentComment
-                });
+                })) return;
                 continue;
             }
 
@@ -626,13 +688,13 @@
                 if (isRetoure) retoureIdx++;
                 else if (isNachbestellung) nachbestellungIdx++;
                 else ausgabeIdx++;
-                await moveFileRequest(fileInfo, isRetoure, {
+                if (!await moveFileOrStop(fileInfo, isRetoure, {
                     toDuplicate: true,
                     logKind: 'skip_comment_exists',
                     logStockId: stockId,
                     logFileName: fileInfo.name,
                     logDetail: currentComment
-                });
+                })) return;
                 continue;
             }
 
@@ -650,29 +712,41 @@
                 });
             });
 
-            if (!b64 || bridgeBodyLooksLikeHtml(b64)) {
-                dbg('getFileData', 'emptyOrHtml', fileInfo.id);
+            let b64Problem = base64ResponseProblem(b64);
+            if (b64Problem) {
+                dbg('getFileData', 'invalidBody', fileInfo.id, b64Problem, 'bodyHead', String(b64 || '').slice(0, 240));
                 await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
                 return;
             }
+            b64 = normalizeBase64Response(b64);
 
             showCustomPopup("ARASAKA UPLOAD", "Lade Bild " + (i + 1) + " hoch...", false);
 
             let uploadBtn = await waitForElementByText(['Upload Document', 'Dokument hochladen'], 'button', 10000);
             if (abortMission) return;
-            if (uploadBtn) forceClick(uploadBtn);
+            if (!uploadBtn) {
+                dbg('uploadStep', 'uploadButtonMissing', fileInfo.name);
+                showCustomPopup("ARASAKA FEHLER", "Upload-Button nicht gefunden. Stoppe, damit nichts doppelt hochgeladen wird.", true);
+                isProcessing = false;
+                return;
+            }
+            forceClick(uploadBtn);
 
-            let selectType = await waitForElementByText(['Other', 'Andere'], 'select, option', 5000);
+            await waitForElementByText(['Other', 'Andere'], 'select, option', 5000);
             if (abortMission) return;
 
             let selectElement = document.querySelector('select');
-            if (selectElement) {
-                let options = Array.from(selectElement.options);
-                let otherOpt = options.find(o => o.text === 'Other' || o.text === 'Andere');
-                if (otherOpt) {
-                    selectElement.value = otherOpt.value;
-                    selectElement.dispatchEvent(new Event('change', { bubbles: true }));
-                }
+            if (!selectElement) {
+                dbg('uploadStep', 'typeSelectMissing', fileInfo.name);
+                showCustomPopup("ARASAKA FEHLER", "Upload-Auswahl nicht gefunden. Stoppe, damit nichts doppelt hochgeladen wird.", true);
+                isProcessing = false;
+                return;
+            }
+            let options = Array.from(selectElement.options);
+            let otherOpt = options.find(o => o.text === 'Other' || o.text === 'Andere');
+            if (otherOpt) {
+                selectElement.value = otherOpt.value;
+                selectElement.dispatchEvent(new Event('change', { bubbles: true }));
             }
 
             let commentInput = document.querySelector('input[name="comment"], input[placeholder*="Comment"]');
@@ -681,15 +755,19 @@
                 commentInput = document.querySelector('input[name="comment"], input[placeholder*="Comment"]');
             }
             if (abortMission) return;
-            if (commentInput) {
-                let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
-                if(nativeInputValueSetter) {
-                    nativeInputValueSetter.call(commentInput, currentComment);
-                } else {
-                    commentInput.value = currentComment;
-                }
-                commentInput.dispatchEvent(new Event('input', { bubbles: true }));
+            if (!commentInput) {
+                dbg('uploadStep', 'commentInputMissing', fileInfo.name);
+                showCustomPopup("ARASAKA FEHLER", "Kommentarfeld nicht gefunden. Stoppe, damit nichts doppelt hochgeladen wird.", true);
+                isProcessing = false;
+                return;
             }
+            let nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+            if(nativeInputValueSetter) {
+                nativeInputValueSetter.call(commentInput, currentComment);
+            } else {
+                commentInput.value = currentComment;
+            }
+            commentInput.dispatchEvent(new Event('input', { bubbles: true }));
 
             let fileInput = document.querySelector('input[type="file"]');
             if (!fileInput) {
@@ -697,20 +775,37 @@
                 fileInput = document.querySelector('input[type="file"]');
             }
             if (abortMission) return;
-            if (fileInput) {
-                let blob = b64toBlob(b64, fileInfo.mimeType);
-                let file = new File([blob], fileInfo.name, { type: fileInfo.mimeType });
-                let dataTransfer = new DataTransfer();
-                dataTransfer.items.add(file);
-                fileInput.files = dataTransfer.files;
-                fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            if (!fileInput) {
+                dbg('uploadStep', 'fileInputMissing', fileInfo.name);
+                showCustomPopup("ARASAKA FEHLER", "Dateifeld nicht gefunden. Stoppe, damit nichts doppelt hochgeladen wird.", true);
+                isProcessing = false;
+                return;
             }
+            let blob;
+            try {
+                blob = b64toBlob(b64, fileInfo.mimeType);
+            } catch (e2) {
+                dbg('getFileData', 'decodeFailed', fileInfo.id, e2 && e2.message);
+                await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
+                return;
+            }
+            let file = new File([blob], fileInfo.name, { type: fileInfo.mimeType });
+            let dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
 
             await sleep(1000);
 
             let submitBtn = await waitForExactText(['Upload', 'Hochladen', 'Save', 'Speichern', 'Add', 'Hinzufügen'], 'button', 10000);
             if (abortMission) return;
-            if (submitBtn) forceClick(submitBtn);
+            if (!submitBtn) {
+                dbg('uploadStep', 'submitButtonMissing', fileInfo.name);
+                showCustomPopup("ARASAKA FEHLER", "Upload-Bestätigung nicht gefunden. Stoppe, damit nichts doppelt hochgeladen wird.", true);
+                isProcessing = false;
+                return;
+            }
+            forceClick(submitBtn);
 
             showCustomPopup("ARASAKA VERIFIKATION", `Warte auf Bestätigung im System...`, false);
             let verifySuccess = await waitForText(currentComment, 20000);
@@ -720,14 +815,22 @@
             if(!verifySuccess) {
                 dbg('postUploadVerify', 'noMatchExtraWait');
                 await sleep(2000);
+                verifySuccess = await waitForText(currentComment, 10000);
+                dbg('postUploadVerify', 'afterExtraWait', currentComment, 'verifySuccess', verifySuccess);
+            }
+
+            if(!verifySuccess) {
+                showCustomPopup("ARASAKA FEHLER", "Upload wurde nicht bestätigt. Stoppe, damit nichts doppelt hochgeladen wird. Bitte Auftrag prüfen.", true);
+                isProcessing = false;
+                return;
             }
 
             if (abortMission) return;
-            await moveFileRequest(fileInfo, isRetoure, {
+            if (!await moveFileOrStop(fileInfo, isRetoure, {
                 recordLastUpload: true,
                 logStockId: stockId,
                 logFileName: fileInfo.name
-            });
+            })) return;
         }
 
         if (abortMission) return;
@@ -782,8 +885,7 @@
         }
 
         dbg('executeUploadsForStock', 'done', 'nextIdx', idx + 1);
-        sessionStorage.setItem('arasaka_batch_current_idx', (idx + 1).toString());
-        window.location.href = '/';
+        continueWithNextStock(idx + 1);
     }
 
     function b64toBlob(b64Data, contentType = '', sliceSize = 512) {
