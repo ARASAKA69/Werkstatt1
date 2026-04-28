@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.40
+// @version      1.41
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,8 +17,8 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.40";
-    const ARASAKA_BRIDGE_VERSION = "14";
+    const ARASAKA_BOT_VERSION = "1.41";
+    const ARASAKA_BRIDGE_VERSION = "15";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
 
     function dbg() {
@@ -867,6 +867,20 @@
         } else {
             dbg('markSheet', 'noResponse');
             syncStatus = 'HTTP_ERROR';
+        }
+
+        if (syncStatus !== "OK") {
+            let checkRes = await bridgePostJson({
+                action: 'checkSheetMark',
+                stockId: stockId
+            }, 30000);
+            if (checkRes) {
+                var crt = String(checkRes.responseText || '').trim();
+                dbg('checkSheetMark', 'http', checkRes.status, 'body', crt.slice(0, 200));
+                if (crt === "OK") syncStatus = "OK";
+            } else {
+                dbg('checkSheetMark', 'noResponse');
+            }
         }
 
         syncDone = true;
