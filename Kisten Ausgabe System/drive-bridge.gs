@@ -142,6 +142,30 @@ function handleRequest_(e) {
         return ContentService.createTextOutput("OK");
     }
 
+    if (action === "checkSheetMark") {
+        try {
+            var stockToCheck = String(e.parameter.stockId).toUpperCase().replace(/\s+/g, '');
+            var ssCheck = SpreadsheetApp.openById(sheetId);
+            var sheetCheck = ssCheck.getSheetByName("Tagesliste");
+            if (!sheetCheck) return ContentService.createTextOutput("SHEET_NOT_FOUND");
+            var checkData = sheetCheck.getDataRange().getValues();
+            var checkRow = -1;
+            for (var c = checkData.length - 1; c >= 1; c--) {
+                var checkStock = String(checkData[c][4] || "").toUpperCase().replace(/\s+/g, '');
+                if (checkStock === stockToCheck) {
+                    checkRow = c + 1;
+                    break;
+                }
+            }
+            if (checkRow === -1) return ContentService.createTextOutput("STOCK_NOT_FOUND");
+            var checkValue = sheetCheck.getRange(checkRow, 14).getValue();
+            var checked = checkValue === true || String(checkValue).toUpperCase() === "TRUE";
+            return ContentService.createTextOutput(checked ? "OK" : "UNCHECKED");
+        } catch (err) {
+            return ContentService.createTextOutput("ERROR_" + err.message);
+        }
+    }
+
     if (action === "markSheet") {
         try {
             var stockToMark = String(e.parameter.stockId).toUpperCase().replace(/\s+/g, '');
@@ -162,35 +186,26 @@ function handleRequest_(e) {
 
             var data = sheet.getDataRange().getValues();
             var matchRow = -1;
-            var latestDate = -1;
+            var matchCount = 0;
+            var matchRows = [];
 
-            for (var i = 1; i < data.length; i++) {
+            for (var i = data.length - 1; i >= 1; i--) {
                 var rowStock = String(data[i][4] || "").toUpperCase().replace(/\s+/g, '');
                 if (rowStock === stockToMark) {
-                    var dateVal = data[i][1];
-                    var timeMs = 0;
-                    if (dateVal instanceof Date) {
-                        timeMs = dateVal.getTime();
-                    } else if (dateVal) {
-                        var parts = String(dateVal).split('.');
-                        if (parts.length === 3) {
-                            timeMs = new Date(parts[2], parts[1] - 1, parts[0]).getTime();
-                        }
-                    }
-                    if (timeMs >= latestDate) {
-                        latestDate = timeMs;
-                        matchRow = i + 1;
-                    }
+                    matchCount++;
+                    if (matchRows.length < 8) matchRows.push(i + 1);
+                    if (matchRow === -1) matchRow = i + 1;
                 }
             }
 
             var markResult = "STOCK_NOT_FOUND";
             if (matchRow !== -1) {
                 sheet.getRange(matchRow, 14).setValue(true);
+                SpreadsheetApp.flush();
                 markResult = "OK";
             }
 
-            var markLogLine = "markSheet | " + stockToMark + " | " + markResult + " | dup_skipped=" + skippedDup + " | comment_skip=" + skippedComment + " | filename_page_skip=" + skippedFilenamePage + " | batch=" + batchFiles + " | unique=" + uniqueFiles;
+            var markLogLine = "markSheet | " + stockToMark + " | " + markResult + " | row=" + matchRow + " | matches=" + matchCount + " | recent_rows=" + matchRows.join(",") + " | dup_skipped=" + skippedDup + " | comment_skip=" + skippedComment + " | filename_page_skip=" + skippedFilenamePage + " | batch=" + batchFiles + " | unique=" + uniqueFiles;
             if (skipDupDetail) markLogLine += " | dup_detail=" + skipDupDetail;
             if (skipCommentDetail) markLogLine += " | comment_skip_detail=" + skipCommentDetail;
             appendTextLogInFolder_(folderErledigtId, kistenLogName, markLogLine);

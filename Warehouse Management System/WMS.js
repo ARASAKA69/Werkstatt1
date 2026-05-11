@@ -1,7 +1,7 @@
 const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo/edit?gid=1453769469#gid=1453769469";
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
-const NACHBESTELL_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
-const NACHBESTELL_TAB = "Nachbestellungen";
+const NACHBESTELL_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
+const NACHBESTELL_TAB = "Nachbestellung";
 const EXIT_SHEET_ID = "1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI";
 const EXIT_TAB = "Exit Repair";
 const AUFTRAG_SHEET_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
@@ -11,6 +11,7 @@ const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const TAGESLISTE_TAB = "Tagesliste";
 const VASOLD_WSS_TAB = "Vasold WSS";
 const NACHBESTELL_REGAL_COL = 13;
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzlFQ3sm2mpo2UUIftYVSC79RqD5oXt4WcWL4HBYcbiVnM3_RLUqHvQyY1xFT-BgW4/exec";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -894,12 +895,17 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
   }
 
   function openWMS() {
-    var t = HtmlService.createTemplateFromFile('WMS_App');
-    t.mode = 'overlay';
-    var html = t.evaluate()
-      .setWidth(2400)
-      .setHeight(1600);
-    SpreadsheetApp.getUi().showModelessDialog(html, 'Warehouse Management System');
+    var url = (WMS_WEB_APP_URL && String(WMS_WEB_APP_URL).trim()) || ScriptApp.getService().getUrl();
+    if (!url) {
+      SpreadsheetApp.getUi().alert("Keine Web-App-URL. Bitte WMS_WEB_APP_URL setzen oder Web-App bereitstellen.");
+      return;
+    }
+    var html = HtmlService.createHtmlOutput(
+      "<!DOCTYPE html><html><body style=\"margin:0\"><script>" +
+      "window.onload=function(){window.open(" + JSON.stringify(url) + ",\"_blank\");google.script.host.close();};" +
+      "</script></body></html>"
+    );
+    SpreadsheetApp.getUi().showModalDialog(html, "Warehouse Management System");
   }
 
   function applyTrackingDateIfEmpty(stockId) {
@@ -1362,7 +1368,7 @@ function getNachbestellungen() {
 
         var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
         var statusVal = rawStatus.toLowerCase();
-        if (statusVal === "angeliefert" || statusVal.indexOf("angeliefert/bereit") !== -1 || statusVal === "fahrzeug rr") continue;
+        if (statusVal === "angeliefert" || statusVal.indexOf("angeliefert/bereit") !== -1 || statusVal.indexOf("komplett angeliefert") !== -1 || statusVal === "fahrzeug rr") continue;
 
         var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
         var dateStr = "";
@@ -1468,7 +1474,7 @@ function updateNachbestellung(sheetRow, fieldName, value) {
         var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
         if (txt.indexOf("teil") !== -1 || txt.indexOf("benennung") !== -1 || txt.indexOf("ersatzteil") !== -1) colMap["teil"] = c + 1;
         if (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("teilenr") !== -1) colMap["artikel"] = c + 1;
-        if (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1) colMap["status"] = c + 1;
+        if (!colMap["status"] && (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1)) colMap["status"] = c + 1;
       }
 
       var targetCol = colMap[fieldName];
@@ -1494,7 +1500,9 @@ function updateNachbestellung(sheetRow, fieldName, value) {
           extraMsgs.push(updateExitListStatus(rowStockId));
         }
 
-        if (rowStockId && String(value || "").indexOf("Angeliefert/Bereit") !== -1) {
+        var valStr = String(value || "");
+        var valLc = valStr.toLowerCase();
+        if (rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
           extraMsgs.push(autoFillWerkstattauftrag(rowStockId, rowBeschreibung));
         }
       }
