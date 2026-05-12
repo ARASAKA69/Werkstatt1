@@ -170,38 +170,54 @@ function onEdit(e) {
 }
 
 function handleEdit(e, sheet, name, row, col) {
-  if (INPUT_SHEETS[name] && col === 2 && row >= 2) {
+  const range = e.range;
+  const startRow = range.getRow();
+  const startCol = range.getColumn();
+  const endRow = startRow + range.getNumRows() - 1;
+  const endCol = startCol + range.getNumColumns() - 1;
+
+  for (let r = endRow; r >= startRow; r--) {
+    handleEditPerRow(e, sheet, name, r, startCol, endCol);
+  }
+}
+
+function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
+  const colHit = function (c) { return c >= startCol && c <= endCol; };
+
+  if (INPUT_SHEETS[name] && colHit(2) && row >= 2) {
     const rowDeleted = handleStockIdEdit(e, sheet, row);
     if (rowDeleted) return;
   }
 
-  if (INPUT_SHEETS[name] && col >= 2 && col <= 6 && row >= 2) {
+  if (INPUT_SHEETS[name] && row >= 2 && endCol >= 2 && startCol <= 6) {
     syncInputRowToNachbestellung(sheet, row);
   }
 
-  if (name === "Nachbestellung" && row >= 2 && col === 6) {
-    try { syncNachbestellungColumnToInputExit(sheet, row, 6, 7); } catch (err) { logDebug("sync F->G failed: " + err); }
+  if (name === "Nachbestellung" && row >= 2) {
+    if (colHit(6)) {
+      try { syncNachbestellungColumnToInputExit(sheet, row, 6, 7); } catch (err) { logDebug("sync F->G failed: " + err); }
+    }
+    if (colHit(9)) {
+      try { syncNachbestellungColumnToInputExit(sheet, row, 9, 8); } catch (err) { logDebug("sync I->H failed: " + err); }
+    }
+    if (colHit(10)) {
+      try { syncNachbestellungColumnToInputExit(sheet, row, 10, 9); } catch (err) { logDebug("sync J->I failed: " + err); }
+    }
+    if (colHit(11)) {
+      try {
+        const kVal = sheet.getRange(row, 11).getValue();
+        const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
+        sheet.getRange(row, 12).setValue(stamp);
+      } catch (err) { logDebug("set L date failed: " + err); }
+      try { syncNachbestellungColumnToInputExit(sheet, row, 11, 10); } catch (err) { logDebug("sync K->J failed: " + err); }
+      try { syncNachbestellungColumnToInputExit(sheet, row, 12, 11); } catch (err) { logDebug("sync L->K failed: " + err); }
+    }
+    if (colHit(9) || colHit(11) || colHit(12)) {
+      try { updateDashboardFromNachbestellungRow(sheet, row); } catch (err) { logDebug("dashboard update failed: " + err); }
+    }
   }
 
-  if (name === "Nachbestellung" && row >= 2 && col === 9) {
-    try { syncNachbestellungColumnToInputExit(sheet, row, 9, 8); } catch (err) { logDebug("sync I->H failed: " + err); }
-  }
-
-  if (name === "Nachbestellung" && row >= 2 && col === 10) {
-    try { syncNachbestellungColumnToInputExit(sheet, row, 10, 9); } catch (err) { logDebug("sync J->I failed: " + err); }
-  }
-
-  if (name === "Nachbestellung" && row >= 2 && col === 11) {
-    try { sheet.getRange(row, 12).setValue(new Date()); } catch (err) { logDebug("set L date failed: " + err); }
-    try { syncNachbestellungColumnToInputExit(sheet, row, 11, 10); } catch (err) { logDebug("sync K->J failed: " + err); }
-    try { syncNachbestellungColumnToInputExit(sheet, row, 12, 11); } catch (err) { logDebug("sync L->K failed: " + err); }
-  }
-
-  if (name === "Nachbestellung" && row >= 2 && (col === 9 || col === 11 || col === 12)) {
-    try { updateDashboardFromNachbestellungRow(sheet, row); } catch (err) { logDebug("dashboard update failed: " + err); }
-  }
-
-  if (name === "Input Exit" && row >= 2 && col === 12) {
+  if (name === "Input Exit" && row >= 2 && colHit(12)) {
     const valueL = sheet.getRange(row, 12).getValue();
     if (valueL !== "" && valueL !== null) {
       const result = syncInputExitToZielSheetRow(row);
@@ -211,30 +227,33 @@ function handleEdit(e, sheet, name, row, col) {
     }
   }
 
-  if (name === "Input Exit" && row >= 2 && col === 7) {
-    try { syncInputExitColumnToNachbestellung(sheet, row, 7, 6); } catch (err) { logDebug("sync Exit G->F failed: " + err); }
+  if (name === "Input Exit" && row >= 2) {
+    if (colHit(7)) {
+      try { syncInputExitColumnToNachbestellung(sheet, row, 7, 6); } catch (err) { logDebug("sync Exit G->F failed: " + err); }
+    }
+    if (colHit(8)) {
+      try { syncInputExitColumnToNachbestellung(sheet, row, 8, 9); } catch (err) { logDebug("sync Exit H->I failed: " + err); }
+    }
+    if (colHit(9)) {
+      try { syncInputExitColumnToNachbestellung(sheet, row, 9, 10); } catch (err) { logDebug("sync Exit I->J failed: " + err); }
+    }
+    if (colHit(10)) {
+      try {
+        const jVal = sheet.getRange(row, 10).getValue();
+        const stamp = (jVal !== "" && jVal !== null) ? new Date() : "";
+        sheet.getRange(row, 11).setValue(stamp);
+      } catch (err) {}
+      try { syncInputExitColumnToNachbestellung(sheet, row, 10, 11); } catch (err) { logDebug("sync Exit J->K failed: " + err); }
+      try { syncInputExitColumnToNachbestellung(sheet, row, 11, 12); } catch (err) { logDebug("sync Exit K->L failed: " + err); }
+    }
   }
 
-  if (name === "Input Exit" && row >= 2 && col === 8) {
-    try { syncInputExitColumnToNachbestellung(sheet, row, 8, 9); } catch (err) { logDebug("sync Exit H->I failed: " + err); }
-  }
-
-  if (name === "Input Exit" && row >= 2 && col === 9) {
-    try { syncInputExitColumnToNachbestellung(sheet, row, 9, 10); } catch (err) { logDebug("sync Exit I->J failed: " + err); }
-  }
-
-  if (name === "Input Exit" && row >= 2 && col === 10) {
-    try { sheet.getRange(row, 11).setValue(new Date()); } catch (err) {}
-    try { syncInputExitColumnToNachbestellung(sheet, row, 10, 11); } catch (err) { logDebug("sync Exit J->K failed: " + err); }
-    try { syncInputExitColumnToNachbestellung(sheet, row, 11, 12); } catch (err) { logDebug("sync Exit K->L failed: " + err); }
-  }
-
-  if (name === "Dashboard" && col === 13 && row >= 3) {
-    const value = sheet.getRange(row, col).getValue();
+  if (name === "Dashboard" && colHit(13) && row >= 3) {
+    const value = sheet.getRange(row, 13).getValue();
     const stockId = sheet.getRange(row, 2).getValue();
     if (value === true && stockId) {
       archiveEntry(stockId);
-      sheet.getRange(row, col).setValue(false);
+      sheet.getRange(row, 13).setValue(false);
     }
     return;
   }
