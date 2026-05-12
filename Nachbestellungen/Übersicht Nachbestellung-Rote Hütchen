@@ -113,13 +113,28 @@ function isInputRowComplete(rowData) {
   return true;
 }
 
+function getActiveUserEmail() {
+  try {
+    const email = Session.getActiveUser().getEmail();
+    if (email) return email;
+  } catch (e) {}
+  try {
+    return Session.getEffectiveUser().getEmail() || "";
+  } catch (e) {}
+  return "";
+}
+
+let _currentLogUser = "";
+function setLogUser(email) { _currentLogUser = email ? String(email) : ""; }
+function getLogUser() { return _currentLogUser || getActiveUserEmail(); }
+
 function logDebug(msg) {
   try {
     Logger.log(msg);
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const q = ss.getSheetByName("EventQueue");
     if (q) {
-      q.appendRow([new Date(), "_LOG", "", "", "", String(msg), "INFO", "", ""]);
+      q.appendRow([new Date(), "_LOG", "", "", "", String(msg), "INFO", "", "", getLogUser()]);
     }
   } catch (e) {}
 }
@@ -128,10 +143,12 @@ function applyNachbestellungState(nbSheet, key, rowData, entryId) {
   const valueC = normalize(rowData[2]);
   if (valueC === "ja" && isInputRowComplete(rowData)) {
     updateNachbestellung(key, rowData, rowData[0] ? new Date(rowData[0]) : new Date(), nbSheet, entryId);
+    logDebug("NB updated: key=" + key + " entryId=" + entryId);
     return "updated";
   }
   if (valueC === "nein" || valueC === "diagnose") {
     deleteNachbestellungByEntryId(nbSheet, entryId);
+    logDebug("NB deleted (C=" + valueC + "): key=" + key + " entryId=" + entryId);
     return "deleted";
   }
   return "noop";
@@ -254,6 +271,18 @@ function handleStockIdEdit(e, sheet, row) {
   try { entryId = sheet.getRange(row, ENTRYID_COL).getValue() || ""; } catch (err) {}
   const oldKey = e && e.oldValue ? String(e.oldValue) : "";
 
+  let snapshot = "";
+  try {
+    const snap = sheet.getRange(row, 1, 1, 6).getValues()[0];
+    snapshot = JSON.stringify(snap);
+  } catch (err) {}
+
+  try {
+    logDebug("StockID cleared -> cascade delete. sheet=" + sheet.getName() +
+      " row=" + row + " oldKey=" + oldKey + " entryId=" + entryId +
+      " snapshot=" + snapshot);
+  } catch (err) {}
+
   try { sheet.deleteRow(row); } catch (err) {}
   try { cancelPendingQueueEvents(entryId); } catch (err) {}
   try { deleteEverywhere(oldKey, entryId); } catch (err) {}
@@ -319,7 +348,8 @@ function enqueueInputEdit(sheet, name, row) {
       JSON.stringify(data),
       "NEW",
       code,
-      entryId
+      entryId,
+      getActiveUserEmail()
     ]);
   } catch (err) {}
 }
@@ -572,7 +602,7 @@ function runQueueProcessor() {
   if (!dashboard || !nbSheet) return;
 
   const tagesMap = getTageslisteMap();
-  const data = queue.getRange(1, 1, last, 9).getValues();
+  const data = queue.getRange(1, 1, last, 10).getValues();
 
   const latestIdxByKey = {};
   for (let i = 1; i < data.length; i++) {
@@ -601,6 +631,8 @@ function runQueueProcessor() {
 
     queue.getRange(i + 1, 7).setValue("PROCESSING");
     SpreadsheetApp.flush();
+
+    setLogUser(data[i][9] || "");
 
     try {
       const action = data[i][3];
@@ -659,6 +691,8 @@ function runQueueProcessor() {
       queue.getRange(i + 1, 7).setValue("DONE");
     } catch (err) {
       queue.getRange(i + 1, 7).setValue("ERROR: " + (err && err.message ? err.message : err));
+    } finally {
+      setLogUser("");
     }
   }
 }
@@ -832,6 +866,10 @@ function deleteEverywhere(key, entryId) {
   const targetId = entryId ? String(entryId) : "";
   const targetKey = key ? String(key).trim().toUpperCase() : "";
 
+  let dashRemoved = 0;
+  let nbRemoved = 0;
+  let tagesRemoved = 0;
+
   let ss = null;
   try { ss = getMainSS(); } catch (err) {}
 
@@ -844,7 +882,7 @@ function deleteEverywhere(key, entryId) {
           const eid = String(rng[i][DASHBOARD_ENTRYID_COL - 1] || "");
           const stk = String(rng[i][1] || "").trim().toUpperCase();
           if ((targetId && eid === targetId) || (!targetId && targetKey && stk === targetKey)) {
-            try { dashboard.deleteRow(i + 4); } catch (e) {}
+            try { dashboard.deleteRow(i + 4); dashRemoved++; } catch (e) {}
           }
         }
       }
@@ -858,7 +896,7 @@ function deleteEverywhere(key, entryId) {
           const eid = String(rng[i][NB_ENTRYID_COL - 1] || "");
           const stk = String(rng[i][1] || "").trim().toUpperCase();
           if ((targetId && eid === targetId) || (!targetId && targetKey && stk === targetKey)) {
-            try { nbSheet.deleteRow(i + 2); } catch (e) {}
+            try { nbSheet.deleteRow(i + 2); nbRemoved++; } catch (e) {}
           }
         }
       }
@@ -873,11 +911,16 @@ function deleteEverywhere(key, entryId) {
         const t = tagesSheet.getRange(2, 5, tagesSheet.getLastRow() - 1, 1).getValues();
         for (let i = t.length - 1; i >= 0; i--) {
           if (String(t[i][0]).trim().toUpperCase() === targetKey) {
-            try { tagesSheet.deleteRow(i + 2); } catch (e) {}
+            try { tagesSheet.deleteRow(i + 2); tagesRemoved++; } catch (e) {}
           }
         }
       }
     } catch (err) {}
+  }
+
+  if (dashRemoved || nbRemoved || tagesRemoved) {
+    logDebug("deleteEverywhere: key=" + targetKey + " entryId=" + targetId +
+      " dashboard=" + dashRemoved + " nb=" + nbRemoved + " tages=" + tagesRemoved);
   }
 }
 
@@ -1051,36 +1094,44 @@ function updateDashboardDayDiffs() {
 }
 
 /***********************
- * Nachbestellung: clear L date when K is empty
+ * Clear stale status-date when status itself is empty.
+ * Nachbestellung: K (status, col 11) -> L (date, col 12)
+ * Input Exit:     J (status, col 10) -> K (date, col 11)
  ***********************/
+function clearStaleStatusDateOnSheet(sheet, statusCol, dateCol, label) {
+  if (!sheet) return 0;
+  const last = sheet.getLastRow();
+  if (last < 2) return 0;
+
+  const range = sheet.getRange(2, statusCol, last - 1, dateCol - statusCol + 1);
+  const values = range.getValues();
+  const dateIdx = dateCol - statusCol;
+  let cleared = 0;
+  for (let i = 0; i < values.length; i++) {
+    const s = values[i][0];
+    const d = values[i][dateIdx];
+    const sEmpty = s === "" || s === null || (typeof s === "string" && s.trim() === "");
+    const dFilled = d !== "" && d !== null && !(typeof d === "string" && d.trim() === "");
+    if (sEmpty && dFilled) {
+      values[i][dateIdx] = "";
+      cleared++;
+    }
+  }
+  if (cleared > 0) {
+    range.setValues(values);
+    logDebug("clearStaleStatusDate[" + label + "]: cleared " + cleared + " stale dates");
+  }
+  return cleared;
+}
+
 function cleanupNachbestellungStatusDate() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return;
   try {
     const ss = getMainSS();
     if (!ss) return;
-    const nbSheet = ss.getSheetByName("Nachbestellung");
-    if (!nbSheet) return;
-    const last = nbSheet.getLastRow();
-    if (last < 2) return;
-
-    const range = nbSheet.getRange(2, 11, last - 1, 2);
-    const values = range.getValues();
-    let cleared = 0;
-    for (let i = 0; i < values.length; i++) {
-      const k = values[i][0];
-      const l = values[i][1];
-      const kEmpty = k === "" || k === null || (typeof k === "string" && k.trim() === "");
-      const lFilled = l !== "" && l !== null && !(typeof l === "string" && l.trim() === "");
-      if (kEmpty && lFilled) {
-        values[i][1] = "";
-        cleared++;
-      }
-    }
-    if (cleared > 0) {
-      range.setValues(values);
-      logDebug("cleanupNachbestellungStatusDate: cleared " + cleared + " stale L dates");
-    }
+    clearStaleStatusDateOnSheet(ss.getSheetByName("Nachbestellung"), 11, 12, "Nachbestellung");
+    clearStaleStatusDateOnSheet(ss.getSheetByName("Input Exit"), 10, 11, "Input Exit");
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
