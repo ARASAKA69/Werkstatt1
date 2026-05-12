@@ -166,9 +166,18 @@ function handleEdit(e, sheet, name, row, col) {
     try { syncNachbestellungColumnToInputExit(sheet, row, 6, 7); } catch (err) { logDebug("sync F->G failed: " + err); }
   }
 
+  if (name === "Nachbestellung" && row >= 2 && col === 9) {
+    try { syncNachbestellungColumnToInputExit(sheet, row, 9, 8); } catch (err) { logDebug("sync I->H failed: " + err); }
+  }
+
+  if (name === "Nachbestellung" && row >= 2 && col === 10) {
+    try { syncNachbestellungColumnToInputExit(sheet, row, 10, 9); } catch (err) { logDebug("sync J->I failed: " + err); }
+  }
+
   if (name === "Nachbestellung" && row >= 2 && col === 11) {
     try { sheet.getRange(row, 12).setValue(new Date()); } catch (err) { logDebug("set L date failed: " + err); }
     try { syncNachbestellungColumnToInputExit(sheet, row, 11, 10); } catch (err) { logDebug("sync K->J failed: " + err); }
+    try { syncNachbestellungColumnToInputExit(sheet, row, 12, 11); } catch (err) { logDebug("sync L->K failed: " + err); }
   }
 
   if (name === "Nachbestellung" && row >= 2 && (col === 9 || col === 11 || col === 12)) {
@@ -185,8 +194,22 @@ function handleEdit(e, sheet, name, row, col) {
     }
   }
 
+  if (name === "Input Exit" && row >= 2 && col === 7) {
+    try { syncInputExitColumnToNachbestellung(sheet, row, 7, 6); } catch (err) { logDebug("sync Exit G->F failed: " + err); }
+  }
+
+  if (name === "Input Exit" && row >= 2 && col === 8) {
+    try { syncInputExitColumnToNachbestellung(sheet, row, 8, 9); } catch (err) { logDebug("sync Exit H->I failed: " + err); }
+  }
+
+  if (name === "Input Exit" && row >= 2 && col === 9) {
+    try { syncInputExitColumnToNachbestellung(sheet, row, 9, 10); } catch (err) { logDebug("sync Exit I->J failed: " + err); }
+  }
+
   if (name === "Input Exit" && row >= 2 && col === 10) {
-    sheet.getRange(row, 11).setValue(new Date());
+    try { sheet.getRange(row, 11).setValue(new Date()); } catch (err) {}
+    try { syncInputExitColumnToNachbestellung(sheet, row, 10, 11); } catch (err) { logDebug("sync Exit J->K failed: " + err); }
+    try { syncInputExitColumnToNachbestellung(sheet, row, 11, 12); } catch (err) { logDebug("sync Exit K->L failed: " + err); }
   }
 
   if (name === "Dashboard" && col === 13 && row >= 3) {
@@ -272,6 +295,7 @@ function applyStockIdProtection(sheet, row) {
     protection.addEditor("helmut.mirbeth@auto1.com");
     protection.addEditor("bastian.frankhauser@auto1.com");
     protection.addEditor("joerg.eichenseher@auto1.com");
+    protection.addEditor("tobias.nehring@auto1.com");
     protection.setWarningOnly(false);
   } catch (err) {}
 }
@@ -381,6 +405,74 @@ function syncNachbestellungColumnToInputExit(nbSheet, row, srcCol, targetCol) {
     logDebug("syncToExit: wrote '" + value + "' to Input Exit row " + exitRow + " col " + targetCol);
   } catch (e) {
     logDebug("syncToExit: write failed row " + exitRow + " col " + targetCol + ": " + e);
+  }
+}
+
+function syncInputExitColumnToNachbestellung(exitSheet, row, srcCol, targetCol) {
+  let stockId = "";
+  try { stockId = String(exitSheet.getRange(row, 2).getValue() || "").trim(); } catch (e) {}
+  let entryId = "";
+  try { entryId = String(exitSheet.getRange(row, ENTRYID_COL).getValue() || ""); } catch (e) {}
+
+  if (!stockId && !entryId) {
+    logDebug("syncToNB: no stockId/entryId in Input Exit row " + row);
+    return;
+  }
+
+  let value;
+  try { value = exitSheet.getRange(row, srcCol).getValue(); } catch (e) {
+    logDebug("syncToNB: cannot read srcCol " + srcCol + " row " + row + ": " + e);
+    return;
+  }
+
+  let nbSheet = null;
+  try {
+    const ss = exitSheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
+    nbSheet = ss.getSheetByName("Nachbestellung");
+  } catch (e) {}
+  if (!nbSheet) {
+    logDebug("syncToNB: Nachbestellung sheet not found");
+    return;
+  }
+
+  const last = nbSheet.getLastRow();
+  if (last < 2) {
+    logDebug("syncToNB: Nachbestellung empty");
+    return;
+  }
+
+  let nbRow = -1;
+
+  if (entryId) {
+    try {
+      const eids = nbSheet.getRange(2, NB_ENTRYID_COL, last - 1, 1).getValues();
+      const targetE = String(entryId);
+      for (let i = 0; i < eids.length; i++) {
+        if (String(eids[i][0]) === targetE) { nbRow = i + 2; break; }
+      }
+    } catch (e) {}
+  }
+
+  if (nbRow === -1 && stockId) {
+    try {
+      const stocks = nbSheet.getRange(2, 2, last - 1, 1).getValues();
+      const targetS = stockId.toUpperCase();
+      for (let i = 0; i < stocks.length; i++) {
+        if (String(stocks[i][0] || "").trim().toUpperCase() === targetS) { nbRow = i + 2; break; }
+      }
+    } catch (e) {}
+  }
+
+  if (nbRow === -1) {
+    logDebug("syncToNB: no Nachbestellung row for stockId=" + stockId + " entryId=" + entryId);
+    return;
+  }
+
+  try {
+    nbSheet.getRange(nbRow, targetCol).setValue(value);
+    logDebug("syncToNB: wrote '" + value + "' to Nachbestellung row " + nbRow + " col " + targetCol);
+  } catch (e) {
+    logDebug("syncToNB: write failed row " + nbRow + " col " + targetCol + ": " + e);
   }
 }
 
@@ -956,4 +1048,53 @@ function updateDashboardDayDiffs() {
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+/***********************
+ * Nachbestellung: clear L date when K is empty
+ ***********************/
+function cleanupNachbestellungStatusDate() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return;
+  try {
+    const ss = getMainSS();
+    if (!ss) return;
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    if (!nbSheet) return;
+    const last = nbSheet.getLastRow();
+    if (last < 2) return;
+
+    const range = nbSheet.getRange(2, 11, last - 1, 2);
+    const values = range.getValues();
+    let cleared = 0;
+    for (let i = 0; i < values.length; i++) {
+      const k = values[i][0];
+      const l = values[i][1];
+      const kEmpty = k === "" || k === null || (typeof k === "string" && k.trim() === "");
+      const lFilled = l !== "" && l !== null && !(typeof l === "string" && l.trim() === "");
+      if (kEmpty && lFilled) {
+        values[i][1] = "";
+        cleared++;
+      }
+    }
+    if (cleared > 0) {
+      range.setValues(values);
+      logDebug("cleanupNachbestellungStatusDate: cleared " + cleared + " stale L dates");
+    }
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function installCleanupNachbestellungStatusDateTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "cleanupNachbestellungStatusDate") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger("cleanupNachbestellungStatusDate")
+    .timeBased()
+    .everyMinutes(1)
+    .create();
 }
