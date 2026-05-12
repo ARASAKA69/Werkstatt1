@@ -881,66 +881,72 @@ function updateNachbestellung(key, data, inputDate, nbSheet, entryId) {
  * DELETE EVERYWHERE
  ***********************/
 function deleteEverywhere(key, entryId) {
-  if (!entryId && !key) return;
-  const targetId = entryId ? String(entryId) : "";
+  if (!entryId) {
+    logDebug("deleteEverywhere: REFUSED - no entryId. key=" + (key || "") +
+      " (refusing to delete by StockID alone, would wipe duplicates with different entryIds)");
+    return;
+  }
+
+  const targetId = String(entryId);
   const targetKey = key ? String(key).trim().toUpperCase() : "";
 
   let dashRemoved = 0;
   let nbRemoved = 0;
-  let tagesRemoved = 0;
+  let inputRemoved = {};
 
   let ss = null;
   try { ss = getMainSS(); } catch (err) {}
 
-  if (ss) {
-    try {
-      const dashboard = ss.getSheetByName("Dashboard");
-      if (dashboard && dashboard.getLastRow() >= 4) {
-        const rng = dashboard.getRange(4, 1, dashboard.getLastRow() - 3, DASHBOARD_ENTRYID_COL).getValues();
-        for (let i = rng.length - 1; i >= 0; i--) {
-          const eid = String(rng[i][DASHBOARD_ENTRYID_COL - 1] || "");
-          const stk = String(rng[i][1] || "").trim().toUpperCase();
-          if ((targetId && eid === targetId) || (!targetId && targetKey && stk === targetKey)) {
-            try { dashboard.deleteRow(i + 4); dashRemoved++; } catch (e) {}
-          }
-        }
-      }
-    } catch (err) {}
-
-    try {
-      const nbSheet = ss.getSheetByName("Nachbestellung");
-      if (nbSheet && nbSheet.getLastRow() >= 2) {
-        const rng = nbSheet.getRange(2, 1, nbSheet.getLastRow() - 1, NB_ENTRYID_COL).getValues();
-        for (let i = rng.length - 1; i >= 0; i--) {
-          const eid = String(rng[i][NB_ENTRYID_COL - 1] || "");
-          const stk = String(rng[i][1] || "").trim().toUpperCase();
-          if ((targetId && eid === targetId) || (!targetId && targetKey && stk === targetKey)) {
-            try { nbSheet.deleteRow(i + 2); nbRemoved++; } catch (e) {}
-          }
-        }
-      }
-    } catch (err) {}
+  if (!ss) {
+    logDebug("deleteEverywhere: cannot access main spreadsheet entryId=" + targetId);
+    return;
   }
 
-  if (targetKey) {
-    try {
-      const source = SpreadsheetApp.openById(SOURCE_ID);
-      const tagesSheet = source ? source.getSheetByName("Tagesliste") : null;
-      if (tagesSheet && tagesSheet.getLastRow() >= 2) {
-        const t = tagesSheet.getRange(2, 5, tagesSheet.getLastRow() - 1, 1).getValues();
-        for (let i = t.length - 1; i >= 0; i--) {
-          if (String(t[i][0]).trim().toUpperCase() === targetKey) {
-            try { tagesSheet.deleteRow(i + 2); tagesRemoved++; } catch (e) {}
-          }
+  try {
+    const dashboard = ss.getSheetByName("Dashboard");
+    if (dashboard && dashboard.getLastRow() >= 4) {
+      const rng = dashboard.getRange(4, 1, dashboard.getLastRow() - 3, DASHBOARD_ENTRYID_COL).getValues();
+      for (let i = rng.length - 1; i >= 0; i--) {
+        const eid = String(rng[i][DASHBOARD_ENTRYID_COL - 1] || "");
+        if (eid === targetId) {
+          try { dashboard.deleteRow(i + 4); dashRemoved++; } catch (e) {}
         }
       }
-    } catch (err) {}
-  }
+    }
+  } catch (err) { logDebug("deleteEverywhere dashboard error: " + err); }
 
-  if (dashRemoved || nbRemoved || tagesRemoved) {
-    logDebug("deleteEverywhere: key=" + targetKey + " entryId=" + targetId +
-      " dashboard=" + dashRemoved + " nb=" + nbRemoved + " tages=" + tagesRemoved);
-  }
+  try {
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    if (nbSheet && nbSheet.getLastRow() >= 2) {
+      const rng = nbSheet.getRange(2, 1, nbSheet.getLastRow() - 1, NB_ENTRYID_COL).getValues();
+      for (let i = rng.length - 1; i >= 0; i--) {
+        const eid = String(rng[i][NB_ENTRYID_COL - 1] || "");
+        if (eid === targetId) {
+          try { nbSheet.deleteRow(i + 2); nbRemoved++; } catch (e) {}
+        }
+      }
+    }
+  } catch (err) { logDebug("deleteEverywhere NB error: " + err); }
+
+  INPUT_SHEET_NAMES.forEach(function (sheetName) {
+    try {
+      const s = ss.getSheetByName(sheetName);
+      if (!s || s.getLastRow() < 2) return;
+      const eids = s.getRange(2, ENTRYID_COL, s.getLastRow() - 1, 1).getValues();
+      let count = 0;
+      for (let i = eids.length - 1; i >= 0; i--) {
+        if (String(eids[i][0] || "") === targetId) {
+          try { s.deleteRow(i + 2); count++; } catch (e) {}
+        }
+      }
+      if (count) inputRemoved[sheetName] = count;
+    } catch (err) { logDebug("deleteEverywhere " + sheetName + " error: " + err); }
+  });
+
+  logDebug("deleteEverywhere: entryId=" + targetId + " key=" + targetKey +
+    " dashboard=" + dashRemoved + " nb=" + nbRemoved +
+    " inputs=" + JSON.stringify(inputRemoved) +
+    " (Tagesliste intentionally untouched)");
 }
 
 /***********************
