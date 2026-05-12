@@ -4297,58 +4297,6 @@
     color: #ff9c9c;
   }
 
-  .wms-bridge-banner {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 10px 18px;
-    margin: 0 8px;
-    background: linear-gradient(90deg, rgba(248, 81, 73, 0.18), rgba(248, 81, 73, 0.06) 60%, rgba(var(--wms-gold-rgb), 0.08));
-    border: 1px solid rgba(248, 81, 73, 0.45);
-    border-top: none;
-    border-radius: 0 0 14px 14px;
-    color: #ffbcb5;
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    animation: wmsTaskbarIn 0.22s ease-out;
-    flex-wrap: wrap;
-  }
-  .wms-bridge-banner[hidden] { display: none !important; }
-  body.wms-standalone .wms-bridge-banner.is-visible { display: flex; }
-  body:not(.wms-standalone) .wms-bridge-banner { display: none !important; }
-  .wms-bridge-banner-text strong { color: #ffdca6; }
-  .wms-bridge-banner-btn {
-    padding: 7px 14px;
-    border-radius: 10px;
-    background: rgba(var(--wms-gold-rgb), 0.14);
-    border: 1px solid rgba(var(--wms-gold-rgb), 0.5);
-    color: #ffdca6;
-    font-family: inherit;
-    font-weight: 800;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: background 0.15s, border-color 0.15s, transform 0.12s;
-  }
-  .wms-bridge-banner-btn:hover {
-    background: rgba(var(--wms-gold-rgb), 0.28);
-    border-color: rgba(var(--wms-gold-bright-rgb), 0.72);
-    transform: translateY(-1px);
-  }
-  .wms-bridge-banner-btn--ghost {
-    background: transparent;
-    border-color: rgba(255, 255, 255, 0.14);
-    color: var(--wms-text-muted);
-  }
-  .wms-bridge-banner-btn--ghost:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.3);
-    color: #e6edf3;
-  }
-
   body.wms-standalone .card > .card-header {
     position: relative;
     padding-right: 46px;
@@ -4954,27 +4902,6 @@
     background: rgba(var(--wms-gold-rgb), 0.26);
     border-color: rgba(var(--wms-gold-bright-rgb), 0.85);
     color: #5a3a00;
-  }
-  html[data-theme="light"] body.wms-standalone .wms-bridge-banner {
-    background: linear-gradient(90deg, rgba(248, 81, 73, 0.14), rgba(248, 81, 73, 0.06) 60%, rgba(var(--wms-gold-rgb), 0.1));
-    border: 1px solid rgba(248, 81, 73, 0.5);
-    color: #8c2d24;
-  }
-  html[data-theme="light"] body.wms-standalone .wms-bridge-banner-text strong {
-    color: #6a1a12;
-  }
-  html[data-theme="light"] body.wms-standalone .wms-bridge-banner-btn {
-    background: #fff8de;
-    border-color: rgba(var(--wms-gold-rgb), 0.65);
-    color: #7a5200;
-  }
-  html[data-theme="light"] body.wms-standalone .wms-bridge-banner-btn:hover {
-    background: #ffefb5;
-  }
-  html[data-theme="light"] body.wms-standalone .wms-bridge-banner-btn--ghost {
-    background: transparent;
-    border-color: rgba(100, 90, 70, 0.35);
-    color: #6a6250;
   }
   html[data-theme="light"] body.wms-standalone .wms-menuitem.is-active-window {
     background: linear-gradient(135deg, rgba(var(--wms-gold-rgb), 0.32) 0%, rgba(var(--wms-orange-rgb), 0.2) 100%) !important;

@@ -3993,44 +3993,6 @@
         } catch(e) { warn('panicReload', e); }
       };
 
-      (function initBridgeMonitor() {
-        var banner = byId('wmsBridgeBanner');
-        var retry = byId('wmsBridgeBannerRetry');
-        var hide = byId('wmsBridgeBannerHide');
-        if (!banner) return;
-        var BRIDGE = (typeof BRIDGE_URL !== 'undefined') ? BRIDGE_URL : 'http://localhost:9150';
-        var hidden = false;
-        var LAST_STATE = null;
-
-        function setVisible(on) {
-          if (on && !hidden) {
-            banner.hidden = false;
-            banner.classList.add('is-visible');
-          } else {
-            banner.classList.remove('is-visible');
-            banner.hidden = true;
-          }
-        }
-        function check() {
-          var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-          var t = setTimeout(function() { if (ctrl) ctrl.abort(); }, 3000);
-          fetch(BRIDGE + '/printers', { method: 'GET', signal: ctrl ? ctrl.signal : undefined })
-            .then(function(r) { return r && r.ok; })
-            .catch(function() { return false; })
-            .then(function(ok) {
-              clearTimeout(t);
-              if (ok === LAST_STATE) return;
-              LAST_STATE = ok;
-              if (ok) { hidden = false; setVisible(false); }
-              else setVisible(true);
-            });
-        }
-        if (retry) retry.addEventListener('click', function() { hidden = false; LAST_STATE = null; check(); });
-        if (hide) hide.addEventListener('click', function() { hidden = true; setVisible(false); });
-        setTimeout(check, 1500);
-        setInterval(check, 25000);
-      })();
-
       (function initThemeToggle() {
         var sw = byId('wmsThemeSwitch');
         if (!sw) return;
