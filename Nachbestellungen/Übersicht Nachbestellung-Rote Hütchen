@@ -14,7 +14,7 @@ const INPUT_SHEETS = {
 };
 const INPUT_SHEET_NAMES = Object.keys(INPUT_SHEETS);
 
-const ENTRYID_COL = 26;
+const ENTRYID_COL = 27;
 const DASHBOARD_ENTRYID_COL = 15;
 const NB_ENTRYID_COL = 15;
 
@@ -100,13 +100,14 @@ function withLock(fn, waitMs) {
 
 function findRowByEntryId(sheet, entryIdCol, entryId, dataStartRow) {
   if (!entryId || !sheet) return -1;
+  const target = String(entryId).trim();
+  if (!target) return -1;
   const start = dataStartRow || 2;
   const last = sheet.getLastRow();
   if (last < start) return -1;
   const values = sheet.getRange(start, entryIdCol, last - start + 1, 1).getValues();
-  const target = String(entryId);
   for (let i = 0; i < values.length; i++) {
-    if (String(values[i][0]) === target) return i + start;
+    if (String(values[i][0] || "").trim() === target) return i + start;
   }
   return -1;
 }
@@ -221,12 +222,27 @@ function onEdit(e) {
     if (nbCleared) return;
   }
 
+  if (INPUT_SHEETS[name] && col === 2 && row >= 2 &&
+      e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
+    let inputCleared = false;
+    try {
+      inputCleared = handleInputStockIdCascade(e, sheet, name, row);
+    } catch (err) {
+      try { logDebug("Input stockId cascade error: " + err); } catch (e2) {}
+    }
+    if (inputCleared) return;
+  }
+
   withLock(function () {
     if (INPUT_SHEETS[name] && row >= 2) {
       try { ensureEntryIdsForEditRange(sheet, e.range); } catch (err) {}
     }
     handleEdit(e, sheet, name, row, col);
   }, ONEDIT_LOCK_WAIT_MS);
+
+  try {
+    mirrorNachbestellungInputExitEdits(e, sheet, name);
+  } catch (err) {}
 
   if (INPUT_SHEETS[name] && row >= 2) {
     try {
@@ -378,17 +394,21 @@ function handleEdit(e, sheet, name, row, col) {
   }
 }
 
-function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
+function mirrorNachbestellungInputExitEdits(e, sheet, name) {
+  if (!e || !e.range || !sheet) return;
+  if (name !== "Nachbestellung" && name !== "Input Exit") return;
+  const range = e.range;
+  const startRow = range.getRow();
+  const startCol = range.getColumn();
+  const endRow = startRow + range.getNumRows() - 1;
+  const endCol = startCol + range.getNumColumns() - 1;
+  for (let r = endRow; r >= startRow; r--) {
+    mirrorNachbestellungInputExitPerRow(sheet, name, r, startCol, endCol);
+  }
+}
+
+function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol) {
   const colHit = function (c) { return c >= startCol && c <= endCol; };
-
-  if (INPUT_SHEETS[name] && colHit(2) && row >= 2) {
-    const rowDeleted = handleStockIdEdit(e, sheet, row);
-    if (rowDeleted) return;
-  }
-
-  if (INPUT_SHEETS[name] && row >= 2 && endCol >= 2 && startCol <= 6) {
-    syncInputRowToNachbestellung(sheet, row);
-  }
 
   if (name === "Nachbestellung" && row >= 2) {
     if (colHit(6)) {
@@ -414,21 +434,10 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
     }
   }
 
-  if (name === "Input Exit" && row >= 2 && colHit(13)) {
-    const valueM = sheet.getRange(row, 13).getValue();
-    if (valueM !== "" && valueM !== null) {
-      const result = syncInputExitToZielSheetRow(row);
-      sheet.getRange(row, 14).setValue(result);
-    } else {
-      sheet.getRange(row, 14).setValue("");
-    }
-  }
-
   if (name === "Input Exit" && row >= 2) {
     if (colHit(7)) {
       try { syncInputExitColumnToNachbestellung(sheet, row, 7, 6); } catch (err) { logDebug("sync Exit G->NB F failed: " + err); }
     }
-    // col 8 (H) = Claim Cost — Input-Exit-only, no Nachbestellung sync
     if (colHit(9)) {
       try { syncInputExitColumnToNachbestellung(sheet, row, 9, 9); } catch (err) { logDebug("sync Exit I->NB I failed: " + err); }
     }
@@ -445,6 +454,29 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
       try { syncInputExitColumnToNachbestellung(sheet, row, 12, 12); } catch (err) { logDebug("sync Exit L->NB L failed: " + err); }
     }
   }
+}
+
+function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
+  const colHit = function (c) { return c >= startCol && c <= endCol; };
+
+  if (INPUT_SHEETS[name] && colHit(2) && row >= 2) {
+    const rowDeleted = handleStockIdEdit(e, sheet, row);
+    if (rowDeleted) return;
+  }
+
+  if (INPUT_SHEETS[name] && row >= 2 && endCol >= 2 && startCol <= 6) {
+    syncInputRowToNachbestellung(sheet, row);
+  }
+
+  if (name === "Input Exit" && row >= 2 && colHit(13)) {
+    const valueM = sheet.getRange(row, 13).getValue();
+    if (valueM !== "" && valueM !== null) {
+      const result = syncInputExitToZielSheetRow(row);
+      sheet.getRange(row, 14).setValue(result);
+    } else {
+      sheet.getRange(row, 14).setValue("");
+    }
+  }
 
   if (name === "Dashboard" && colHit(13) && row >= 3) {
     const value = sheet.getRange(row, 13).getValue();
@@ -455,6 +487,32 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
     }
     return;
   }
+}
+
+function executeInputStockIdClearCascade(sheet, row, oldKey, entryIdRaw) {
+  let snapshot = "";
+  try {
+    const snap = sheet.getRange(row, 1, 1, 6).getValues()[0];
+    snapshot = JSON.stringify(snap);
+  } catch (err) {}
+
+  const entryId = String(entryIdRaw || "").trim();
+
+  try {
+    logDebug("StockID cleared -> cascade delete. sheet=" + sheet.getName() +
+      " row=" + row + " oldKey=" + (oldKey || "") + " entryId=" + entryId +
+      " snapshot=" + snapshot);
+  } catch (err) {}
+
+  if (entryId) {
+    try { cancelPendingQueueEvents(entryId); } catch (err) {}
+    try { deleteEverywhere(oldKey || "", entryId); } catch (err) {}
+    return;
+  }
+
+  try { sheet.deleteRow(row); } catch (err) {}
+  try { cancelPendingQueueEvents(""); } catch (err) {}
+  try { deleteEverywhere(oldKey || "", ""); } catch (err) {}
 }
 
 function handleStockIdEdit(e, sheet, row) {
@@ -480,24 +538,23 @@ function handleStockIdEdit(e, sheet, row) {
   }
 
   let entryId = "";
-  try { entryId = sheet.getRange(row, getEntryIdCol(sheet)).getValue() || ""; } catch (err) {}
+  try { entryId = String(sheet.getRange(row, getEntryIdCol(sheet)).getValue() || "").trim(); } catch (err) {}
   const oldKey = e && e.oldValue ? String(e.oldValue) : "";
+  executeInputStockIdClearCascade(sheet, row, oldKey, entryId);
+  return true;
+}
 
-  let snapshot = "";
-  try {
-    const snap = sheet.getRange(row, 1, 1, 6).getValues()[0];
-    snapshot = JSON.stringify(snap);
-  } catch (err) {}
+function handleInputStockIdCascade(e, sheet, name, row) {
+  if (!INPUT_SHEETS[name] || row < 2) return false;
+  let val = "";
+  try { val = String(sheet.getRange(row, 2).getValue() || "").trim(); } catch (err) {}
+  if (val) return false;
 
-  try {
-    logDebug("StockID cleared -> cascade delete. sheet=" + sheet.getName() +
-      " row=" + row + " oldKey=" + oldKey + " entryId=" + entryId +
-      " snapshot=" + snapshot);
-  } catch (err) {}
+  const oldKey = e && e.oldValue ? String(e.oldValue) : "";
+  let entryId = "";
+  try { entryId = String(sheet.getRange(row, getEntryIdCol(sheet)).getValue() || "").trim(); } catch (err) {}
 
-  try { sheet.deleteRow(row); } catch (err) {}
-  try { cancelPendingQueueEvents(entryId); } catch (err) {}
-  try { deleteEverywhere(oldKey, entryId); } catch (err) {}
+  executeInputStockIdClearCascade(sheet, row, oldKey, entryId);
   return true;
 }
 
@@ -508,7 +565,7 @@ function handleNachbestellungStockIdEdit(e, sheet, row) {
 
   const oldKey = e && e.oldValue ? String(e.oldValue) : "";
   let entryId = "";
-  try { entryId = String(sheet.getRange(row, getEntryIdCol(sheet)).getValue() || ""); } catch (err) {}
+  try { entryId = String(sheet.getRange(row, getEntryIdCol(sheet)).getValue() || "").trim(); } catch (err) {}
 
   if (!entryId) return oldKey ? true : false;
 
@@ -1194,13 +1251,13 @@ function updateNachbestellung(key, data, inputDate, nbSheet, entryId) {
  * DELETE EVERYWHERE
  ***********************/
 function deleteEverywhere(key, entryId) {
-  if (!entryId) {
+  const targetId = String(entryId || "").trim();
+  if (!targetId) {
     logDebug("deleteEverywhere: REFUSED - no entryId. key=" + (key || "") +
       " (refusing to delete by StockID alone, would wipe duplicates with different entryIds)");
     return;
   }
 
-  const targetId = String(entryId);
   const targetKey = key ? String(key).trim().toUpperCase() : "";
 
   let dashRemoved = 0;
@@ -1219,10 +1276,14 @@ function deleteEverywhere(key, entryId) {
     const dashboard = ss.getSheetByName("Dashboard");
     if (dashboard && dashboard.getLastRow() >= 4) {
       const dashEidCol = getEntryIdCol(dashboard);
-      const eids = dashboard.getRange(4, dashEidCol, dashboard.getLastRow() - 3, 1).getValues();
-      for (let i = eids.length - 1; i >= 0; i--) {
-        if (String(eids[i][0] || "") === targetId) {
-          try { dashboard.deleteRow(i + 4); dashRemoved++; } catch (e) {}
+      let dRow;
+      while ((dRow = findRowByEntryId(dashboard, dashEidCol, targetId, 4)) !== -1) {
+        try {
+          dashboard.deleteRow(dRow);
+          dashRemoved++;
+        } catch (e) {
+          logDebug("deleteEverywhere dashboard delete failed row=" + dRow + ": " + e);
+          break;
         }
       }
     }
@@ -1232,10 +1293,14 @@ function deleteEverywhere(key, entryId) {
     const nbSheet = ss.getSheetByName("Nachbestellung");
     if (nbSheet && nbSheet.getLastRow() >= 2) {
       const nbEidCol = getEntryIdCol(nbSheet);
-      const eids = nbSheet.getRange(2, nbEidCol, nbSheet.getLastRow() - 1, 1).getValues();
-      for (let i = eids.length - 1; i >= 0; i--) {
-        if (String(eids[i][0] || "") === targetId) {
-          try { nbSheet.deleteRow(i + 2); nbRemoved++; } catch (e) {}
+      let nbRow;
+      while ((nbRow = findRowByEntryId(nbSheet, nbEidCol, targetId, 2)) !== -1) {
+        try {
+          nbSheet.deleteRow(nbRow);
+          nbRemoved++;
+        } catch (e) {
+          logDebug("deleteEverywhere NB delete failed row=" + nbRow + ": " + e);
+          break;
         }
       }
     }
@@ -1245,11 +1310,16 @@ function deleteEverywhere(key, entryId) {
     try {
       const s = ss.getSheetByName(sheetName);
       if (!s || s.getLastRow() < 2) return;
-      const eids = s.getRange(2, getEntryIdCol(s), s.getLastRow() - 1, 1).getValues();
+      const inputEidCol = getEntryIdCol(s);
       let count = 0;
-      for (let i = eids.length - 1; i >= 0; i--) {
-        if (String(eids[i][0] || "") === targetId) {
-          try { s.deleteRow(i + 2); count++; } catch (e) {}
+      let inRow;
+      while ((inRow = findRowByEntryId(s, inputEidCol, targetId, 2)) !== -1) {
+        try {
+          s.deleteRow(inRow);
+          count++;
+        } catch (e) {
+          logDebug("deleteEverywhere " + sheetName + " delete failed row=" + inRow + ": " + e);
+          break;
         }
       }
       if (count) inputRemoved[sheetName] = count;
