@@ -18,8 +18,10 @@ const ENTRYID_COL = 26;
 const DASHBOARD_ENTRYID_COL = 15;
 const NB_ENTRYID_COL = 15;
 
-const LOCK_WAIT_MS = 8000;
+const LOCK_WAIT_MS = 30000;
+const ONEDIT_LOCK_WAIT_MS = 10000;
 const QUEUE_LOCK_WAIT_MS = 30000;
+const MAX_EVENTS_PER_RUN = 25;
 
 /***********************
  * Lock helper
@@ -41,6 +43,10 @@ function withLock(fn, waitMs) {
   let acquired = false;
   try {
     try { acquired = lock.tryLock(waitMs || LOCK_WAIT_MS); } catch (e) { acquired = false; }
+    if (!acquired) {
+      try { logDebug("withLock: konnte Lock nicht erlangen, Aktion übersprungen"); } catch (e) {}
+      return null;
+    }
     return fn();
   } catch (err) {
     return null;
@@ -164,9 +170,35 @@ function onEdit(e) {
   const row = e.range.getRow();
   const col = e.range.getColumn();
 
+  if (INPUT_SHEETS[name] && col === 2 && row >= 2) {
+    try { ensureEntryIdAndDate(sheet, row); } catch (err) {}
+  }
+
   withLock(function () {
     handleEdit(e, sheet, name, row, col);
-  });
+  }, ONEDIT_LOCK_WAIT_MS);
+
+  if (INPUT_SHEETS[name] && row >= 2) {
+    try {
+      const range = e.range;
+      const startRow = range.getRow();
+      const endRow = startRow + range.getNumRows() - 1;
+      for (let r = endRow; r >= startRow && r >= 2; r--) {
+        enqueueInputEdit(sheet, name, r);
+      }
+    } catch (err) {}
+  }
+}
+
+function ensureEntryIdAndDate(sheet, row) {
+  try {
+    const val = sheet.getRange(row, 2).getValue();
+    if (!val) return;
+    const entryIdCell = sheet.getRange(row, ENTRYID_COL);
+    if (!entryIdCell.getValue()) entryIdCell.setValue(Utilities.getUuid());
+    const dateCell = sheet.getRange(row, 1);
+    if (!dateCell.getValue()) dateCell.setValue(new Date());
+  } catch (err) {}
 }
 
 function handleEdit(e, sheet, name, row, col) {
@@ -257,11 +289,6 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
     }
     return;
   }
-
-  if (!INPUT_SHEETS[name]) return;
-  if (row < 2) return;
-
-  enqueueInputEdit(sheet, name, row);
 }
 
 function handleStockIdEdit(e, sheet, row) {
@@ -634,6 +661,7 @@ function runQueueProcessor() {
     latestIdxByKey[dedupKey] = i;
   }
 
+  let processedCount = 0;
   for (let i = 1; i < data.length; i++) {
     if (data[i][6] !== "NEW") continue;
     if (data[i][1] === "_LOG") continue;
@@ -648,8 +676,12 @@ function runQueueProcessor() {
       continue;
     }
 
+    if (processedCount >= MAX_EVENTS_PER_RUN) {
+      logDebug("runQueueProcessor: Batch-Limit erreicht, Rest beim nächsten Lauf");
+      break;
+    }
+
     queue.getRange(i + 1, 7).setValue("PROCESSING");
-    SpreadsheetApp.flush();
 
     setLogUser(data[i][9] || "");
 
@@ -712,6 +744,7 @@ function runQueueProcessor() {
       queue.getRange(i + 1, 7).setValue("ERROR: " + (err && err.message ? err.message : err));
     } finally {
       setLogUser("");
+      processedCount++;
     }
   }
 }
@@ -871,10 +904,11 @@ function updateNachbestellung(key, data, inputDate, nbSheet, entryId) {
 
   if (foundRow !== -1) {
     nbSheet.getRange(foundRow, 1, 1, 15).setValues([rowData]);
-  } else {
-    const insertRow = Math.max(2, nbSheet.getLastRow() + 1);
-    nbSheet.getRange(insertRow, 1, 1, 15).setValues([rowData]);
+    return;
   }
+
+  const insertRow = Math.max(2, nbSheet.getLastRow() + 1);
+  nbSheet.getRange(insertRow, 1, 1, 15).setValues([rowData]);
 }
 
 /***********************
@@ -1157,8 +1191,180 @@ function cleanupNachbestellungStatusDate() {
     if (!ss) return;
     clearStaleStatusDateOnSheet(ss.getSheetByName("Nachbestellung"), 11, 12, "Nachbestellung");
     clearStaleStatusDateOnSheet(ss.getSheetByName("Input Exit"), 10, 11, "Input Exit");
+    try { reconcileNachbestellungInputExit(ss); } catch (err) { logDebug("reconcile failed: " + err); }
+    try { cleanupEventQueue(ss); } catch (err) { logDebug("queue cleanup failed: " + err); }
   } finally {
     try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+/***********************
+ * EventQueue Cleanup
+ * Löscht alte _LOG / DONE / SKIPPED / CANCELLED / ERROR Zeilen, damit
+ * runQueueProcessor nicht ewig braucht. Geht zusammenhängend von oben,
+ * stoppt bei der ersten Zeile, die behalten werden muss (z. B. NEW).
+ ***********************/
+function cleanupEventQueue(ss) {
+  ss = ss || getMainSS();
+  if (!ss) return;
+  const queue = ss.getSheetByName("EventQueue");
+  if (!queue) return;
+  const last = queue.getLastRow();
+  if (last < 200) return;
+
+  const data = queue.getRange(2, 1, last - 1, 7).getValues();
+  const now = Date.now();
+  const LOG_TTL_MS = 6 * 60 * 60 * 1000;
+  const DONE_TTL_MS = 24 * 60 * 60 * 1000;
+
+  let deleteUpTo = 0;
+  for (let i = 0; i < data.length; i++) {
+    const ts = data[i][0];
+    const action = data[i][1];
+    const status = data[i][6];
+    const tsMs = ts ? new Date(ts).getTime() : 0;
+    const ageMs = tsMs ? (now - tsMs) : Infinity;
+    const isLog = action === "_LOG";
+    const isDone = status === "DONE" || status === "SKIPPED" || status === "CANCELLED" ||
+      (typeof status === "string" && status.indexOf("ERROR") === 0);
+
+    if (isLog && ageMs > LOG_TTL_MS) {
+      deleteUpTo = i + 1;
+    } else if (isDone && ageMs > DONE_TTL_MS) {
+      deleteUpTo = i + 1;
+    } else {
+      break;
+    }
+  }
+
+  if (deleteUpTo > 0) {
+    queue.deleteRows(2, deleteUpTo);
+    Logger.log("cleanupEventQueue: " + deleteUpTo + " Zeilen entfernt");
+  }
+}
+
+/***********************
+ * Reconciliation: gleicht Nachbestellung <-> Input Exit ab,
+ * falls onEdit-Sync einen Update verpasst hat.
+ * Mapping (NB -> Exit):
+ *   F (6)  <-> G (7)
+ *   I (9)  <-> H (8)
+ *   J (10) <-> I (9)
+ *   K (11) <-> J (10)   Status
+ *   L (12) <-> K (11)   Status-Datum
+ ***********************/
+function reconcileNachbestellungInputExit(ss) {
+  ss = ss || getMainSS();
+  if (!ss) return;
+  const nbSheet = ss.getSheetByName("Nachbestellung");
+  const exitSheet = ss.getSheetByName("Input Exit");
+  if (!nbSheet || !exitSheet) return;
+
+  const nbLast = nbSheet.getLastRow();
+  const exitLast = exitSheet.getLastRow();
+  if (nbLast < 2 || exitLast < 2) return;
+
+  const exitEids = exitSheet.getRange(2, ENTRYID_COL, exitLast - 1, 1).getValues();
+  const exitStocks = exitSheet.getRange(2, 2, exitLast - 1, 1).getValues();
+  const exitBlock = exitSheet.getRange(2, 7, exitLast - 1, 5).getValues();
+
+  const exitByEid = {};
+  const exitByStock = {};
+  for (let i = 0; i < exitEids.length; i++) {
+    const eid = String(exitEids[i][0] || "");
+    if (eid) exitByEid[eid] = i;
+    const stock = String(exitStocks[i][0] || "").trim().toUpperCase();
+    if (stock && !(stock in exitByStock)) exitByStock[stock] = i;
+  }
+
+  const nbEids = nbSheet.getRange(2, NB_ENTRYID_COL, nbLast - 1, 1).getValues();
+  const nbStocks = nbSheet.getRange(2, 2, nbLast - 1, 1).getValues();
+  const nbBlockF = nbSheet.getRange(2, 6, nbLast - 1, 1).getValues();
+  const nbBlockI = nbSheet.getRange(2, 9, nbLast - 1, 4).getValues();
+
+  const isEmpty = function (v) {
+    return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+  };
+  const sameVal = function (a, b) {
+    if (isEmpty(a) && isEmpty(b)) return true;
+    if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+    return String(a) === String(b);
+  };
+  const tsMs = function (v) {
+    if (!v) return 0;
+    try { return new Date(v).getTime() || 0; } catch (e) { return 0; }
+  };
+
+  let nbWrites = 0;
+  let exitWrites = 0;
+
+  for (let i = 0; i < nbEids.length; i++) {
+    const eid = String(nbEids[i][0] || "");
+    const stock = String(nbStocks[i][0] || "").trim().toUpperCase();
+    let xi = -1;
+    if (eid && (eid in exitByEid)) xi = exitByEid[eid];
+    else if (stock && (stock in exitByStock)) xi = exitByStock[stock];
+    if (xi === -1) continue;
+
+    const nbF = nbBlockF[i][0];
+    const nbI = nbBlockI[i][0];
+    const nbJ = nbBlockI[i][1];
+    const nbK = nbBlockI[i][2];
+    const nbL = nbBlockI[i][3];
+
+    const exG = exitBlock[xi][0];
+    const exH = exitBlock[xi][1];
+    const exI = exitBlock[xi][2];
+    const exJ = exitBlock[xi][3];
+    const exK = exitBlock[xi][4];
+
+    const nbDate = tsMs(nbL);
+    const exDate = tsMs(exK);
+    const nbNewer = nbDate >= exDate;
+
+    if (!sameVal(nbK, exJ) || !sameVal(nbL, exK)) {
+      if (nbNewer) {
+        exitSheet.getRange(xi + 2, 10, 1, 2).setValues([[nbK, nbL]]);
+        exitBlock[xi][3] = nbK; exitBlock[xi][4] = nbL;
+        exitWrites++;
+      } else {
+        nbSheet.getRange(i + 2, 11, 1, 2).setValues([[exJ, exK]]);
+        nbBlockI[i][2] = exJ; nbBlockI[i][3] = exK;
+        nbWrites++;
+      }
+    }
+
+    if (!sameVal(nbF, exG)) {
+      if (isEmpty(nbF) && !isEmpty(exG)) {
+        nbSheet.getRange(i + 2, 6).setValue(exG);
+        nbWrites++;
+      } else if (!isEmpty(nbF) && isEmpty(exG)) {
+        exitSheet.getRange(xi + 2, 7).setValue(nbF);
+        exitWrites++;
+      }
+    }
+    if (!sameVal(nbI, exH)) {
+      if (isEmpty(nbI) && !isEmpty(exH)) {
+        nbSheet.getRange(i + 2, 9).setValue(exH);
+        nbWrites++;
+      } else if (!isEmpty(nbI) && isEmpty(exH)) {
+        exitSheet.getRange(xi + 2, 8).setValue(nbI);
+        exitWrites++;
+      }
+    }
+    if (!sameVal(nbJ, exI)) {
+      if (isEmpty(nbJ) && !isEmpty(exI)) {
+        nbSheet.getRange(i + 2, 10).setValue(exI);
+        nbWrites++;
+      } else if (!isEmpty(nbJ) && isEmpty(exI)) {
+        exitSheet.getRange(xi + 2, 9).setValue(nbJ);
+        exitWrites++;
+      }
+    }
+  }
+
+  if (nbWrites || exitWrites) {
+    logDebug("reconcileNachbestellungInputExit: NB writes=" + nbWrites + " Exit writes=" + exitWrites);
   }
 }
 
