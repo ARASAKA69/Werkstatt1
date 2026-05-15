@@ -21,6 +21,36 @@ const NB_ENTRYID_COL = 15;
 const ENTRYID_HEADER_PATTERNS = ["entryid", "entry id", "entry_id"];
 const ENTRYID_HEADER_SEARCH_ROWS = 5;
 const _entryIdColCache = {};
+const _dashLayoutBySheetId = {};
+const _nbLayoutBySheetId = {};
+
+const NB_HEADER_ALIASES = {
+  stockId: ["stock id"],
+  costGate: ["cost gate"],
+  status: ["status"],
+  statusAenderung: ["statusänderung", "statusanderung"],
+  entryId: ["entryid", "entry id", "entry_id"]
+};
+const NB_HEADER_KEY_LIST = Object.keys(NB_HEADER_ALIASES);
+
+const DASHBOARD_HEADER_ALIASES = {
+  datum: ["datum"],
+  stockId: ["stock id"],
+  letzerTagesliste: ["letzer tageslisteneintrag", "letzter tageslisteneintrag"],
+  tageSeitLetztem: ["tage seit letzten eintrag"],
+  eintraege: ["einträge", "eintrage"],
+  herkunft: ["herkunft"],
+  etDiagnose: ["et/diagnose", "et / diagnose"],
+  grund: ["grund"],
+  tageSeitInput: ["tage seit input"],
+  costGate: ["cost gate"],
+  status: ["status"],
+  statusAenderung: ["statusänderung", "statusanderung"],
+  archivieren: ["archivieren"],
+  bemerkung: ["bemerkung/verlauf", "bemerkung / verlauf"],
+  entryId: ["entryid", "entry id", "entry_id"]
+};
+const DASHBOARD_HEADER_KEY_LIST = Object.keys(DASHBOARD_HEADER_ALIASES);
 
 function defaultEntryIdCol(sheetName) {
   if (sheetName === "Dashboard") return DASHBOARD_ENTRYID_COL;
@@ -51,6 +81,24 @@ function getEntryIdCol(sheet) {
   if (!sheet) return 0;
   const name = sheet.getName();
   if (_entryIdColCache[name]) return _entryIdColCache[name];
+  if (name === "Dashboard") {
+    try {
+      const layout = getDashboardLayout(sheet);
+      if (layout && layout.cols && layout.cols.entryId) {
+        _entryIdColCache[name] = layout.cols.entryId;
+        return layout.cols.entryId;
+      }
+    } catch (e) {}
+  }
+  if (name === "Nachbestellung") {
+    try {
+      const nbLo = getNachbestellungLayout(sheet);
+      if (nbLo && nbLo.cols && nbLo.cols.entryId) {
+        _entryIdColCache[name] = nbLo.cols.entryId;
+        return nbLo.cols.entryId;
+      }
+    } catch (e) {}
+  }
   const detected = _detectEntryIdColRaw(sheet);
   const col = detected || defaultEntryIdCol(name);
   _entryIdColCache[name] = col;
@@ -59,6 +107,236 @@ function getEntryIdCol(sheet) {
 
 function clearEntryIdColCache() {
   for (const k in _entryIdColCache) delete _entryIdColCache[k];
+  for (const k in _dashLayoutBySheetId) delete _dashLayoutBySheetId[k];
+  for (const k in _nbLayoutBySheetId) delete _nbLayoutBySheetId[k];
+}
+
+function normDashHeader(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function defaultDashboardLayout() {
+  return {
+    headerRow: 3,
+    dataStartRow: 4,
+    dataEndTrimBottomRows: 3,
+    cols: {
+      datum: 1,
+      stockId: 2,
+      letzerTagesliste: 3,
+      tageSeitLetztem: 4,
+      eintraege: 5,
+      herkunft: 6,
+      etDiagnose: 7,
+      grund: 8,
+      tageSeitInput: 9,
+      costGate: 10,
+      status: 11,
+      statusAenderung: 12,
+      archivieren: 13,
+      bemerkung: 14,
+      entryId: 15
+    },
+    lastCol: 15
+  };
+}
+
+function dashboardLayoutComplete(cols) {
+  for (let i = 0; i < DASHBOARD_HEADER_KEY_LIST.length; i++) {
+    if (!cols[DASHBOARD_HEADER_KEY_LIST[i]]) return false;
+  }
+  return true;
+}
+
+function buildDashboardLayout(dashboard) {
+  const fb = defaultDashboardLayout();
+  if (!dashboard) return fb;
+  try {
+    const lastCol = Math.max(1, dashboard.getLastColumn());
+    const lastRow = Math.max(1, dashboard.getLastRow());
+    const scanRows = Math.min(40, lastRow);
+    let bestRow = -1;
+    let bestScore = -1;
+    let bestCols = null;
+    for (let r = 1; r <= scanRows; r++) {
+      const row = dashboard.getRange(r, 1, r, lastCol).getValues()[0];
+      const normToCol = {};
+      for (let c = 0; c < lastCol; c++) {
+        const n = normDashHeader(row[c]);
+        if (!n) continue;
+        if (normToCol[n] === undefined) normToCol[n] = c + 1;
+      }
+      const cols = {};
+      let score = 0;
+      for (let k = 0; k < DASHBOARD_HEADER_KEY_LIST.length; k++) {
+        const key = DASHBOARD_HEADER_KEY_LIST[k];
+        const aliases = DASHBOARD_HEADER_ALIASES[key];
+        for (let a = 0; a < aliases.length; a++) {
+          const idx = normToCol[normDashHeader(aliases[a])];
+          if (idx) {
+            cols[key] = idx;
+            score++;
+            break;
+          }
+        }
+      }
+      if (dashboardLayoutComplete(cols)) {
+        if (score > bestScore) {
+          bestScore = score;
+          bestRow = r;
+          bestCols = cols;
+        }
+      }
+    }
+    if (bestRow === -1 || !bestCols) return fb;
+    let maxC = lastCol;
+    for (let k = 0; k < DASHBOARD_HEADER_KEY_LIST.length; k++) {
+      const v = bestCols[DASHBOARD_HEADER_KEY_LIST[k]];
+      if (v > maxC) maxC = v;
+    }
+    return {
+      headerRow: bestRow,
+      dataStartRow: bestRow + 1,
+      dataEndTrimBottomRows: 3,
+      cols: bestCols,
+      lastCol: Math.max(maxC, lastCol, 15)
+    };
+  } catch (err) {
+    return fb;
+  }
+}
+
+function getDashboardLayout(dashboard) {
+  if (!dashboard) return defaultDashboardLayout();
+  const sid = dashboard.getSheetId();
+  if (_dashLayoutBySheetId[sid]) return _dashLayoutBySheetId[sid];
+  const layout = buildDashboardLayout(dashboard);
+  _dashLayoutBySheetId[sid] = layout;
+  return layout;
+}
+
+function dashboardDataEndRow(dashboard, layout) {
+  const last = dashboard.getLastRow();
+  const trim = layout.dataEndTrimBottomRows != null ? layout.dataEndTrimBottomRows : 3;
+  if (last < layout.dataStartRow) return last;
+  return Math.max(layout.dataStartRow, last - trim);
+}
+
+function setDashboardTageSeitLetztemBackground(dashboard, layout, row, diffDays) {
+  let color = "#ffffff";
+  if (diffDays === "" || diffDays == null) {
+    color = "#ffffff";
+  } else if (diffDays <= 3) {
+    color = "#d9f7d9";
+  } else if (diffDays <= 10) {
+    color = "#fff4cc";
+  } else {
+    color = "#ffd6d6";
+  }
+  dashboard.getRange(row, layout.cols.tageSeitLetztem).setBackground(color);
+}
+
+function defaultNachbestellungLayout() {
+  return {
+    headerRow: 1,
+    dataStartRow: 2,
+    dataEndTrimBottomRows: 1,
+    cols: {
+      stockId: 2,
+      costGate: 9,
+      status: 11,
+      statusAenderung: 12,
+      entryId: NB_ENTRYID_COL
+    },
+    lastCol: 15
+  };
+}
+
+function nbLayoutComplete(cols) {
+  for (let i = 0; i < NB_HEADER_KEY_LIST.length; i++) {
+    if (!cols[NB_HEADER_KEY_LIST[i]]) return false;
+  }
+  return true;
+}
+
+function buildNachbestellungLayout(sheet) {
+  const fb = defaultNachbestellungLayout();
+  if (!sheet) return fb;
+  try {
+    const lastCol = Math.max(1, sheet.getLastColumn());
+    const lastRow = Math.max(1, sheet.getLastRow());
+    const scanRows = Math.min(40, lastRow);
+    let bestRow = -1;
+    let bestScore = -1;
+    let bestCols = null;
+    for (let r = 1; r <= scanRows; r++) {
+      const row = sheet.getRange(r, 1, r, lastCol).getValues()[0];
+      const normToCol = {};
+      for (let c = 0; c < lastCol; c++) {
+        const n = normDashHeader(row[c]);
+        if (!n) continue;
+        if (normToCol[n] === undefined) normToCol[n] = c + 1;
+      }
+      const cols = {};
+      let score = 0;
+      for (let k = 0; k < NB_HEADER_KEY_LIST.length; k++) {
+        const lk = NB_HEADER_KEY_LIST[k];
+        const aliases = NB_HEADER_ALIASES[lk];
+        for (let a = 0; a < aliases.length; a++) {
+          const idx = normToCol[normDashHeader(aliases[a])];
+          if (idx) {
+            cols[lk] = idx;
+            score++;
+            break;
+          }
+        }
+      }
+      if (nbLayoutComplete(cols)) {
+        if (score > bestScore) {
+          bestScore = score;
+          bestRow = r;
+          bestCols = cols;
+        }
+      }
+    }
+    if (bestRow === -1 || !bestCols) return fb;
+    let maxC = lastCol;
+    for (let k = 0; k < NB_HEADER_KEY_LIST.length; k++) {
+      const v = bestCols[NB_HEADER_KEY_LIST[k]];
+      if (v > maxC) maxC = v;
+    }
+    return {
+      headerRow: bestRow,
+      dataStartRow: bestRow + 1,
+      dataEndTrimBottomRows: 1,
+      cols: bestCols,
+      lastCol: Math.max(maxC, lastCol, 15)
+    };
+  } catch (err) {
+    return fb;
+  }
+}
+
+function getNachbestellungLayout(sheet) {
+  if (!sheet) return defaultNachbestellungLayout();
+  const sid = sheet.getSheetId();
+  if (_nbLayoutBySheetId[sid]) return _nbLayoutBySheetId[sid];
+  const lo = buildNachbestellungLayout(sheet);
+  _nbLayoutBySheetId[sid] = lo;
+  return lo;
+}
+
+function nachbestellungFallbackFromNb(nb) {
+  const s = String(nb && nb.k != null ? nb.k : "").trim();
+  return s || "Kein Datum";
+}
+
+function isStockIdInTagesliste(tages) {
+  return !!(tages && tages.count > 0);
 }
 
 const LOCK_WAIT_MS = 30000;
@@ -140,14 +418,16 @@ function isEntryIdFromInputExit(entryId) {
 
 function removeDashboardRowByEntryId(dashboard, entryId) {
   if (!dashboard || !entryId) return;
+  const layout = getDashboardLayout(dashboard);
   const last = dashboard.getLastRow();
-  if (last < 4) return;
+  if (last < layout.dataStartRow) return;
+  const end = dashboardDataEndRow(dashboard, layout);
   try {
-    const rng = dashboard.getRange(4, getEntryIdCol(dashboard), last - 3, 1).getValues();
+    const rng = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, end, 1).getValues();
     const target = String(entryId);
     for (let i = rng.length - 1; i >= 0; i--) {
       if (String(rng[i][0]) === target) {
-        try { dashboard.deleteRow(i + 4); } catch (e) {}
+        try { dashboard.deleteRow(i + layout.dataStartRow); } catch (e) {}
       }
     }
   } catch (e) {}
@@ -478,12 +758,15 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
     }
   }
 
-  if (name === "Dashboard" && colHit(13) && row >= 3) {
-    const value = sheet.getRange(row, 13).getValue();
-    const stockId = sheet.getRange(row, 2).getValue();
-    if (value === true && stockId) {
-      archiveEntry(stockId);
-      sheet.getRange(row, 13).setValue(false);
+  if (name === "Dashboard") {
+    const layout = getDashboardLayout(sheet);
+    if (colHit(layout.cols.archivieren) && row >= layout.dataStartRow) {
+      const value = sheet.getRange(row, layout.cols.archivieren).getValue();
+      const stockId = sheet.getRange(row, layout.cols.stockId).getValue();
+      if (value === true && stockId) {
+        archiveEntry(stockId);
+        sheet.getRange(row, layout.cols.archivieren).setValue(false);
+      }
     }
     return;
   }
@@ -806,6 +1089,7 @@ function updateDashboardFromNachbestellungRow(nbSheet, row) {
   if (!ss) return;
   const dashboard = ss.getSheetByName("Dashboard");
   if (!dashboard) return;
+  const layout = getDashboardLayout(dashboard);
   const entryId = nbSheet.getRange(row, getEntryIdCol(nbSheet)).getValue() || "";
 
   if (entryId && isEntryIdFromInputExit(entryId)) {
@@ -815,13 +1099,13 @@ function updateDashboardFromNachbestellungRow(nbSheet, row) {
 
   const tagesMap = getTageslisteMap();
 
-  const dashboardRow = findRowByEntryId(dashboard, getEntryIdCol(dashboard), entryId, 4);
+  const dashboardRow = findRowByEntryId(dashboard, layout.cols.entryId, entryId, layout.dataStartRow);
   let fVal = "", gVal = "", hVal = "";
   if (dashboardRow !== -1) {
-    const dashVals = dashboard.getRange(dashboardRow, 1, 1, 15).getValues()[0];
-    fVal = dashVals[5] || "";
-    gVal = dashVals[6] || "";
-    hVal = dashVals[7] || "";
+    const dashVals = dashboard.getRange(dashboardRow, 1, dashboardRow, layout.lastCol).getValues()[0];
+    fVal = dashVals[layout.cols.herkunft - 1] || "";
+    gVal = dashVals[layout.cols.etDiagnose - 1] || "";
+    hVal = dashVals[layout.cols.grund - 1] || "";
   }
   const data = [
     nbSheet.getRange(row, 1).getValue(),
@@ -1084,6 +1368,15 @@ function runQueueProcessor() {
 /***********************
  * DAYS BETWEEN
  ***********************/
+function cellDateToTime(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) {
+    return isNaN(v.getTime()) ? null : v.getTime();
+  }
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
 function daysBetween(d1, d2) {
   const date1 = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
   const date2 = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
@@ -1096,19 +1389,39 @@ function daysBetween(d1, d2) {
 function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entryId) {
   if (!key) return;
 
+  const layout = getDashboardLayout(dashboard);
   const inputDate = data[0] ? new Date(data[0]) : new Date();
   const nb = getNachbestellungValuesByKey(nbSheet, key, entryId);
-  const tages = tagesMap[key.toUpperCase()] || { count: 0, lastDate: "" };
+  const tages = tagesMap[key.toUpperCase()] || { count: 0, lastDate: null };
   const baseDate = dashboard.getRange("A2").getValue()
     ? new Date(dashboard.getRange("A2").getValue())
     : new Date();
 
-  let diffD = "";
-  const rowDateC = tages.lastDate ? new Date(tages.lastDate) : null;
-  if (rowDateC) diffD = daysBetween(baseDate, rowDateC);
+  let cVal, diffD, orangeC;
+  if (!isStockIdInTagesliste(tages)) {
+    cVal = nachbestellungFallbackFromNb(nb);
+    diffD = "";
+    orangeC = true;
+  } else if (tages.lastDate == null || tages.lastDate === "") {
+    cVal = "Kein Datum";
+    diffD = "";
+    orangeC = true;
+  } else {
+    const rowDateC = new Date(tages.lastDate);
+    if (isNaN(rowDateC.getTime())) {
+      cVal = "Kein Datum";
+      diffD = "";
+      orangeC = true;
+    } else {
+      cVal = tages.lastDate;
+      diffD = daysBetween(baseDate, rowDateC);
+      orangeC = false;
+    }
+  }
+
   const diffI = daysBetween(baseDate, inputDate);
 
-  const found = findRowByEntryId(dashboard, getEntryIdCol(dashboard), entryId, 4);
+  const found = findRowByEntryId(dashboard, layout.cols.entryId, entryId, layout.dataStartRow);
 
   let fVal = "", gVal = "", hVal = "";
   if (code) {
@@ -1116,77 +1429,95 @@ function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entr
     gVal = data[2] || "";
     hVal = data[3] || "";
   } else if (found !== -1) {
-    const dashVals = dashboard.getRange(found, 1, 1, 15).getValues()[0];
-    fVal = dashVals[5] || "";
-    gVal = dashVals[6] || "";
-    hVal = dashVals[7] || "";
+    const dashVals = dashboard.getRange(found, 1, found, layout.lastCol).getValues()[0];
+    fVal = dashVals[layout.cols.herkunft - 1] || "";
+    gVal = dashVals[layout.cols.etDiagnose - 1] || "";
+    hVal = dashVals[layout.cols.grund - 1] || "";
   }
 
-  const dashEidCol = getEntryIdCol(dashboard);
-  const dataWidth = Math.max(14, dashEidCol - 1);
-  const rowData = new Array(dataWidth);
-  rowData[0] = inputDate;
-  rowData[1] = key;
-  rowData[2] = tages.lastDate || "";
-  rowData[3] = diffD;
-  rowData[4] = tages.count || 0;
-  rowData[5] = fVal;
-  rowData[6] = gVal;
-  rowData[7] = hVal;
-  rowData[8] = diffI;
-  rowData[9] = nb.i || "";
-  rowData[10] = nb.k || "";
-  rowData[11] = nb.l || "";
-  rowData[12] = false;
-  for (let c = 13; c < dataWidth; c++) rowData[c] = "";
+  const c = layout.cols;
+  const out = new Array(layout.lastCol);
+  for (let i = 0; i < layout.lastCol; i++) out[i] = "";
+
+  if (found !== -1) {
+    const existing = dashboard.getRange(found, 1, found, layout.lastCol).getValues()[0];
+    for (let i = 0; i < layout.lastCol; i++) out[i] = existing[i];
+  }
+
+  out[c.datum - 1] = inputDate;
+  out[c.stockId - 1] = key;
+  out[c.letzerTagesliste - 1] = cVal;
+  out[c.tageSeitLetztem - 1] = diffD;
+  out[c.eintraege - 1] = tages.count || 0;
+  out[c.herkunft - 1] = fVal;
+  out[c.etDiagnose - 1] = gVal;
+  out[c.grund - 1] = hVal;
+  out[c.tageSeitInput - 1] = diffI;
+  out[c.costGate - 1] = nb.i || "";
+  out[c.status - 1] = nb.k || "";
+  out[c.statusAenderung - 1] = nb.l || "";
+  out[c.archivieren - 1] = false;
 
   let targetRow;
   if (found !== -1) {
     targetRow = found;
   } else {
     targetRow = dashboard.getLastRow() + 1;
-    if (dashboard.getLastRow() >= 4) {
-      const allRows = dashboard.getRange(4, 2, dashboard.getLastRow() - 3, 1).getValues();
+    const endData = dashboardDataEndRow(dashboard, layout);
+    if (dashboard.getLastRow() >= layout.dataStartRow) {
+      const allRows = dashboard.getRange(layout.dataStartRow, c.stockId, endData, 1).getValues();
       for (let i = 0; i < allRows.length; i++) {
         if (allRows[i][0] === "" || allRows[i][0] === null) {
-          targetRow = i + 4;
+          targetRow = i + layout.dataStartRow;
           break;
         }
       }
     } else {
-      targetRow = 4;
+      targetRow = layout.dataStartRow;
     }
   }
-  dashboard.getRange(targetRow, 1, 1, dataWidth).setValues([rowData]);
-  dashboard.getRange(targetRow, dashEidCol).setValue(entryId);
-  applyColor(dashboard.getRange(targetRow, 1, 1, 13), diffD);
+
+  dashboard.getRange(targetRow, 1, targetRow, layout.lastCol).setValues([out]);
+  dashboard.getRange(targetRow, c.entryId).setValue(entryId);
+  dashboard.getRange(targetRow, c.letzerTagesliste).setBackground(orangeC ? "#f9cb9c" : "#ffffff");
+  setDashboardTageSeitLetztemBackground(dashboard, layout, targetRow, diffD);
 }
 
 /***********************
  * Nachbestellung lookup
  ***********************/
 function getNachbestellungValuesByKey(nbSheet, key, entryId) {
+  const empty = { i: "", k: "", l: "" };
+  if (!nbSheet) return empty;
+  const layout = getNachbestellungLayout(nbSheet);
   const last = nbSheet.getLastRow();
-  if (last < 2) return { i: "", k: "", l: "" };
-  const nbEidCol = getEntryIdCol(nbSheet);
-  const width = Math.max(15, nbEidCol);
-  const data = nbSheet.getRange(2, 1, last - 1, width).getValues();
+  if (last < layout.dataStartRow) return empty;
+  const trim = layout.dataEndTrimBottomRows != null ? layout.dataEndTrimBottomRows : 1;
+  const dataEnd = last > trim ? last - trim : last;
+  if (dataEnd < layout.dataStartRow) return empty;
+  const nbEidCol = layout.cols.entryId;
+  const width = Math.max(layout.lastCol, nbEidCol);
+  const data = nbSheet.getRange(layout.dataStartRow, 1, dataEnd, width).getValues();
   const keyU = String(key).toUpperCase();
   const eid = String(entryId || "");
   const eidIdx = nbEidCol - 1;
+  const stockIdx = layout.cols.stockId - 1;
+  const iIdx = layout.cols.costGate - 1;
+  const kIdx = layout.cols.status - 1;
+  const lIdx = layout.cols.statusAenderung - 1;
   for (let i = 0; i < data.length; i++) {
     if (
-      String(data[i][1] || "").trim().toUpperCase() === keyU &&
+      String(data[i][stockIdx] || "").trim().toUpperCase() === keyU &&
       String(data[i][eidIdx] || "") === eid
     ) {
       return {
-        i: data[i][8] || "",
-        k: data[i][10] || "",
-        l: data[i][11] || ""
+        i: data[i][iIdx] || "",
+        k: data[i][kIdx] || "",
+        l: data[i][lIdx] || ""
       };
     }
   }
-  return { i: "", k: "", l: "" };
+  return empty;
 }
 
 /***********************
@@ -1199,17 +1530,21 @@ function getTageslisteMap() {
   if (!sheet) return map;
   const last = sheet.getLastRow();
   if (last < 2) return map;
-  const data = sheet.getRange(1, 1, last, 5).getValues();
-  for (let i = 1; i < data.length; i++) {
+  const data = sheet.getRange(2, 1, last, 5).getValues();
+  for (let i = 0; i < data.length; i++) {
     const date = data[i][0];
     const key = String(data[i][4] || "").trim();
     if (!key) continue;
     const keyUpper = key.toUpperCase();
     if (!map[keyUpper]) {
-      map[keyUpper] = { count: 0, lastDate: date };
+      map[keyUpper] = { count: 0, lastDate: null };
     }
     map[keyUpper].count++;
-    if (date && new Date(date) > new Date(map[keyUpper].lastDate)) {
+    const t = cellDateToTime(date);
+    if (t == null) continue;
+    const prev = map[keyUpper].lastDate;
+    const prevT = prev == null || prev === "" ? null : cellDateToTime(prev);
+    if (prevT == null || t > prevT) {
       map[keyUpper].lastDate = date;
     }
   }
@@ -1274,16 +1609,19 @@ function deleteEverywhere(key, entryId) {
 
   try {
     const dashboard = ss.getSheetByName("Dashboard");
-    if (dashboard && dashboard.getLastRow() >= 4) {
-      const dashEidCol = getEntryIdCol(dashboard);
-      let dRow;
-      while ((dRow = findRowByEntryId(dashboard, dashEidCol, targetId, 4)) !== -1) {
-        try {
-          dashboard.deleteRow(dRow);
-          dashRemoved++;
-        } catch (e) {
-          logDebug("deleteEverywhere dashboard delete failed row=" + dRow + ": " + e);
-          break;
+    if (dashboard) {
+      const dLayout = getDashboardLayout(dashboard);
+      if (dashboard.getLastRow() >= dLayout.dataStartRow) {
+        const dashEidCol = dLayout.cols.entryId;
+        let dRow;
+        while ((dRow = findRowByEntryId(dashboard, dashEidCol, targetId, dLayout.dataStartRow)) !== -1) {
+          try {
+            dashboard.deleteRow(dRow);
+            dashRemoved++;
+          } catch (e) {
+            logDebug("deleteEverywhere dashboard delete failed row=" + dRow + ": " + e);
+            break;
+          }
         }
       }
     }
@@ -1333,23 +1671,6 @@ function deleteEverywhere(key, entryId) {
 }
 
 /***********************
- * COLORS
- ***********************/
-function applyColor(range, diffDays) {
-  let color = "#ffffff";
-  if (diffDays === "" || diffDays == null) {
-    color = "#ffffff";
-  } else if (diffDays <= 3) {
-    color = "#d9f7d9";
-  } else if (diffDays <= 10) {
-    color = "#fff4cc";
-  } else {
-    color = "#ffd6d6";
-  }
-  range.getCell(1, 4).setBackground(color);
-}
-
-/***********************
  * ARCHIVIERUNG
  ***********************/
 function archiveEntry(stockId) {
@@ -1377,7 +1698,9 @@ function archiveEntry(stockId) {
     }
   }
 
-  moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", 2, stockId);
+  const dash = ss.getSheetByName("Dashboard");
+  const dashStockCol = dash ? getDashboardLayout(dash).cols.stockId : 2;
+  moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dashStockCol, stockId);
   moveRowToArchiveAndDelete(ss, "Nachbestellung", "Nachbestellung_Archiv", 2, stockId);
   moveRowToArchiveAndDelete(ss, "Input Exit", "Input Exit_Archiv", 2, stockId);
   moveRowToArchiveAndDelete(ss, "Input Q-Check", "Input Q-Check_Archiv", 2, stockId);
@@ -1441,16 +1764,17 @@ function cleanupDashboardOfInputExit() {
     }
 
     const dashLast = dashboard.getLastRow();
-    if (dashLast < 4) return;
-    const dashEidCol = getEntryIdCol(dashboard);
-    const dashEids = dashboard.getRange(4, dashEidCol, dashLast - 3, 1).getValues();
-    const dashCodes = dashboard.getRange(4, 6, dashLast - 3, 1).getValues();
+    const layout = getDashboardLayout(dashboard);
+    if (dashLast < layout.dataStartRow) return;
+    const end = dashboardDataEndRow(dashboard, layout);
+    const dashEids = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, end, 1).getValues();
+    const dashCodes = dashboard.getRange(layout.dataStartRow, layout.cols.herkunft, end, 1).getValues();
     let removed = 0;
     for (let i = dashEids.length - 1; i >= 0; i--) {
       const eid = String(dashEids[i][0] || "");
       const code = String(dashCodes[i][0] || "").trim().toUpperCase();
       if (code === "EX" || (eid && exitIds.has(eid))) {
-        try { dashboard.deleteRow(i + 4); removed++; } catch (e) {}
+        try { dashboard.deleteRow(i + layout.dataStartRow); removed++; } catch (e) {}
       }
     }
     logDebug("cleanupDashboardOfInputExit: removed " + removed + " rows");
@@ -1469,33 +1793,79 @@ function updateDashboardDayDiffs() {
     const ss = getMainSS();
     const dashboard = ss.getSheetByName("Dashboard");
     if (!dashboard) return;
+    const layout = getDashboardLayout(dashboard);
     const tagesMap = getTageslisteMap();
+    const nbSheet = ss.getSheetByName("Nachbestellung");
     const baseDate = dashboard.getRange("A2").getValue()
       ? new Date(dashboard.getRange("A2").getValue())
       : new Date();
 
     const lastRow = dashboard.getLastRow();
-    if (lastRow < 4) return;
+    if (lastRow < layout.dataStartRow) return;
 
-    const data = dashboard.getRange(4, 1, lastRow - 3, 15).getValues();
+    const end = dashboardDataEndRow(dashboard, layout);
+    const w = layout.lastCol;
+    const data = dashboard.getRange(layout.dataStartRow, 1, end, w).getValues();
+    const ix = layout.cols;
+
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
-      const inputDate = row[0] ? new Date(row[0]) : null;
-      const key = String(row[1] || "").trim();
+      const inputDate = row[ix.datum - 1] ? new Date(row[ix.datum - 1]) : null;
+      const key = String(row[ix.stockId - 1] || "").trim();
       if (!key) continue;
-      const tages = tagesMap[key.toUpperCase()] || { count: 0, lastDate: "" };
+      const eid = String(row[ix.entryId - 1] || "").trim();
+      const nb = nbSheet ? getNachbestellungValuesByKey(nbSheet, key, eid) : { k: "" };
+      const tages = tagesMap[key.toUpperCase()] || { count: 0, lastDate: null };
 
-      let diffD = "";
-      const rowDateC = tages.lastDate ? new Date(tages.lastDate) : null;
-      if (rowDateC) diffD = daysBetween(baseDate, rowDateC);
+      let cVal, diffD, orangeC;
+      if (!isStockIdInTagesliste(tages)) {
+        cVal = nachbestellungFallbackFromNb(nb);
+        diffD = "";
+        orangeC = true;
+      } else if (tages.lastDate == null || tages.lastDate === "") {
+        cVal = "Kein Datum";
+        diffD = "";
+        orangeC = true;
+      } else {
+        const rowDateC = new Date(tages.lastDate);
+        if (isNaN(rowDateC.getTime())) {
+          cVal = "Kein Datum";
+          diffD = "";
+          orangeC = true;
+        } else {
+          cVal = tages.lastDate;
+          diffD = daysBetween(baseDate, rowDateC);
+          orangeC = false;
+        }
+      }
 
       let diffI = "";
       if (inputDate) diffI = daysBetween(baseDate, inputDate);
 
-      if (row[3] !== diffD || row[8] !== diffI) {
-        dashboard.getRange(i + 4, 4).setValue(diffD);
-        dashboard.getRange(i + 4, 9).setValue(diffI);
-        applyColor(dashboard.getRange(i + 4, 1, 1, 13), diffD);
+      const dataRow = i + layout.dataStartRow;
+      let cMatch = false;
+      if (orangeC) {
+        cMatch = String(row[ix.letzerTagesliste - 1] || "").trim() === String(cVal || "").trim();
+      } else {
+        const ct = cellDateToTime(row[ix.letzerTagesliste - 1]);
+        const wt = cellDateToTime(cVal);
+        if (ct != null && wt != null) cMatch = ct === wt;
+        else cMatch = String(row[ix.letzerTagesliste - 1]) === String(cVal);
+      }
+
+      const dMatch =
+        (diffD === "" && (row[ix.tageSeitLetztem - 1] === "" || row[ix.tageSeitLetztem - 1] == null)) ||
+        row[ix.tageSeitLetztem - 1] === diffD;
+      const iMatch =
+        (diffI === "" && (row[ix.tageSeitInput - 1] === "" || row[ix.tageSeitInput - 1] == null)) ||
+        row[ix.tageSeitInput - 1] === diffI;
+
+      dashboard.getRange(dataRow, ix.letzerTagesliste).setBackground(orangeC ? "#f9cb9c" : "#ffffff");
+      if (!cMatch || !dMatch || !iMatch) {
+        dashboard.getRange(dataRow, ix.letzerTagesliste).setValue(cVal);
+        dashboard.getRange(dataRow, ix.tageSeitLetztem).setValue(diffD);
+        dashboard.getRange(dataRow, ix.tageSeitInput).setValue(diffI);
+        setDashboardTageSeitLetztemBackground(dashboard, layout, dataRow, diffD);
       }
     }
   } finally {
