@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.41
+// @version      1.42
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,9 +17,10 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.41";
-    const ARASAKA_BRIDGE_VERSION = "15";
+    const ARASAKA_BOT_VERSION = "1.42";
+    const ARASAKA_BRIDGE_VERSION = "16";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
+    const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -147,6 +148,7 @@
             sessionStorage.removeItem('arasaka_batch_data');
             sessionStorage.removeItem('arasaka_batch_keys');
             sessionStorage.removeItem('arasaka_batch_current_idx');
+            sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
             showCustomPopup("ARASAKA", "PROZESS GESTOPPT & SPEICHER GELÖSCHT", true);
         }
 
@@ -302,6 +304,97 @@
         return false;
     }
 
+    function readTageslistePending() {
+        try {
+            var p = JSON.parse(sessionStorage.getItem(ARASAKA_TAGESLISTE_PENDING_KEY) || "[]");
+            return Array.isArray(p) ? p : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function pushTageslistePending(entry) {
+        var pend = readTageslistePending();
+        pend.push(entry);
+        sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(pend));
+    }
+
+    async function flushTageslisteBatchIfAny() {
+        var entries = readTageslistePending();
+        if (entries.length === 0) {
+            sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
+            return;
+        }
+        if (abortMission) return;
+        sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
+        showCustomPopup("ARASAKA SYNC", "Setze Haken in der Tagesliste für " + entries.length + " Stock-ID(s)...", false);
+        var syncDone = false;
+        var warningTimer = setTimeout(function() {
+            if (!syncDone && !abortMission) {
+                showCustomPopup("ARASAKA WARTET", "Warte noch kurz...\nGoogle braucht gerade etwas länger für die Haken. Gleich fertig!", false);
+            }
+        }, 5000);
+        var markRes = await bridgePostJson({
+            action: "markSheetBatch",
+            entriesJson: JSON.stringify(entries)
+        }, 90000);
+        var parsed = null;
+        var syncStatus = "HTTP_ERROR";
+        if (markRes) {
+            var mrt = String(markRes.responseText || "").trim();
+            dbg("markSheetBatch", "http", markRes.status, "body", mrt.slice(0, 400));
+            if (bridgeBodyLooksLikeHtml(mrt)) {
+                syncStatus = "HTML_FEHLER";
+                dbg("markSheetBatch", "appsScriptHtml", bridgeHtmlErrorHint(mrt));
+            } else if (mrt.charAt(0) === "{") {
+                try {
+                    parsed = JSON.parse(mrt);
+                    if (parsed && parsed.allOk === true) syncStatus = "OK";
+                    else if (parsed && parsed.error === "SHEET_NOT_FOUND") syncStatus = "SHEET_NOT_FOUND";
+                    else if (parsed && parsed.notFound && parsed.notFound.length) syncStatus = "PARTIAL";
+                    else if (parsed && parsed.error) syncStatus = "ERROR_" + String(parsed.error);
+                    else syncStatus = "PARTIAL";
+                } catch (eJ) {
+                    syncStatus = "JSON_PARSE";
+                }
+            } else {
+                syncStatus = mrt;
+            }
+        } else {
+            dbg("markSheetBatch", "noResponse");
+        }
+        syncDone = true;
+        clearTimeout(warningTimer);
+        dbg("markSheetBatch", "syncStatus", syncStatus, "parsed", parsed);
+        if (syncStatus === "OK") {
+            showCustomPopup("ARASAKA", "Tagesliste: alle Haken für diesen Stapel gesetzt.", false);
+            await sleep(1200);
+            return;
+        }
+        if (syncStatus === "PARTIAL" && parsed && parsed.notFound && parsed.notFound.length) {
+            var stillMissing = [];
+            for (var ni = 0; ni < parsed.notFound.length; ni++) {
+                if (abortMission) break;
+                var sid = parsed.notFound[ni];
+                var checkRes = await bridgePostJson({ action: "checkSheetMark", stockId: sid }, 30000);
+                if (checkRes && String(checkRes.responseText || "").trim() === "OK") continue;
+                stillMissing.push(sid);
+            }
+            if (stillMissing.length === 0) {
+                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach kurzer Prüfung).", false);
+                await sleep(1200);
+                return;
+            }
+            dbg("markSheetBatchHudWarn", "stillMissing", stillMissing);
+            showCustomPopup("ARASAKA WARNUNG", "Stapel fertig, aber für " + stillMissing.length + " Stock-ID(s) fehlt der Haken in der Tagesliste. Konsole (F12) für Details.", false);
+            await sleep(3500);
+            return;
+        }
+        dbg("markSheetBatchHudWarn", "syncStatus", syncStatus);
+        showCustomPopup("ARASAKA WARNUNG", "Stapel fertig, aber die Tagesliste konnte nicht vollständig bestätigt werden. Konsole (F12) für Details.", false);
+        await sleep(3500);
+    }
+
     function continueWithNextStock(nextIdx) {
         sessionStorage.setItem('arasaka_batch_current_idx', String(nextIdx));
         if (window.location.pathname === '/' || window.location.pathname === '') {
@@ -407,6 +500,7 @@
             sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
             sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
             sessionStorage.setItem('arasaka_batch_current_idx', '0');
+            sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
             processNextStock();
         } catch (err) {
             dbg('getBatch', 'parseError', err && err.message, 'rawHead', rt.slice(0, 400));
@@ -422,6 +516,7 @@
         dbg('processNextStock', 'idx', idx, 'totalKeys', keys.length, 'keys', keys);
 
         if (idx >= keys.length) {
+            if (!abortMission) await flushTageslisteBatchIfAny();
             sessionStorage.removeItem('arasaka_batch_data');
             sessionStorage.removeItem('arasaka_batch_keys');
             sessionStorage.removeItem('arasaka_batch_current_idx');
@@ -463,6 +558,7 @@
                         sessionStorage.setItem('arasaka_batch_data', JSON.stringify(data));
                         sessionStorage.setItem('arasaka_batch_keys', JSON.stringify(stockIds));
                         sessionStorage.setItem('arasaka_batch_current_idx', '0');
+                        sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
                         processNextStock();
                     }
                 } catch (err) {
@@ -835,68 +931,18 @@
 
         if (abortMission) return;
 
-        showCustomPopup("ARASAKA SYNC", `Setze Haken in der Tagesliste...`, false);
-
-        let syncDone = false;
-        let warningTimer = setTimeout(() => {
-            if (!syncDone && !abortMission) {
-                showCustomPopup("ARASAKA WARTET", "Warte noch kurz...\nGoogle braucht gerade etwas länger für den Haken. Geht gleich weiter!", false);
-            }
-        }, 5000);
-
-        dbg('markSheet', 'post', 'skippedDup', dupByName.length, 'skippedComment', skipCommentCount, 'skippedFilenamePage', skipFilenameOnPageCount);
-        let markRes = await bridgePostJson({
-            action: 'markSheet',
+        pushTageslistePending({
             stockId: stockId,
             skippedDup: String(dupByName.length),
             skippedComment: String(skipCommentCount),
             skippedFilenamePage: String(skipFilenameOnPageCount),
             batchFiles: String(rawFiles.length),
             uniqueFiles: String(files.length)
-        }, 45000);
-        let syncStatus = 'HTTP_ERROR';
-        if (markRes) {
-            var mrt = String(markRes.responseText || '').trim();
-            dbg('markSheet', 'http', markRes.status, 'body', mrt.slice(0, 200));
-            if (bridgeBodyLooksLikeHtml(mrt)) {
-                syncStatus = 'HTML_FEHLER';
-                dbg('markSheet', 'appsScriptHtml', bridgeHtmlErrorHint(mrt));
-            } else {
-                syncStatus = mrt;
-            }
-        } else {
-            dbg('markSheet', 'noResponse');
-            syncStatus = 'HTTP_ERROR';
-        }
+        });
+        dbg('tageslistePending', 'queued', stockId, 'count', readTageslistePending().length);
 
-        if (syncStatus !== "OK") {
-            let checkRes = await bridgePostJson({
-                action: 'checkSheetMark',
-                stockId: stockId
-            }, 30000);
-            if (checkRes) {
-                var crt = String(checkRes.responseText || '').trim();
-                dbg('checkSheetMark', 'http', checkRes.status, 'body', crt.slice(0, 200));
-                if (crt === "OK") syncStatus = "OK";
-            } else {
-                dbg('checkSheetMark', 'noResponse');
-            }
-        }
-
-        syncDone = true;
-        clearTimeout(warningTimer);
-
-        dbg('markSheet', 'syncStatus', syncStatus);
-
-        if (syncStatus === "OK") {
-            dbg('markSheetOk', stockId);
-            showCustomPopup("ARASAKA", "Fertig — Tagesliste aktualisiert. Nächste Seite...", false);
-            await sleep(1500);
-        } else {
-            dbg('markSheetHudWarn', 'stockId', stockId, 'syncStatus', syncStatus);
-            showCustomPopup("ARASAKA WARNUNG", "Upload fertig, aber der Haken in der Tagesliste konnte nicht gesetzt werden. Konsole (F12) für Details. Nächste Seite...", false);
-            await sleep(4000);
-        }
+        showCustomPopup("ARASAKA", "Diese Stock-ID fertig — Haken am Stapelende.", false);
+        await sleep(900);
 
         dbg('executeUploadsForStock', 'done', 'nextIdx', idx + 1);
         continueWithNextStock(idx + 1);
@@ -1012,6 +1058,7 @@
         sessionStorage.removeItem('arasaka_batch_data');
         sessionStorage.removeItem('arasaka_batch_keys');
         sessionStorage.removeItem('arasaka_batch_current_idx');
+        sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
         showCustomPopup("ARASAKA STOP", "Prozess gestoppt. Speicher gelöscht.", true);
     }
 
