@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.42
+// @version      1.43
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -319,6 +319,32 @@
         sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(pend));
     }
 
+    async function markSheetSequential(entries) {
+        var notFoundBatch = [];
+        var markedCountB = 0;
+        for (var si = 0; si < entries.length; si++) {
+            if (abortMission) break;
+            var ent = entries[si] || {};
+            var stockToMarkB = String(ent.stockId || "").toUpperCase().replace(/\s+/g, "");
+            if (!stockToMarkB) continue;
+            var res = await bridgePostJson({
+                action: "markSheet",
+                stockId: ent.stockId,
+                skippedDup: ent.skippedDup,
+                skippedComment: ent.skippedComment,
+                skippedFilenamePage: ent.skippedFilenamePage,
+                batchFiles: ent.batchFiles,
+                uniqueFiles: ent.uniqueFiles,
+                skipDupDetail: ent.skipDupDetail,
+                skipCommentDetail: ent.skipCommentDetail
+            }, 30000);
+            var body = res && res.status >= 200 && res.status < 300 ? String(res.responseText || "").trim() : "";
+            if (body === "OK") markedCountB++;
+            else notFoundBatch.push(stockToMarkB);
+        }
+        return { allOk: notFoundBatch.length === 0, notFound: notFoundBatch, marked: markedCountB, total: entries.length };
+    }
+
     async function flushTageslisteBatchIfAny() {
         var entries = readTageslistePending();
         if (entries.length === 0) {
@@ -343,12 +369,17 @@
         if (markRes) {
             var mrt = String(markRes.responseText || "").trim();
             dbg("markSheetBatch", "http", markRes.status, "body", mrt.slice(0, 400));
+            if (mrt === "Invalid Action" && entries.length > 0 && markRes.status >= 200 && markRes.status < 300) {
+                dbg("markSheetBatch", "fallbackMarkSheet");
+                parsed = await markSheetSequential(entries);
+                mrt = JSON.stringify(parsed);
+            }
             if (bridgeBodyLooksLikeHtml(mrt)) {
                 syncStatus = "HTML_FEHLER";
                 dbg("markSheetBatch", "appsScriptHtml", bridgeHtmlErrorHint(mrt));
             } else if (mrt.charAt(0) === "{") {
                 try {
-                    parsed = JSON.parse(mrt);
+                    parsed = parsed || JSON.parse(mrt);
                     if (parsed && parsed.allOk === true) syncStatus = "OK";
                     else if (parsed && parsed.error === "SHEET_NOT_FOUND") syncStatus = "SHEET_NOT_FOUND";
                     else if (parsed && parsed.notFound && parsed.notFound.length) syncStatus = "PARTIAL";
