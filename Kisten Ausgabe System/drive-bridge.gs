@@ -221,5 +221,70 @@ function handleRequest_(e) {
         }
     }
 
+    if (action === "markSheetBatch") {
+        try {
+            var rawBatch = e.parameter.entriesJson || "[]";
+            var entriesBatch = JSON.parse(rawBatch);
+            if (!entriesBatch || Object.prototype.toString.call(entriesBatch) !== "[object Array]") {
+                return ContentService.createTextOutput(JSON.stringify({ allOk: false, error: "BAD_ENTRIES" }));
+            }
+            var ssB = SpreadsheetApp.openById(sheetId);
+            var sheetB = ssB.getSheetByName("Tagesliste");
+            if (!sheetB) {
+                appendTextLogInFolder_(folderErledigtId, kistenLogName, "markSheetBatch | SHEET_NOT_FOUND | count=" + entriesBatch.length);
+                return ContentService.createTextOutput(JSON.stringify({ allOk: false, error: "SHEET_NOT_FOUND" }));
+            }
+            var dataB = sheetB.getDataRange().getValues();
+            var notFoundBatch = [];
+            var markedCountB = 0;
+            for (var bi = 0; bi < entriesBatch.length; bi++) {
+                var ent = entriesBatch[bi] || {};
+                var stockToMarkB = String(ent.stockId || "").toUpperCase().replace(/\s+/g, "");
+                if (!stockToMarkB) continue;
+                var skippedDupB = ent.skippedDup != null ? String(ent.skippedDup) : "0";
+                var skippedCommentB = ent.skippedComment != null ? String(ent.skippedComment) : "0";
+                var skippedFilenamePageB = ent.skippedFilenamePage != null ? String(ent.skippedFilenamePage) : "0";
+                var batchFilesB = ent.batchFiles != null ? String(ent.batchFiles) : "0";
+                var uniqueFilesB = ent.uniqueFiles != null ? String(ent.uniqueFiles) : "0";
+                var skipDupDetailB = ent.skipDupDetail != null ? String(ent.skipDupDetail) : "";
+                var skipCommentDetailB = ent.skipCommentDetail != null ? String(ent.skipCommentDetail) : "";
+                var matchRowB = -1;
+                var matchCountB = 0;
+                var matchRowsB = [];
+                for (var ri = dataB.length - 1; ri >= 1; ri--) {
+                    var rowStockB = String(dataB[ri][4] || "").toUpperCase().replace(/\s+/g, "");
+                    if (rowStockB === stockToMarkB) {
+                        matchCountB++;
+                        if (matchRowsB.length < 8) matchRowsB.push(ri + 1);
+                        if (matchRowB === -1) matchRowB = ri + 1;
+                    }
+                }
+                var markResultB = "STOCK_NOT_FOUND";
+                if (matchRowB !== -1) {
+                    sheetB.getRange(matchRowB, 14).setValue(true);
+                    dataB[matchRowB - 1][13] = true;
+                    markResultB = "OK";
+                    markedCountB++;
+                } else {
+                    notFoundBatch.push(stockToMarkB);
+                }
+                var markLogLineB = "markSheetBatch | " + stockToMarkB + " | " + markResultB + " | row=" + matchRowB + " | matches=" + matchCountB + " | recent_rows=" + matchRowsB.join(",") + " | dup_skipped=" + skippedDupB + " | comment_skip=" + skippedCommentB + " | filename_page_skip=" + skippedFilenamePageB + " | batch=" + batchFilesB + " | unique=" + uniqueFilesB;
+                if (skipDupDetailB) markLogLineB += " | dup_detail=" + skipDupDetailB;
+                if (skipCommentDetailB) markLogLineB += " | comment_skip_detail=" + skipCommentDetailB;
+                appendTextLogInFolder_(folderErledigtId, kistenLogName, markLogLineB);
+                var dupSkipTotalB = (parseInt(skippedDupB, 10) || 0) + (parseInt(skippedCommentB, 10) || 0) + (parseInt(skippedFilenamePageB, 10) || 0);
+                if (dupSkipTotalB > 0) {
+                    appendTextLogInFolder_(folderDuplicateId, kistenLogName, markLogLineB);
+                }
+            }
+            SpreadsheetApp.flush();
+            var allOkBatch = notFoundBatch.length === 0;
+            return ContentService.createTextOutput(JSON.stringify({ allOk: allOkBatch, notFound: notFoundBatch, marked: markedCountB, total: entriesBatch.length }));
+        } catch (errB) {
+            appendTextLogInFolder_(folderErledigtId, kistenLogName, "markSheetBatch | ERROR | " + errB.message);
+            return ContentService.createTextOutput(JSON.stringify({ allOk: false, error: String(errB.message) }));
+        }
+    }
+
     return ContentService.createTextOutput("Invalid Action");
 }
