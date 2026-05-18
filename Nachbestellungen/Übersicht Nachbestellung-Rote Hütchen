@@ -12,6 +12,13 @@ const INPUT_SHEETS = {
 };
 const INPUT_SHEET_NAMES = Object.keys(INPUT_SHEETS);
 
+const INPUT_ARCHIVE_DATA_START_ROW = {
+  "Input Q-Check": 4,
+  "Input Exit": 3,
+  "Input Mechanik": 3,
+  "Input Lack": 3
+};
+
 const ENTRYID_COL = 27;
 const DASHBOARD_ENTRYID_COL = 15;
 const NB_ENTRYID_COL = 15;
@@ -24,7 +31,7 @@ const _nbLayoutBySheetId = {};
 
 const NB_HEADER_ALIASES = {
   stockId: ["stock id"],
-  costGate: ["cost gate"],
+  costGate: ["cost gate", "cost calc"],
   status: ["status"],
   statusAenderung: ["statusänderung", "statusanderung"],
   entryId: ["entryid", "entry id", "entry_id"]
@@ -764,9 +771,16 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
     if (colHit(layout.cols.archivieren) && row >= layout.dataStartRow) {
       const value = sheet.getRange(row, layout.cols.archivieren).getValue();
       const stockId = sheet.getRange(row, layout.cols.stockId).getValue();
-      if (value === true && stockId) {
-        archiveEntry(stockId);
-        sheet.getRange(row, layout.cols.archivieren).setValue(false);
+      const archiveOn = value === true || String(value || "").toUpperCase() === "TRUE";
+      if (archiveOn && stockId) {
+        const entryId = sheet.getRange(row, layout.cols.entryId).getValue();
+        archiveEntry(stockId, entryId);
+        if (entryId) {
+          const stillRow = findRowByEntryId(sheet, layout.cols.entryId, entryId, layout.dataStartRow);
+          if (stillRow !== -1) {
+            sheet.getRange(stillRow, layout.cols.archivieren).setValue(false);
+          }
+        }
       }
     }
     return;
@@ -1637,69 +1651,178 @@ function deleteEverywhere(key, entryId) {
     " (Tagesliste intentionally untouched)");
 }
 
-function archiveEntry(stockId) {
+function inputSheetArchiveDataStart(sheetName) {
+  const s = INPUT_ARCHIVE_DATA_START_ROW[sheetName];
+  return s != null && s > 0 ? s : 3;
+}
+
+function inputSheetArchiveDataEnd(sheet, dataStartRow) {
+  if (!sheet) return undefined;
+  const last = sheet.getLastRow();
+  const start = dataStartRow != null && dataStartRow > 0 ? dataStartRow : 3;
+  if (last < start) return undefined;
+  if (last === start) return last;
+  return last - 1;
+}
+
+function archiveTemplateHeaderRange(orig, origSheetName) {
+  if (!orig) return null;
+  const lc = Math.max(1, orig.getLastColumn());
+  if (origSheetName === "Dashboard") {
+    try {
+      const lo = getDashboardLayout(orig);
+      const hr = lo.headerRow > 0 ? lo.headerRow : 1;
+      return orig.getRange(hr, 1, hr, lc);
+    } catch (e) {}
+  }
+  if (origSheetName === "Nachbestellung") {
+    try {
+      const lo = getNachbestellungLayout(orig);
+      const hr = lo.headerRow > 0 ? lo.headerRow : 1;
+      return orig.getRange(hr, 1, hr, lc);
+    } catch (e) {}
+  }
+  if (origSheetName && origSheetName.indexOf("Input ") === 0) {
+    const dr = inputSheetArchiveDataStart(origSheetName);
+    const hr = dr > 1 ? dr - 1 : 1;
+    return orig.getRange(hr, 1, hr, lc);
+  }
+  return orig.getRange(1, 1, 1, lc);
+}
+
+function archiveCopyFormattedRowToBottom(sheet, srcRow, archive) {
+  const lc = Math.max(1, sheet.getLastColumn());
+  const destRow = archive.getLastRow() + 1;
+  sheet.getRange(srcRow, 1, srcRow, lc).copyTo(archive.getRange(destRow, 1, destRow, lc));
+}
+
+function archiveEntry(stockId, nachbestellungEntryId) {
   if (!stockId) return;
   const ss = getMainSS();
   if (!ss) return;
+  const nbEidFilter = nachbestellungEntryId != null ? String(nachbestellungEntryId).trim() : "";
 
   const archiveSheets = ["Dashboard_Archiv", "Nachbestellung_Archiv", "Input Exit_Archiv", "Input Q-Check_Archiv", "Input Mechanik_Archiv", "Input Lack_Archiv"];
   const origSheets = ["Dashboard", "Nachbestellung", "Input Exit", "Input Q-Check", "Input Mechanik", "Input Lack"];
   archiveSheets.forEach((name, idx) => {
     if (!ss.getSheetByName(name)) {
-      const orig = ss.getSheetByName(origSheets[idx]);
+      const origName = origSheets[idx];
+      const orig = ss.getSheetByName(origName);
       const newSheet = ss.insertSheet(name);
       if (orig && orig.getLastColumn() > 0) {
-        newSheet.appendRow(orig.getRange(1, 1, 1, orig.getLastColumn()).getValues()[0]);
+        const hdr = archiveTemplateHeaderRange(orig, origName);
+        if (hdr) {
+          const w = hdr.getNumColumns();
+          hdr.copyTo(newSheet.getRange(1, 1, 1, w));
+        }
       }
     }
   });
-  const source = SpreadsheetApp.openById(SOURCE_ID);
-  if (!source.getSheetByName("Tagesliste_Archiv")) {
-    const orig = source.getSheetByName("Tagesliste");
-    const newSheet = source.insertSheet("Tagesliste_Archiv");
-    if (orig && orig.getLastColumn() > 0) {
-      newSheet.appendRow(orig.getRange(1, 1, 1, orig.getLastColumn()).getValues()[0]);
-    }
-  }
 
   const dash = ss.getSheetByName("Dashboard");
-  const dashStockCol = dash ? getDashboardLayout(dash).cols.stockId : 2;
-  moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dashStockCol, stockId);
-  moveRowToArchiveAndDelete(ss, "Nachbestellung", "Nachbestellung_Archiv", 2, stockId);
-  moveRowToArchiveAndDelete(ss, "Input Exit", "Input Exit_Archiv", 2, stockId);
-  moveRowToArchiveAndDelete(ss, "Input Q-Check", "Input Q-Check_Archiv", 2, stockId);
-  moveRowToArchiveAndDelete(ss, "Input Mechanik", "Input Mechanik_Archiv", 2, stockId);
-  moveRowToArchiveAndDelete(ss, "Input Lack", "Input Lack_Archiv", 2, stockId);
-  moveRowToArchiveOnly(source, "Tagesliste", "Tagesliste_Archiv", 5, stockId);
+  if (dash) {
+    const dlo = getDashboardLayout(dash);
+    const dEnd = dashboardDataEndRow(dash, dlo);
+    moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd);
+  }
+
+  const nb = ss.getSheetByName("Nachbestellung");
+  if (nb) {
+    const nlo = getNachbestellungLayout(nb);
+    const nbLast = nb.getLastRow();
+    const trim = nlo.dataEndTrimBottomRows != null ? nlo.dataEndTrimBottomRows : 1;
+    const nbEnd = nbLast > trim ? nbLast - trim : nbLast;
+    if (nbEidFilter) {
+      moveRowToArchiveAndDelete(ss, "Nachbestellung", "Nachbestellung_Archiv", nlo.cols.stockId, stockId, nlo.dataStartRow, nbEnd, nlo.cols.entryId, nbEidFilter);
+    } else {
+      try {
+        logDebug("archiveEntry: skip Nachbestellung (no EntryID) stockId=" + stockId);
+      } catch (e) {}
+    }
+  }
+
+  const inputExit = ss.getSheetByName("Input Exit");
+  const inputQC = ss.getSheetByName("Input Q-Check");
+  const inputMe = ss.getSheetByName("Input Mechanik");
+  const inputLa = ss.getSheetByName("Input Lack");
+  const inExitStart = inputSheetArchiveDataStart("Input Exit");
+  const inQCStart = inputSheetArchiveDataStart("Input Q-Check");
+  const inMeStart = inputSheetArchiveDataStart("Input Mechanik");
+  const inLaStart = inputSheetArchiveDataStart("Input Lack");
+  moveRowToArchiveAndDelete(ss, "Input Exit", "Input Exit_Archiv", 2, stockId, inExitStart, inputSheetArchiveDataEnd(inputExit, inExitStart));
+  moveRowToArchiveAndDelete(ss, "Input Q-Check", "Input Q-Check_Archiv", 2, stockId, inQCStart, inputSheetArchiveDataEnd(inputQC, inQCStart));
+  moveRowToArchiveAndDelete(ss, "Input Mechanik", "Input Mechanik_Archiv", 2, stockId, inMeStart, inputSheetArchiveDataEnd(inputMe, inMeStart));
+  moveRowToArchiveAndDelete(ss, "Input Lack", "Input Lack_Archiv", 2, stockId, inLaStart, inputSheetArchiveDataEnd(inputLa, inLaStart));
+
+  try {
+    const source = SpreadsheetApp.openById(SOURCE_ID);
+    if (!source.getSheetByName("Tagesliste_Archiv")) {
+      const orig = source.getSheetByName("Tagesliste");
+      const newSheet = source.insertSheet("Tagesliste_Archiv");
+      if (orig && orig.getLastColumn() > 0) {
+        const w = orig.getLastColumn();
+        orig.getRange(1, 1, 1, w).copyTo(newSheet.getRange(1, 1, 1, w));
+      }
+    }
+    moveRowToArchiveOnly(source, "Tagesliste", "Tagesliste_Archiv", 5, stockId, 2);
+  } catch (err) {
+    try {
+      logDebug("archiveEntry Tagesliste: " + err);
+    } catch (e) {}
+  }
 }
 
-function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId) {
+function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId, dataStartRow, dataEndRow, entryIdCol, requiredEntryId) {
   const sheet = ss.getSheetByName(sheetName);
   const archive = ss.getSheetByName(archiveName);
   if (!sheet || !archive) return;
   const last = sheet.getLastRow();
-  if (last < 2) return;
-  const data = sheet.getRange(1, 1, last, sheet.getLastColumn()).getValues();
+  const start = dataStartRow != null && dataStartRow > 0 ? dataStartRow : 2;
+  if (last < start) return;
+  const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
+  if (end < start) return;
+  const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
+  const needEid = entryIdCol != null && requiredEntryId != null && String(requiredEntryId).trim() !== "";
+  const eids = needEid ? sheet.getRange(start, entryIdCol, end, entryIdCol).getValues() : null;
+  const eidTarget = needEid ? String(requiredEntryId).trim() : "";
   const target = String(stockId).trim().toUpperCase();
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][keyCol - 1]).trim().toUpperCase() === target) {
-      archive.appendRow(data[i]);
-      sheet.deleteRow(i + 1);
+  for (let r = keys.length - 1; r >= 0; r--) {
+    const cell = keys[r][0];
+    if (String(cell != null ? cell : "").trim().toUpperCase() !== target) continue;
+    if (needEid && String(eids[r][0] != null ? eids[r][0] : "").trim() !== eidTarget) continue;
+    const srcRow = start + r;
+    try {
+      archiveCopyFormattedRowToBottom(sheet, srcRow, archive);
+      sheet.deleteRow(srcRow);
+    } catch (e) {
+      try {
+        logDebug("moveRowToArchiveAndDelete " + sheetName + " row " + srcRow + ": " + e);
+      } catch (e2) {}
     }
   }
 }
 
-function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId) {
+function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId, dataStartRow, dataEndRow) {
   const sheet = ss.getSheetByName(sheetName);
   const archive = ss.getSheetByName(archiveName);
   if (!sheet || !archive) return;
   const last = sheet.getLastRow();
-  if (last < 2) return;
-  const data = sheet.getRange(1, 1, last, sheet.getLastColumn()).getValues();
+  const start = dataStartRow != null && dataStartRow > 0 ? dataStartRow : 2;
+  if (last < start) return;
+  const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
+  if (end < start) return;
+  const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
   const target = String(stockId).trim().toUpperCase();
-  for (let i = data.length - 1; i >= 1; i--) {
-    if (String(data[i][keyCol - 1]).trim().toUpperCase() === target) {
-      archive.appendRow(data[i]);
+  for (let r = keys.length - 1; r >= 0; r--) {
+    const cell = keys[r][0];
+    if (String(cell != null ? cell : "").trim().toUpperCase() !== target) continue;
+    const srcRow = start + r;
+    try {
+      archiveCopyFormattedRowToBottom(sheet, srcRow, archive);
+    } catch (e) {
+      try {
+        logDebug("moveRowToArchiveOnly " + sheetName + " row " + srcRow + ": " + e);
+      } catch (e2) {}
     }
   }
 }
