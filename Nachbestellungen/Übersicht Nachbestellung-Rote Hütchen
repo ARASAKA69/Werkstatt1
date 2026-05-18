@@ -1,6 +1,4 @@
-/***********************
- * CONFIG
- ***********************/
+
 const MAIN_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 const SOURCE_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const ZIELSHEET_ID = "18mx0dJupfas4w8xuTvNdcX3TrGjx0idYfLhSBt7DHYY";
@@ -163,7 +161,7 @@ function buildDashboardLayout(dashboard) {
     let bestScore = -1;
     let bestCols = null;
     for (let r = 1; r <= scanRows; r++) {
-      const row = dashboard.getRange(r, 1, r, lastCol).getValues()[0];
+      const row = dashboard.getRange(r, 1, 1, lastCol).getValues()[0];
       const normToCol = {};
       for (let c = 0; c < lastCol; c++) {
         const n = normDashHeader(row[c]);
@@ -274,7 +272,7 @@ function buildNachbestellungLayout(sheet) {
     let bestScore = -1;
     let bestCols = null;
     for (let r = 1; r <= scanRows; r++) {
-      const row = sheet.getRange(r, 1, r, lastCol).getValues()[0];
+      const row = sheet.getRange(r, 1, 1, lastCol).getValues()[0];
       const normToCol = {};
       for (let c = 0; c < lastCol; c++) {
         const n = normDashHeader(row[c]);
@@ -345,9 +343,7 @@ const QUEUE_LOCK_WAIT_MS = 15000;
 const CLEANUP_LOCK_WAIT_MS = 5000;
 const MAX_EVENTS_PER_RUN = 3;
 
-/***********************
- * Lock helper
- ***********************/
+
 function getMainSS() {
   try {
     const active = SpreadsheetApp.getActiveSpreadsheet();
@@ -398,6 +394,14 @@ function isCellFilled(v) {
   return v !== null && v !== undefined && String(v).trim() !== "";
 }
 
+function isInputDatumBlank(v) {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") return v.trim() === "";
+  if (v instanceof Date) return isNaN(v.getTime());
+  if (typeof v === "number") return !(v > 0) || isNaN(v);
+  return false;
+}
+
 function isEntryIdFromInputExit(entryId) {
   if (!entryId) return false;
   try {
@@ -423,7 +427,7 @@ function removeDashboardRowByEntryId(dashboard, entryId) {
   if (last < layout.dataStartRow) return;
   const end = dashboardDataEndRow(dashboard, layout);
   try {
-    const rng = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, end, 1).getValues();
+    const rng = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, end - layout.dataStartRow + 1, 1).getValues();
     const target = String(entryId);
     for (let i = rng.length - 1; i >= 0; i--) {
       if (String(rng[i][0]) === target) {
@@ -482,9 +486,6 @@ function applyNachbestellungState(nbSheet, key, rowData, entryId) {
   return "noop";
 }
 
-/***********************
- * ONEDIT
- ***********************/
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
@@ -555,7 +556,7 @@ function ensureEntryIdsForEditRange(sheet, range) {
   for (let i = 0; i < count; i++) {
     if (String(stocks[i][0] || "").trim()) {
       if (!eids[i][0]) needEid = true;
-      if (!dates[i][0]) needDate = true;
+      if (isInputDatumBlank(dates[i][0])) needDate = true;
     }
   }
   if (!needEid && !needDate) return;
@@ -575,7 +576,7 @@ function ensureEntryIdsForEditRange(sheet, range) {
       eids[i][0] = Utilities.getUuid();
       eidChanged = true;
     }
-    if (!dates[i][0]) {
+    if (isInputDatumBlank(dates[i][0])) {
       dates[i][0] = now;
       dateChanged = true;
     }
@@ -599,7 +600,7 @@ function ensureEntryIdAndDate(sheet, row) {
         " stockId=" + val);
     }
     const dateCell = sheet.getRange(row, 1);
-    if (!dateCell.getValue()) dateCell.setValue(new Date());
+    if (isInputDatumBlank(dateCell.getValue())) dateCell.setValue(new Date());
     return String(eid);
   } catch (err) {
     return "";
@@ -927,14 +928,17 @@ function enqueueInputEdit(sheet, name, row) {
   } catch (err) {}
 }
 
-/***********************
- * Sync helpers
- ***********************/
+
 function syncInputRowToNachbestellung(sheet, row) {
   let entryId = sheet.getRange(row, getEntryIdCol(sheet)).getValue() || "";
   const data = sheet.getRange(row, 1, 1, 6).getValues()[0];
   const stockId = String(data[1] || "").trim();
   if (!stockId) return;
+  if (isInputDatumBlank(data[0])) {
+    const now = new Date();
+    sheet.getRange(row, 1).setValue(now);
+    data[0] = now;
+  }
   if (!entryId) {
     entryId = ensureEntryIdOnInputRow(sheet, row);
     if (!entryId) return;
@@ -987,16 +991,6 @@ function syncNachbestellungColumnToInputExit(nbSheet, row, srcCol, targetCol) {
       const targetE = String(entryId);
       for (let i = 0; i < eids.length; i++) {
         if (String(eids[i][0]) === targetE) { exitRow = i + 2; break; }
-      }
-    } catch (e) {}
-  }
-
-  if (exitRow === -1 && stockId) {
-    try {
-      const stocks = exitSheet.getRange(2, 2, last - 1, 1).getValues();
-      const targetS = stockId.toUpperCase();
-      for (let i = 0; i < stocks.length; i++) {
-        if (String(stocks[i][0] || "").trim().toUpperCase() === targetS) { exitRow = i + 2; break; }
       }
     } catch (e) {}
   }
@@ -1059,16 +1053,6 @@ function syncInputExitColumnToNachbestellung(exitSheet, row, srcCol, targetCol) 
     } catch (e) {}
   }
 
-  if (nbRow === -1 && stockId) {
-    try {
-      const stocks = nbSheet.getRange(2, 2, last - 1, 1).getValues();
-      const targetS = stockId.toUpperCase();
-      for (let i = 0; i < stocks.length; i++) {
-        if (String(stocks[i][0] || "").trim().toUpperCase() === targetS) { nbRow = i + 2; break; }
-      }
-    } catch (e) {}
-  }
-
   if (nbRow === -1) {
     logDebug("syncToNB: no Nachbestellung row for stockId=" + stockId + " entryId=" + entryId);
     return;
@@ -1102,7 +1086,7 @@ function updateDashboardFromNachbestellungRow(nbSheet, row) {
   const dashboardRow = findRowByEntryId(dashboard, layout.cols.entryId, entryId, layout.dataStartRow);
   let fVal = "", gVal = "", hVal = "";
   if (dashboardRow !== -1) {
-    const dashVals = dashboard.getRange(dashboardRow, 1, dashboardRow, layout.lastCol).getValues()[0];
+    const dashVals = dashboard.getRange(dashboardRow, 1, 1, layout.lastCol).getValues()[0];
     fVal = dashVals[layout.cols.herkunft - 1] || "";
     gVal = dashVals[layout.cols.etDiagnose - 1] || "";
     hVal = dashVals[layout.cols.grund - 1] || "";
@@ -1129,9 +1113,6 @@ function deleteNachbestellungByEntryId(nbSheet, entryId) {
   }
 }
 
-/***********************
- * Input Exit -> Zielsheet
- ***********************/
 function syncInputExitToZielSheetRow(inputRow) {
   try {
     const inputExit = getMainSS().getSheetByName("Input Exit");
@@ -1153,9 +1134,6 @@ function syncInputExitToZielSheetRow(inputRow) {
   }
 }
 
-/***********************
- * QUEUE PROCESSOR
- ***********************/
 function processQueue() {
   const MAX_LOCK_CYCLES = 8;
   for (let k = 0; k < MAX_LOCK_CYCLES; k++) {
@@ -1319,6 +1297,11 @@ function runQueueProcessor() {
 
       if (liveRow !== -1) {
         liveData = inputSheet.getRange(liveRow, 1, 1, 6).getValues()[0];
+        if (isInputDatumBlank(liveData[0]) && String(liveData[1] || "").trim()) {
+          const now = new Date();
+          inputSheet.getRange(liveRow, 1).setValue(now);
+          liveData[0] = now;
+        }
         const liveStock = String(liveData[1] || "").trim();
         if (liveStock) liveKey = liveStock;
         if (!effectiveEntryId) {
@@ -1365,9 +1348,6 @@ function runQueueProcessor() {
   return processedCount;
 }
 
-/***********************
- * DAYS BETWEEN
- ***********************/
 function cellDateToTime(v) {
   if (v === null || v === undefined || v === "") return null;
   if (v instanceof Date) {
@@ -1383,9 +1363,6 @@ function daysBetween(d1, d2) {
   return Math.abs(Math.floor((date1 - date2) / (1000 * 60 * 60 * 24)));
 }
 
-/***********************
- * MAIN PROCESSOR
- ***********************/
 function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entryId) {
   if (!key) return;
 
@@ -1429,7 +1406,7 @@ function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entr
     gVal = data[2] || "";
     hVal = data[3] || "";
   } else if (found !== -1) {
-    const dashVals = dashboard.getRange(found, 1, found, layout.lastCol).getValues()[0];
+    const dashVals = dashboard.getRange(found, 1, 1, layout.lastCol).getValues()[0];
     fVal = dashVals[layout.cols.herkunft - 1] || "";
     gVal = dashVals[layout.cols.etDiagnose - 1] || "";
     hVal = dashVals[layout.cols.grund - 1] || "";
@@ -1440,7 +1417,7 @@ function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entr
   for (let i = 0; i < layout.lastCol; i++) out[i] = "";
 
   if (found !== -1) {
-    const existing = dashboard.getRange(found, 1, found, layout.lastCol).getValues()[0];
+    const existing = dashboard.getRange(found, 1, 1, layout.lastCol).getValues()[0];
     for (let i = 0; i < layout.lastCol; i++) out[i] = existing[i];
   }
 
@@ -1465,7 +1442,7 @@ function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entr
     targetRow = dashboard.getLastRow() + 1;
     const endData = dashboardDataEndRow(dashboard, layout);
     if (dashboard.getLastRow() >= layout.dataStartRow) {
-      const allRows = dashboard.getRange(layout.dataStartRow, c.stockId, endData, 1).getValues();
+      const allRows = dashboard.getRange(layout.dataStartRow, c.stockId, endData - layout.dataStartRow + 1, 1).getValues();
       for (let i = 0; i < allRows.length; i++) {
         if (allRows[i][0] === "" || allRows[i][0] === null) {
           targetRow = i + layout.dataStartRow;
@@ -1477,15 +1454,12 @@ function processRow(data, key, dashboard, nbSheet, tagesMap, code, forceNB, entr
     }
   }
 
-  dashboard.getRange(targetRow, 1, targetRow, layout.lastCol).setValues([out]);
+  dashboard.getRange(targetRow, 1, 1, layout.lastCol).setValues([out]);
   dashboard.getRange(targetRow, c.entryId).setValue(entryId);
   dashboard.getRange(targetRow, c.letzerTagesliste).setBackground(orangeC ? "#f9cb9c" : "#ffffff");
   setDashboardTageSeitLetztemBackground(dashboard, layout, targetRow, diffD);
 }
 
-/***********************
- * Nachbestellung lookup
- ***********************/
 function getNachbestellungValuesByKey(nbSheet, key, entryId) {
   const empty = { i: "", k: "", l: "" };
   if (!nbSheet) return empty;
@@ -1497,7 +1471,7 @@ function getNachbestellungValuesByKey(nbSheet, key, entryId) {
   if (dataEnd < layout.dataStartRow) return empty;
   const nbEidCol = layout.cols.entryId;
   const width = Math.max(layout.lastCol, nbEidCol);
-  const data = nbSheet.getRange(layout.dataStartRow, 1, dataEnd, width).getValues();
+  const data = nbSheet.getRange(layout.dataStartRow, 1, dataEnd - layout.dataStartRow + 1, width).getValues();
   const keyU = String(key).toUpperCase();
   const eid = String(entryId || "");
   const eidIdx = nbEidCol - 1;
@@ -1520,9 +1494,6 @@ function getNachbestellungValuesByKey(nbSheet, key, entryId) {
   return empty;
 }
 
-/***********************
- * TAGESLISTE MAP
- ***********************/
 function getTageslisteMap() {
   const ss = SpreadsheetApp.openById(SOURCE_ID);
   const sheet = ss.getSheetByName("Tagesliste");
@@ -1551,9 +1522,6 @@ function getTageslisteMap() {
   return map;
 }
 
-/***********************
- * NACHBESTELLUNG UPDATE
- ***********************/
 function updateNachbestellung(key, data, inputDate, nbSheet, entryId) {
   if (!key || key === "Stock ID" || !entryId) return;
   if (!nbSheet) return;
@@ -1582,9 +1550,6 @@ function updateNachbestellung(key, data, inputDate, nbSheet, entryId) {
   nbSheet.getRange(targetRow, nbEidCol).setValue(entryId);
 }
 
-/***********************
- * DELETE EVERYWHERE
- ***********************/
 function deleteEverywhere(key, entryId) {
   const targetId = String(entryId || "").trim();
   if (!targetId) {
@@ -1670,9 +1635,6 @@ function deleteEverywhere(key, entryId) {
     " (Tagesliste intentionally untouched)");
 }
 
-/***********************
- * ARCHIVIERUNG
- ***********************/
 function archiveEntry(stockId) {
   if (!stockId) return;
   const ss = getMainSS();
@@ -1740,9 +1702,7 @@ function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId) {
   }
 }
 
-/***********************
- * Dashboard Cleanup: alle Input-Exit Einträge entfernen
- ***********************/
+
 function cleanupDashboardOfInputExit() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return;
@@ -1767,8 +1727,9 @@ function cleanupDashboardOfInputExit() {
     const layout = getDashboardLayout(dashboard);
     if (dashLast < layout.dataStartRow) return;
     const end = dashboardDataEndRow(dashboard, layout);
-    const dashEids = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, end, 1).getValues();
-    const dashCodes = dashboard.getRange(layout.dataStartRow, layout.cols.herkunft, end, 1).getValues();
+    const dashRowCount = end - layout.dataStartRow + 1;
+    const dashEids = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, dashRowCount, 1).getValues();
+    const dashCodes = dashboard.getRange(layout.dataStartRow, layout.cols.herkunft, dashRowCount, 1).getValues();
     let removed = 0;
     for (let i = dashEids.length - 1; i >= 0; i--) {
       const eid = String(dashEids[i][0] || "");
@@ -1783,9 +1744,6 @@ function cleanupDashboardOfInputExit() {
   }
 }
 
-/***********************
- * DASHBOARD TAGESDIFFERENZEN
- ***********************/
 function updateDashboardDayDiffs() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return;
@@ -1805,7 +1763,7 @@ function updateDashboardDayDiffs() {
 
     const end = dashboardDataEndRow(dashboard, layout);
     const w = layout.lastCol;
-    const data = dashboard.getRange(layout.dataStartRow, 1, end, w).getValues();
+    const data = dashboard.getRange(layout.dataStartRow, 1, end - layout.dataStartRow + 1, w).getValues();
     const ix = layout.cols;
 
     for (let i = 0; i < data.length; i++) {
@@ -1873,11 +1831,6 @@ function updateDashboardDayDiffs() {
   }
 }
 
-/***********************
- * Clear stale status-date when status itself is empty.
- * Nachbestellung: K (status, col 11) -> L (date, col 12)
- * Input Exit:     K (status, col 11) -> L (date, col 12)
- ***********************/
 function clearStaleStatusDateOnSheet(sheet, statusCol, dateCol, label) {
   if (!sheet) return 0;
   const last = sheet.getLastRow();
@@ -1919,12 +1872,6 @@ function cleanupNachbestellungStatusDate() {
   }
 }
 
-/***********************
- * EventQueue Cleanup
- * Löscht alte _LOG / DONE / SKIPPED / CANCELLED / ERROR Zeilen, damit
- * runQueueProcessor nicht ewig braucht. Geht zusammenhängend von oben,
- * stoppt bei der ersten Zeile, die behalten werden muss (z. B. NEW).
- ***********************/
 function cleanupEventQueue(ss) {
   ss = ss || getMainSS();
   if (!ss) return;
@@ -1964,16 +1911,7 @@ function cleanupEventQueue(ss) {
   }
 }
 
-/***********************
- * Reconciliation: gleicht Nachbestellung <-> Input Exit ab,
- * falls onEdit-Sync einen Update verpasst hat.
- * Mapping (NB <-> Exit):
- *   F (6)  <-> G (7)    Preis (Netto)
- *   I (9)  <-> I (9)    Cost Gate     (Exit H/8 = Claim Cost, kein NB-Pendant)
- *   J (10) <-> J (10)   Carol eingetragen
- *   K (11) <-> K (11)   Status
- *   L (12) <-> L (12)   Status-Datum
- ***********************/
+
 function reconcileNachbestellungInputExit(ss) {
   ss = ss || getMainSS();
   if (!ss) return;
@@ -1986,21 +1924,15 @@ function reconcileNachbestellungInputExit(ss) {
   if (nbLast < 2 || exitLast < 2) return;
 
   const exitEids = exitSheet.getRange(2, getEntryIdCol(exitSheet), exitLast - 1, 1).getValues();
-  const exitStocks = exitSheet.getRange(2, 2, exitLast - 1, 1).getValues();
-  // Read cols 7..12 (G..L). Col 8 (H = Claim Cost) is read but ignored in the mapping.
   const exitBlock = exitSheet.getRange(2, 7, exitLast - 1, 6).getValues();
 
   const exitByEid = {};
-  const exitByStock = {};
   for (let i = 0; i < exitEids.length; i++) {
     const eid = String(exitEids[i][0] || "");
     if (eid) exitByEid[eid] = i;
-    const stock = String(exitStocks[i][0] || "").trim().toUpperCase();
-    if (stock && !(stock in exitByStock)) exitByStock[stock] = i;
   }
 
   const nbEids = nbSheet.getRange(2, getEntryIdCol(nbSheet), nbLast - 1, 1).getValues();
-  const nbStocks = nbSheet.getRange(2, 2, nbLast - 1, 1).getValues();
   const nbBlockF = nbSheet.getRange(2, 6, nbLast - 1, 1).getValues();
   const nbBlockI = nbSheet.getRange(2, 9, nbLast - 1, 4).getValues();
 
@@ -2022,10 +1954,8 @@ function reconcileNachbestellungInputExit(ss) {
 
   for (let i = 0; i < nbEids.length; i++) {
     const eid = String(nbEids[i][0] || "");
-    const stock = String(nbStocks[i][0] || "").trim().toUpperCase();
     let xi = -1;
     if (eid && (eid in exitByEid)) xi = exitByEid[eid];
-    else if (stock && (stock in exitByStock)) xi = exitByStock[stock];
     if (xi === -1) continue;
 
     const nbF = nbBlockF[i][0];
@@ -2034,12 +1964,11 @@ function reconcileNachbestellungInputExit(ss) {
     const nbK = nbBlockI[i][2];
     const nbL = nbBlockI[i][3];
 
-    const exG = exitBlock[xi][0]; // col 7  Preis (Netto)
-    // exitBlock[xi][1] = col 8 (Claim Cost) — Input-Exit-only, ignored here
-    const exI = exitBlock[xi][2]; // col 9  Cost Gate
-    const exJ = exitBlock[xi][3]; // col 10 Carol eingetragen
-    const exK = exitBlock[xi][4]; // col 11 Status
-    const exL = exitBlock[xi][5]; // col 12 Status-Datum
+    const exG = exitBlock[xi][0];
+    const exI = exitBlock[xi][2];
+    const exJ = exitBlock[xi][3];
+    const exK = exitBlock[xi][4];
+    const exL = exitBlock[xi][5];
 
     const nbDate = tsMs(nbL);
     const exDate = tsMs(exL);
