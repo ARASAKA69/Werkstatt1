@@ -1,19 +1,19 @@
 var UX_NB_DELBUF_KEY = "ux_nb_delbuf_v1";
 var UX_NB_DELBUF_MAX = 100;
 
-function uxNbDelBufferMenueAnlegen() {
+function uxBaseMenueEinrichten() {
   SpreadsheetApp.getUi()
     .createMenu("UX")
-    .addItem("Gelöschte Einträge…", "uxNbDelBufferOeffneDialog")
+    .addItem("Gelöschte Einträge…", "uxBaseDialogGeloeschteEintraegeOeffnen")
     .addToUi();
 }
 
 function onOpen() {
-  uxNbDelBufferMenueAnlegen();
+  uxBaseMenueEinrichten();
 }
 
-function uxNbDelBufferOeffneDialog() {
-  var html = HtmlService.createHtmlOutputFromFile("StockIdUxWiederherstellung")
+function uxBaseDialogGeloeschteEintraegeOeffnen() {
+  var html = HtmlService.createHtmlOutputFromFile("UXMenu")
     .setWidth(920)
     .setHeight(640);
   SpreadsheetApp.getUi().showModalDialog(html, "UX · Gelöschte Einträge");
