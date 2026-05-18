@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Google Sans", Roboto, Arial, sans-serif;
+        margin: 0;
+        padding: 20px 24px 28px;
+        background: #f6f8fc;
+        color: #202124;
+        font-size: 14px;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0 0 6px;
+        letter-spacing: 0.01em;
+      }
+      .sub {
+        color: #5f6368;
+        margin-bottom: 20px;
+        font-size: 13px;
+      }
+      #status {
+        min-height: 22px;
+        color: #5f6368;
+        margin-bottom: 12px;
+        font-size: 13px;
+      }
+      #list {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        max-height: 460px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .card {
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 1px 2px rgba(60, 64, 67, 0.28), 0 2px 6px rgba(60, 64, 67, 0.12);
+        padding: 16px 18px;
+        border: 1px solid #e8eaed;
+      }
+      .card-top {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 18px;
+        margin-bottom: 12px;
+      }
+      .kv {
+        min-width: 140px;
+      }
+      .kv label {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #80868b;
+        margin-bottom: 2px;
+      }
+      .kv span {
+        font-weight: 500;
+        word-break: break-all;
+      }
+      .detail-wrap {
+        background: #f1f3f4;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-bottom: 14px;
+        max-height: 160px;
+        overflow: auto;
+        font-family: "Roboto Mono", Consolas, monospace;
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 10px 18px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .btn-restore {
+        background: #1a73e8;
+        color: #fff;
+      }
+      .btn-restore:hover:not(:disabled) {
+        background: #1967d2;
+      }
+      .btn-remove {
+        background: #fff;
+        color: #c5221f;
+        border: 1px solid #dadce0;
+      }
+      .btn-remove:hover:not(:disabled) {
+        background: #fce8e6;
+      }
+      .empty {
+        text-align: center;
+        padding: 48px 20px;
+        color: #5f6368;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Gelöschte Einträge</h1>
+    <div class="sub">
+      Hier sehen Sie Zeilen, die über eine gelöschte Stock-ID entfernt wurden. Sie können sie
+      wiederherstellen oder endgültig aus dieser Liste löschen.
+    </div>
+    <div id="status">Lade…</div>
+    <div id="list"></div>
+    <script>
+      function escapeHtml(s) {
+        return String(s == null ? "" : s)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function formatDeDatum(iso) {
+        if (!iso) return "—";
+        try {
+          var d = new Date(iso);
+          if (isNaN(d.getTime())) return iso;
+          return d.toLocaleString("de-DE", {
+            dateStyle: "short",
+            timeStyle: "short"
+          });
+        } catch (e) {
+          return iso;
+        }
+      }
+
+      function buildDetailText(entry) {
+        var lines = [];
+        var snames = Object.keys(entry.sheets || {});
+        for (var i = 0; i < snames.length; i++) {
+          var sn = snames[i];
+          var p = entry.sheets[sn];
+          lines.push("— " + sn + " (Zeile " + (p.row != null ? p.row : "?") + ")");
+          var vals = p.values || [];
+          for (var c = 0; c < vals.length; c++) {
+            var v = vals[c];
+            var show = v;
+            if (v && typeof v === "object" && typeof v.__uxNbD === "number") {
+              show = new Date(v.__uxNbD).toLocaleString("de-DE");
+            }
+            lines.push("  Spalte " + (c + 1) + ": " + show);
+          }
+          lines.push("");
+        }
+        return lines.join("\n").trim();
+      }
+
+      function setStatus(t) {
+        document.getElementById("status").textContent = t || "";
+      }
+
+      function renderList(arr) {
+        var el = document.getElementById("list");
+        el.innerHTML = "";
+        if (!arr || !arr.length) {
+          el.innerHTML =
+            '<div class="empty">Keine gespeicherten Löschungen im Puffer.</div>';
+          return;
+        }
+        for (var i = 0; i < arr.length; i++) {
+          (function (entry) {
+            var card = document.createElement("div");
+            card.className = "card";
+            var top = document.createElement("div");
+            top.className = "card-top";
+            top.innerHTML =
+              '<div class="kv"><label>Gelöscht am</label><span>' +
+              escapeHtml(formatDeDatum(entry.deletedAt)) +
+              "</span></div>" +
+              '<div class="kv"><label>Stock-ID (vorher)</label><span>' +
+              escapeHtml(entry.stockId || "—") +
+              "</span></div>" +
+              '<div class="kv"><label>Entry-ID</label><span>' +
+              escapeHtml(entry.entryId || "—") +
+              "</span></div>" +
+              '<div class="kv"><label>Benutzer</label><span>' +
+              escapeHtml(entry.deletedBy || "—") +
+              "</span></div>";
+            var dw = document.createElement("div");
+            dw.className = "detail-wrap";
+            dw.textContent = buildDetailText(entry);
+            var actions = document.createElement("div");
+            actions.className = "actions";
+            var bRestore = document.createElement("button");
+            bRestore.className = "btn-restore";
+            bRestore.textContent = "Wiederherstellen";
+            var bRemove = document.createElement("button");
+            bRemove.className = "btn-remove";
+            bRemove.textContent = "Endgültig entfernen";
+            function busy(on) {
+              bRestore.disabled = on;
+              bRemove.disabled = on;
+            }
+            bRestore.onclick = function () {
+              busy(true);
+              setStatus("Stelle wieder her…");
+              google.script.run
+                .withSuccessHandler(function (res) {
+                  busy(false);
+                  if (res && res.ok) {
+                    var msg =
+                      "Wiederhergestellt in: " +
+                      (res.wiederhergestelltIn || []).join(", ");
+                    if (res.hinweise && res.hinweise.length)
+                      msg += " · " + res.hinweise.join(" ");
+                    setStatus(msg);
+                    load();
+                  } else {
+                    setStatus((res && res.fehler) || "Wiederherstellung fehlgeschlagen.");
+                    busy(false);
+                  }
+                })
+                .withFailureHandler(function (err) {
+                  busy(false);
+                  setStatus("Fehler: " + err);
+                })
+                .uxNbDelBufferWiederherstellen(entry.id);
+            };
+            bRemove.onclick = function () {
+              if (!confirm("Diesen Puffer-Eintrag endgültig entfernen?")) return;
+              busy(true);
+              setStatus("Entferne…");
+              google.script.run
+                .withSuccessHandler(function (res) {
+                  busy(false);
+                  if (res && res.ok) {
+                    setStatus("Eintrag entfernt.");
+                    load();
+                  } else {
+                    setStatus((res && res.fehler) || "Entfernen fehlgeschlagen.");
+                  }
+                })
+                .withFailureHandler(function (err) {
+                  busy(false);
+                  setStatus("Fehler: " + err);
+                })
+                .uxNbDelBufferEndgueltigEntfernen(entry.id);
+            };
+            actions.appendChild(bRestore);
+            actions.appendChild(bRemove);
+            card.appendChild(top);
+            card.appendChild(dw);
+            card.appendChild(actions);
+            el.appendChild(card);
+          })(arr[i]);
+        }
+      }
+
+      function load() {
+        setStatus("Lade…");
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.ok) {
+              var n = (res.arr && res.arr.length) || 0;
+              setStatus(n ? n + " Einträge im Puffer." : "Keine Einträge im Puffer.");
+              renderList(res.arr || []);
+            } else {
+              setStatus((res && res.fehler) || "Liste konnte nicht geladen werden.");
+              renderList([]);
+            }
+          })
+          .withFailureHandler(function (err) {
+            setStatus("Fehler: " + err);
+            renderList([]);
+          })
+          .uxNbDelBufferListe();
+      }
+
+      load();
+    </script>
+  </body>
+</html>
