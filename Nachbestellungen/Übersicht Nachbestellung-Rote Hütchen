@@ -1572,6 +1572,8 @@ function deleteEverywhere(key, entryId) {
     return;
   }
 
+  try { uxNbStockIdLoeschungFuerWiederherstellungSpeichern_(ss, targetId, targetKey); } catch (eSnap) {}
+
   try {
     const dashboard = ss.getSheetByName("Dashboard");
     if (dashboard) {
