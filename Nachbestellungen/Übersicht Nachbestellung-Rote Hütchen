@@ -774,12 +774,15 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
       const archiveOn = value === true || String(value || "").toUpperCase() === "TRUE";
       if (archiveOn && stockId) {
         const entryId = sheet.getRange(row, layout.cols.entryId).getValue();
-        archiveEntry(stockId, entryId);
+        const archived = archiveEntry(stockId, entryId);
+        let stillRow = -1;
         if (entryId) {
-          const stillRow = findRowByEntryId(sheet, layout.cols.entryId, entryId, layout.dataStartRow);
-          if (stillRow !== -1) {
-            sheet.getRange(stillRow, layout.cols.archivieren).setValue(false);
-          }
+          stillRow = findRowByEntryId(sheet, layout.cols.entryId, entryId, layout.dataStartRow);
+        } else if (row <= sheet.getLastRow()) {
+          stillRow = row;
+        }
+        if (stillRow !== -1) {
+          sheet.getRange(stillRow, layout.cols.archivieren).setValue(!archived);
         }
       }
     }
@@ -1149,6 +1152,9 @@ function syncInputExitToZielSheetRow(inputRow) {
 }
 
 function processQueue() {
+  try {
+    processPendingTageslisteArchives_();
+  } catch (e) {}
   const MAX_LOCK_CYCLES = 8;
   for (let k = 0; k < MAX_LOCK_CYCLES; k++) {
     const lock = LockService.getScriptLock();
@@ -1672,35 +1678,113 @@ function archiveTemplateHeaderRange(orig, origSheetName) {
     try {
       const lo = getDashboardLayout(orig);
       const hr = lo.headerRow > 0 ? lo.headerRow : 1;
-      return orig.getRange(hr, 1, hr, lc);
+      return archiveSheetRowRange_(orig, hr, lc);
     } catch (e) {}
   }
   if (origSheetName === "Nachbestellung") {
     try {
       const lo = getNachbestellungLayout(orig);
       const hr = lo.headerRow > 0 ? lo.headerRow : 1;
-      return orig.getRange(hr, 1, hr, lc);
+      return archiveSheetRowRange_(orig, hr, lc);
     } catch (e) {}
   }
   if (origSheetName && origSheetName.indexOf("Input ") === 0) {
     const dr = inputSheetArchiveDataStart(origSheetName);
     const hr = dr > 1 ? dr - 1 : 1;
-    return orig.getRange(hr, 1, hr, lc);
+    return archiveSheetRowRange_(orig, hr, lc);
   }
-  return orig.getRange(1, 1, 1, lc);
+  return archiveSheetRowRange_(orig, 1, lc);
 }
 
-function archiveCopyFormattedRowToBottom(sheet, srcRow, archive) {
-  const lc = Math.max(1, sheet.getLastColumn());
-  const destRow = archive.getLastRow() + 1;
-  sheet.getRange(srcRow, 1, srcRow, lc).copyTo(archive.getRange(destRow, 1, destRow, lc));
+function archiveSheetRowRange_(sheet, row, colCount) {
+  const lc = Math.max(1, colCount || sheet.getLastColumn());
+  return sheet.getRange(row, 1).offset(0, 0, 1, lc);
+}
+
+function ensureArchiveSheetColumns_(archive, minCols) {
+  const need = Math.max(1, minCols || 1);
+  const max = archive.getMaxColumns();
+  if (max < need) {
+    archive.insertColumnsAfter(max, need - max);
+  }
+}
+
+function archiveCopyFormattedRowToBottom(sheet, srcRow, archive, colCount) {
+  const lc = Math.max(1, colCount || sheet.getLastColumn());
+  ensureArchiveSheetColumns_(archive, lc);
+  let destRow = archive.getLastRow() + 1;
+  if (destRow < 1) destRow = 1;
+  archiveSheetRowRange_(sheet, srcRow, lc).copyTo(archiveSheetRowRange_(archive, destRow, lc));
+}
+
+const PENDING_TAGESLISTE_ARCHIVE_PROP = "pendingTageslisteArchives";
+
+function enqueueTageslisteArchive_(stockId) {
+  const id = String(stockId || "").trim().toUpperCase();
+  if (!id) return;
+  const props = PropertiesService.getScriptProperties();
+  let list = [];
+  try {
+    list = JSON.parse(props.getProperty(PENDING_TAGESLISTE_ARCHIVE_PROP) || "[]");
+    if (!Array.isArray(list)) list = [];
+  } catch (e) {
+    list = [];
+  }
+  if (list.indexOf(id) === -1) list.push(id);
+  props.setProperty(PENDING_TAGESLISTE_ARCHIVE_PROP, JSON.stringify(list));
+}
+
+function processPendingTageslisteArchives_() {
+  const props = PropertiesService.getScriptProperties();
+  let list = [];
+  try {
+    list = JSON.parse(props.getProperty(PENDING_TAGESLISTE_ARCHIVE_PROP) || "[]");
+    if (!Array.isArray(list)) list = [];
+  } catch (e) {
+    list = [];
+  }
+  if (!list.length) return 0;
+  const remaining = [];
+  let done = 0;
+  for (let i = 0; i < list.length; i++) {
+    try {
+      archiveTageslisteForStock_(list[i]);
+      done++;
+    } catch (e) {
+      remaining.push(list[i]);
+    }
+  }
+  props.setProperty(PENDING_TAGESLISTE_ARCHIVE_PROP, JSON.stringify(remaining));
+  return done;
+}
+
+function runPendingTageslisteArchivesNow() {
+  const done = processPendingTageslisteArchives_();
+  try {
+    SpreadsheetApp.getUi().alert("Tagesliste-Archiv: " + done + " Eintrag/Einträge verarbeitet.");
+  } catch (e) {}
+}
+
+function archiveTageslisteForStock_(stockId) {
+  if (!stockId) return;
+  const source = SpreadsheetApp.openById(SOURCE_ID);
+  if (!source.getSheetByName("Tagesliste_Archiv")) {
+    const orig = source.getSheetByName("Tagesliste");
+    const newSheet = source.insertSheet("Tagesliste_Archiv");
+    if (orig && orig.getLastColumn() > 0) {
+      const w = orig.getLastColumn();
+      orig.getRange(1, 1, 1, w).copyTo(newSheet.getRange(1, 1, 1, w));
+    }
+  }
+  moveRowToArchiveOnly(source, "Tagesliste", "Tagesliste_Archiv", 5, stockId, 2);
 }
 
 function archiveEntry(stockId, nachbestellungEntryId) {
-  if (!stockId) return;
+  if (!stockId) return false;
   const ss = getMainSS();
-  if (!ss) return;
+  if (!ss) return false;
   const nbEidFilter = nachbestellungEntryId != null ? String(nachbestellungEntryId).trim() : "";
+  let dashboardMoved = 0;
 
   const archiveSheets = ["Dashboard_Archiv", "Nachbestellung_Archiv", "Input Exit_Archiv", "Input Q-Check_Archiv", "Input Mechanik_Archiv", "Input Lack_Archiv"];
   const origSheets = ["Dashboard", "Nachbestellung", "Input Exit", "Input Q-Check", "Input Mechanik", "Input Lack"];
@@ -1713,7 +1797,8 @@ function archiveEntry(stockId, nachbestellungEntryId) {
         const hdr = archiveTemplateHeaderRange(orig, origName);
         if (hdr) {
           const w = hdr.getNumColumns();
-          hdr.copyTo(newSheet.getRange(1, 1, 1, w));
+          ensureArchiveSheetColumns_(newSheet, w);
+          hdr.copyTo(archiveSheetRowRange_(newSheet, 1, w));
         }
       }
     }
@@ -1723,7 +1808,12 @@ function archiveEntry(stockId, nachbestellungEntryId) {
   if (dash) {
     const dlo = getDashboardLayout(dash);
     const dEnd = dashboardDataEndRow(dash, dlo);
-    moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd);
+    const dashWidth = Math.max(dlo.lastCol || 0, dash.getLastColumn());
+    if (nbEidFilter) {
+      dashboardMoved = moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd, dlo.cols.entryId, nbEidFilter, dashWidth);
+    } else {
+      dashboardMoved = moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd, null, null, dashWidth);
+    }
   }
 
   const nb = ss.getSheetByName("Nachbestellung");
@@ -1754,52 +1844,42 @@ function archiveEntry(stockId, nachbestellungEntryId) {
   moveRowToArchiveAndDelete(ss, "Input Mechanik", "Input Mechanik_Archiv", 2, stockId, inMeStart, inputSheetArchiveDataEnd(inputMe, inMeStart));
   moveRowToArchiveAndDelete(ss, "Input Lack", "Input Lack_Archiv", 2, stockId, inLaStart, inputSheetArchiveDataEnd(inputLa, inLaStart));
 
-  try {
-    const source = SpreadsheetApp.openById(SOURCE_ID);
-    if (!source.getSheetByName("Tagesliste_Archiv")) {
-      const orig = source.getSheetByName("Tagesliste");
-      const newSheet = source.insertSheet("Tagesliste_Archiv");
-      if (orig && orig.getLastColumn() > 0) {
-        const w = orig.getLastColumn();
-        orig.getRange(1, 1, 1, w).copyTo(newSheet.getRange(1, 1, 1, w));
-      }
-    }
-    moveRowToArchiveOnly(source, "Tagesliste", "Tagesliste_Archiv", 5, stockId, 2);
-  } catch (err) {
-    try {
-      logDebug("archiveEntry Tagesliste: " + err);
-    } catch (e) {}
-  }
+  enqueueTageslisteArchive_(stockId);
+  return dashboardMoved > 0;
 }
 
-function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId, dataStartRow, dataEndRow, entryIdCol, requiredEntryId) {
+function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId, dataStartRow, dataEndRow, entryIdCol, requiredEntryId, copyWidth) {
   const sheet = ss.getSheetByName(sheetName);
   const archive = ss.getSheetByName(archiveName);
-  if (!sheet || !archive) return;
+  if (!sheet || !archive) return 0;
   const last = sheet.getLastRow();
   const start = dataStartRow != null && dataStartRow > 0 ? dataStartRow : 2;
-  if (last < start) return;
+  if (last < start) return 0;
   const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
-  if (end < start) return;
+  if (end < start) return 0;
+  const width = Math.max(copyWidth || 0, sheet.getLastColumn());
   const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
   const needEid = entryIdCol != null && requiredEntryId != null && String(requiredEntryId).trim() !== "";
   const eids = needEid ? sheet.getRange(start, entryIdCol, end, entryIdCol).getValues() : null;
   const eidTarget = needEid ? String(requiredEntryId).trim() : "";
   const target = String(stockId).trim().toUpperCase();
+  let moved = 0;
   for (let r = keys.length - 1; r >= 0; r--) {
     const cell = keys[r][0];
     if (String(cell != null ? cell : "").trim().toUpperCase() !== target) continue;
     if (needEid && String(eids[r][0] != null ? eids[r][0] : "").trim() !== eidTarget) continue;
     const srcRow = start + r;
     try {
-      archiveCopyFormattedRowToBottom(sheet, srcRow, archive);
+      archiveCopyFormattedRowToBottom(sheet, srcRow, archive, width);
       sheet.deleteRow(srcRow);
+      moved++;
     } catch (e) {
       try {
         logDebug("moveRowToArchiveAndDelete " + sheetName + " row " + srcRow + ": " + e);
       } catch (e2) {}
     }
   }
+  return moved;
 }
 
 function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId, dataStartRow, dataEndRow) {
@@ -1811,6 +1891,7 @@ function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId, dataS
   if (last < start) return;
   const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
   if (end < start) return;
+  const width = sheet.getLastColumn();
   const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
   const target = String(stockId).trim().toUpperCase();
   for (let r = keys.length - 1; r >= 0; r--) {
@@ -1818,7 +1899,7 @@ function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId, dataS
     if (String(cell != null ? cell : "").trim().toUpperCase() !== target) continue;
     const srcRow = start + r;
     try {
-      archiveCopyFormattedRowToBottom(sheet, srcRow, archive);
+      archiveCopyFormattedRowToBottom(sheet, srcRow, archive, width);
     } catch (e) {
       try {
         logDebug("moveRowToArchiveOnly " + sheetName + " row " + srcRow + ": " + e);
@@ -1992,6 +2073,7 @@ function cleanupNachbestellungStatusDate() {
     clearStaleStatusDateOnSheet(ss.getSheetByName("Input Exit"), 11, 12, "Input Exit");
     try { reconcileNachbestellungInputExit(ss); } catch (err) { logDebug("reconcile failed: " + err); }
     try { cleanupEventQueue(ss); } catch (err) { logDebug("queue cleanup failed: " + err); }
+    try { processPendingTageslisteArchives_(); } catch (err) { logDebug("pending Tagesliste archive failed: " + err); }
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
