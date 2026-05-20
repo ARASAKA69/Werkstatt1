@@ -577,6 +577,128 @@
       }).getStockRegalOverview();
     }
 
+    function compareOverviewEntries(a, b) {
+      var ra = compareRegalShelfNames(a.regal, b.regal);
+      if (ra !== 0) return ra;
+      return String(a.stockId || '').localeCompare(String(b.stockId || ''), 'de');
+    }
+
+    function overviewPrintDateHeader() {
+      var today = new Date();
+      return (today.getDate() < 10 ? '0' : '') + today.getDate() + '.' + ((today.getMonth() + 1) < 10 ? '0' : '') + (today.getMonth() + 1) + '.' + today.getFullYear();
+    }
+
+    function overviewPrintCellText(val) {
+      var s = String(val || '').trim();
+      return s ? escapeHtml(s).replace(/\n/g, '<br>') : '-';
+    }
+
+    function buildOverviewHtml(entries, dateHeader) {
+      var sorted = entries.slice().sort(compareOverviewEntries);
+      var rows = '';
+      for (var j = 0; j < sorted.length; j++) {
+        var e = sorted[j];
+        var reifen = String(e.regalReifen || '').trim() || '-';
+        rows += '<tr>'
+          + '<td>' + (j + 1) + '</td>'
+          + '<td style="font-weight:700;">' + escapeHtml(e.stockId) + '</td>'
+          + '<td style="font-weight:700;">' + escapeHtml(e.regal) + '</td>'
+          + '<td>' + escapeHtml(reifen) + '</td>'
+          + '</tr>';
+      }
+      var kistenWord = sorted.length === 1 ? 'Kiste' : 'Kisten';
+      return '<!DOCTYPE html><html><head><title>Stock-ID + Regal \u00dcbersicht ' + dateHeader + '</title>'
+        + '<style>'
+        + 'body{font-family:Arial,sans-serif;margin:20px;color:#111;}'
+        + 'h2{margin:0 0 4px 0;font-size:18px;}'
+        + '.sub{color:#555;font-size:12px;margin-bottom:14px;}'
+        + 'table{width:100%;border-collapse:collapse;font-size:13px;}'
+        + 'th,td{border:1px solid #999;padding:6px 10px;text-align:left;}'
+        + 'th{background:#eee;font-weight:700;}'
+        + 'tr:nth-child(even){background:#f7f7f7;}'
+        + '@media print{body{margin:10px;}@page{size:A4 portrait;margin:12mm;}}'
+        + '</style></head><body>'
+        + '<h2>Stock-ID + Regal \u00dcbersicht \u2014 ' + dateHeader + '</h2>'
+        + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
+        + '<table><thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody></table>'
+        + '</body></html>';
+    }
+
+    function buildOverviewDetailHtml(entries, dateHeader) {
+      var sorted = entries.slice().sort(compareOverviewEntries);
+      var rows = '';
+      for (var j = 0; j < sorted.length; j++) {
+        var e = sorted[j];
+        var reifen = String(e.regalReifen || '').trim() || '-';
+        rows += '<tr>'
+          + '<td>' + (j + 1) + '</td>'
+          + '<td class="sid">' + escapeHtml(e.stockId) + '</td>'
+          + '<td class="reg">' + escapeHtml(e.regal) + '</td>'
+          + '<td>' + escapeHtml(reifen) + '</td>'
+          + '<td class="note">' + overviewPrintCellText(e.kommBestellung) + '</td>'
+          + '<td class="note">' + overviewPrintCellText(e.kommAnlieferung) + '</td>'
+          + '</tr>';
+      }
+      var kistenWord = sorted.length === 1 ? 'Kiste' : 'Kisten';
+      return '<!DOCTYPE html><html><head><title>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) ' + dateHeader + '</title>'
+        + '<style>'
+        + 'body{font-family:Arial,sans-serif;margin:16px;color:#111;}'
+        + 'h2{margin:0 0 4px 0;font-size:17px;}'
+        + '.sub{color:#555;font-size:11px;margin-bottom:12px;}'
+        + 'table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}'
+        + 'th,td{border:1px solid #999;padding:5px 8px;text-align:left;vertical-align:top;}'
+        + 'th{background:#eee;font-weight:700;font-size:10px;}'
+        + 'tr:nth-child(even){background:#f7f7f7;}'
+        + 'td.sid,td.reg{font-weight:700;}'
+        + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
+        + 'col.c-n{width:28px;}col.c-sid{width:72px;}col.c-reg{width:64px;}col.c-rf{width:56px;}col.c-et{width:auto;}col.c-an{width:auto;}'
+        + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
+        + '</style></head><body>'
+        + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
+        + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
+        + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-rf"><col class="c-et"><col class="c-an"></colgroup>'
+        + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
+        + '<tbody>' + rows + '</tbody></table>'
+        + '</body></html>';
+    }
+
+    function sendOverviewPrint(html, btn, idleLabel) {
+      if (btn) { btn.disabled = true; btn.textContent = '\u23f3 Drucke...'; }
+      fetch(BRIDGE_URL + '/print-html', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: html })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.success) {
+          if (btn) { btn.textContent = '\u2705 Gedruckt!'; setTimeout(function() { btn.disabled = false; btn.textContent = idleLabel; }, 2000); }
+        } else {
+          throw new Error(data.error || 'Bridge error');
+        }
+      }).catch(function() {
+        if (btn) { btn.disabled = false; btn.textContent = idleLabel; }
+        printRaFallback(html);
+      });
+    }
+
+    function printOverviewList() {
+      if (!ovAllEntries || !ovAllEntries.length) {
+        alert('Keine Einträge zum Drucken.');
+        return;
+      }
+      var html = buildOverviewHtml(ovAllEntries, overviewPrintDateHeader());
+      sendOverviewPrint(html, document.querySelector('.ov-btn-print'), '\ud83d\udda8\ufe0f Drucken');
+    }
+
+    function printOverviewDetailList() {
+      if (!ovAllEntries || !ovAllEntries.length) {
+        alert('Keine Einträge zum Drucken.');
+        return;
+      }
+      var html = buildOverviewDetailHtml(ovAllEntries, overviewPrintDateHeader());
+      sendOverviewPrint(html, document.querySelector('.ov-btn-print-detail'), '\ud83d\udda8\ufe0f Drucken + ET');
+    }
+
     function normalizeStockInput(value) {
       return String(value || "").replace(/\s+/g, '').toUpperCase();
     }
@@ -810,6 +932,7 @@
     var nbFilteredEntries = [];
     var nbDisplayEntries = [];
     var nbLagerortOptions = [];
+    var nbStatusOptions = [];
     var nbSessionActive = false;
     var nbDataReady = false;
 
@@ -829,6 +952,7 @@
       nbFilteredEntries = [];
       nbDisplayEntries = [];
       nbLagerortOptions = [];
+      nbStatusOptions = [];
       nbSessionActive = false;
       nbDataReady = false;
       var btn = document.querySelector('.topbar-action[onclick*="openNbModal"]');
@@ -856,13 +980,14 @@
         nbDataReady = true;
         document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
         nbLagerortOptions = res.lagerortOptions || [];
+        nbStatusOptions = res.statusOptions || [];
         renderNbTable(nbAllEntries);
       }).withFailureHandler(function(err) {
         document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
       }).getNachbestellungen();
     }
 
-    var NB_STATUS_OPTIONS = ["bestellt", "nicht bestellt", "teilweise angeliefert", "komplett angeliefert", "Lieferrückstand", "N/A", "B2A1"];
+    var NB_STATUS_FALLBACK = ["bestellt", "nicht bestellt", "teilweise angeliefert", "komplett angeliefert", "Lieferrückstand", "B2A1", "Fertiggestellt", "Konsi-Lager"];
 
     function getNbTypStyle(typ) {
       var t = String(typ || "").toLowerCase();
@@ -893,9 +1018,9 @@
     function getNbStatusClass(status) {
       var s = String(status || '').toLowerCase();
       if(s === 'nicht bestellt') return 'nb-box-status-red';
-      if(s === 'bestellt') return 'nb-box-status-yellow';
-      if(s === 'teilweise angeliefert') return 'nb-box-status-yellow';
-      if(s.indexOf('angeliefert') !== -1) return 'nb-box-status-green';
+      if(s === 'bestellt' || s === 'teilweise angeliefert' || s === 'lieferrückstand' || s === 'lieferrueckstand') return 'nb-box-status-yellow';
+      if(s.indexOf('angeliefert') !== -1 || s === 'fertiggestellt') return 'nb-box-status-green';
+      if(s === 'b2a1' || s === 'konsi-lager' || s === 'konsilager') return 'nb-box-status-yellow';
       return '';
     }
 
@@ -948,24 +1073,21 @@
     }
 
     function buildNbStatusSelect(index, currentStatus, sheetRow) {
+      var list = (nbStatusOptions && nbStatusOptions.length) ? nbStatusOptions : NB_STATUS_FALLBACK;
       var html = '<select class="nb-edit-input" onchange="saveNbStatus(event,' + sheetRow + ',this.value,' + index + ')" onclick="event.stopPropagation();">';
       var found = false;
-      for(var s = 0; s < NB_STATUS_OPTIONS.length; s++) {
-        var opt = NB_STATUS_OPTIONS[s];
-        var sel = opt.toLowerCase() === String(currentStatus || "").toLowerCase() ? ' selected' : '';
+      var cur = String(currentStatus || "").trim().toLowerCase();
+      for(var s = 0; s < list.length; s++) {
+        var opt = String(list[s] != null ? list[s] : "").trim();
+        if(!opt) continue;
+        var sel = opt.toLowerCase() === cur ? ' selected' : '';
         if(sel) found = true;
         html += '<option value="' + escapeHtml(opt) + '"' + sel + '>' + escapeHtml(opt) + '</option>';
       }
       if(!found && currentStatus) {
-        html = '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>' + html.replace('<select ', '').replace('>', '');
-        html = '<select class="nb-edit-input" onchange="saveNbStatus(event,' + sheetRow + ',this.value,' + index + ')" onclick="event.stopPropagation();">' + '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>';
-        for(var s2 = 0; s2 < NB_STATUS_OPTIONS.length; s2++) {
-          html += '<option value="' + escapeHtml(NB_STATUS_OPTIONS[s2]) + '">' + escapeHtml(NB_STATUS_OPTIONS[s2]) + '</option>';
-        }
-        html += '</select>';
-      } else {
-        html += '</select>';
+        html += '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>';
       }
+      html += '</select>';
       return html;
     }
 
@@ -1262,6 +1384,7 @@
         nbDataReady = true;
         document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
         nbLagerortOptions = res.lagerortOptions || [];
+        nbStatusOptions = res.statusOptions || [];
         renderNbTable(nbAllEntries);
       }).withFailureHandler(function(err) {
         document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
@@ -2735,6 +2858,7 @@
           nbAllEntries = res.entries || [];
           nbFilteredEntries = nbAllEntries;
           nbLagerortOptions = res.lagerortOptions || [];
+          nbStatusOptions = res.statusOptions || [];
           nbSessionActive = true;
           nbDataReady = true;
           var nbb = document.getElementById('nbTotalBadge');

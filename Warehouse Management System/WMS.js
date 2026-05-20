@@ -2,6 +2,7 @@ const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
 const NACHBESTELL_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 const NACHBESTELL_TAB = "Nachbestellung";
+const NACHBESTELL_GID = 130741593;
 const EXIT_SHEET_ID = "1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI";
 const EXIT_TAB = "Exit Repair";
 const AUFTRAG_SHEET_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
@@ -10,6 +11,7 @@ const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
 const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const TAGESLISTE_TAB = "Tagesliste";
 const VASOLD_WSS_TAB = "Vasold WSS";
+const NACHBESTELL_STATUS_COL = 11;
 const NACHBESTELL_REGAL_COL = 13;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzlFQ3sm2mpo2UUIftYVSC79RqD5oXt4WcWL4HBYcbiVnM3_RLUqHvQyY1xFT-BgW4/exec";
 
@@ -66,37 +68,66 @@ function nachbestellungLagerortVerifyMatch(expected, cellValue) {
   return false;
 }
 
-function findNachbestellungLagerortColumn(sheet) {
+function getColIndexExact(headerRow, exactTerms) {
+  if (!headerRow) return -1;
+  for (var i = 0; i < headerRow.length; i++) {
+    var cellText = String(headerRow[i] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
+    for (var j = 0; j < exactTerms.length; j++) {
+      var term = String(exactTerms[j] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
+      if (cellText === term) return i + 1;
+    }
+  }
+  return -1;
+}
+
+function findNachbestellungSheetLayout(sheet) {
+  var fallback = {
+    headerRow: 2,
+    dataStartRow: 3,
+    statusCol: NACHBESTELL_STATUS_COL,
+    lagerortCol: NACHBESTELL_REGAL_COL
+  };
+  if (!sheet) return fallback;
   var lastRow = Math.max(1, sheet.getLastRow());
   var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
   var headerScan = sheet.getRange(1, 1, Math.min(10, lastRow), lastCol).getValues();
-  var h;
-  for (h = 0; h < headerScan.length; h++) {
-    var colL = getColIndex(headerScan[h], ["lagerort"]);
-    if (colL !== -1) return colL;
-  }
+  var h, bestIdx = -1, bestScore = 0;
   for (h = 0; h < headerScan.length; h++) {
     var row = headerScan[h];
-    var hasStock = false;
-    for (var c = 0; c < row.length; c++) {
-      if (String(row[c] || "").toLowerCase().indexOf("stock") !== -1) {
-        hasStock = true;
-        break;
-      }
-    }
-    if (hasStock) {
-      var colR = getColIndex(headerScan[h], ["lagerort", "regal"]);
-      if (colR !== -1) return colR;
+    var stockCol = getColIndex(row, ["stockid", "stock"]);
+    if (stockCol === -1) continue;
+    var score = 1;
+    var lagerortCol = getColIndex(row, ["lagerort", "regal"]);
+    if (lagerortCol !== -1) score += 3;
+    var statusCol = getColIndexExact(row, ["status"]);
+    if (statusCol !== -1) score += 3;
+    if (getColIndex(row, ["datum", "date"]) !== -1) score += 1;
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = h;
     }
   }
-  return NACHBESTELL_REGAL_COL;
+  if (bestIdx === -1) return fallback;
+  var hdr = headerScan[bestIdx];
+  var loCol = getColIndex(hdr, ["lagerort", "regal"]);
+  var stCol = getColIndexExact(hdr, ["status"]);
+  return {
+    headerRow: bestIdx + 1,
+    dataStartRow: bestIdx + 2,
+    statusCol: stCol !== -1 ? stCol : NACHBESTELL_STATUS_COL,
+    lagerortCol: loCol !== -1 ? loCol : NACHBESTELL_REGAL_COL
+  };
+}
+
+function findNachbestellungLagerortColumn(sheet) {
+  return findNachbestellungSheetLayout(sheet).lagerortCol;
 }
 
 function nachbestellungLagerortFallbackList() {
   var o = ["Tagesliste"];
-  for (var i = 1; i <= 5; i++) {
+  for (var i = 1; i <= 9; i++) {
     for (var j = 1; j <= 8; j++) {
-      o.push(i + "." + j);
+      o.push("Regal " + i + "." + j);
     }
   }
   o.push("LACK");
@@ -134,6 +165,53 @@ function getNachbestellungLagerortAllowedList(sheet, col) {
   return nachbestellungLagerortFallbackList();
 }
 
+function nachbestellungStatusFallbackList() {
+  return [
+    "bestellt",
+    "nicht bestellt",
+    "teilweise angeliefert",
+    "komplett angeliefert",
+    "Lieferrückstand",
+    "B2A1",
+    "Fertiggestellt",
+    "Konsi-Lager"
+  ];
+}
+
+function getNachbestellungStatusAllowedList(sheet, col) {
+  var lastRow = Math.max(2, sheet.getLastRow());
+  var samples = [2, 3, 4, 5, 10, 15, 20, 50, 100, 500, 1000, 2000, 3000, 4000, 5000];
+  for (var s = 0; s < samples.length; s++) {
+    var rr = samples[s];
+    if (rr > lastRow) continue;
+    var list = extractDataValidationList(sheet.getRange(rr, col).getDataValidation());
+    if (list && list.length) return list;
+  }
+  return nachbestellungStatusFallbackList();
+}
+
+function nachbestellungStatusToSheetValue(raw, allowedList) {
+  raw = String(raw || "").trim();
+  if (!raw) return "";
+  var i;
+  for (i = 0; i < allowedList.length; i++) {
+    var opt = String(allowedList[i] != null ? allowedList[i] : "").trim();
+    if (raw.toLowerCase() === opt.toLowerCase()) return String(allowedList[i]);
+  }
+  return null;
+}
+
+function nachbestellungIsClosedStatus(statusVal) {
+  var s = String(statusVal || "").trim().toLowerCase();
+  if (!s) return false;
+  if (s === "angeliefert" || s === "fahrzeug rr") return true;
+  if (s.indexOf("angeliefert/bereit") !== -1) return true;
+  if (s.indexOf("komplett angeliefert") !== -1) return true;
+  if (s === "fertiggestellt") return true;
+  if (s === "konsi-lager" || s === "konsilager") return true;
+  return false;
+}
+
 function nachbestellungLagerortToSheetValue(raw, allowedList) {
   raw = String(raw || "").trim();
   if (!raw) return "";
@@ -156,29 +234,13 @@ function mergeNachbestellungenRegalIntoCounts(counts) {
     var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
     var sheet = ss.getSheetByName(NACHBESTELL_TAB);
     if (!sheet || !counts) return;
-    var col = findNachbestellungLagerortColumn(sheet);
+    var layout = findNachbestellungSheetLayout(sheet);
+    var col = layout.lagerortCol;
     var lastRow = Math.max(1, sheet.getLastRow());
     var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
     if (col > lastCol) col = Math.min(NACHBESTELL_REGAL_COL, lastCol);
-    var headerScan = sheet.getRange(1, 1, Math.min(10, lastRow), lastCol).getValues();
-    var headerIdx = -1;
-    for (var h = 0; h < headerScan.length; h++) {
-      var scanRow = headerScan[h];
-      var hasStock = false;
-      for (var c = 0; c < scanRow.length; c++) {
-        if (String(scanRow[c] || "").toLowerCase().indexOf("stock") !== -1) {
-          hasStock = true;
-          break;
-        }
-      }
-      if (hasStock) {
-        headerIdx = h;
-        break;
-      }
-    }
-    if (headerIdx === -1) headerIdx = 0;
-    var startRow = headerIdx + 2;
-    var numRows = lastRow - headerIdx - 1;
+    var startRow = layout.dataStartRow;
+    var numRows = lastRow - startRow + 1;
     if (numRows <= 0) return;
     var regalColData = sheet.getRange(startRow, col, numRows, 1).getValues();
     for (var r = 0; r < regalColData.length; r++) {
@@ -1314,27 +1376,22 @@ function getNachbestellungen() {
     try {
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
-      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [], lagerortOptions: [] };
+      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [], lagerortOptions: [], statusOptions: [] };
 
-      var lagerortCol = findNachbestellungLagerortColumn(sheet);
+      var layout = findNachbestellungSheetLayout(sheet);
+      var lagerortCol = layout.lagerortCol;
+      var statusCol = layout.statusCol;
       var lastColBound = Math.max(1, Math.min(80, sheet.getLastColumn()));
       if (lagerortCol > lastColBound) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lastColBound);
+      if (statusCol > lastColBound) statusCol = Math.min(NACHBESTELL_STATUS_COL, lastColBound);
       var lagerortOptions = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
+      var statusOptions = getNachbestellungStatusAllowedList(sheet, statusCol);
 
       var lastRow = Math.max(2, sheet.getLastRow());
       var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
 
-      var headerIdx = -1;
-      for (var h = 0; h < Math.min(10, data.length); h++) {
-        var row = data[h].map(function(c) { return String(c || "").toLowerCase(); });
-        if (row.some(function(c) { return c.indexOf("stock") !== -1; })) {
-          headerIdx = h;
-          break;
-        }
-      }
-      if (headerIdx === -1) headerIdx = 0;
-
+      var headerIdx = layout.headerRow - 1;
       var header = data[headerIdx];
       var cols = {};
       for (var c = 0; c < header.length; c++) {
@@ -1347,8 +1404,8 @@ function getNachbestellungen() {
         if (!cols.teil && (txt.indexOf("teil") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1)) cols.teil = c;
         if (!cols.preis && (txt.indexOf("preis") !== -1 || txt.indexOf("kosten") !== -1 || txt.indexOf("price") !== -1)) cols.preis = c;
         if (!cols.artikel && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
-        if (!cols.status && (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1)) cols.status = c;
       }
+      cols.status = statusCol - 1;
 
       if (cols.stock === undefined) {
         for (var bc = 0; bc < header.length; bc++) {
@@ -1357,7 +1414,7 @@ function getNachbestellungen() {
         }
       }
 
-      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [], lagerortOptions: lagerortOptions };
+      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [], lagerortOptions: lagerortOptions, statusOptions: statusOptions };
 
       var entries = [];
       
@@ -1367,8 +1424,7 @@ function getNachbestellungen() {
         if (!stockId) continue;
 
         var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
-        var statusVal = rawStatus.toLowerCase();
-        if (statusVal === "angeliefert" || statusVal.indexOf("angeliefert/bereit") !== -1 || statusVal.indexOf("komplett angeliefert") !== -1 || statusVal === "fahrzeug rr") continue;
+        if (nachbestellungIsClosedStatus(rawStatus)) continue;
 
         var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
         var dateStr = "";
@@ -1428,9 +1484,9 @@ function getNachbestellungen() {
         return b.row - a.row;
       });
 
-      return { success: true, entries: entries, lagerortOptions: lagerortOptions };
+      return { success: true, entries: entries, lagerortOptions: lagerortOptions, statusOptions: statusOptions };
     } catch (err) {
-      return { success: false, message: err.message, entries: [], lagerortOptions: [] };
+      return { success: false, message: err.message, entries: [], lagerortOptions: [], statusOptions: [] };
     }
   }
 
@@ -1440,8 +1496,10 @@ function updateNachbestellung(sheetRow, fieldName, value) {
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
       if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
 
+      var nbLayout = findNachbestellungSheetLayout(sheet);
+
       if (fieldName === "regal") {
-        var lagerortCol = findNachbestellungLagerortColumn(sheet);
+        var lagerortCol = nbLayout.lagerortCol;
         var lcW = Math.max(1, sheet.getLastColumn());
         if (lagerortCol > lcW) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lcW);
         var allowedLv = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
@@ -1459,51 +1517,68 @@ function updateNachbestellung(sheetRow, fieldName, value) {
         return { success: true, message: "Lagerort gespeichert!" };
       }
 
-      var lastCol = Math.max(1, Math.min(15, sheet.getLastColumn()));
-      var headerData = sheet.getRange(1, 1, Math.min(10, sheet.getLastRow()), lastCol).getValues();
-      var headerIdx = -1;
-      for (var h = 0; h < headerData.length; h++) {
-        var row = headerData[h].map(function(c) { return String(c || "").toLowerCase(); });
-        if (row.some(function(c) { return c.indexOf("stock") !== -1; })) { headerIdx = h; break; }
+      if (fieldName === "status") {
+        var statusColW = nbLayout.statusCol;
+        var scW = Math.max(1, sheet.getLastColumn());
+        if (statusColW > scW) statusColW = Math.min(NACHBESTELL_STATUS_COL, scW);
+        var allowedSt = getNachbestellungStatusAllowedList(sheet, statusColW);
+        var rawSt = String(value || "").trim();
+        var statusWrite = rawSt === "" ? "" : nachbestellungStatusToSheetValue(rawSt, allowedSt);
+        if (rawSt !== "" && statusWrite === null) {
+          return { success: false, message: "Status nicht in der Sheet-Liste. Bitte passenden Eintrag wählen." };
+        }
+        var stCell = sheet.getRange(sheetRow, statusColW);
+        stCell.setValue(statusWrite);
+        SpreadsheetApp.flush();
+        var verifySt = String(stCell.getValue() || "").trim();
+        if (rawSt !== "" && verifySt.toLowerCase() !== String(statusWrite || "").trim().toLowerCase()) {
+          return { success: false, message: "Status konnte nicht verifiziert werden!" };
+        }
+        value = statusWrite;
+      } else {
+        var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+        var headerData = sheet.getRange(1, 1, Math.min(10, sheet.getLastRow()), lastCol).getValues();
+        var headerIdx = nbLayout.headerRow - 1;
+        var header = headerData[headerIdx];
+        var colMap = {};
+        for (var c = 0; c < header.length; c++) {
+          var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+          if (txt.indexOf("teil") !== -1 || txt.indexOf("benennung") !== -1 || txt.indexOf("ersatzteil") !== -1) colMap["teil"] = c + 1;
+          if (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("teilenr") !== -1) colMap["artikel"] = c + 1;
+        }
+        var targetCol = colMap[fieldName];
+        if (!targetCol) return { success: false, message: "Spalte '" + fieldName + "' nicht gefunden!" };
+        sheet.getRange(sheetRow, targetCol).setValue(value);
+        SpreadsheetApp.flush();
       }
-      if (headerIdx === -1) headerIdx = 0;
 
-      var header = headerData[headerIdx];
-      var colMap = {};
-      for (var c = 0; c < header.length; c++) {
-        var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
-        if (txt.indexOf("teil") !== -1 || txt.indexOf("benennung") !== -1 || txt.indexOf("ersatzteil") !== -1) colMap["teil"] = c + 1;
-        if (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("teilenr") !== -1) colMap["artikel"] = c + 1;
-        if (!colMap["status"] && (txt.indexOf("status") !== -1 || txt.indexOf("bestellt") !== -1 || txt.indexOf("angeliefert") !== -1)) colMap["status"] = c + 1;
-      }
-
-      var targetCol = colMap[fieldName];
-      if (!targetCol) return { success: false, message: "Spalte '" + fieldName + "' nicht gefunden!" };
-
-      sheet.getRange(sheetRow, targetCol).setValue(value);
-      SpreadsheetApp.flush();
-
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var extraMsgs = [];
-      if (fieldName === "status" && String(value || "").toLowerCase().indexOf("angeliefert") !== -1) {
-        var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
-        var rowStockId = "";
-        var rowTyp = "";
-        var rowBeschreibung = "";
-        for (var r = 0; r < rowData.length; r++) {
-          var cellVal = String(rowData[r] || "").trim();
-          if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
-          if (!rowTyp && cellVal.toLowerCase().indexOf("exit") !== -1) rowTyp = cellVal;
-        }
-        if (colMap["teil"]) rowBeschreibung = String(sheet.getRange(sheetRow, colMap["teil"]).getValue() || "").trim();
+      if (fieldName === "status") {
+        var valLcStatus = String(value || "").toLowerCase();
+        if (valLcStatus.indexOf("angeliefert") !== -1) {
+          var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
+          var rowStockId = "";
+          var rowTyp = "";
+          var rowBeschreibung = "";
+          for (var r = 0; r < rowData.length; r++) {
+            var cellVal = String(rowData[r] || "").trim();
+            if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
+            if (!rowTyp && cellVal.toLowerCase().indexOf("exit") !== -1) rowTyp = cellVal;
+          }
+          var hdrData = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
+          var teilCol = getColIndex(hdrData, ["ersatzteil", "teil", "benennung"]);
+          if (teilCol !== -1) rowBeschreibung = String(sheet.getRange(sheetRow, teilCol).getValue() || "").trim();
 
-        if (rowTyp && rowStockId) {
-          extraMsgs.push(updateExitListStatus(rowStockId));
-        }
+          if (rowTyp && rowStockId) {
+            extraMsgs.push(updateExitListStatus(rowStockId));
+          }
 
-        var valStr = String(value || "");
-        var valLc = valStr.toLowerCase();
-        if (rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
-          extraMsgs.push(autoFillWerkstattauftrag(rowStockId, rowBeschreibung));
+          var valStr = String(value || "");
+          var valLc = valStr.toLowerCase();
+          if (rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
+            extraMsgs.push(autoFillWerkstattauftrag(rowStockId, rowBeschreibung));
+          }
         }
       }
 
