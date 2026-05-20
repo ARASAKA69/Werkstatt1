@@ -145,10 +145,22 @@ function moveFertiggestelltRowsOnSheet_(ss, sourceName, archiveName, boundsFn) {
   let moved = 0;
   for (let i = toMove.length - 1; i >= 0; i--) {
     const row = toMove[i];
-    const destRow = archive.getLastRow() + 1;
-    fertigSheetRowRange_(sheet, row, lastCol).copyTo(fertigSheetRowRange_(archive, destRow, lastCol));
-    sheet.deleteRow(row);
-    moved++;
+    try {
+      if (typeof archiveCopyFormattedRowToBottom === "function") {
+        archiveCopyFormattedRowToBottom(sheet, row, archive, lastCol);
+      } else {
+        const destRow = archive.getLastRow() + 1;
+        fertigSheetRowRange_(sheet, row, lastCol).copyTo(fertigSheetRowRange_(archive, destRow, lastCol));
+      }
+      sheet.deleteRow(row);
+      moved++;
+    } catch (e) {
+      try {
+        if (typeof logDebug === "function") {
+          logDebug("moveFertiggestelltRowsOnSheet_ " + sourceName + " row " + row + ": " + e);
+        }
+      } catch (e2) {}
+    }
   }
   return moved;
 }

@@ -368,14 +368,46 @@ function withLock(fn, waitMs) {
   let acquired = false;
   try {
     try { acquired = lock.tryLock(waitMs || LOCK_WAIT_MS); } catch (e) { acquired = false; }
-    if (!acquired) return null;
+    if (!acquired) {
+      try { logDebug("withLock: could not acquire script lock within " + (waitMs || LOCK_WAIT_MS) + "ms"); } catch (e2) {}
+      return null;
+    }
     return fn();
   } catch (err) {
+    try { logDebug("withLock error: " + err); } catch (e3) {}
     return null;
   } finally {
     if (acquired) {
       try { lock.releaseLock(); } catch (e) {}
     }
+  }
+}
+
+function isTruthyCheckbox_(value) {
+  if (value === true) return true;
+  const s = String(value != null ? value : "").trim().toUpperCase();
+  return s === "TRUE" || s === "WAHR" || s === "1" || s === "YES" || s === "JA";
+}
+
+function handleDashboardArchiveCheckbox_(sheet, row, layout) {
+  const value = sheet.getRange(row, layout.cols.archivieren).getValue();
+  const stockId = sheet.getRange(row, layout.cols.stockId).getValue();
+  if (!isTruthyCheckbox_(value)) return;
+  if (!String(stockId || "").trim()) {
+    try { logDebug("archive checkbox row " + row + ": no stockId"); } catch (e) {}
+    sheet.getRange(row, layout.cols.archivieren).setValue(false);
+    return;
+  }
+  let entryId = "";
+  try {
+    entryId = sheet.getRange(row, layout.cols.entryId).getValue();
+  } catch (e) {}
+  try {
+    logDebug("archive checkbox row " + row + " stockId=" + stockId + " entryId=" + entryId);
+  } catch (e2) {}
+  const archived = archiveEntry(stockId, entryId, { dashboardRow: row });
+  if (!archived) {
+    sheet.getRange(row, layout.cols.archivieren).setValue(false);
   }
 }
 
@@ -519,6 +551,18 @@ function onEdit(e) {
       try { logDebug("Input stockId cascade error: " + err); } catch (e2) {}
     }
     if (inputCleared) return;
+  }
+
+  if (name === "Dashboard" && e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
+    try {
+      const layout = getDashboardLayout(sheet);
+      if (col === layout.cols.archivieren && row >= layout.dataStartRow) {
+        handleDashboardArchiveCheckbox_(sheet, row, layout);
+        return;
+      }
+    } catch (err) {
+      try { logDebug("Dashboard archive onEdit error: " + err); } catch (e2) {}
+    }
   }
 
   withLock(function () {
@@ -767,25 +811,6 @@ function handleEditPerRow(e, sheet, name, row, startCol, endCol) {
   }
 
   if (name === "Dashboard") {
-    const layout = getDashboardLayout(sheet);
-    if (colHit(layout.cols.archivieren) && row >= layout.dataStartRow) {
-      const value = sheet.getRange(row, layout.cols.archivieren).getValue();
-      const stockId = sheet.getRange(row, layout.cols.stockId).getValue();
-      const archiveOn = value === true || String(value || "").toUpperCase() === "TRUE";
-      if (archiveOn && stockId) {
-        const entryId = sheet.getRange(row, layout.cols.entryId).getValue();
-        const archived = archiveEntry(stockId, entryId);
-        let stillRow = -1;
-        if (entryId) {
-          stillRow = findRowByEntryId(sheet, layout.cols.entryId, entryId, layout.dataStartRow);
-        } else if (row <= sheet.getLastRow()) {
-          stillRow = row;
-        }
-        if (stillRow !== -1) {
-          sheet.getRange(stillRow, layout.cols.archivieren).setValue(!archived);
-        }
-      }
-    }
     return;
   }
 }
@@ -1709,11 +1734,27 @@ function ensureArchiveSheetColumns_(archive, minCols) {
   }
 }
 
+function ensureArchiveSheetRows_(archive, minRow) {
+  const need = Math.max(1, minRow || 1);
+  const max = archive.getMaxRows();
+  if (max < need) {
+    archive.insertRowsAfter(max, need - max);
+  }
+}
+
+function archiveCopyWidth_(sheet, archive, colCount) {
+  const need = Math.max(1, colCount || sheet.getLastColumn());
+  ensureArchiveSheetColumns_(archive, need);
+  ensureArchiveSheetColumns_(sheet, need);
+  return Math.min(need, sheet.getMaxColumns(), archive.getMaxColumns());
+}
+
 function archiveCopyFormattedRowToBottom(sheet, srcRow, archive, colCount) {
-  const lc = Math.max(1, colCount || sheet.getLastColumn());
-  ensureArchiveSheetColumns_(archive, lc);
+  const lc = archiveCopyWidth_(sheet, archive, colCount);
   let destRow = archive.getLastRow() + 1;
   if (destRow < 1) destRow = 1;
+  if (archive.getLastRow() >= 1) destRow = Math.max(destRow, 2);
+  ensureArchiveSheetRows_(archive, destRow);
   archiveSheetRowRange_(sheet, srcRow, lc).copyTo(archiveSheetRowRange_(archive, destRow, lc));
 }
 
@@ -1779,28 +1820,69 @@ function archiveTageslisteForStock_(stockId) {
   moveRowToArchiveOnly(source, "Tagesliste", "Tagesliste_Archiv", 5, stockId, 2);
 }
 
-function archiveEntry(stockId, nachbestellungEntryId) {
+function archiveDashboardRowAt_(ss, sheet, row, layout, stockId, entryIdFilter, width) {
+  if (!sheet || !row || row < layout.dataStartRow || row > sheet.getLastRow()) return false;
+  const archive = ss.getSheetByName("Dashboard_Archiv");
+  if (!archive) return false;
+  const rowStock = String(sheet.getRange(row, layout.cols.stockId).getValue() || "").trim().toUpperCase();
+  const targetStock = String(stockId).trim().toUpperCase();
+  if (!rowStock || rowStock !== targetStock) return false;
+  const eidNeed = entryIdFilter != null && String(entryIdFilter).trim() !== "";
+  if (eidNeed) {
+    const rowEid = String(sheet.getRange(row, layout.cols.entryId).getValue() || "").trim();
+    if (rowEid !== String(entryIdFilter).trim()) return false;
+  }
+  try {
+    archiveCopyFormattedRowToBottom(sheet, row, archive, width);
+    sheet.deleteRow(row);
+    return true;
+  } catch (e) {
+    try { logDebug("archiveDashboardRowAt_ row " + row + " FAILED: " + e); } catch (e2) {}
+    return false;
+  }
+}
+
+function archiveEntry(stockId, nachbestellungEntryId, options) {
   if (!stockId) return false;
   const ss = getMainSS();
   if (!ss) return false;
+  const dashRowOpt = options && options.dashboardRow > 0 ? options.dashboardRow : 0;
   const nbEidFilter = nachbestellungEntryId != null ? String(nachbestellungEntryId).trim() : "";
   let dashboardMoved = 0;
+  let nbMoved = 0;
+  let inputExitMoved = 0;
+  let inputQCMoved = 0;
+  let inputMeMoved = 0;
+  let inputLaMoved = 0;
 
   const archiveSheets = ["Dashboard_Archiv", "Nachbestellung_Archiv", "Input Exit_Archiv", "Input Q-Check_Archiv", "Input Mechanik_Archiv", "Input Lack_Archiv"];
   const origSheets = ["Dashboard", "Nachbestellung", "Input Exit", "Input Q-Check", "Input Mechanik", "Input Lack"];
   archiveSheets.forEach((name, idx) => {
-    if (!ss.getSheetByName(name)) {
-      const origName = origSheets[idx];
-      const orig = ss.getSheetByName(origName);
-      const newSheet = ss.insertSheet(name);
+    const origName = origSheets[idx];
+    const orig = ss.getSheetByName(origName);
+    let archiveSheet = ss.getSheetByName(name);
+    if (!archiveSheet) {
+      archiveSheet = ss.insertSheet(name);
       if (orig && orig.getLastColumn() > 0) {
         const hdr = archiveTemplateHeaderRange(orig, origName);
         if (hdr) {
           const w = hdr.getNumColumns();
-          ensureArchiveSheetColumns_(newSheet, w);
-          hdr.copyTo(archiveSheetRowRange_(newSheet, 1, w));
+          ensureArchiveSheetColumns_(archiveSheet, w);
+          hdr.copyTo(archiveSheetRowRange_(archiveSheet, 1, w));
         }
       }
+    } else if (orig) {
+      let w = Math.max(orig.getLastColumn(), 1);
+      try {
+        if (origName === "Dashboard") {
+          const dlo = getDashboardLayout(orig);
+          if (dlo && dlo.lastCol) w = Math.max(w, dlo.lastCol);
+        } else if (origName === "Nachbestellung") {
+          const nlo = getNachbestellungLayout(orig);
+          if (nlo && nlo.lastCol) w = Math.max(w, nlo.lastCol);
+        }
+      } catch (e) {}
+      ensureArchiveSheetColumns_(archiveSheet, w);
     }
   });
 
@@ -1809,7 +1891,9 @@ function archiveEntry(stockId, nachbestellungEntryId) {
     const dlo = getDashboardLayout(dash);
     const dEnd = dashboardDataEndRow(dash, dlo);
     const dashWidth = Math.max(dlo.lastCol || 0, dash.getLastColumn());
-    if (nbEidFilter) {
+    if (dashRowOpt > 0) {
+      dashboardMoved = archiveDashboardRowAt_(ss, dash, dashRowOpt, dlo, stockId, nbEidFilter, dashWidth) ? 1 : 0;
+    } else if (nbEidFilter) {
       dashboardMoved = moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd, dlo.cols.entryId, nbEidFilter, dashWidth);
     } else {
       dashboardMoved = moveRowToArchiveAndDelete(ss, "Dashboard", "Dashboard_Archiv", dlo.cols.stockId, stockId, dlo.dataStartRow, dEnd, null, null, dashWidth);
@@ -1823,7 +1907,7 @@ function archiveEntry(stockId, nachbestellungEntryId) {
     const trim = nlo.dataEndTrimBottomRows != null ? nlo.dataEndTrimBottomRows : 1;
     const nbEnd = nbLast > trim ? nbLast - trim : nbLast;
     if (nbEidFilter) {
-      moveRowToArchiveAndDelete(ss, "Nachbestellung", "Nachbestellung_Archiv", nlo.cols.stockId, stockId, nlo.dataStartRow, nbEnd, nlo.cols.entryId, nbEidFilter);
+      nbMoved = moveRowToArchiveAndDelete(ss, "Nachbestellung", "Nachbestellung_Archiv", nlo.cols.stockId, stockId, nlo.dataStartRow, nbEnd, nlo.cols.entryId, nbEidFilter);
     } else {
       try {
         logDebug("archiveEntry: skip Nachbestellung (no EntryID) stockId=" + stockId);
@@ -1839,12 +1923,28 @@ function archiveEntry(stockId, nachbestellungEntryId) {
   const inQCStart = inputSheetArchiveDataStart("Input Q-Check");
   const inMeStart = inputSheetArchiveDataStart("Input Mechanik");
   const inLaStart = inputSheetArchiveDataStart("Input Lack");
-  moveRowToArchiveAndDelete(ss, "Input Exit", "Input Exit_Archiv", 2, stockId, inExitStart, inputSheetArchiveDataEnd(inputExit, inExitStart));
-  moveRowToArchiveAndDelete(ss, "Input Q-Check", "Input Q-Check_Archiv", 2, stockId, inQCStart, inputSheetArchiveDataEnd(inputQC, inQCStart));
-  moveRowToArchiveAndDelete(ss, "Input Mechanik", "Input Mechanik_Archiv", 2, stockId, inMeStart, inputSheetArchiveDataEnd(inputMe, inMeStart));
-  moveRowToArchiveAndDelete(ss, "Input Lack", "Input Lack_Archiv", 2, stockId, inLaStart, inputSheetArchiveDataEnd(inputLa, inLaStart));
+  inputExitMoved = moveRowToArchiveAndDelete(ss, "Input Exit", "Input Exit_Archiv", 2, stockId, inExitStart, inputSheetArchiveDataEnd(inputExit, inExitStart));
+  inputQCMoved = moveRowToArchiveAndDelete(ss, "Input Q-Check", "Input Q-Check_Archiv", 2, stockId, inQCStart, inputSheetArchiveDataEnd(inputQC, inQCStart));
+  inputMeMoved = moveRowToArchiveAndDelete(ss, "Input Mechanik", "Input Mechanik_Archiv", 2, stockId, inMeStart, inputSheetArchiveDataEnd(inputMe, inMeStart));
+  inputLaMoved = moveRowToArchiveAndDelete(ss, "Input Lack", "Input Lack_Archiv", 2, stockId, inLaStart, inputSheetArchiveDataEnd(inputLa, inLaStart));
 
   enqueueTageslisteArchive_(stockId);
+  try {
+    const total = dashboardMoved + nbMoved + inputExitMoved + inputQCMoved + inputMeMoved + inputLaMoved;
+    const detail =
+      "Dashboard=" + dashboardMoved +
+      " NB=" + nbMoved +
+      " Exit=" + inputExitMoved +
+      " QC=" + inputQCMoved +
+      " ME=" + inputMeMoved +
+      " LA=" + inputLaMoved;
+    logDebug(
+      "archiveEntry: " + (total > 0 ? "moved " + total + " row(s)" : "no rows moved") +
+        " stockId=" + stockId +
+        (nbEidFilter ? " entryId=" + nbEidFilter : "") +
+        " (" + detail + ")"
+    );
+  } catch (e) {}
   return dashboardMoved > 0;
 }
 
@@ -1858,9 +1958,10 @@ function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId, 
   const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
   if (end < start) return 0;
   const width = Math.max(copyWidth || 0, sheet.getLastColumn());
-  const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
+  const numRows = end - start + 1;
+  const keys = sheet.getRange(start, keyCol, numRows, 1).getValues();
   const needEid = entryIdCol != null && requiredEntryId != null && String(requiredEntryId).trim() !== "";
-  const eids = needEid ? sheet.getRange(start, entryIdCol, end, entryIdCol).getValues() : null;
+  const eids = needEid ? sheet.getRange(start, entryIdCol, numRows, 1).getValues() : null;
   const eidTarget = needEid ? String(requiredEntryId).trim() : "";
   const target = String(stockId).trim().toUpperCase();
   let moved = 0;
@@ -1873,9 +1974,12 @@ function moveRowToArchiveAndDelete(ss, sheetName, archiveName, keyCol, stockId, 
       archiveCopyFormattedRowToBottom(sheet, srcRow, archive, width);
       sheet.deleteRow(srcRow);
       moved++;
+      try {
+        logDebug("moveRowToArchiveAndDelete " + sheetName + " row " + srcRow + " -> " + archiveName + " stockId=" + stockId);
+      } catch (eLog) {}
     } catch (e) {
       try {
-        logDebug("moveRowToArchiveAndDelete " + sheetName + " row " + srcRow + ": " + e);
+        logDebug("moveRowToArchiveAndDelete " + sheetName + " row " + srcRow + " FAILED: " + e);
       } catch (e2) {}
     }
   }
@@ -1892,7 +1996,8 @@ function moveRowToArchiveOnly(ss, sheetName, archiveName, keyCol, stockId, dataS
   const end = dataEndRow != null && dataEndRow >= start ? Math.min(last, dataEndRow) : last;
   if (end < start) return;
   const width = sheet.getLastColumn();
-  const keys = sheet.getRange(start, keyCol, end, keyCol).getValues();
+  const numRows = end - start + 1;
+  const keys = sheet.getRange(start, keyCol, numRows, 1).getValues();
   const target = String(stockId).trim().toUpperCase();
   for (let r = keys.length - 1; r >= 0; r--) {
     const cell = keys[r][0];
