@@ -402,6 +402,21 @@
     font-weight: 700;
     font-size: 14px;
     color: #3FA0DB;
+    transition: 0.2s ease;
+  }
+  #globalStatus.global-status--error {
+    font-size: clamp(18px, 2.2vw, 26px);
+    font-weight: 900;
+    color: #ff6b6b !important;
+    background: rgba(248, 81, 73, 0.2);
+    border: 2px solid rgba(248, 81, 73, 0.65);
+    padding: 16px 24px;
+    border-radius: 14px;
+    letter-spacing: 0.4px;
+    box-shadow: 0 0 28px rgba(248, 81, 73, 0.35);
+    max-width: min(960px, 96vw);
+    line-height: 1.25;
+    white-space: normal;
   }
   .dashboard-grid {
     display: grid;

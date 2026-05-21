@@ -17,7 +17,9 @@ const NACHBESTELL_ENTRYID_COL = 15;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
-const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzlFQ3sm2mpo2UUIftYVSC79RqD5oXt4WcWL4HBYcbiVnM3_RLUqHvQyY1xFT-BgW4/exec";
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzj6XhWgQSAmJ_ypS-ymGi1MEF1RMlhAWKMYQ5Kzf31Nrk6bMqo99wGdpgUiRSPWKtt/exec";
+const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
+const GMAIL_LOOKUP_TAB = "Lookup";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -999,6 +1001,45 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     return { success: false, updated: false, message: "Stock-ID in Stock ID extern Tracking nicht gefunden!" };
   }
   
+  function searchOrderNumberInGmailLookup_(query) {
+    query = String(query || "").replace(/\s+/g, "").toUpperCase();
+    if (!query) return { found: false, message: "Keine Suchanfrage" };
+
+    var cleanQuery = query.replace(/^N4P/i, "");
+    if (!cleanQuery || cleanQuery.length < 4) {
+      return { found: false, message: "Suchanfrage zu kurz (min. 4 Zeichen)" };
+    }
+
+    var ss = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+    var sheet = ss.getSheetByName(GMAIL_LOOKUP_TAB);
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { found: false, message: "Gmail Lookup leer — Sync auf lager.hemau starten." };
+    }
+
+    var lastRow = sheet.getLastRow();
+    var data = sheet.getRange(2, 1, lastRow, 2).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var key = String(data[i][0] || "").replace(/\s+/g, "").toUpperCase();
+      if (!key || (key !== query && key !== cleanQuery)) continue;
+      var stockId = String(data[i][1] || "").trim();
+      if (!stockId) continue;
+      return {
+        found: true,
+        stockId: normalizeStockId(stockId),
+        message: "Gefunden via Gmail Lookup",
+        source: "gmail"
+      };
+    }
+
+    return { found: false, message: "Bestellnummer '" + query + "' nicht in Gmail Lookup gefunden." };
+  }
+
+  function testGmailLookupFromWms() {
+    var result = searchOrderNumberInGmailLookup_("2611233477");
+    Logger.log(JSON.stringify(result, null, 2));
+    return result;
+  }
+
   function searchByOrderNumber(query) {
     try {
       query = String(query || "").replace(/\s+/g, '').toUpperCase();
@@ -1021,12 +1062,15 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
         if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
           var stockId = String(stockData[i][0] || "").trim();
           if (stockId) {
-            return { found: true, stockId: stockId, message: "Gefunden via Bestellnummer in Zeile " + (i + 1) };
+            return { found: true, stockId: stockId, message: "Gefunden via Bestellnummer in Zeile " + (i + 1), source: "sheet" };
           }
         }
       }
 
-      return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
+      var gmailHit = searchOrderNumberInGmailLookup_(query);
+      if (gmailHit && gmailHit.found && gmailHit.stockId) return gmailHit;
+
+      return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet noch in Gmail Lookup gefunden." };
     } catch (err) {
       return { found: false, message: "Fehler: " + err.message };
     }
@@ -1168,12 +1212,23 @@ function getRefurbishmentCachePayload() {
     }
     mergeNachbestellungenRegalIntoCounts(counts);
 
+    var gmailLookup = [];
+    try {
+      var lookupSs = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+      var lookupSheet = lookupSs.getSheetByName(GMAIL_LOOKUP_TAB);
+      if (lookupSheet && lookupSheet.getLastRow() >= 2) {
+        var lookupLastRow = lookupSheet.getLastRow();
+        gmailLookup = lookupSheet.getRange(2, 1, lookupLastRow, 2).getValues();
+      }
+    } catch (lookupErr) {}
+
     return {
       success: true,
       version: Date.now(),
       lastRow: lastRow,
       rows: rows,
-      counts: counts
+      counts: counts,
+      gmailLookup: gmailLookup
     };
   } catch (err) {
     return { success: false, message: err.message };

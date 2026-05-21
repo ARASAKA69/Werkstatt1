@@ -255,6 +255,21 @@
     font-weight: 700;
     font-size: 14px;
     color: #3FA0DB;
+    transition: 0.2s ease;
+  }
+  #globalStatus.global-status--error {
+    font-size: clamp(18px, 2.2vw, 26px);
+    font-weight: 900;
+    color: #ff6b6b !important;
+    background: rgba(248, 81, 73, 0.2);
+    border: 2px solid rgba(248, 81, 73, 0.65);
+    padding: 16px 24px;
+    border-radius: 14px;
+    letter-spacing: 0.4px;
+    box-shadow: 0 0 28px rgba(248, 81, 73, 0.35);
+    max-width: min(960px, 96vw);
+    line-height: 1.25;
+    white-space: normal;
   }
   .dashboard-grid {
     display: grid;
@@ -3284,8 +3299,11 @@
 
     function setStatus(msg, color) {
       var el = document.getElementById('globalStatus');
+      if (!el) return;
       el.innerText = msg;
-      el.style.color = color || "#3FA0DB";
+      var isError = color === '#f85149' || /FEHLER|nicht gefunden|Nicht gefunden/i.test(String(msg || ''));
+      el.className = isError ? 'global-status--error' : '';
+      el.style.color = isError ? '' : (color || '#3FA0DB');
     }
 
     function setHudBusy(active, message) {
@@ -5634,23 +5652,34 @@
     }
 
     function searchByOrderNumberFromCache(query, cache) {
-      if (!cache || !cache.rows || !cache.rows.length) return null;
+      if (!cache || (!cache.rows && !cache.gmailLookup)) return null;
       query = String(query || '').replace(/\s+/g, '').toUpperCase();
       if (!query) return { found: false, message: 'Keine Suchanfrage' };
       var cleanQuery = query.replace(/^N4P/i, '');
       if (!cleanQuery || cleanQuery.length < 4) return { found: false, message: 'Suchanfrage zu kurz (min. 4 Zeichen)' };
-      var rows = cache.rows;
+
+      var rows = cache.rows || [];
       for (var i = 0; i < rows.length; i++) {
         var cellText = String(rows[i][3] || '').replace(/\s+/g, '').toUpperCase();
         if (!cellText) continue;
         if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
           var st = String(rows[i][0] || '').trim();
           if (st) {
-            return { found: true, stockId: st, message: 'Gefunden via Bestellnummer in Kommentar Ersatzteile Bestellung' };
+            return { found: true, stockId: st, message: 'Gefunden via Bestellnummer in Kommentar Ersatzteile Bestellung', source: 'sheet' };
           }
         }
       }
-      return { found: false, message: "Bestellnummer '" + query + "' nicht in Kommentar Ersatzteile Bestellung gefunden." };
+
+      var gmailRows = cache.gmailLookup || [];
+      for (var g = 0; g < gmailRows.length; g++) {
+        var key = String(gmailRows[g][0] || '').replace(/\s+/g, '').toUpperCase();
+        if (!key || (key !== query && key !== cleanQuery)) continue;
+        var stockId = String(gmailRows[g][1] || '').trim();
+        if (!stockId) continue;
+        return { found: true, stockId: stockId, message: 'Gefunden via Gmail Lookup', source: 'gmail' };
+      }
+
+      return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet noch in Gmail Lookup gefunden." };
     }
 
     function clearRefurbCacheProgressTimer() {
@@ -5945,6 +5974,27 @@
       }
     }
 
+    function handleOrderNumberSearchResult(res) {
+      if(res.found && res.stockId) {
+        setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
+        document.getElementById('searchInput').value = res.stockId;
+        setHudBusy(true, 'Lade Auftrag…');
+        setTimeout(function() { loadData(); }, 600);
+      } else {
+        setHudBusy(false);
+        setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
+        toggleUI(true);
+      }
+    }
+
+    function requestOrderNumberSearch(id) {
+      google.script.run.withSuccessHandler(handleOrderNumberSearchResult).withFailureHandler(function(err) {
+        setHudBusy(false);
+        setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+        toggleUI(true);
+      }).searchByOrderNumber(id);
+    }
+
     function loadData() {
       var id = document.getElementById('searchInput').value.trim();
       if(!id) return;
@@ -5955,31 +6005,10 @@
         setHudBusy(true, 'Suche Bestellnummer…');
         var orderLocal = searchByOrderNumberFromCache(id, refurbCache);
         if (orderLocal !== null) {
-          if(orderLocal.found && orderLocal.stockId) {
-            setStatus("✅ " + orderLocal.message + " → " + orderLocal.stockId, "#56d364");
-            document.getElementById('searchInput').value = orderLocal.stockId;
-            setHudBusy(true, 'Lade Auftrag…');
-            setTimeout(function() { loadData(); }, 600);
-          } else {
-            setStatus("❌ " + (orderLocal.message || "Nicht gefunden"), "#f85149");
-            toggleUI(true);
-          }
+          handleOrderNumberSearchResult(orderLocal);
           return;
         }
-        google.script.run.withSuccessHandler(function(res) {
-          if(res.found && res.stockId) {
-            setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
-            document.getElementById('searchInput').value = res.stockId;
-            setHudBusy(true, 'Lade Auftrag…');
-            setTimeout(function() { loadData(); }, 600);
-          } else {
-            setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
-            toggleUI(true);
-          }
-        }).withFailureHandler(function(err) {
-          setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
-          toggleUI(true);
-        }).searchByOrderNumber(id);
+        requestOrderNumberSearch(id);
         return;
       }
 
