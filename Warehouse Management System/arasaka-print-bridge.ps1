@@ -310,6 +310,24 @@ try {
                 if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
                 else { Log "Print OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
             }
+            elseif ($m -eq "POST" -and $pa -eq "/print-b64") {
+                if (-not $config.printer) { Err $st 400 "No printer set"; $client.Close(); continue }
+                try { $d = $req.Body | ConvertFrom-Json } catch { Err $st 400 "Bad JSON"; $client.Close(); continue }
+                $b64 = $d.b64; $cp = 1; if($d.copies){ $cp = [int]$d.copies }
+                if (-not $b64) { Err $st 400 "Missing b64"; $client.Close(); continue }
+                Log "PRINT-B64 x$cp"
+                try {
+                    $bytes = [Convert]::FromBase64String($b64)
+                } catch {
+                    Log "Base64 decode FAIL"
+                    Err $st 400 "Invalid base64"; $client.Close(); continue
+                }
+                $pdfPath = Join-Path $TempDir "arasaka_$(Get-Date -Format 'yyyyMMdd_HHmmss').pdf"
+                [System.IO.File]::WriteAllBytes($pdfPath, $bytes)
+                $pe = Invoke-PdfPrint $pdfPath $config.printer $cp
+                if ($pe) { Log "Print FAIL: $pe"; Err $st 500 "Print failed: $pe" }
+                else { Log "Print-B64 OK -> $($config.printer)"; Ok $st @{ success=$true; printer=$config.printer; copies=$cp; message="Sent" } }
+            }
             elseif ($m -eq "POST" -and $pa -eq "/print-html") {
                 if (-not $config.printer) { Err $st 400 "No printer set"; $client.Close(); continue }
                 if (-not $ChromePath) { Err $st 500 "Chrome not found for HTML-to-PDF"; $client.Close(); continue }

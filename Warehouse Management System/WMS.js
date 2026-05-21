@@ -3,16 +3,20 @@ const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
 const NACHBESTELL_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 const NACHBESTELL_TAB = "Nachbestellung";
 const NACHBESTELL_GID = 130741593;
-const EXIT_SHEET_ID = "1OrSRkB8xdMk0uGvTGUVA_J8Q3IPX0GYF7eOXf6af1GI";
-const EXIT_TAB = "Exit Repair";
 const AUFTRAG_SHEET_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
 const AUFTRAG_TAB = "BLANCO Reparaturauftrag";
 const AUFTRAG_EMAIL = "francesco.berger@auto1.com";
+const HEMAU_SHEET_ID = "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM";
+const HEMAU_DAILY_PLANNING_TAB = "Daily Planning List";
 const TAGESLISTE_SHEET_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
 const TAGESLISTE_TAB = "Tagesliste";
 const VASOLD_WSS_TAB = "Vasold WSS";
 const NACHBESTELL_STATUS_COL = 11;
 const NACHBESTELL_REGAL_COL = 13;
+const NACHBESTELL_ENTRYID_COL = 15;
+const INPUT_EXIT_TAB = "Input Exit";
+const INPUT_EXIT_STATUS_COL = 11;
+const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzlFQ3sm2mpo2UUIftYVSC79RqD5oXt4WcWL4HBYcbiVnM3_RLUqHvQyY1xFT-BgW4/exec";
 
 function normalizeRegalKeyForCount(val) {
@@ -1554,30 +1558,43 @@ function updateNachbestellung(sheetRow, fieldName, value) {
 
       var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var extraMsgs = [];
+      var printB64 = "";
       if (fieldName === "status") {
+        var rowTyp = getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol);
+        var rowStockId = normalizeStockId(sheet.getRange(sheetRow, getNachbestellungStockIdCol(sheet, nbLayout)).getValue());
         var valLcStatus = String(value || "").toLowerCase();
+
+        if (rowTyp.toLowerCase().indexOf("exit") !== -1) {
+          extraMsgs.push(syncNachbestellungStatusToInputExit(ss, sheet, sheetRow, value, nbLayout));
+        }
+
         if (valLcStatus.indexOf("angeliefert") !== -1) {
-          var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
-          var rowStockId = "";
-          var rowTyp = "";
           var rowBeschreibung = "";
-          for (var r = 0; r < rowData.length; r++) {
-            var cellVal = String(rowData[r] || "").trim();
-            if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
-            if (!rowTyp && cellVal.toLowerCase().indexOf("exit") !== -1) rowTyp = cellVal;
-          }
           var hdrData = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
           var teilCol = getColIndex(hdrData, ["ersatzteil", "teil", "benennung"]);
           if (teilCol !== -1) rowBeschreibung = String(sheet.getRange(sheetRow, teilCol).getValue() || "").trim();
-
-          if (rowTyp && rowStockId) {
-            extraMsgs.push(updateExitListStatus(rowStockId));
+          if (!rowStockId) {
+            var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
+            for (var r = 0; r < rowData.length; r++) {
+              var cellVal = String(rowData[r] || "").trim();
+              if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
+            }
           }
 
           var valStr = String(value || "");
           var valLc = valStr.toLowerCase();
-          if (rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
-            extraMsgs.push(autoFillWerkstattauftrag(rowStockId, rowBeschreibung));
+          var shouldWerkstattAuftrag = nachbestellungTypShouldPrintWerkstattauftrag(rowTyp);
+          if (shouldWerkstattAuftrag && rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
+            var fillMsg = autoFillWerkstattauftrag(rowStockId, rowBeschreibung);
+            extraMsgs.push(fillMsg);
+            if (fillMsg.indexOf("befüllt") !== -1) {
+              var printPrep = prepareWerkstattauftragPrint(rowStockId, rowBeschreibung);
+              if (printPrep.success) {
+                printB64 = printPrep.printB64;
+              } else if (printPrep.message) {
+                extraMsgs.push("Druck: " + printPrep.message);
+              }
+            }
           }
         }
       }
@@ -1586,56 +1603,151 @@ function updateNachbestellung(sheetRow, fieldName, value) {
       for (var m = 0; m < extraMsgs.length; m++) {
         if (extraMsgs[m]) msg += " | " + extraMsgs[m];
       }
-      return { success: true, message: msg };
+      var result = { success: true, message: msg };
+      if (printB64) {
+        result.printB64 = printB64;
+      }
+      return result;
     } catch (err) {
       return { success: false, message: err.message };
     }
   }
 
-function updateExitListStatus(stockId) {
-    try {
-      if (!stockId) return "Exit: Keine Stock-ID";
-      var EXIT_STOCK_COL = 2;
-      var EXIT_STATUS_COL = 8;
-      var ss = SpreadsheetApp.openById(EXIT_SHEET_ID);
-      var sh = ss.getSheetByName(EXIT_TAB);
-      if (!sh) return "Exit: Tab '" + EXIT_TAB + "' nicht gefunden!";
-      var lastRow = Math.max(1, sh.getLastRow());
-      if (lastRow < 2) return "Exit: Tab leer";
-      var stockData = sh.getRange(1, EXIT_STOCK_COL, lastRow, 1).getValues();
-      for (var i = 0; i < stockData.length; i++) {
-        if (cellMatchesStockId(stockData[i][0], stockId)) {
-          var cell = sh.getRange(i + 1, EXIT_STATUS_COL);
-          var validation = cell.getDataValidation();
-          var targetValue = "komplett angeliefert";
-          if (validation) {
-            var criteria = validation.getCriteriaValues();
-            if (criteria && criteria.length > 0 && Array.isArray(criteria[0])) {
-              for (var v = 0; v < criteria[0].length; v++) {
-                var opt = String(criteria[0][v] || "").toLowerCase();
-                if (opt.indexOf("komplett") !== -1) {
-                  targetValue = String(criteria[0][v]);
-                  break;
-                }
-              }
-            }
-          }
-          cell.setValue(targetValue);
-          SpreadsheetApp.flush();
-          var verify = String(cell.getValue() || "");
-          if (verify.toLowerCase().indexOf("komplett") !== -1) {
-            return "Exit Z" + (i + 1) + " → " + targetValue;
-          }
-          cell.clearDataValidations();
-          cell.setValue(targetValue);
-          if (validation) cell.setDataValidation(validation);
-          SpreadsheetApp.flush();
-          return "Exit Z" + (i + 1) + " → " + targetValue + " (forced)";
-        }
+function getSheetEntryIdCol(sheet, fallbackCol) {
+  if (!sheet) return fallbackCol || 0;
+  var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+  for (var hr = 1; hr <= 5; hr++) {
+    var header = sheet.getRange(hr, 1, 1, lastCol).getValues()[0];
+    for (var c = 0; c < header.length; c++) {
+      var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß_]/g, "");
+      if (txt === "entryid" || txt.indexOf("entryid") !== -1) return c + 1;
+    }
+  }
+  return fallbackCol || 0;
+}
+
+function getNachbestellungStockIdCol(sheet, nbLayout) {
+  var hdr = sheet.getRange(nbLayout.headerRow, 1, 1, Math.min(80, sheet.getLastColumn())).getValues()[0];
+  var col = getColIndex(hdr, ["stockid", "stock"]);
+  return col !== -1 ? col : 2;
+}
+
+function findInputExitRowByKeys(exitSheet, stockId, entryId) {
+  var lastRow = Math.max(1, exitSheet.getLastRow());
+  if (lastRow < 2) return -1;
+  var eidCol = getSheetEntryIdCol(exitSheet, 27);
+  var stockCol = 2;
+  if (entryId) {
+    var targetE = String(entryId).trim();
+    if (targetE && eidCol > 0) {
+      var eids = exitSheet.getRange(2, eidCol, lastRow - 1, 1).getValues();
+      for (var i = 0; i < eids.length; i++) {
+        if (String(eids[i][0] || "").trim() === targetE) return i + 2;
       }
-      return "Exit: '" + stockId + "' in '" + EXIT_TAB + "' nicht gefunden";
+    }
+  }
+  if (stockId) {
+    var stocks = exitSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
+    for (var j = 0; j < stocks.length; j++) {
+      if (cellMatchesStockId(stocks[j][0], stockId)) return j + 2;
+    }
+  }
+  return -1;
+}
+
+function syncNachbestellungStatusToInputExit(ss, nbSheet, sheetRow, statusValue, nbLayout) {
+  try {
+    var exitSheet = ss.getSheetByName(INPUT_EXIT_TAB);
+    if (!exitSheet) return "Input Exit: Tab nicht gefunden";
+    var stockCol = getNachbestellungStockIdCol(nbSheet, nbLayout);
+    var eidCol = getSheetEntryIdCol(nbSheet, NACHBESTELL_ENTRYID_COL);
+    var stockId = normalizeStockId(nbSheet.getRange(sheetRow, stockCol).getValue());
+    var entryId = eidCol > 0 ? String(nbSheet.getRange(sheetRow, eidCol).getValue() || "").trim() : "";
+    if (!stockId && !entryId) return "Input Exit: Keine Stock-ID/EntryID";
+    var exitRow = findInputExitRowByKeys(exitSheet, stockId, entryId);
+    if (exitRow === -1) return "Input Exit: Zeile nicht gefunden";
+    var statusCell = exitSheet.getRange(exitRow, INPUT_EXIT_STATUS_COL);
+    var allowedSt = getNachbestellungStatusAllowedList(exitSheet, INPUT_EXIT_STATUS_COL);
+    var rawSt = String(statusValue || "").trim();
+    var statusWrite = rawSt === "" ? "" : nachbestellungStatusToSheetValue(rawSt, allowedSt);
+    if (rawSt !== "" && statusWrite === null) statusWrite = rawSt;
+    var validation = statusCell.getDataValidation();
+    statusCell.setValue(statusWrite);
+    var stamp = (statusWrite !== "" && statusWrite != null) ? new Date() : "";
+    exitSheet.getRange(exitRow, INPUT_EXIT_STATUS_DATE_COL).setValue(stamp);
+    if (nbLayout.statusCol > 0) {
+      nbSheet.getRange(sheetRow, nbLayout.statusCol + 1).setValue(stamp);
+    }
+    SpreadsheetApp.flush();
+    var verifySt = String(statusCell.getValue() || "").trim();
+    if (rawSt !== "" && verifySt.toLowerCase() !== String(statusWrite || "").trim().toLowerCase()) {
+      statusCell.clearDataValidations();
+      statusCell.setValue(statusWrite);
+      if (validation) statusCell.setDataValidation(validation);
+      SpreadsheetApp.flush();
+      verifySt = String(statusCell.getValue() || "").trim();
+    }
+    return "Input Exit Z" + exitRow + " → " + verifySt;
+  } catch (err) {
+    return "Input Exit Fehler: " + err.message;
+  }
+}
+
+function nachbestellungTypShouldPrintWerkstattauftrag(typ) {
+  var t = String(typ || "").trim().toLowerCase();
+  if (!t) return false;
+  if (t.indexOf("exit") !== -1) return false;
+  if (t.indexOf("erstbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
+  if (t.indexOf("mechanik") !== -1 && t.indexOf("nachbestellung") !== -1) return true;
+  if (t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return true;
+  return false;
+}
+
+function getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol) {
+  var hdrData = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
+  var typCol = getColIndex(hdrData, ["typ"]);
+  if (typCol === -1) typCol = getColIndex(hdrData, ["art", "bestellung"]);
+  if (typCol === -1) return "";
+  return String(sheet.getRange(sheetRow, typCol).getValue() || "").trim();
+}
+
+function getWmsUserCapabilities() {
+    var email = Session.getActiveUser().getEmail();
+    return {
+      werkstattAuftragPrint: email === AUFTRAG_EMAIL
+    };
+  }
+
+function verifyWerkstattauftragFill(stockId, beschreibung, strictDesc) {
+    var zielSs = SpreadsheetApp.openById(AUFTRAG_SHEET_ID);
+    var zielSheet = zielSs.getSheetByName(AUFTRAG_TAB);
+    if (!zielSheet) return { ok: false, message: "Tab '" + AUFTRAG_TAB + "' nicht gefunden" };
+    var filledStock = String(zielSheet.getRange("D10").getValue() || "").trim();
+    var filledDesc = String(zielSheet.getRange("D18").getValue() || "").trim();
+    if (!cellMatchesStockId(filledStock, stockId)) return { ok: false, message: "Stock-ID nicht verifiziert" };
+    if (!filledDesc) return { ok: false, message: "Beschreibung leer" };
+    if (strictDesc !== false && beschreibung && filledDesc !== String(beschreibung).trim()) {
+      return { ok: false, message: "Beschreibung nicht verifiziert" };
+    }
+    return { ok: true, sheet: zielSheet };
+  }
+
+function lookupHemauMarkeModell(stockId) {
+    try {
+      stockId = normalizeStockId(stockId);
+      if (!stockId) return "";
+      var ss = SpreadsheetApp.openById(HEMAU_SHEET_ID);
+      var sheet = ss.getSheetByName(HEMAU_DAILY_PLANNING_TAB);
+      if (!sheet) return "";
+      var search = findRowFast(sheet, ["stockid", "stock"], stockId);
+      if (search.row === -1) return "";
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+      var headerData = sheet.getRange(search.headerIdx + 1, 1, 1, lastCol).getValues()[0];
+      var markeCol = getColIndex(headerData, ["markemodell", "marke", "modell"]);
+      if (markeCol === -1) markeCol = 9;
+      return String(sheet.getRange(search.row, markeCol).getValue() || "").trim();
     } catch (err) {
-      return "Exit Fehler: " + err.message;
+      return "";
     }
   }
 
@@ -1649,10 +1761,75 @@ function autoFillWerkstattauftrag(stockId, beschreibung) {
       if (!zielSheet) return "Auftrag: Tab '" + AUFTRAG_TAB + "' nicht gefunden";
       zielSheet.getRange("D10").setValue(stockId);
       zielSheet.getRange("D18").setValue(beschreibung || "");
+      var markeModell = lookupHemauMarkeModell(stockId);
+      if (markeModell) {
+        zielSheet.getRange("B13:D13").setValue(markeModell);
+      } else {
+        zielSheet.getRange("B13:D13").clearContent();
+      }
       SpreadsheetApp.flush();
-      return "Werkstattauftrag befüllt (" + stockId + ")";
+      var verify = verifyWerkstattauftragFill(stockId, beschreibung);
+      if (!verify.ok) return "Auftrag: " + verify.message;
+      var msg = "Werkstattauftrag befüllt (" + stockId + ")";
+      if (markeModell) msg += " + " + markeModell;
+      return msg;
     } catch (err) {
       return "Auftrag Fehler: " + err.message;
+    }
+  }
+
+function prepareWerkstattauftragPrint(stockId, beschreibung, strictDesc) {
+    try {
+      var bearbeiter = Session.getActiveUser().getEmail();
+      if (bearbeiter !== AUFTRAG_EMAIL) return { success: false, message: "" };
+      if (!stockId) return { success: false, message: "Keine Stock-ID" };
+      var verify = verifyWerkstattauftragFill(stockId, beschreibung, strictDesc);
+      if (!verify.ok) return { success: false, message: verify.message };
+      var zielSheet = verify.sheet;
+      var exportUrl = "https://docs.google.com/spreadsheets/d/" + AUFTRAG_SHEET_ID + "/export?format=pdf"
+        + "&gid=" + zielSheet.getSheetId()
+        + "&portrait=true&size=A4&fitw=true&gridlines=false"
+        + "&top_margin=0.3&bottom_margin=0.3&left_margin=0.3&right_margin=0.3"
+        + "&sheetnames=false&printtitle=false&pagenumbers=false"
+        + "&r1=0&c1=0&r2=46&c2=15";
+      var token = ScriptApp.getOAuthToken();
+      var response = UrlFetchApp.fetch(exportUrl, {
+        headers: { Authorization: "Bearer " + token },
+        muteHttpExceptions: true
+      });
+      if (response.getResponseCode() !== 200) {
+        return { success: false, message: "PDF-Export fehlgeschlagen" };
+      }
+      var pdfBytes = response.getBlob().getBytes();
+      if (!pdfBytes || pdfBytes.length < 100) {
+        return { success: false, message: "PDF leer oder ungültig" };
+      }
+      return {
+        success: true,
+        printB64: Utilities.base64Encode(pdfBytes)
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
+
+function requestWerkstattauftragPrint(stockId, beschreibung, typ) {
+    try {
+      var bearbeiter = Session.getActiveUser().getEmail();
+      if (bearbeiter !== AUFTRAG_EMAIL) return { success: false, message: "Nicht berechtigt" };
+      if (!nachbestellungTypShouldPrintWerkstattauftrag(typ)) {
+        return { success: false, message: "Druck nur für Erstbestellung falsch, Mechanik Nachbestellung und Q-Check" };
+      }
+      var fillMsg = autoFillWerkstattauftrag(stockId, beschreibung);
+      var prep = prepareWerkstattauftragPrint(stockId, beschreibung, true);
+      if (prep.success) return prep;
+      if (fillMsg.indexOf("befüllt") === -1) {
+        var relaxed = prepareWerkstattauftragPrint(stockId, beschreibung, false);
+        if (relaxed.success) return relaxed;
+      }
+      return { success: false, message: prep.message || fillMsg || "Druck nicht möglich" };
+    } catch (err) {
+      return { success: false, message: err.message };
     }
   }
 

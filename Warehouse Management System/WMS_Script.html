@@ -53,6 +53,7 @@
     if(savedInitials) document.getElementById('dymoInitials').value = savedInitials;
 
     var BRIDGE_URL = 'http://localhost:9150';
+    var wmsWerkstattPrintEnabled = false;
     var BRIDGE_DOWNLOAD_PS1 = 'https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/Warehouse%20Management%20System/arasaka-print-bridge.ps1';
     var BRIDGE_DOWNLOAD_BAT = 'https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/Warehouse%20Management%20System/arasaka-print-bridge.bat';
     function downloadBridgeFile(url, filename) {
@@ -125,6 +126,17 @@
       }).catch(function(){});
     }
     initBrotherPrinter();
+    function initWmsUserCapabilities() {
+      google.script.run.withSuccessHandler(function(res) {
+        wmsWerkstattPrintEnabled = !!(res && res.werkstattAuftragPrint);
+        if (typeof nbSessionActive !== 'undefined' && nbSessionActive && nbDisplayEntries && nbDisplayEntries.length) {
+          renderNbTable(nbFilteredEntries && nbFilteredEntries.length ? nbFilteredEntries : nbDisplayEntries);
+        }
+      }).withFailureHandler(function() {
+        wmsWerkstattPrintEnabled = false;
+      }).getWmsUserCapabilities();
+    }
+    initWmsUserCapabilities();
 
     document.getElementById('searchInput').addEventListener('keypress', function(e) {
       if(e.key === 'Enter') loadData();
@@ -989,6 +1001,16 @@
 
     var NB_STATUS_FALLBACK = ["bestellt", "nicht bestellt", "teilweise angeliefert", "komplett angeliefert", "Lieferrückstand", "B2A1", "Fertiggestellt", "Konsi-Lager"];
 
+    function nbTypShouldPrintWerkstattauftrag(typ) {
+      var t = String(typ || '').trim().toLowerCase();
+      if (!t) return false;
+      if (t.indexOf('exit') !== -1) return false;
+      if (t.indexOf('erstbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
+      if (t.indexOf('mechanik') !== -1 && t.indexOf('nachbestellung') !== -1) return true;
+      if (t.indexOf('q-check') !== -1 || t.indexOf('qcheck') !== -1) return true;
+      return false;
+    }
+
     function getNbTypStyle(typ) {
       var t = String(typ || "").toLowerCase();
       if(t.indexOf("exit") !== -1) return "border-left:4px solid #f85149;";
@@ -1159,6 +1181,12 @@
           +   '</div>'
           +   '<button class="nb-print-btn" style="width:100%;" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
           + '</div>'
+          + (wmsWerkstattPrintEnabled && nbTypShouldPrintWerkstattauftrag(e.typ)
+            ? '<div class="nb-detail-box nb-box-gold" id="nb-wa-print-wrap-' + i + '"><div class="nb-detail-lbl">Werkstattauftrag</div>'
+            +   '<button type="button" class="nb-print-btn" style="width:100%;" id="nb-wa-print-btn-' + i + '" onclick="printNbWerkstattauftrag(event,' + i + ')">Auftrag drucken</button>'
+            +   '<div class="nb-vasold-msg" id="nb-wa-print-msg-' + i + '"></div>'
+            + '</div>'
+            : '')
           + '</div>'
           + '</td>'
           + '</tr>';
@@ -1308,6 +1336,73 @@
       loadData();
     }
 
+    function showWerkstattPrintStatus(badgeEl, msgEl, text, color, resetBadge) {
+      if (msgEl) {
+        msgEl.textContent = text;
+        msgEl.style.color = color || '#9da7b3';
+        return;
+      }
+      if (!badgeEl) return;
+      badgeEl.innerText = text;
+      badgeEl.style.color = color || '';
+      if (resetBadge) {
+        setTimeout(function() {
+          badgeEl.innerText = nbAllEntries.length + ' offen';
+          badgeEl.style.color = '';
+        }, resetBadge);
+      }
+    }
+
+    function sendWerkstattauftragPrint(printB64, badgeEl, msgEl) {
+      if (!printB64) return;
+      showWerkstattPrintStatus(badgeEl, msgEl, 'Drucke Auftrag…', '#9da7b3');
+      if (badgeEl && !msgEl) {
+        badgeEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Drucke Auftrag…</span>';
+      }
+      fetch(BRIDGE_URL + '/print-b64', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ b64: printB64, copies: 1 })
+      }).then(function(r) {
+        return r.json().then(function(data) {
+          if (!r.ok || !data.success) throw new Error((data && data.error) || 'Bridge-Fehler');
+          return data;
+        });
+      }).then(function() {
+        showWerkstattPrintStatus(badgeEl, msgEl, 'Auftrag gedruckt!', '#56d364', badgeEl && !msgEl ? 4000 : 0);
+      }).catch(function(err) {
+        var errTxt = 'Druck fehlgeschlagen: ' + (err && err.message ? err.message : 'Bridge nicht erreichbar');
+        showWerkstattPrintStatus(badgeEl, msgEl, errTxt, '#f85149', badgeEl && !msgEl ? 10000 : 0);
+      });
+    }
+
+    function printNbWerkstattauftrag(event, index) {
+      if (event) { event.stopPropagation(); event.preventDefault(); }
+      var ent = nbDisplayEntries[index];
+      if (!ent) return;
+      var btn = document.getElementById('nb-wa-print-btn-' + index);
+      var msgEl = document.getElementById('nb-wa-print-msg-' + index);
+      if (btn) btn.disabled = true;
+      if (msgEl) { msgEl.textContent = 'Bereite Auftrag vor…'; msgEl.style.color = '#9da7b3'; }
+      google.script.run.withSuccessHandler(function(res) {
+        if (btn) btn.disabled = false;
+        if (!res || !res.success || !res.printB64) {
+          if (msgEl) {
+            msgEl.textContent = (res && res.message) || 'Auftrag konnte nicht vorbereitet werden';
+            msgEl.style.color = '#f85149';
+          }
+          return;
+        }
+        sendWerkstattauftragPrint(res.printB64, null, msgEl);
+      }).withFailureHandler(function(err) {
+        if (btn) btn.disabled = false;
+        if (msgEl) {
+          msgEl.textContent = 'Fehler: ' + (err.message || String(err));
+          msgEl.style.color = '#f85149';
+        }
+      }).requestWerkstattauftragPrint(ent.stockId, ent.teil || '', ent.typ || '');
+    }
+
     function saveNbStatus(event, sheetRow, value, index) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
       var sel = event ? event.target : null;
@@ -1331,7 +1426,11 @@
             if(cells.length > 6) cells[6].textContent = value;
           }
           if(badge) badge.innerText = res.message || 'Gespeichert!';
-          setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
+          if (res.printB64) {
+            sendWerkstattauftragPrint(res.printB64, badge, null);
+          } else {
+            setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
+          }
         } else {
           if(sel) sel.style.borderColor = '#f85149';
           if(badge) { badge.innerText = res.message || 'Fehler'; badge.style.color = '#f85149'; }
