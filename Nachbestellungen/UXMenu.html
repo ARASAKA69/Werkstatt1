@@ -3,133 +3,161 @@
   <head>
     <base target="_top" />
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
-      * {
-        box-sizing: border-box;
-      }
-      body {
-        font-family: "Google Sans", Roboto, Arial, sans-serif;
-        margin: 0;
-        padding: 20px 24px 28px;
-        background: #f6f8fc;
-        color: #202124;
-        font-size: 14px;
-      }
-      h1 {
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0 0 6px;
-        letter-spacing: 0.01em;
-      }
-      .sub {
-        color: #5f6368;
-        margin-bottom: 20px;
-        font-size: 13px;
-      }
-      #status {
-        min-height: 22px;
-        color: #5f6368;
-        margin-bottom: 12px;
-        font-size: 13px;
-      }
-      #list {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-        max-height: 460px;
-        overflow-y: auto;
-        padding-right: 4px;
-      }
-      .card {
-        background: #fff;
-        border-radius: 12px;
-        box-shadow: 0 1px 2px rgba(60, 64, 67, 0.28), 0 2px 6px rgba(60, 64, 67, 0.12);
-        padding: 16px 18px;
-        border: 1px solid #e8eaed;
-      }
-      .card-top {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px 18px;
-        margin-bottom: 12px;
-      }
-      .kv {
-        min-width: 140px;
-      }
-      .kv label {
-        display: block;
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #80868b;
-        margin-bottom: 2px;
-      }
-      .kv span {
-        font-weight: 500;
-        word-break: break-all;
-      }
-      .detail-wrap {
-        background: #f1f3f4;
-        border-radius: 8px;
-        padding: 10px 12px;
-        margin-bottom: 14px;
-        max-height: 160px;
-        overflow: auto;
-        font-family: "Roboto Mono", Consolas, monospace;
-        font-size: 12px;
-        line-height: 1.45;
-        white-space: pre-wrap;
-        word-break: break-word;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-      }
-      button {
-        border: none;
-        border-radius: 8px;
-        padding: 10px 18px;
-        font-size: 13px;
-        font-weight: 500;
-        cursor: pointer;
-        font-family: inherit;
-      }
-      button:disabled {
-        opacity: 0.55;
-        cursor: default;
-      }
-      .btn-restore {
-        background: #1a73e8;
-        color: #fff;
-      }
-      .btn-restore:hover:not(:disabled) {
-        background: #1967d2;
-      }
-      .btn-remove {
-        background: #fff;
-        color: #c5221f;
-        border: 1px solid #dadce0;
-      }
-      .btn-remove:hover:not(:disabled) {
-        background: #fce8e6;
-      }
-      .empty {
-        text-align: center;
-        padding: 48px 20px;
-        color: #5f6368;
-      }
+      <?!= include('UXStyles'); ?>
     </style>
   </head>
   <body>
-    <h1>Gelöschte Einträge</h1>
-    <div class="sub">
-      Hier sehen Sie Zeilen, die über eine gelöschte Stock-ID entfernt wurden. Sie können sie
-      wiederherstellen oder endgültig aus dieser Liste löschen.
+    <div class="ux-shell">
+      <aside class="ux-nav">
+        <div class="ux-brand">
+          <span class="ux-brand-eyebrow">WMS</span>
+          <span class="ux-brand-title">NB Control Center</span>
+        </div>
+        <button type="button" class="ux-nav-item active" id="navHome" data-view="home">
+          Start
+        </button>
+        <button type="button" class="ux-nav-item" id="navDeleted" data-view="deleted">
+          Gelöschte Einträge
+          <span class="ux-nav-badge" id="navDelBadge">0</span>
+        </button>
+        <button type="button" class="ux-nav-item" id="navSync" data-view="sync">
+          NB Sync
+          <span class="ux-nav-badge" id="navSyncBadge">0</span>
+        </button>
+      </aside>
+      <div class="ux-main">
+        <header class="ux-topbar">
+          <div>
+            <h1 id="viewTitle">Start</h1>
+            <p class="ux-topbar-sub" id="viewSub">Quick Check – was gerade so los ist</p>
+          </div>
+          <div class="ux-topbar-meta">
+            <div class="ux-cache-bar">
+              <button type="button" class="ux-btn-copy ux-cache-reload-btn" id="btnCacheReload">
+                <span class="ux-cache-reload-label">Cache neu ziehen</span>
+                <span class="ux-cache-reload-busy" id="cacheReloadBusy" hidden aria-hidden="true">
+                  <span class="ux-cache-progress">
+                    <svg class="ux-cache-progress-svg" viewBox="0 0 36 36" aria-hidden="true">
+                      <circle class="ux-cache-progress-bg" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"/>
+                      <circle class="ux-cache-progress-fill" id="cacheReloadRing" cx="18" cy="18" r="15.5" fill="none" stroke-width="3"/>
+                    </svg>
+                    <span class="ux-cache-progress-pct" id="cacheReloadPct">0%</span>
+                  </span>
+                </span>
+              </button>
+              <span class="ux-cache-time" id="cacheLoadedAt">Stand: --</span>
+            </div>
+            <strong id="userEmail">—</strong>
+            <span id="loadedAt">—</span>
+          </div>
+        </header>
+        <div class="ux-content">
+          <section class="ux-view active" id="viewHome">
+            <div class="ux-home-scroll">
+            <div class="ux-panel">
+              <p class="ux-panel-title">Gefüllte Zeilen</p>
+              <div class="ux-stat-grid" id="sheetCountGrid"></div>
+            </div>
+            <div class="ux-panel">
+              <p class="ux-panel-title">Automatik / Trigger</p>
+              <ul class="ux-trigger-list" id="triggerList"></ul>
+            </div>
+            <button type="button" class="ux-nav-tile" id="tileDeleted">
+              <span class="ux-nav-tile-body">
+                <span class="ux-nav-tile-title">Gelöschte Einträge</span>
+                <span class="ux-nav-tile-sub">Stock-ID gelöscht? Wiederherstellen oder endgültig weg</span>
+              </span>
+              <span class="ux-nav-badge" id="tileDelBadge">0</span>
+            </button>
+            <button type="button" class="ux-nav-tile" id="tileSync">
+              <span class="ux-nav-tile-body">
+                <span class="ux-nav-tile-title">NB Sync · Inputs</span>
+                <span class="ux-nav-tile-sub">Fehlt in Nachbestellung? Nachtragen oder IDs kopieren</span>
+              </span>
+              <span class="ux-nav-badge" id="tileSyncBadge">0</span>
+            </button>
+            </div>
+          </section>
+          <section class="ux-view" id="viewSync">
+            <button type="button" class="ux-btn-back" id="btnBackHomeSync">← zurück</button>
+            <div class="ux-toolbar">
+              <button type="button" class="ux-btn-copy" id="btnSyncRefresh">Nochmal checken</button>
+            </div>
+            <div class="ux-status" id="syncStatus"></div>
+            <div class="ux-list-wrap" id="syncListWrap">
+              <div class="ux-loading" id="syncListLoading" hidden>
+                <div class="ux-spinner"></div>
+                <span class="ux-loading-text" id="syncListLoadingText">Check läuft…</span>
+              </div>
+              <div class="ux-list" id="syncList"></div>
+            </div>
+          </section>
+          <section class="ux-view" id="viewDeleted">
+            <button type="button" class="ux-btn-back" id="btnBackHome">← zurück</button>
+            <div class="ux-status" id="status"></div>
+            <div class="ux-list-wrap" id="listWrap">
+              <div class="ux-loading" id="listLoading" hidden>
+                <div class="ux-spinner"></div>
+                <span class="ux-loading-text" id="listLoadingText">Lade…</span>
+              </div>
+              <div class="ux-list" id="list"></div>
+            </div>
+          </section>
+        </div>
+      </div>
     </div>
-    <div id="status">Lade…</div>
-    <div id="list"></div>
     <script>
+      var initialView = <?!= JSON.stringify(initialView || 'home') ?>;
+      var hubCacheData = null;
+      var hubStats = null;
+      var delBufferArr = [];
+      var syncMissingArr = [];
+      var nachtragenDoneSet = {};
+      var cacheReloadBusy = false;
+      var cacheProgressTimer = null;
+      var cacheProgressValue = 0;
+      var CACHE_RING_C = 2 * Math.PI * 15.5;
+
+      var VIEW_KEYS = ["home", "deleted", "sync"];
+      var NACHT_TOOLTIP =
+        'Klick = ET/Diagnose kurz auf "Nein", dann wieder "Ja". ' +
+        "Damit springt der Prozess an und die Zeile soll in Nachbestellung landen – Rest macht das Sheet. Nur 1x klickbar.";
+
+      var VIEW_META = {
+        home: {
+          title: "Start",
+          sub: "Quick Check – was gerade so los ist"
+        },
+        deleted: {
+          title: "Gelöschte Einträge",
+          sub: "Stock-ID weg? Hier wiederherstellen oder endgültig aus dem Puffer schmeißen"
+        },
+        sync: {
+          title: "NB Sync · Inputs",
+          sub: "ET/Diagnose = Ja, aber in Nachbestellung fehlt's noch"
+        }
+      };
+
+      var TRIGGER_LABELS = {
+        cleanupNachbestellungStatusDate: "Status-Datum aufräumen (minütlich)",
+        archiveFertiggestelltRows: "Fertig-Archiv (täglich)",
+        processQueue: "Queue abarbeiten"
+      };
+      var ALL_TRIGGERS = [
+        "cleanupNachbestellungStatusDate",
+        "archiveFertiggestelltRows",
+        "processQueue"
+      ];
+      var SHEET_COUNT_ORDER = [
+        "Input Mechanik",
+        "Input Q-Check",
+        "Input Lack",
+        "Input Exit",
+        "Nachbestellung"
+      ];
+
       function escapeHtml(s) {
         return String(s == null ? "" : s)
           .replace(/&/g, "&amp;")
@@ -173,55 +201,263 @@
         return lines.join("\n").trim();
       }
 
+      function setDelBadges(n) {
+        document.getElementById("navDelBadge").textContent = String(n);
+        document.getElementById("tileDelBadge").textContent = String(n);
+      }
+
+      function setSyncBadges(n) {
+        document.getElementById("navSyncBadge").textContent = String(n);
+        document.getElementById("tileSyncBadge").textContent = String(n);
+      }
+
+      function showView(name) {
+        if (VIEW_KEYS.indexOf(name) === -1) name = "home";
+        for (var i = 0; i < VIEW_KEYS.length; i++) {
+          var key = VIEW_KEYS[i];
+          var active = key === name;
+          document.getElementById("view" + key.charAt(0).toUpperCase() + key.slice(1)).classList.toggle("active", active);
+          document.getElementById("nav" + key.charAt(0).toUpperCase() + key.slice(1)).classList.toggle("active", active);
+        }
+        var meta = VIEW_META[name] || VIEW_META.home;
+        document.getElementById("viewTitle").textContent = meta.title;
+        document.getElementById("viewSub").textContent = meta.sub;
+      }
+
+      function updateCacheProgressUi(pct) {
+        pct = Math.max(0, Math.min(100, Math.round(pct)));
+        var pctEl = document.getElementById("cacheReloadPct");
+        var ring = document.getElementById("cacheReloadRing");
+        if (pctEl) pctEl.textContent = pct + "%";
+        if (ring) ring.style.strokeDashoffset = String(CACHE_RING_C * (1 - pct / 100));
+      }
+
+      function stopCacheProgressTimer() {
+        if (cacheProgressTimer) {
+          clearInterval(cacheProgressTimer);
+          cacheProgressTimer = null;
+        }
+      }
+
+      function startCacheProgressTimer() {
+        stopCacheProgressTimer();
+        cacheProgressValue = 0;
+        updateCacheProgressUi(0);
+        cacheProgressTimer = setInterval(function () {
+          if (cacheProgressValue >= 92) return;
+          var bump = cacheProgressValue < 55 ? 5 : cacheProgressValue < 82 ? 2 : 0.6;
+          cacheProgressValue = Math.min(92, cacheProgressValue + bump + Math.random() * 2);
+          updateCacheProgressUi(cacheProgressValue);
+        }, 260);
+      }
+
+      function finishCacheProgress(done) {
+        stopCacheProgressTimer();
+        updateCacheProgressUi(100);
+        setTimeout(function () {
+          if (done) done();
+        }, 180);
+      }
+
+      function setCacheLabel(iso) {
+        var el = document.getElementById("cacheLoadedAt");
+        if (!iso) {
+          el.textContent = "Stand: --";
+          return;
+        }
+        try {
+          var d = new Date(iso);
+          el.textContent =
+            "Stand: " +
+            d.toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+        } catch (e) {
+          el.textContent = "Stand: " + iso;
+        }
+      }
+
+      function buildNachtragenSet(arr) {
+        nachtragenDoneSet = {};
+        for (var i = 0; i < (arr || []).length; i++) {
+          nachtragenDoneSet[String(arr[i])] = true;
+        }
+      }
+
+      function applyHubData(data) {
+        if (!data) return;
+        hubCacheData = data;
+        buildNachtragenSet(data.nachtragenDone || []);
+        setCacheLabel(data.loadedAt);
+        if (data.stats) {
+          hubStats = data.stats;
+          renderStats(data.stats);
+        }
+        var nDel = (data.delBuffer || []).length;
+        setStatus(nDel ? nDel + " Stück im Puffer." : "Puffer ist leer.");
+        renderList(data.delBuffer || []);
+        var n = data.syncCount != null ? data.syncCount : (data.syncMissing || []).length;
+        setSyncStatus(
+          n
+            ? n + " fehlen noch in Nachbestellung."
+            : "Alles clean – nix fehlt in NB."
+        );
+        renderSyncList(data.syncMissing || []);
+      }
+
+      function setCacheLoading(on) {
+        var btn = document.getElementById("btnCacheReload");
+        var label = btn.querySelector(".ux-cache-reload-label");
+        var busy = document.getElementById("cacheReloadBusy");
+        if (on) {
+          cacheReloadBusy = true;
+          btn.disabled = true;
+          btn.classList.add("is-loading");
+          document.getElementById("cacheLoadedAt").textContent = "Stand: --";
+          if (label) label.hidden = true;
+          if (busy) busy.hidden = false;
+          startCacheProgressTimer();
+          return;
+        }
+        finishCacheProgress(function () {
+          cacheReloadBusy = false;
+          btn.disabled = false;
+          btn.classList.remove("is-loading");
+          if (label) label.hidden = false;
+          if (busy) busy.hidden = true;
+          updateCacheProgressUi(0);
+        });
+      }
+
+      function loadHubCache(forceReload) {
+        setCacheLoading(true);
+        var runner = google.script.run
+          .withSuccessHandler(function (res) {
+            setCacheLoading(false);
+            setListLoading(false);
+            setSyncLoading(false);
+            if (res && res.ok && res.data) {
+              applyHubData(res.data);
+            }
+          })
+          .withFailureHandler(function (err) {
+            setCacheLoading(false);
+            setListLoading(false);
+            setSyncLoading(false);
+            if (hubCacheData && hubCacheData.loadedAt) setCacheLabel(hubCacheData.loadedAt);
+            else setCacheLabel(null);
+            setSyncStatus("Cache kaputt: " + err);
+          });
+        if (forceReload) runner.uxNbHubCacheNeuLaden();
+        else runner.uxNbHubCacheLesen();
+      }
+
+      function renderSheetCounts(counts) {
+        var grid = document.getElementById("sheetCountGrid");
+        grid.innerHTML = "";
+        for (var i = 0; i < SHEET_COUNT_ORDER.length; i++) {
+          var name = SHEET_COUNT_ORDER[i];
+          var val = counts && counts[name] != null ? counts[name] : 0;
+          var card = document.createElement("div");
+          card.className = "ux-stat-card";
+          card.innerHTML =
+            '<span class="ux-stat-label">' +
+            escapeHtml(name) +
+            '</span><span class="ux-stat-value">' +
+            escapeHtml(String(val)) +
+            "</span>";
+          grid.appendChild(card);
+        }
+      }
+
+      function renderTriggers(activeList) {
+        var active = activeList || [];
+        var ul = document.getElementById("triggerList");
+        ul.innerHTML = "";
+        for (var i = 0; i < ALL_TRIGGERS.length; i++) {
+          var key = ALL_TRIGGERS[i];
+          var on = active.indexOf(key) !== -1;
+          var li = document.createElement("li");
+          li.className = "ux-trigger-item" + (on ? "" : " ux-trigger-item--off");
+          li.innerHTML =
+            '<span class="ux-trigger-dot"></span>' +
+            escapeHtml(TRIGGER_LABELS[key] || key) +
+            (on ? "" : " · läuft nicht");
+          ul.appendChild(li);
+        }
+      }
+
+      function renderStats(stats) {
+        hubStats = stats;
+        renderSheetCounts(stats.sheetCounts || {});
+        document.getElementById("userEmail").textContent = stats.userEmail || "—";
+        document.getElementById("loadedAt").textContent =
+          "Zuletzt: " +
+          new Date().toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
+        setDelBadges(stats.delBufferCount);
+        renderTriggers(stats.triggers);
+      }
+
+      function setListLoading(on, text) {
+        var loading = document.getElementById("listLoading");
+        var list = document.getElementById("list");
+        document.getElementById("listLoadingText").textContent = text || "Lad…";
+        loading.hidden = !on;
+        list.style.visibility = on ? "hidden" : "visible";
+        list.style.pointerEvents = on ? "none" : "";
+        list.setAttribute("aria-busy", on ? "true" : "false");
+      }
+
       function setStatus(t) {
         document.getElementById("status").textContent = t || "";
       }
 
       function renderList(arr) {
+        delBufferArr = arr || [];
+        setDelBadges(delBufferArr.length);
+        if (hubStats) hubStats.delBufferCount = delBufferArr.length;
         var el = document.getElementById("list");
         el.innerHTML = "";
-        if (!arr || !arr.length) {
-          el.innerHTML =
-            '<div class="empty">Keine gespeicherten Löschungen im Puffer.</div>';
+        if (!delBufferArr.length) {
+          el.innerHTML = '<div class="ux-empty">Puffer leer – nix zum Wiederherstellen.</div>';
           return;
         }
-        for (var i = 0; i < arr.length; i++) {
+        for (var i = 0; i < delBufferArr.length; i++) {
           (function (entry) {
             var card = document.createElement("div");
-            card.className = "card";
+            card.className = "ux-card";
             var top = document.createElement("div");
-            top.className = "card-top";
+            top.className = "ux-card-top";
             top.innerHTML =
-              '<div class="kv"><label>Gelöscht am</label><span>' +
+              '<div class="ux-kv"><label>Gelöscht am</label><span>' +
               escapeHtml(formatDeDatum(entry.deletedAt)) +
               "</span></div>" +
-              '<div class="kv"><label>Stock-ID (vorher)</label><span>' +
+              '<div class="ux-kv"><label>Stock-ID (vorher)</label><span>' +
               escapeHtml(entry.stockId || "—") +
               "</span></div>" +
-              '<div class="kv"><label>Entry-ID</label><span>' +
+              '<div class="ux-kv"><label>Entry-ID</label><span>' +
               escapeHtml(entry.entryId || "—") +
               "</span></div>" +
-              '<div class="kv"><label>Benutzer</label><span>' +
+              '<div class="ux-kv"><label>Benutzer</label><span>' +
               escapeHtml(entry.deletedBy || "—") +
               "</span></div>";
             var dw = document.createElement("div");
-            dw.className = "detail-wrap";
+            dw.className = "ux-detail-wrap";
             dw.textContent = buildDetailText(entry);
             var actions = document.createElement("div");
-            actions.className = "actions";
+            actions.className = "ux-actions";
             var bRestore = document.createElement("button");
-            bRestore.className = "btn-restore";
+            bRestore.className = "ux-btn-primary";
             bRestore.textContent = "Wiederherstellen";
             var bRemove = document.createElement("button");
-            bRemove.className = "btn-remove";
-            bRemove.textContent = "Endgültig entfernen";
+            bRemove.className = "ux-btn-ghost";
+            bRemove.textContent = "Endgültig weg";
             function busy(on) {
               bRestore.disabled = on;
               bRemove.disabled = on;
             }
             bRestore.onclick = function () {
               busy(true);
-              setStatus("Stelle wieder her…");
+              setListLoading(true, "Hol wieder zurück…");
+              setStatus("");
               google.script.run
                 .withSuccessHandler(function (res) {
                   busy(false);
@@ -232,34 +468,38 @@
                     if (res.hinweise && res.hinweise.length)
                       msg += " · " + res.hinweise.join(" ");
                     setStatus(msg);
-                    load();
+                    loadHubCache(true);
                   } else {
-                    setStatus((res && res.fehler) || "Wiederherstellung fehlgeschlagen.");
-                    busy(false);
+                    setListLoading(false);
+                    setStatus((res && res.fehler) || "Hat nicht geklappt.");
                   }
                 })
                 .withFailureHandler(function (err) {
                   busy(false);
+                  setListLoading(false);
                   setStatus("Fehler: " + err);
                 })
                 .uxNbDelBufferWiederherstellen(entry.id);
             };
             bRemove.onclick = function () {
-              if (!confirm("Diesen Puffer-Eintrag endgültig entfernen?")) return;
+              if (!confirm("Wirklich endgültig raus aus dem Puffer?")) return;
               busy(true);
-              setStatus("Entferne…");
+              setListLoading(true, "Räum auf…");
+              setStatus("");
               google.script.run
                 .withSuccessHandler(function (res) {
                   busy(false);
                   if (res && res.ok) {
-                    setStatus("Eintrag entfernt.");
-                    load();
+                    setStatus("Weg damit.");
+                    loadHubCache(true);
                   } else {
-                    setStatus((res && res.fehler) || "Entfernen fehlgeschlagen.");
+                    setListLoading(false);
+                    setStatus((res && res.fehler) || "Hat nicht geklappt.");
                   }
                 })
                 .withFailureHandler(function (err) {
                   busy(false);
+                  setListLoading(false);
                   setStatus("Fehler: " + err);
                 })
                 .uxNbDelBufferEndgueltigEntfernen(entry.id);
@@ -270,31 +510,251 @@
             card.appendChild(dw);
             card.appendChild(actions);
             el.appendChild(card);
-          })(arr[i]);
+          })(delBufferArr[i]);
         }
       }
 
-      function load() {
-        setStatus("Lade…");
+      function loadDeletedList(keepSpinner) {
+        if (keepSpinner) return;
+        loadHubCache(true);
+      }
+
+      function refreshAll() {
+        setListLoading(true, "Lad…");
+        setSyncLoading(true, "Lad…");
+        loadHubCache(false);
+      }
+
+      function setSyncLoading(on, text) {
+        var loading = document.getElementById("syncListLoading");
+        var list = document.getElementById("syncList");
+        document.getElementById("syncListLoadingText").textContent = text || "Check läuft…";
+        loading.hidden = !on;
+        list.style.visibility = on ? "hidden" : "visible";
+        list.style.pointerEvents = on ? "none" : "";
+      }
+
+      function setSyncStatus(t) {
+        document.getElementById("syncStatus").textContent = t || "";
+      }
+
+      function copyText(text, btn, okLabel) {
+        var val = String(text || "").trim();
+        if (!val) return;
+        function done(ok) {
+          if (!btn) return;
+          if (ok) {
+            btn.classList.add("ux-btn-copy--ok");
+            var old = btn.textContent;
+            btn.textContent = okLabel || "Copied";
+            setTimeout(function () {
+              btn.classList.remove("ux-btn-copy--ok");
+              btn.textContent = old;
+            }, 1400);
+          }
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(val).then(function () { done(true); }).catch(fallbackCopy);
+        } else {
+          fallbackCopy();
+        }
+        function fallbackCopy() {
+          try {
+            var ta = document.createElement("textarea");
+            ta.value = val;
+            ta.style.position = "fixed";
+            ta.style.left = "-9999px";
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            done(true);
+          } catch (e) {
+            done(false);
+            setSyncStatus("Copy hat nicht geklappt.");
+          }
+        }
+      }
+
+      function renderSyncList(arr) {
+        syncMissingArr = arr || [];
+        setSyncBadges(syncMissingArr.length);
+        var el = document.getElementById("syncList");
+        el.innerHTML = "";
+        if (!syncMissingArr.length) {
+          el.innerHTML =
+            '<div class="ux-empty">Alles clean – nix fehlt in Nachbestellung.</div>';
+          return;
+        }
+        for (var i = 0; i < syncMissingArr.length; i++) {
+          (function (item) {
+            var card = document.createElement("div");
+            card.className = "ux-card";
+            var top = document.createElement("div");
+            top.className = "ux-card-top";
+            top.innerHTML =
+              '<div class="ux-kv"><label>Input-Blatt</label><span>' +
+              escapeHtml(item.sheetName || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Zeile</label><span>' +
+              escapeHtml(String(item.row != null ? item.row : "—")) +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Herkunft</label><span>' +
+              escapeHtml(item.herkunft || "—") +
+              "</span></div>";
+            var chips = document.createElement("div");
+            chips.className = "ux-copy-row";
+            chips.innerHTML =
+              '<div class="ux-id-chip"><label>Stock-ID</label>' +
+              escapeHtml(item.stockId || "—") +
+              "</div>" +
+              '<div class="ux-id-chip"><label>Entry-ID</label>' +
+              escapeHtml(item.entryId || "—") +
+              "</div>";
+            var actions = document.createElement("div");
+            actions.className = "ux-copy-row";
+            var bStock = document.createElement("button");
+            bStock.type = "button";
+            bStock.className = "ux-btn-copy";
+            bStock.textContent = "Stock-ID copy";
+            bStock.onclick = function () {
+              copyText(item.stockId, bStock, "Copied");
+            };
+            var bEid = document.createElement("button");
+            bEid.type = "button";
+            bEid.className = "ux-btn-copy";
+            bEid.textContent = "Entry-ID copy";
+            bEid.onclick = function () {
+              copyText(item.entryId, bEid, "Copied");
+            };
+            var bNacht = document.createElement("button");
+            bNacht.type = "button";
+            bNacht.className = "ux-btn-primary";
+            var eidKey = String(item.entryId || "").trim();
+            var locked = !eidKey || nachtragenDoneSet[eidKey];
+            if (locked) {
+              bNacht.disabled = true;
+              bNacht.className = "ux-btn-primary ux-btn-locked";
+              bNacht.textContent = eidKey ? "Läuft schon" : "Nachtragen";
+            } else {
+              bNacht.textContent = "Nachtragen";
+              bNacht.onclick = function () {
+                if (bNacht.disabled) return;
+                bNacht.disabled = true;
+                bNacht.textContent = "Einen Moment…";
+                bNacht.className = "ux-btn-primary ux-btn-locked";
+                google.script.run
+                  .withSuccessHandler(function (res) {
+                    if (res && res.ok) {
+                      nachtragenDoneSet[eidKey] = true;
+                      if (hubCacheData) {
+                        if (!hubCacheData.nachtragenDone) hubCacheData.nachtragenDone = [];
+                        if (hubCacheData.nachtragenDone.indexOf(eidKey) === -1) {
+                          hubCacheData.nachtragenDone.push(eidKey);
+                        }
+                      }
+                      bNacht.textContent = "Läuft schon";
+                      setSyncStatus("Angestoßen – Sheet macht den Rest. Cache neu ziehen wenn du checken willst.");
+                    } else {
+                      bNacht.disabled = false;
+                      bNacht.className = "ux-btn-primary";
+                      bNacht.textContent = "Nachtragen";
+                      setSyncStatus((res && res.fehler) || "Hat nicht geklappt.");
+                    }
+                  })
+                  .withFailureHandler(function (err) {
+                    bNacht.disabled = false;
+                    bNacht.className = "ux-btn-primary";
+                    bNacht.textContent = "Nachtragen";
+                    setSyncStatus("Fehler: " + err);
+                  })
+                  .uxNbSyncNachtragen(item.sheetName, item.row, item.entryId);
+              };
+            }
+            var tipWrap = document.createElement("span");
+            tipWrap.className = "ux-tip-wrap";
+            tipWrap.setAttribute("data-tip", NACHT_TOOLTIP);
+            tipWrap.appendChild(bNacht);
+            actions.appendChild(bStock);
+            actions.appendChild(bEid);
+            actions.appendChild(tipWrap);
+            card.appendChild(top);
+            card.appendChild(chips);
+            card.appendChild(actions);
+            el.appendChild(card);
+          })(syncMissingArr[i]);
+        }
+      }
+
+      function loadSyncList(keepSpinner) {
+        if (!keepSpinner) setSyncLoading(true, "Check läuft…");
         google.script.run
           .withSuccessHandler(function (res) {
-            if (res && res.ok) {
-              var n = (res.arr && res.arr.length) || 0;
-              setStatus(n ? n + " Einträge im Puffer." : "Keine Einträge im Puffer.");
-              renderList(res.arr || []);
+            setSyncLoading(false);
+            if (res && res.ok && res.data) {
+              applyHubData(res.data);
             } else {
-              setStatus((res && res.fehler) || "Liste konnte nicht geladen werden.");
-              renderList([]);
+              setSyncStatus((res && res.fehler) || "Check hat nicht geklappt.");
             }
           })
           .withFailureHandler(function (err) {
-            setStatus("Fehler: " + err);
-            renderList([]);
+            setSyncLoading(false);
+            setSyncStatus("Fehler: " + err);
           })
-          .uxNbDelBufferListe();
+          .uxNbHubCacheNeuLaden();
       }
 
-      load();
+      document.getElementById("navHome").onclick = function () {
+        showView("home");
+      };
+      document.getElementById("navDeleted").onclick = function () {
+        showView("deleted");
+      };
+      document.getElementById("navSync").onclick = function () {
+        showView("sync");
+      };
+      document.getElementById("tileDeleted").onclick = function () {
+        showView("deleted");
+      };
+      document.getElementById("tileSync").onclick = function () {
+        showView("sync");
+      };
+      document.getElementById("btnBackHome").onclick = function () {
+        showView("home");
+      };
+      document.getElementById("btnBackHomeSync").onclick = function () {
+        showView("home");
+      };
+      document.getElementById("btnSyncRefresh").onclick = function () {
+        loadSyncList();
+      };
+      document.getElementById("btnCacheReload").onclick = function () {
+        if (cacheReloadBusy) return;
+        setListLoading(true, "Cache neu ziehen…");
+        setSyncLoading(true, "Cache neu ziehen…");
+        loadHubCache(true);
+      };
+
+      function resizeDialogToViewport() {
+        try {
+          var sw = screen.availWidth || screen.width || window.innerWidth || 1200;
+          var sh = screen.availHeight || screen.height || window.innerHeight || 850;
+          var w = Math.min(Math.max(sw - 16, 320), 1200);
+          var h = Math.min(Math.max(sh - 32, 480), 850);
+          google.script.host.setWidth(w);
+          google.script.host.setHeight(h);
+        } catch (e) {}
+      }
+
+      window.addEventListener("load", function () {
+        resizeDialogToViewport();
+        setTimeout(resizeDialogToViewport, 80);
+        setTimeout(resizeDialogToViewport, 300);
+      });
+      window.addEventListener("resize", resizeDialogToViewport);
+
+      refreshAll();
+      showView(VIEW_KEYS.indexOf(initialView) !== -1 ? initialView : "home");
     </script>
   </body>
 </html>
