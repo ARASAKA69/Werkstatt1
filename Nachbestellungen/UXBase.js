@@ -24,9 +24,15 @@ function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
+function uxAutoheroLogoDataUrl_() {
+  if (typeof UX_AUTOHERO_LOGO_B64 === "undefined") return "";
+  return "data:image/png;base64," + UX_AUTOHERO_LOGO_B64;
+}
+
 function uxBaseDialogControlCenterOeffnen(initialView) {
   var t = HtmlService.createTemplateFromFile("UXMenu");
   t.initialView = initialView || "home";
+  t.autoheroLogoDataUrl = uxAutoheroLogoDataUrl_();
   var html = t
     .evaluate()
     .setWidth(1200)
