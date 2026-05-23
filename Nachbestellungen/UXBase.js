@@ -1,6 +1,6 @@
 var UX_NB_DELBUF_KEY = "ux_nb_delbuf_v1";
 var UX_NB_DELBUF_MAX = 100;
-var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v3";
+var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v4";
 var UX_NB_NACHT_KEY = "ux_nb_nachtragen_done_v1";
 var UX_NB_EVENTQUEUE_SHEET = "EventQueue";
 var UX_NB_EVENTQUEUE_KEEP = 500;
@@ -117,6 +117,8 @@ function uxNbHubDatenSammeln_() {
   var dashMissing = dash.ok ? dash.missing || [] : [];
   var dashNachtragenDone = uxNbDashNachtragenDoneCleanup_(dashMissing, uxNbDashNachtragenDoneRead_());
   uxNbDashNachtragenDoneWrite_(dashNachtragenDone);
+  var dashGaps = uxNbDashStatusGapListe();
+  var dashStatusGaps = dashGaps.ok ? dashGaps.gaps || [] : [];
   return {
     ok: true,
     loadedAt: new Date().toISOString(),
@@ -127,7 +129,9 @@ function uxNbHubDatenSammeln_() {
     nachtragenDone: nachtragenDone,
     dashMissing: dashMissing,
     dashSyncCount: dash.ok ? dash.count || 0 : 0,
-    dashNachtragenDone: dashNachtragenDone
+    dashNachtragenDone: dashNachtragenDone,
+    dashStatusGaps: dashStatusGaps,
+    dashStatusGapCount: dashGaps.ok ? dashGaps.count || 0 : 0
   };
 }
 
@@ -438,19 +442,78 @@ function uxNbBuildDashboardEntryIdSet_(dashboard) {
   var set = {};
   if (!dashboard) return set;
   var layout = getDashboardLayout(dashboard);
-  var end = dashboardDataEndRow(dashboard, layout);
-  if (end < layout.dataStartRow) return set;
+  var last = dashboard.getLastRow();
+  if (last < layout.dataStartRow) return set;
   var eids = dashboard.getRange(
     layout.dataStartRow,
     layout.cols.entryId,
-    end - layout.dataStartRow + 1,
-    1
+    last,
+    layout.cols.entryId
   ).getValues();
   for (var i = 0; i < eids.length; i++) {
     var eid = String(eids[i][0] || "").trim();
     if (eid) set[eid] = true;
   }
   return set;
+}
+
+function uxNbSameDashStatusDate_(a, b) {
+  if (a === "" || a === null || a === undefined) {
+    return b === "" || b === null || b === undefined;
+  }
+  if (b === "" || b === null || b === undefined) return false;
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return String(a) === String(b);
+}
+
+function uxNbDashStatusGapListe() {
+  try {
+    var ss = getMainSS();
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar.", gaps: [], count: 0 };
+    var dashboard = ss.getSheetByName("Dashboard");
+    var nbSheet = ss.getSheetByName("Nachbestellung");
+    if (!dashboard || !nbSheet) {
+      return { ok: false, fehler: "Dashboard oder Nachbestellung fehlt.", gaps: [], count: 0 };
+    }
+    var dLayout = getDashboardLayout(dashboard);
+    var last = dashboard.getLastRow();
+    if (last < dLayout.dataStartRow) return { ok: true, gaps: [], count: 0 };
+    var numRows = last - dLayout.dataStartRow + 1;
+    var block = dashboard.getRange(dLayout.dataStartRow, 1, numRows, dLayout.lastCol).getValues();
+    var exitIds = buildInputExitEntryIdSet_(ss);
+    var nbByEid = buildNachbestellungStatusByEntryIdMap_(nbSheet);
+    var gaps = [];
+    for (var i = 0; i < block.length; i++) {
+      var row = block[i];
+      var entryId = String(row[dLayout.cols.entryId - 1] || "").trim();
+      var stockId = String(row[dLayout.cols.stockId - 1] || "").trim();
+      if (!entryId || !stockId) continue;
+      if (exitIds[entryId]) continue;
+      var nb = nbByEid[entryId];
+      if (!nb) continue;
+      var nbHas = isCellFilled(nb.i) || isCellFilled(nb.k) || isCellFilled(nb.l);
+      if (!nbHas) continue;
+      var curI = row[dLayout.cols.costGate - 1];
+      var curK = row[dLayout.cols.status - 1];
+      var curL = row[dLayout.cols.statusAenderung - 1];
+      if (
+        String(curI) === String(nb.i) &&
+        String(curK) === String(nb.k) &&
+        uxNbSameDashStatusDate_(curL, nb.l)
+      ) continue;
+      gaps.push({
+        dashRow: dLayout.dataStartRow + i,
+        stockId: stockId,
+        entryId: entryId,
+        herkunft: String(row[dLayout.cols.herkunft - 1] || "").trim(),
+        nbCostGate: String(nb.i || ""),
+        nbStatus: String(nb.k || "")
+      });
+    }
+    return { ok: true, gaps: gaps, count: gaps.length };
+  } catch (e) {
+    return { ok: false, fehler: String(e), gaps: [], count: 0 };
+  }
 }
 
 function uxNbDashPushRow_(sheet, row) {
@@ -573,7 +636,9 @@ function uxNbDashSyncStatusNow() {
   if (typeof syncDashboardStatusFromNachbestellung !== "function") {
     return { ok: false, fehler: "Sync-Funktion fehlt im Script." };
   }
-  return syncDashboardStatusFromNachbestellung();
+  return syncDashboardStatusFromNachbestellung(
+    typeof DASH_SYNC_LOCK_WAIT_MS !== "undefined" ? DASH_SYNC_LOCK_WAIT_MS : 30000
+  );
 }
 
 function uxNbNormEtDiagnose_(v) {

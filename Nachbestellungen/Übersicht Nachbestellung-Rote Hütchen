@@ -364,6 +364,7 @@ var LOCK_WAIT_MS = 30000;
 var ONEDIT_LOCK_WAIT_MS = 5000;
 var QUEUE_LOCK_WAIT_MS = 15000;
 var CLEANUP_LOCK_WAIT_MS = 5000;
+var DASH_SYNC_LOCK_WAIT_MS = 30000;
 var MAX_EVENTS_PER_RUN = 3;
 
 
@@ -460,19 +461,54 @@ function isInputDatumBlank(v) {
 function isEntryIdFromInputExit(entryId) {
   if (!entryId) return false;
   try {
-    const ss = getMainSS();
-    if (!ss) return false;
-    const sheet = ss.getSheetByName("Input Exit");
-    if (!sheet) return false;
-    const last = sheet.getLastRow();
-    if (last < 2) return false;
-    const eids = sheet.getRange(2, getEntryIdCol(sheet), last - 1, 1).getValues();
-    const target = String(entryId);
-    for (let i = 0; i < eids.length; i++) {
-      if (String(eids[i][0]) === target) return true;
-    }
+    const set = buildInputExitEntryIdSet_();
+    return !!set[String(entryId).trim()];
   } catch (e) {}
   return false;
+}
+
+function buildInputExitEntryIdSet_(ss) {
+  const set = {};
+  ss = ss || getMainSS();
+  if (!ss) return set;
+  const sheet = ss.getSheetByName("Input Exit");
+  if (!sheet) return set;
+  const last = sheet.getLastRow();
+  if (last < 2) return set;
+  const eidCol = getEntryIdCol(sheet);
+  const vals = sheet.getRange(2, eidCol, last - 1, 1).getValues();
+  for (let i = 0; i < vals.length; i++) {
+    const eid = String(vals[i][0] || "").trim();
+    if (eid) set[eid] = true;
+  }
+  return set;
+}
+
+function buildNachbestellungStatusByEntryIdMap_(nbSheet) {
+  const map = {};
+  if (!nbSheet) return map;
+  const layout = getNachbestellungLayout(nbSheet);
+  const last = nbSheet.getLastRow();
+  const trim = layout.dataEndTrimBottomRows != null ? layout.dataEndTrimBottomRows : 1;
+  const dataEnd = last > trim ? last - trim : last;
+  if (dataEnd < layout.dataStartRow) return map;
+  const width = Math.max(layout.lastCol, layout.cols.entryId, layout.cols.statusAenderung);
+  const numRows = dataEnd - layout.dataStartRow + 1;
+  const block = nbSheet.getRange(layout.dataStartRow, 1, numRows, width).getValues();
+  const eidIdx = layout.cols.entryId - 1;
+  const iIdx = layout.cols.costGate - 1;
+  const kIdx = layout.cols.status - 1;
+  const lIdx = layout.cols.statusAenderung - 1;
+  for (let i = 0; i < block.length; i++) {
+    const eid = String(block[i][eidIdx] || "").trim();
+    if (!eid) continue;
+    map[eid] = {
+      i: block[i][iIdx] || "",
+      k: block[i][kIdx] || "",
+      l: block[i][lIdx] || ""
+    };
+  }
+  return map;
 }
 
 function removeDashboardRowByEntryId(dashboard, entryId) {
@@ -1525,31 +1561,30 @@ function getNachbestellungValuesByKey(nbSheet, key, entryId) {
   const empty = { i: "", k: "", l: "" };
   if (!nbSheet) return empty;
   const layout = getNachbestellungLayout(nbSheet);
+  const cg = layout.cols.costGate;
+  const st = layout.cols.status;
+  const sa = layout.cols.statusAenderung;
+  const eid = String(entryId || "").trim();
+  if (eid) {
+    const row = findRowByEntryId(nbSheet, layout.cols.entryId, eid, layout.dataStartRow);
+    if (row !== -1) {
+      const vals = nbSheet.getRange(row, cg, row, sa).getValues()[0];
+      return { i: vals[0] || "", k: vals[1] || "", l: vals[2] || "" };
+    }
+  }
+  if (!key) return empty;
   const last = nbSheet.getLastRow();
-  if (last < layout.dataStartRow) return empty;
   const trim = layout.dataEndTrimBottomRows != null ? layout.dataEndTrimBottomRows : 1;
   const dataEnd = last > trim ? last - trim : last;
   if (dataEnd < layout.dataStartRow) return empty;
-  const nbEidCol = layout.cols.entryId;
-  const width = Math.max(layout.lastCol, nbEidCol);
-  const data = nbSheet.getRange(layout.dataStartRow, 1, dataEnd - layout.dataStartRow + 1, width).getValues();
-  const keyU = String(key).toUpperCase();
-  const eid = String(entryId || "");
-  const eidIdx = nbEidCol - 1;
-  const stockIdx = layout.cols.stockId - 1;
-  const iIdx = layout.cols.costGate - 1;
-  const kIdx = layout.cols.status - 1;
-  const lIdx = layout.cols.statusAenderung - 1;
-  for (let i = 0; i < data.length; i++) {
-    if (
-      String(data[i][stockIdx] || "").trim().toUpperCase() === keyU &&
-      String(data[i][eidIdx] || "") === eid
-    ) {
-      return {
-        i: data[i][iIdx] || "",
-        k: data[i][kIdx] || "",
-        l: data[i][lIdx] || ""
-      };
+  const stockIdx = layout.cols.stockId;
+  const keyU = String(key).trim().toUpperCase();
+  const stocks = nbSheet.getRange(layout.dataStartRow, stockIdx, dataEnd, stockIdx).getValues();
+  for (let i = stocks.length - 1; i >= 0; i--) {
+    if (String(stocks[i][0] || "").trim().toUpperCase() === keyU) {
+      const dataRow = layout.dataStartRow + i;
+      const vals = nbSheet.getRange(dataRow, cg, dataRow, sa).getValues()[0];
+      return { i: vals[0] || "", k: vals[1] || "", l: vals[2] || "" };
     }
   }
   return empty;
@@ -2357,10 +2392,15 @@ function sameDashboardStatusDate_(a, b) {
   return String(a) === String(b);
 }
 
-function syncDashboardStatusFromNachbestellung() {
+function syncDashboardStatusFromNachbestellung(waitMs) {
+  const lockMs = waitMs != null ? waitMs : DASH_SYNC_LOCK_WAIT_MS;
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(CLEANUP_LOCK_WAIT_MS)) return { ok: false, fehler: "Keine Sperre." };
+  if (!lock.tryLock(lockMs)) {
+    return { ok: false, skipped: true, fehler: "Anderer Lauf aktiv (Lock). Bitte kurz warten und erneut versuchen." };
+  }
   let updated = 0;
+  let alreadyOk = 0;
+  let noNbMatch = 0;
   try {
     const ss = getMainSS();
     if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
@@ -2368,35 +2408,122 @@ function syncDashboardStatusFromNachbestellung() {
     const nbSheet = ss.getSheetByName("Nachbestellung");
     if (!dashboard || !nbSheet) return { ok: false, fehler: "Dashboard oder Nachbestellung fehlt." };
     const dLayout = getDashboardLayout(dashboard);
-    const end = dashboardDataEndRow(dashboard, dLayout);
-    if (end < dLayout.dataStartRow) return { ok: true, updated: 0 };
-    const block = dashboard.getRange(dLayout.dataStartRow, 1, end, dLayout.lastCol).getValues();
+    const last = dashboard.getLastRow();
+    if (last < dLayout.dataStartRow) {
+      return { ok: true, updated: 0, alreadyOk: 0, noNbMatch: 0, scanned: 0 };
+    }
+    const exitIds = buildInputExitEntryIdSet_(ss);
+    const nbByEid = buildNachbestellungStatusByEntryIdMap_(nbSheet);
+    const numRows = last - dLayout.dataStartRow + 1;
+    const block = dashboard.getRange(dLayout.dataStartRow, 1, numRows, dLayout.lastCol).getValues();
+    const cg = dLayout.cols.costGate;
+    const st = dLayout.cols.status;
+    const sa = dLayout.cols.statusAenderung;
+    const colCg = new Array(block.length);
+    const colSt = new Array(block.length);
+    const colSa = new Array(block.length);
     for (let i = 0; i < block.length; i++) {
       const row = block[i];
-      const entryId = String(row[dLayout.cols.entryId - 1] || "");
+      colCg[i] = [row[cg - 1]];
+      colSt[i] = [row[st - 1]];
+      colSa[i] = [row[sa - 1]];
+      const entryId = String(row[dLayout.cols.entryId - 1] || "").trim();
       const stockId = String(row[dLayout.cols.stockId - 1] || "").trim();
       if (!entryId || !stockId) continue;
-      if (isEntryIdFromInputExit(entryId)) continue;
-      const nb = getNachbestellungValuesByKey(nbSheet, stockId, entryId);
-      const curI = row[dLayout.cols.costGate - 1];
-      const curK = row[dLayout.cols.status - 1];
-      const curL = row[dLayout.cols.statusAenderung - 1];
+      if (exitIds[entryId]) continue;
+      const nb = nbByEid[entryId];
+      if (!nb) {
+        noNbMatch++;
+        continue;
+      }
+      const curI = row[cg - 1];
+      const curK = row[st - 1];
+      const curL = row[sa - 1];
+      const nbHas = isCellFilled(nb.i) || isCellFilled(nb.k) || isCellFilled(nb.l);
+      if (!nbHas) {
+        noNbMatch++;
+        continue;
+      }
       if (
         String(curI) === String(nb.i) &&
         String(curK) === String(nb.k) &&
         sameDashboardStatusDate_(curL, nb.l)
-      ) continue;
-      const dataRow = dLayout.dataStartRow + i;
-      dashboard.getRange(dataRow, dLayout.cols.costGate, 1, 3).setValues([[nb.i, nb.k, nb.l]]);
+      ) {
+        alreadyOk++;
+        continue;
+      }
+      colCg[i] = [nb.i];
+      colSt[i] = [nb.k];
+      colSa[i] = [nb.l];
       updated++;
     }
-    if (updated > 0) logDebug("syncDashboardStatusFromNachbestellung: updated " + updated + " rows");
-    return { ok: true, updated: updated };
+    if (updated > 0) {
+      const startRow = dLayout.dataStartRow;
+      const rowCount = block.length;
+      dashboard.getRange(startRow, cg, rowCount, 1).setValues(colCg);
+      dashboard.getRange(startRow, st, rowCount, 1).setValues(colSt);
+      dashboard.getRange(startRow, sa, rowCount, 1).setValues(colSa);
+      try { logDebug("syncDashboardStatusFromNachbestellung: updated " + updated + " rows"); } catch (eLog) {}
+    }
+    return {
+      ok: true,
+      updated: updated,
+      alreadyOk: alreadyOk,
+      noNbMatch: noNbMatch,
+      scanned: block.length
+    };
   } catch (err) {
-    return { ok: false, fehler: String(err) };
+    return { ok: false, fehler: String(err && err.message ? err.message : err) };
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
+}
+
+function runSyncDashboardStatusNow() {
+  try { Logger.log("runSyncDashboardStatusNow: start"); } catch (e0) {}
+  let res;
+  try {
+    res = syncDashboardStatusFromNachbestellung(DASH_SYNC_LOCK_WAIT_MS);
+  } catch (e) {
+    res = { ok: false, fehler: String(e && e.message ? e.message : e) };
+  }
+  try { Logger.log("runSyncDashboardStatusNow: " + JSON.stringify(res)); } catch (e2) {}
+  return res;
+}
+
+function runSyncDashboardStatusProbe() {
+  const steps = [];
+  function step(name, fn) {
+    try {
+      fn();
+      steps.push(name + ": ok");
+    } catch (e) {
+      steps.push(name + ": " + String(e && e.message ? e.message : e));
+    }
+  }
+  step("getMainSS", function () {
+    const ss = getMainSS();
+    if (!ss) throw new Error("Hauptmappe nicht erreichbar.");
+    steps.push("ss=" + ss.getName());
+  });
+  step("sheets", function () {
+    const ss = getMainSS();
+    const dashboard = ss.getSheetByName("Dashboard");
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    if (!dashboard || !nbSheet) throw new Error("Dashboard oder Nachbestellung fehlt.");
+    steps.push("dashLast=" + dashboard.getLastRow() + " nbLast=" + nbSheet.getLastRow());
+  });
+  step("maps", function () {
+    const ss = getMainSS();
+    const exitIds = buildInputExitEntryIdSet_(ss);
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    const nbByEid = buildNachbestellungStatusByEntryIdMap_(nbSheet);
+    steps.push("exitIds=" + Object.keys(exitIds).length + " nbMap=" + Object.keys(nbByEid).length);
+  });
+  const res = syncDashboardStatusFromNachbestellung(DASH_SYNC_LOCK_WAIT_MS);
+  steps.push("sync=" + JSON.stringify(res));
+  try { Logger.log(steps.join(" | ")); } catch (e3) {}
+  return { steps: steps, sync: res };
 }
 
 function installDashboardStatusSyncTrigger() {
@@ -2414,8 +2541,14 @@ function installDashboardStatusSyncTrigger() {
 
 function syncDashboardStatusSyncTrigger() {
   try {
-    syncDashboardStatusFromNachbestellung();
-  } catch (e) {}
+    const res = syncDashboardStatusFromNachbestellung(DASH_SYNC_LOCK_WAIT_MS);
+    if (res && res.skipped) return;
+    if (res && !res.ok) {
+      try { Logger.log("syncDashboardStatusSyncTrigger: " + JSON.stringify(res)); } catch (e2) {}
+    }
+  } catch (e) {
+    try { Logger.log("syncDashboardStatusSyncTrigger error: " + e); } catch (e3) {}
+  }
 }
 
 function ensureDashboardStatusSyncTrigger_() {

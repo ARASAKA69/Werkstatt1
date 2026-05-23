@@ -114,7 +114,12 @@
             <div class="ux-status" id="syncStatus"></div>
             <div class="ux-list-wrap" id="syncListWrap">
               <div class="ux-loading" id="syncListLoading" hidden>
-                <div class="ux-spinner"></div>
+                <div class="ux-spinner" aria-hidden="true">
+                  <svg class="ux-spinner-svg" viewBox="0 0 48 48">
+                    <circle class="ux-spinner-track" cx="24" cy="24" r="20" fill="none"/>
+                    <circle class="ux-spinner-arc" cx="24" cy="24" r="20" fill="none"/>
+                  </svg>
+                </div>
                 <span class="ux-loading-text" id="syncListLoadingText">Check läuft…</span>
               </div>
               <div class="ux-list" id="syncList"></div>
@@ -126,14 +131,24 @@
               <button type="button" class="ux-btn-copy" id="btnDashRefresh">Nochmal checken</button>
               <button type="button" class="ux-btn-primary" id="btnDashStatusSync">Status jetzt syncen</button>
             </div>
-            <p class="ux-dash-sync-note">Cost Gate, Status und Statusänderung werden alle 5 Min. aus Nachbestellung ins Dashboard gezogen.</p>
+            <p class="ux-dash-sync-note">Oben: fehlen komplett im Dashboard (Entry-ID). Unten: schon im Dashboard, aber Cost Gate / Status leer obwohl Nachbestellung Werte hat.</p>
             <div class="ux-status" id="dashStatus"></div>
+            <p class="ux-panel-title ux-dash-section-title">Fehlen komplett im Dashboard</p>
             <div class="ux-list-wrap" id="dashListWrap">
               <div class="ux-loading" id="dashListLoading" hidden>
-                <div class="ux-spinner"></div>
+                <div class="ux-spinner" aria-hidden="true">
+                  <svg class="ux-spinner-svg" viewBox="0 0 48 48">
+                    <circle class="ux-spinner-track" cx="24" cy="24" r="20" fill="none"/>
+                    <circle class="ux-spinner-arc" cx="24" cy="24" r="20" fill="none"/>
+                  </svg>
+                </div>
                 <span class="ux-loading-text" id="dashListLoadingText">Check läuft…</span>
               </div>
               <div class="ux-list" id="dashList"></div>
+            </div>
+            <p class="ux-panel-title ux-dash-section-title">Status leer / falsch (NB hat Werte)</p>
+            <div class="ux-list-wrap" id="dashGapListWrap">
+              <div class="ux-list" id="dashGapList"></div>
             </div>
           </section>
           <section class="ux-view" id="viewDeleted">
@@ -141,7 +156,12 @@
             <div class="ux-status" id="status"></div>
             <div class="ux-list-wrap" id="listWrap">
               <div class="ux-loading" id="listLoading" hidden>
-                <div class="ux-spinner"></div>
+                <div class="ux-spinner" aria-hidden="true">
+                  <svg class="ux-spinner-svg" viewBox="0 0 48 48">
+                    <circle class="ux-spinner-track" cx="24" cy="24" r="20" fill="none"/>
+                    <circle class="ux-spinner-arc" cx="24" cy="24" r="20" fill="none"/>
+                  </svg>
+                </div>
                 <span class="ux-loading-text" id="listLoadingText">Lade…</span>
               </div>
               <div class="ux-list" id="list"></div>
@@ -157,6 +177,7 @@
       var delBufferArr = [];
       var syncMissingArr = [];
       var dashMissingArr = [];
+      var dashStatusGapArr = [];
       var nachtragenDoneSet = {};
       var dashNachtragenDoneSet = {};
       var cacheReloadBusy = false;
@@ -186,7 +207,7 @@
         },
         dash: {
           title: "Dashboard Sync",
-          sub: "Mechanik, Q-Check, Lack – fehlen im Dashboard, obwohl sie ready sind"
+          sub: "Fehlt im Dashboard vs. leere Cost Gate / Status obwohl NB Werte da sind"
         }
       };
 
@@ -263,9 +284,18 @@
         document.getElementById("tileSyncBadge").textContent = String(n);
       }
 
-      function setDashBadges(n) {
+      function setDashBadges(missingCount, gapCount) {
+        var n = (missingCount || 0) + (gapCount || 0);
         document.getElementById("navDashBadge").textContent = String(n);
         document.getElementById("tileDashBadge").textContent = String(n);
+      }
+
+      function formatDashStatusLine(missingCount, gapCount) {
+        var parts = [];
+        if (missingCount > 0) parts.push(missingCount + " fehlen komplett im Dashboard");
+        if (gapCount > 0) parts.push(gapCount + " mit leerem/falschem Status obwohl NB Werte da sind");
+        if (!parts.length) return "Alles im Dashboard – Status passt.";
+        return parts.join(" · ");
       }
 
       function showView(name) {
@@ -367,12 +397,10 @@
         );
         renderSyncList(data.syncMissing || []);
         var nd = data.dashSyncCount != null ? data.dashSyncCount : (data.dashMissing || []).length;
-        setDashStatus(
-          nd
-            ? nd + " fehlen noch im Dashboard."
-            : "Alles im Dashboard – nix fehlt."
-        );
+        var ng = data.dashStatusGapCount != null ? data.dashStatusGapCount : (data.dashStatusGaps || []).length;
+        setDashStatus(formatDashStatusLine(nd, ng));
         renderDashList(data.dashMissing || []);
+        renderDashStatusGapList(data.dashStatusGaps || []);
       }
 
       function setCacheLoading(on) {
@@ -522,7 +550,7 @@
       function setListLoading(on, text) {
         var loading = document.getElementById("listLoading");
         var list = document.getElementById("list");
-        document.getElementById("listLoadingText").textContent = text || "Lad…";
+        document.getElementById("listLoadingText").textContent = text || "Lade…";
         loading.hidden = !on;
         list.style.visibility = on ? "hidden" : "visible";
         list.style.pointerEvents = on ? "none" : "";
@@ -643,9 +671,9 @@
       }
 
       function refreshAll() {
-        setListLoading(true, "Lad…");
-        setSyncLoading(true, "Lad…");
-        setDashLoading(true, "Lad…");
+        setListLoading(true, "Lade…");
+        setSyncLoading(true, "Lade…");
+        setDashLoading(true, "Lade…");
         loadHubCache(false);
       }
 
@@ -825,7 +853,8 @@
 
       function renderDashList(arr) {
         dashMissingArr = arr || [];
-        setDashBadges(dashMissingArr.length);
+        var ng = dashStatusGapArr ? dashStatusGapArr.length : 0;
+        setDashBadges(dashMissingArr.length, ng);
         var el = document.getElementById("dashList");
         el.innerHTML = "";
         if (!dashMissingArr.length) {
@@ -934,6 +963,44 @@
         }
       }
 
+      function renderDashStatusGapList(arr) {
+        dashStatusGapArr = arr || [];
+        setDashBadges(dashMissingArr.length, dashStatusGapArr.length);
+        setDashStatus(formatDashStatusLine(dashMissingArr.length, dashStatusGapArr.length));
+        var el = document.getElementById("dashGapList");
+        el.innerHTML = "";
+        if (!dashStatusGapArr.length) {
+          el.innerHTML =
+            '<div class="ux-empty">Keine Status-Lücken – oder NB hat auch noch nichts.</div>';
+          return;
+        }
+        for (var i = 0; i < dashStatusGapArr.length; i++) {
+          (function (item) {
+            var card = document.createElement("div");
+            card.className = "ux-card";
+            card.innerHTML =
+              '<div class="ux-card-top">' +
+              '<div class="ux-kv"><label>Dashboard-Zeile</label><span>' +
+              escapeHtml(String(item.dashRow != null ? item.dashRow : "—")) +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Stock-ID</label><span>' +
+              escapeHtml(item.stockId || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Herkunft</label><span>' +
+              escapeHtml(item.herkunft || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>NB Cost Gate</label><span>' +
+              escapeHtml(item.nbCostGate || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>NB Status</label><span>' +
+              escapeHtml(item.nbStatus || "—") +
+              "</span></div>" +
+              "</div>";
+            el.appendChild(card);
+          })(dashStatusGapArr[i]);
+        }
+      }
+
       function loadDashList(keepSpinner) {
         if (!keepSpinner) setDashLoading(true, "Check läuft…");
         google.script.run
@@ -1015,11 +1082,15 @@
             btn.disabled = false;
             btn.textContent = "Status jetzt syncen";
             if (res && res.ok) {
-              setDashStatus(
-                (res.updated || 0) > 0
-                  ? res.updated + " Dashboard-Zeilen aktualisiert."
-                  : "Schon aktuell – nix zu ändern."
-              );
+              var msg =
+                (res.updated || 0) +
+                " Zeilen aktualisiert";
+              if (res.alreadyOk != null) msg += " · " + res.alreadyOk + " schon ok";
+              if (res.noNbMatch != null && res.noNbMatch > 0) {
+                msg += " · " + res.noNbMatch + " ohne NB-Werte";
+              }
+              setDashStatus(msg + ".");
+              loadHubCache(true);
             } else {
               setDashStatus((res && res.fehler) || "Sync hat nicht geklappt.");
             }
