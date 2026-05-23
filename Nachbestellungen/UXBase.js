@@ -1,9 +1,11 @@
 var UX_NB_DELBUF_KEY = "ux_nb_delbuf_v1";
 var UX_NB_DELBUF_MAX = 100;
-var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v2";
+var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v3";
 var UX_NB_NACHT_KEY = "ux_nb_nachtragen_done_v1";
 var UX_NB_EVENTQUEUE_SHEET = "EventQueue";
 var UX_NB_EVENTQUEUE_KEEP = 500;
+var UX_NB_DASH_INPUT_SHEETS = ["Input Mechanik", "Input Q-Check", "Input Lack"];
+var UX_NB_DASH_NACHT_KEY = "ux_nb_dash_nachtragen_done_v1";
 
 function uxBaseMenueEinrichten() {
   try {
@@ -47,6 +49,33 @@ function uxNbHubCacheWrite_(data) {
   PropertiesService.getUserProperties().setProperty(UX_NB_HUB_CACHE_KEY, JSON.stringify(data || {}));
 }
 
+function uxNbDashNachtragenDoneRead_() {
+  try {
+    var raw = PropertiesService.getUserProperties().getProperty(UX_NB_DASH_NACHT_KEY);
+    var arr = JSON.parse(raw || "[]");
+    return Array.isArray(arr) ? arr : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function uxNbDashNachtragenDoneWrite_(arr) {
+  PropertiesService.getUserProperties().setProperty(UX_NB_DASH_NACHT_KEY, JSON.stringify(arr || []));
+}
+
+function uxNbDashNachtragenDoneCleanup_(missing, done) {
+  var still = {};
+  for (var i = 0; i < (missing || []).length; i++) {
+    var eid = String(missing[i].entryId || "").trim();
+    if (eid) still[eid] = true;
+  }
+  var next = [];
+  for (var j = 0; j < (done || []).length; j++) {
+    if (still[done[j]]) next.push(done[j]);
+  }
+  return next;
+}
+
 function uxNbNachtragenDoneRead_() {
   try {
     var raw = PropertiesService.getUserProperties().getProperty(UX_NB_NACHT_KEY);
@@ -75,12 +104,19 @@ function uxNbNachtragenDoneCleanup_(missing, done) {
 }
 
 function uxNbHubDatenSammeln_() {
+  try {
+    if (typeof ensureDashboardStatusSyncTrigger_ === "function") ensureDashboardStatusSyncTrigger_();
+  } catch (e0) {}
   var stats = uxNbHubDashboardStats();
   var del = uxNbDelBufferRead_();
   var sync = uxNbSyncMissingInputsListe();
   var missing = sync.ok ? sync.missing || [] : [];
   var nachtragenDone = uxNbNachtragenDoneCleanup_(missing, uxNbNachtragenDoneRead_());
   uxNbNachtragenDoneWrite_(nachtragenDone);
+  var dash = uxNbDashMissingListe();
+  var dashMissing = dash.ok ? dash.missing || [] : [];
+  var dashNachtragenDone = uxNbDashNachtragenDoneCleanup_(dashMissing, uxNbDashNachtragenDoneRead_());
+  uxNbDashNachtragenDoneWrite_(dashNachtragenDone);
   return {
     ok: true,
     loadedAt: new Date().toISOString(),
@@ -88,7 +124,10 @@ function uxNbHubDatenSammeln_() {
     delBuffer: del.ok ? del.arr || [] : [],
     syncMissing: missing,
     syncCount: sync.ok ? sync.count || 0 : 0,
-    nachtragenDone: nachtragenDone
+    nachtragenDone: nachtragenDone,
+    dashMissing: dashMissing,
+    dashSyncCount: dash.ok ? dash.count || 0 : 0,
+    dashNachtragenDone: dashNachtragenDone
   };
 }
 
@@ -347,7 +386,8 @@ function uxNbHubDashboardStats() {
     var watch = {
       cleanupNachbestellungStatusDate: false,
       archiveFertiggestelltRows: false,
-      processQueue: false
+      processQueue: false,
+      syncDashboardStatusSyncTrigger: false
     };
     var triggers = ScriptApp.getProjectTriggers();
     for (var t = 0; t < triggers.length; t++) {
@@ -358,6 +398,7 @@ function uxNbHubDashboardStats() {
     if (watch.cleanupNachbestellungStatusDate) names.push("cleanupNachbestellungStatusDate");
     if (watch.archiveFertiggestelltRows) names.push("archiveFertiggestelltRows");
     if (watch.processQueue) names.push("processQueue");
+    if (watch.syncDashboardStatusSyncTrigger) names.push("syncDashboardStatusSyncTrigger");
     stats.triggers = names;
   } catch (e4) {}
   try {
@@ -391,6 +432,148 @@ function uxNbBuildNachbestellungEntryIdSet_(nbSheet) {
     if (eid) set[eid] = true;
   }
   return set;
+}
+
+function uxNbBuildDashboardEntryIdSet_(dashboard) {
+  var set = {};
+  if (!dashboard) return set;
+  var layout = getDashboardLayout(dashboard);
+  var end = dashboardDataEndRow(dashboard, layout);
+  if (end < layout.dataStartRow) return set;
+  var eids = dashboard.getRange(
+    layout.dataStartRow,
+    layout.cols.entryId,
+    end - layout.dataStartRow + 1,
+    1
+  ).getValues();
+  for (var i = 0; i < eids.length; i++) {
+    var eid = String(eids[i][0] || "").trim();
+    if (eid) set[eid] = true;
+  }
+  return set;
+}
+
+function uxNbDashPushRow_(sheet, row) {
+  if (!sheet || !row || row < 2) return { ok: false, fehler: "Ungültige Zeile." };
+  var name = sheet.getName();
+  if (UX_NB_DASH_INPUT_SHEETS.indexOf(name) === -1) {
+    return { ok: false, fehler: "Nur Mechanik, Q-Check und Lack." };
+  }
+  var ss = getMainSS();
+  if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+  var dashboard = ss.getSheetByName("Dashboard");
+  var nbSheet = ss.getSheetByName("Nachbestellung");
+  if (!dashboard || !nbSheet) return { ok: false, fehler: "Dashboard oder Nachbestellung fehlt." };
+  var rowData = sheet.getRange(row, 1, 1, 6).getValues()[0];
+  var key = String(rowData[1] || "").trim();
+  if (!key) return { ok: false, fehler: "Keine Stock-ID." };
+  if (uxNbNormEtDiagnose_(rowData[2]) !== "ja") return { ok: false, fehler: "ET/Diagnose ist nicht Ja." };
+  if (!isInputRowComplete(rowData)) return { ok: false, fehler: "Zeile ist nicht komplett." };
+  var entryId = String(sheet.getRange(row, getEntryIdCol(sheet)).getValue() || "").trim();
+  if (!entryId) return { ok: false, fehler: "Keine Entry-ID." };
+  if (isEntryIdFromInputExit(entryId)) return { ok: false, fehler: "Exit-Zeile gehört nicht ins Dashboard." };
+  if (isInputDatumBlank(rowData[0])) {
+    var now = new Date();
+    sheet.getRange(row, 1).setValue(now);
+    rowData[0] = now;
+  }
+  var code = INPUT_SHEETS[name] || "";
+  var tagesMap = getTageslisteMap();
+  processRow(rowData, key, dashboard, nbSheet, tagesMap, code, false, entryId);
+  applyNachbestellungState(nbSheet, key, rowData, entryId);
+  return { ok: true, entryId: entryId, stockId: key };
+}
+
+function uxNbDashMissingListe() {
+  try {
+    var ss = getMainSS();
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar.", missing: [], count: 0 };
+    var dashboard = ss.getSheetByName("Dashboard");
+    if (!dashboard) return { ok: false, fehler: "Tabellenblatt Dashboard fehlt.", missing: [], count: 0 };
+    var dashIds = uxNbBuildDashboardEntryIdSet_(dashboard);
+    var missing = [];
+    for (var k = 0; k < UX_NB_DASH_INPUT_SHEETS.length; k++) {
+      var sheetName = UX_NB_DASH_INPUT_SHEETS[k];
+      var sheet = ss.getSheetByName(sheetName);
+      if (!sheet) continue;
+      var start = inputSheetArchiveDataStart(sheetName);
+      var end = sheet.getLastRow();
+      if (end < start) continue;
+      var eidCol = getEntryIdCol(sheet);
+      var dataBlock = sheet.getRange(start, 1, end, 6).getValues();
+      var eidBlock = sheet.getRange(start, eidCol, end, eidCol).getValues();
+      for (var r = 0; r < dataBlock.length; r++) {
+        var rowData = dataBlock[r];
+        var stockId = String(rowData[1] || "").trim();
+        if (!stockId) continue;
+        if (uxNbNormEtDiagnose_(rowData[2]) !== "ja") continue;
+        if (!isInputRowComplete(rowData)) continue;
+        var entryId = String(eidBlock[r][0] || "").trim();
+        if (!entryId) {
+          missing.push({
+            sheetName: sheetName,
+            row: start + r,
+            stockId: stockId,
+            entryId: "",
+            herkunft: INPUT_SHEETS[sheetName] || ""
+          });
+          continue;
+        }
+        if (isEntryIdFromInputExit(entryId)) continue;
+        if (!dashIds[entryId]) {
+          missing.push({
+            sheetName: sheetName,
+            row: start + r,
+            stockId: stockId,
+            entryId: entryId,
+            herkunft: INPUT_SHEETS[sheetName] || ""
+          });
+        }
+      }
+    }
+    missing.sort(function (a, b) {
+      if (a.sheetName !== b.sheetName) return a.sheetName < b.sheetName ? -1 : 1;
+      return a.row - b.row;
+    });
+    return { ok: true, missing: missing, count: missing.length };
+  } catch (e) {
+    return { ok: false, fehler: String(e), missing: [], count: 0 };
+  }
+}
+
+function uxNbDashNachtragen(sheetName, row, entryId) {
+  var eid = String(entryId || "").trim();
+  if (!eid) return { ok: false, fehler: "Keine Entry-ID." };
+  var done = uxNbDashNachtragenDoneRead_();
+  if (done.indexOf(eid) !== -1) return { ok: false, fehler: "Bereits angestoßen." };
+  var ss = getMainSS();
+  if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+  var sheet = ss.getSheetByName(String(sheetName || ""));
+  if (!sheet) return { ok: false, fehler: "Input-Blatt nicht gefunden." };
+  var r = parseInt(row, 10);
+  if (!r || r < 2) return { ok: false, fehler: "Ungültige Zeile." };
+  var push = uxNbDashPushRow_(sheet, r);
+  if (!push.ok) return push;
+  try {
+    enqueueInputEdit(sheet, sheet.getName(), r);
+  } catch (e1) {}
+  done.push(eid);
+  uxNbDashNachtragenDoneWrite_(done);
+  try {
+    var cache = uxNbHubCacheRead_();
+    if (cache) {
+      cache.dashNachtragenDone = done;
+      uxNbHubCacheWrite_(cache);
+    }
+  } catch (e2) {}
+  return { ok: true, entryId: eid };
+}
+
+function uxNbDashSyncStatusNow() {
+  if (typeof syncDashboardStatusFromNachbestellung !== "function") {
+    return { ok: false, fehler: "Sync-Funktion fehlt im Script." };
+  }
+  return syncDashboardStatusFromNachbestellung();
 }
 
 function uxNbNormEtDiagnose_(v) {

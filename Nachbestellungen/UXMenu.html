@@ -32,6 +32,10 @@
           NB Sync
           <span class="ux-nav-badge" id="navSyncBadge">0</span>
         </button>
+        <button type="button" class="ux-nav-item" id="navDash" data-view="dash">
+          Dashboard Sync
+          <span class="ux-nav-badge" id="navDashBadge">0</span>
+        </button>
       </aside>
       <div class="ux-main">
         <header class="ux-topbar">
@@ -93,6 +97,13 @@
               </span>
               <span class="ux-nav-badge" id="tileSyncBadge">0</span>
             </button>
+            <button type="button" class="ux-nav-tile" id="tileDash">
+              <span class="ux-nav-tile-body">
+                <span class="ux-nav-tile-title">Dashboard Sync</span>
+                <span class="ux-nav-tile-sub">Mechanik, Q-Check, Lack fehlen im Dashboard? Hier rüber schieben</span>
+              </span>
+              <span class="ux-nav-badge" id="tileDashBadge">0</span>
+            </button>
             </div>
           </section>
           <section class="ux-view" id="viewSync">
@@ -107,6 +118,22 @@
                 <span class="ux-loading-text" id="syncListLoadingText">Check läuft…</span>
               </div>
               <div class="ux-list" id="syncList"></div>
+            </div>
+          </section>
+          <section class="ux-view" id="viewDash">
+            <button type="button" class="ux-btn-back" id="btnBackHomeDash">← zurück</button>
+            <div class="ux-toolbar">
+              <button type="button" class="ux-btn-copy" id="btnDashRefresh">Nochmal checken</button>
+              <button type="button" class="ux-btn-primary" id="btnDashStatusSync">Status jetzt syncen</button>
+            </div>
+            <p class="ux-dash-sync-note">Cost Gate, Status und Statusänderung werden alle 5 Min. aus Nachbestellung ins Dashboard gezogen.</p>
+            <div class="ux-status" id="dashStatus"></div>
+            <div class="ux-list-wrap" id="dashListWrap">
+              <div class="ux-loading" id="dashListLoading" hidden>
+                <div class="ux-spinner"></div>
+                <span class="ux-loading-text" id="dashListLoadingText">Check läuft…</span>
+              </div>
+              <div class="ux-list" id="dashList"></div>
             </div>
           </section>
           <section class="ux-view" id="viewDeleted">
@@ -129,16 +156,20 @@
       var hubStats = null;
       var delBufferArr = [];
       var syncMissingArr = [];
+      var dashMissingArr = [];
       var nachtragenDoneSet = {};
+      var dashNachtragenDoneSet = {};
       var cacheReloadBusy = false;
       var cacheProgressTimer = null;
       var cacheProgressValue = 0;
       var CACHE_RING_C = 2 * Math.PI * 15.5;
 
-      var VIEW_KEYS = ["home", "deleted", "sync"];
+      var VIEW_KEYS = ["home", "deleted", "sync", "dash"];
       var NACHT_TOOLTIP =
         'Klick = ET/Diagnose kurz auf "Nein", dann wieder "Ja". ' +
         "Damit springt der Prozess an und die Zeile soll in Nachbestellung landen – Rest macht das Sheet. Nur 1x klickbar.";
+      var DASH_NACHT_TOOLTIP =
+        "Klick = Zeile per processRow ins Dashboard schieben (wie Queue). Cost Gate, Status und Statusänderung kommen aus Nachbestellung. Nur 1x klickbar.";
 
       var VIEW_META = {
         home: {
@@ -152,18 +183,24 @@
         sync: {
           title: "NB Sync · Inputs",
           sub: "ET/Diagnose = Ja, aber in Nachbestellung fehlt's noch"
+        },
+        dash: {
+          title: "Dashboard Sync",
+          sub: "Mechanik, Q-Check, Lack – fehlen im Dashboard, obwohl sie ready sind"
         }
       };
 
       var TRIGGER_LABELS = {
         cleanupNachbestellungStatusDate: "Status-Datum aufräumen (minütlich)",
         archiveFertiggestelltRows: "Fertig-Archiv (täglich)",
-        processQueue: "Queue abarbeiten"
+        processQueue: "Queue abarbeiten",
+        syncDashboardStatusSyncTrigger: "Dashboard Status-Sync (5 Min.)"
       };
       var ALL_TRIGGERS = [
         "cleanupNachbestellungStatusDate",
         "archiveFertiggestelltRows",
-        "processQueue"
+        "processQueue",
+        "syncDashboardStatusSyncTrigger"
       ];
       var SHEET_COUNT_ORDER = [
         "Input Mechanik",
@@ -224,6 +261,11 @@
       function setSyncBadges(n) {
         document.getElementById("navSyncBadge").textContent = String(n);
         document.getElementById("tileSyncBadge").textContent = String(n);
+      }
+
+      function setDashBadges(n) {
+        document.getElementById("navDashBadge").textContent = String(n);
+        document.getElementById("tileDashBadge").textContent = String(n);
       }
 
       function showView(name) {
@@ -297,10 +339,18 @@
         }
       }
 
+      function buildDashNachtragenSet(arr) {
+        dashNachtragenDoneSet = {};
+        for (var i = 0; i < (arr || []).length; i++) {
+          dashNachtragenDoneSet[String(arr[i])] = true;
+        }
+      }
+
       function applyHubData(data) {
         if (!data) return;
         hubCacheData = data;
         buildNachtragenSet(data.nachtragenDone || []);
+        buildDashNachtragenSet(data.dashNachtragenDone || []);
         setCacheLabel(data.loadedAt);
         if (data.stats) {
           hubStats = data.stats;
@@ -316,6 +366,13 @@
             : "Alles clean – nix fehlt in NB."
         );
         renderSyncList(data.syncMissing || []);
+        var nd = data.dashSyncCount != null ? data.dashSyncCount : (data.dashMissing || []).length;
+        setDashStatus(
+          nd
+            ? nd + " fehlen noch im Dashboard."
+            : "Alles im Dashboard – nix fehlt."
+        );
+        renderDashList(data.dashMissing || []);
       }
 
       function setCacheLoading(on) {
@@ -349,6 +406,7 @@
             setCacheLoading(false);
             setListLoading(false);
             setSyncLoading(false);
+            setDashLoading(false);
             if (res && res.ok && res.data) {
               applyHubData(res.data);
             }
@@ -357,6 +415,7 @@
             setCacheLoading(false);
             setListLoading(false);
             setSyncLoading(false);
+            setDashLoading(false);
             if (hubCacheData && hubCacheData.loadedAt) setCacheLabel(hubCacheData.loadedAt);
             else setCacheLabel(null);
             setSyncStatus("Cache kaputt: " + err);
@@ -586,7 +645,21 @@
       function refreshAll() {
         setListLoading(true, "Lad…");
         setSyncLoading(true, "Lad…");
+        setDashLoading(true, "Lad…");
         loadHubCache(false);
+      }
+
+      function setDashLoading(on, text) {
+        var loading = document.getElementById("dashListLoading");
+        var list = document.getElementById("dashList");
+        document.getElementById("dashListLoadingText").textContent = text || "Check läuft…";
+        loading.hidden = !on;
+        list.style.visibility = on ? "hidden" : "visible";
+        list.style.pointerEvents = on ? "none" : "";
+      }
+
+      function setDashStatus(t) {
+        document.getElementById("dashStatus").textContent = t || "";
       }
 
       function setSyncLoading(on, text) {
@@ -750,6 +823,135 @@
         }
       }
 
+      function renderDashList(arr) {
+        dashMissingArr = arr || [];
+        setDashBadges(dashMissingArr.length);
+        var el = document.getElementById("dashList");
+        el.innerHTML = "";
+        if (!dashMissingArr.length) {
+          el.innerHTML =
+            '<div class="ux-empty">Alles im Dashboard – nix fehlt.</div>';
+          return;
+        }
+        for (var i = 0; i < dashMissingArr.length; i++) {
+          (function (item) {
+            var card = document.createElement("div");
+            card.className = "ux-card";
+            var top = document.createElement("div");
+            top.className = "ux-card-top";
+            top.innerHTML =
+              '<div class="ux-kv"><label>Input-Blatt</label><span>' +
+              escapeHtml(item.sheetName || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Zeile</label><span>' +
+              escapeHtml(String(item.row != null ? item.row : "—")) +
+              "</span></div>" +
+              '<div class="ux-kv"><label>Herkunft</label><span>' +
+              escapeHtml(item.herkunft || "—") +
+              "</span></div>";
+            var chips = document.createElement("div");
+            chips.className = "ux-copy-row";
+            chips.innerHTML =
+              '<div class="ux-id-chip"><label>Stock-ID</label>' +
+              escapeHtml(item.stockId || "—") +
+              "</div>" +
+              '<div class="ux-id-chip"><label>Entry-ID</label>' +
+              escapeHtml(item.entryId || "—") +
+              "</div>";
+            var actions = document.createElement("div");
+            actions.className = "ux-copy-row";
+            var bStock = document.createElement("button");
+            bStock.type = "button";
+            bStock.className = "ux-btn-copy";
+            bStock.textContent = "Stock-ID copy";
+            bStock.onclick = function () {
+              copyText(item.stockId, bStock, "Copied");
+            };
+            var bEid = document.createElement("button");
+            bEid.type = "button";
+            bEid.className = "ux-btn-copy";
+            bEid.textContent = "Entry-ID copy";
+            bEid.onclick = function () {
+              copyText(item.entryId, bEid, "Copied");
+            };
+            var bDash = document.createElement("button");
+            bDash.type = "button";
+            bDash.className = "ux-btn-primary";
+            var eidKey = String(item.entryId || "").trim();
+            var locked = !eidKey || dashNachtragenDoneSet[eidKey];
+            if (locked) {
+              bDash.disabled = true;
+              bDash.className = "ux-btn-primary ux-btn-locked";
+              bDash.textContent = eidKey ? "Läuft schon" : "Ins Dashboard";
+            } else {
+              bDash.textContent = "Ins Dashboard";
+              bDash.onclick = function () {
+                if (bDash.disabled) return;
+                bDash.disabled = true;
+                bDash.textContent = "Einen Moment…";
+                bDash.className = "ux-btn-primary ux-btn-locked";
+                google.script.run
+                  .withSuccessHandler(function (res) {
+                    if (res && res.ok) {
+                      dashNachtragenDoneSet[eidKey] = true;
+                      if (hubCacheData) {
+                        if (!hubCacheData.dashNachtragenDone) hubCacheData.dashNachtragenDone = [];
+                        if (hubCacheData.dashNachtragenDone.indexOf(eidKey) === -1) {
+                          hubCacheData.dashNachtragenDone.push(eidKey);
+                        }
+                      }
+                      bDash.textContent = "Läuft schon";
+                      setDashStatus("Im Dashboard – Cache neu ziehen zum Gegencheck.");
+                      loadHubCache(true);
+                    } else {
+                      bDash.disabled = false;
+                      bDash.className = "ux-btn-primary";
+                      bDash.textContent = "Ins Dashboard";
+                      setDashStatus((res && res.fehler) || "Hat nicht geklappt.");
+                    }
+                  })
+                  .withFailureHandler(function (err) {
+                    bDash.disabled = false;
+                    bDash.className = "ux-btn-primary";
+                    bDash.textContent = "Ins Dashboard";
+                    setDashStatus("Fehler: " + err);
+                  })
+                  .uxNbDashNachtragen(item.sheetName, item.row, item.entryId);
+              };
+            }
+            var tipWrap = document.createElement("span");
+            tipWrap.className = "ux-tip-wrap";
+            tipWrap.setAttribute("data-tip", DASH_NACHT_TOOLTIP);
+            tipWrap.appendChild(bDash);
+            actions.appendChild(bStock);
+            actions.appendChild(bEid);
+            actions.appendChild(tipWrap);
+            card.appendChild(top);
+            card.appendChild(chips);
+            card.appendChild(actions);
+            el.appendChild(card);
+          })(dashMissingArr[i]);
+        }
+      }
+
+      function loadDashList(keepSpinner) {
+        if (!keepSpinner) setDashLoading(true, "Check läuft…");
+        google.script.run
+          .withSuccessHandler(function (res) {
+            setDashLoading(false);
+            if (res && res.ok && res.data) {
+              applyHubData(res.data);
+            } else {
+              setDashStatus((res && res.fehler) || "Check hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            setDashLoading(false);
+            setDashStatus("Fehler: " + err);
+          })
+          .uxNbHubCacheNeuLaden();
+      }
+
       function loadSyncList(keepSpinner) {
         if (!keepSpinner) setSyncLoading(true, "Check läuft…");
         google.script.run
@@ -777,11 +979,17 @@
       document.getElementById("navSync").onclick = function () {
         showView("sync");
       };
+      document.getElementById("navDash").onclick = function () {
+        showView("dash");
+      };
       document.getElementById("tileDeleted").onclick = function () {
         showView("deleted");
       };
       document.getElementById("tileSync").onclick = function () {
         showView("sync");
+      };
+      document.getElementById("tileDash").onclick = function () {
+        showView("dash");
       };
       document.getElementById("btnBackHome").onclick = function () {
         showView("home");
@@ -789,13 +997,45 @@
       document.getElementById("btnBackHomeSync").onclick = function () {
         showView("home");
       };
+      document.getElementById("btnBackHomeDash").onclick = function () {
+        showView("home");
+      };
       document.getElementById("btnSyncRefresh").onclick = function () {
         loadSyncList();
+      };
+      document.getElementById("btnDashRefresh").onclick = function () {
+        loadDashList();
+      };
+      document.getElementById("btnDashStatusSync").onclick = function () {
+        var btn = document.getElementById("btnDashStatusSync");
+        btn.disabled = true;
+        btn.textContent = "Sync läuft…";
+        google.script.run
+          .withSuccessHandler(function (res) {
+            btn.disabled = false;
+            btn.textContent = "Status jetzt syncen";
+            if (res && res.ok) {
+              setDashStatus(
+                (res.updated || 0) > 0
+                  ? res.updated + " Dashboard-Zeilen aktualisiert."
+                  : "Schon aktuell – nix zu ändern."
+              );
+            } else {
+              setDashStatus((res && res.fehler) || "Sync hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            btn.textContent = "Status jetzt syncen";
+            setDashStatus("Fehler: " + err);
+          })
+          .uxNbDashSyncStatusNow();
       };
       document.getElementById("btnCacheReload").onclick = function () {
         if (cacheReloadBusy) return;
         setListLoading(true, "Cache neu ziehen…");
         setSyncLoading(true, "Cache neu ziehen…");
+        setDashLoading(true, "Cache neu ziehen…");
         loadHubCache(true);
       };
       document.getElementById("btnQueueClean").onclick = function () {
