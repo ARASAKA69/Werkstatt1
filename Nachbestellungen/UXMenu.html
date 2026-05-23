@@ -4,11 +4,17 @@
     <base target="_top" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      <?!= include('UXStyles'); ?>
-    </style>
+    <template id="uxStylesSource"><?!= include('UXStyles'); ?></template>
+    <style id="uxStyles"></style>
+    <script>
+      (function () {
+        var src = document.getElementById("uxStylesSource");
+        var out = document.getElementById("uxStyles");
+        if (src && out) out.textContent = src.content.textContent;
+      })();
+    </script>
   </head>
-  <body>
+  <body data-initial-view="<?!= initialView || 'home' ?>">
     <div class="ux-shell">
       <aside class="ux-nav">
         <div class="ux-brand">
@@ -64,6 +70,15 @@
               <p class="ux-panel-title">Automatik / Trigger</p>
               <ul class="ux-trigger-list" id="triggerList"></ul>
             </div>
+            <div class="ux-panel ux-queue-panel">
+              <p class="ux-panel-title">Queue-Log aufräumen</p>
+              <p class="ux-queue-desc">EventQueue · behält die 500 neuesten Zeilen (älteste werden gelöscht).</p>
+              <div class="ux-queue-stats" id="queueCleanStats">—</div>
+              <div class="ux-queue-actions">
+                <button type="button" class="ux-btn-primary" id="btnQueueClean">Queue cleanen</button>
+                <span class="ux-queue-status" id="queueCleanStatus"></span>
+              </div>
+            </div>
             <button type="button" class="ux-nav-tile" id="tileDeleted">
               <span class="ux-nav-tile-body">
                 <span class="ux-nav-tile-title">Gelöschte Einträge</span>
@@ -109,7 +124,7 @@
       </div>
     </div>
     <script>
-      var initialView = <?!= JSON.stringify(initialView || 'home') ?>;
+      var initialView = document.body.getAttribute("data-initial-view") || "home";
       var hubCacheData = null;
       var hubStats = null;
       var delBufferArr = [];
@@ -385,6 +400,54 @@
         }
       }
 
+      function renderQueueCleanPanel(info) {
+        var statsEl = document.getElementById("queueCleanStats");
+        var btn = document.getElementById("btnQueueClean");
+        if (!info) {
+          statsEl.textContent = "Noch kein Stand – bitte Cache neu ziehen.";
+          if (btn) btn.disabled = true;
+          return;
+        }
+        if (!info.ok) {
+          statsEl.textContent = info.fehler || "EventQueue-Infos nicht verfügbar.";
+          if (btn) btn.disabled = true;
+          return;
+        }
+        if (btn) btn.disabled = false;
+        if (info.dataRows <= 0) {
+          statsEl.textContent = "EventQueue ist leer.";
+          if (btn) btn.disabled = true;
+          return;
+        }
+        if (info.removable <= 0) {
+          statsEl.textContent =
+            info.dataRows +
+            " Zeilen · alles innerhalb der letzten " +
+            (info.keepMax || 500) +
+            " (ab heute) · nichts zu löschen.";
+          if (btn) btn.disabled = true;
+          return;
+        }
+        statsEl.textContent =
+          info.dataRows +
+          " Zeilen · " +
+          info.removable +
+          " alte raus · " +
+          Math.min(info.keepMax || 500, info.kept || info.keepMax || 500) +
+          " bleiben";
+        if (btn) btn.disabled = false;
+      }
+
+      function setQueueCleanStatus(text) {
+        document.getElementById("queueCleanStatus").textContent = text || "";
+      }
+
+      function setQueueCleanBusy(on) {
+        var btn = document.getElementById("btnQueueClean");
+        btn.disabled = on;
+        btn.textContent = on ? "Räum auf…" : "Queue cleanen";
+      }
+
       function renderStats(stats) {
         hubStats = stats;
         renderSheetCounts(stats.sheetCounts || {});
@@ -394,6 +457,7 @@
           new Date().toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" });
         setDelBadges(stats.delBufferCount);
         renderTriggers(stats.triggers);
+        renderQueueCleanPanel(stats.eventQueue || null);
       }
 
       function setListLoading(on, text) {
@@ -733,6 +797,54 @@
         setListLoading(true, "Cache neu ziehen…");
         setSyncLoading(true, "Cache neu ziehen…");
         loadHubCache(true);
+      };
+      document.getElementById("btnQueueClean").onclick = function () {
+        var info = hubStats && hubStats.eventQueue ? hubStats.eventQueue : null;
+        if (!info || !info.ok || info.removable <= 0) return;
+        if (
+          !confirm(
+            info.removable +
+              " alte EventQueue-Zeilen löschen? Es bleiben max. " +
+              (info.keepMax || 500) +
+              " Zeilen ab heute rückwärts."
+          )
+        ) {
+          return;
+        }
+        setQueueCleanBusy(true);
+        setQueueCleanStatus("");
+        google.script.run
+          .withSuccessHandler(function (res) {
+            setQueueCleanBusy(false);
+            if (res && res.ok) {
+              if (res.removed > 0) {
+                setQueueCleanStatus(
+                  res.removed + " Zeilen gelöscht · " + (res.kept || 0) + " bleiben."
+                );
+              } else {
+                setQueueCleanStatus("Schon clean – nix zum Löschen.");
+              }
+              if (hubStats) {
+                hubStats.eventQueue = {
+                  ok: true,
+                  sheetName: "EventQueue",
+                  keepMax: res.keepMax || 500,
+                  dataRows: res.kept || 0,
+                  kept: res.kept || 0,
+                  removable: 0
+                };
+                renderQueueCleanPanel(hubStats.eventQueue);
+              }
+              loadHubCache(true);
+            } else {
+              setQueueCleanStatus((res && res.fehler) || "Aufräumen hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            setQueueCleanBusy(false);
+            setQueueCleanStatus("Fehler: " + err);
+          })
+          .uxNbEventQueueAufraeumen();
       };
 
       function resizeDialogToViewport() {

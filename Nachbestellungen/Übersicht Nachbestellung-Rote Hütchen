@@ -1,61 +1,77 @@
-
-const MAIN_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
-const SOURCE_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
-const ZIELSHEET_ID = "18mx0dJupfas4w8xuTvNdcX3TrGjx0idYfLhSBt7DHYY";
-const ZIELSHEET_NAME = "Repair Status";
-
-const INPUT_SHEETS = {
-  "Input Q-Check": "QC",
-  "Input Mechanik": "ME",
-  "Input Lack": "LA",
-  "Input Exit": "EX"
-};
-const INPUT_SHEET_NAMES = Object.keys(INPUT_SHEETS);
-
-const INPUT_ARCHIVE_DATA_START_ROW = {
-  "Input Q-Check": 4,
-  "Input Exit": 3,
-  "Input Mechanik": 3,
-  "Input Lack": 3
-};
-
-const ENTRYID_COL = 27;
-const DASHBOARD_ENTRYID_COL = 15;
-const NB_ENTRYID_COL = 15;
-
-const ENTRYID_HEADER_PATTERNS = ["entryid", "entry id", "entry_id"];
-const ENTRYID_HEADER_SEARCH_ROWS = 5;
-const _entryIdColCache = {};
-const _dashLayoutBySheetId = {};
-const _nbLayoutBySheetId = {};
-
-const NB_HEADER_ALIASES = {
-  stockId: ["stock id"],
-  costGate: ["cost gate", "cost calc"],
-  status: ["status"],
-  statusAenderung: ["statusänderung", "statusanderung"],
-  entryId: ["entryid", "entry id", "entry_id"]
-};
-const NB_HEADER_KEY_LIST = Object.keys(NB_HEADER_ALIASES);
-
-const DASHBOARD_HEADER_ALIASES = {
-  datum: ["datum"],
-  stockId: ["stock id"],
-  letzerTagesliste: ["letzer tageslisteneintrag", "letzter tageslisteneintrag"],
-  tageSeitLetztem: ["tage seit letzten eintrag"],
-  eintraege: ["einträge", "eintrage"],
-  herkunft: ["herkunft"],
-  etDiagnose: ["et/diagnose", "et / diagnose"],
-  grund: ["grund"],
-  tageSeitInput: ["tage seit input"],
-  costGate: ["cost gate"],
-  status: ["status"],
-  statusAenderung: ["statusänderung", "statusanderung"],
-  archivieren: ["archivieren"],
-  bemerkung: ["bemerkung/verlauf", "bemerkung / verlauf"],
-  entryId: ["entryid", "entry id", "entry_id"]
-};
-const DASHBOARD_HEADER_KEY_LIST = Object.keys(DASHBOARD_HEADER_ALIASES);
+var NB_APP = NB_APP || {};
+if (!NB_APP.initialized) {
+  NB_APP.initialized = true;
+  NB_APP.MAIN_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
+  NB_APP.SOURCE_ID = "1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo";
+  NB_APP.ZIELSHEET_ID = "18mx0dJupfas4w8xuTvNdcX3TrGjx0idYfLhSBt7DHYY";
+  NB_APP.ZIELSHEET_NAME = "Repair Status";
+  NB_APP.INPUT_SHEETS = {
+    "Input Q-Check": "QC",
+    "Input Mechanik": "ME",
+    "Input Lack": "LA",
+    "Input Exit": "EX"
+  };
+  NB_APP.INPUT_SHEET_NAMES = Object.keys(NB_APP.INPUT_SHEETS);
+  NB_APP.INPUT_ARCHIVE_DATA_START_ROW = {
+    "Input Q-Check": 4,
+    "Input Exit": 3,
+    "Input Mechanik": 3,
+    "Input Lack": 3
+  };
+  NB_APP.ENTRYID_COL = 27;
+  NB_APP.DASHBOARD_ENTRYID_COL = 15;
+  NB_APP.NB_ENTRYID_COL = 15;
+  NB_APP.ENTRYID_HEADER_PATTERNS = ["entryid", "entry id", "entry_id"];
+  NB_APP.ENTRYID_HEADER_SEARCH_ROWS = 5;
+  NB_APP._entryIdColCache = {};
+  NB_APP._dashLayoutBySheetId = {};
+  NB_APP._nbLayoutBySheetId = {};
+  NB_APP.NB_HEADER_ALIASES = {
+    stockId: ["stock id"],
+    costGate: ["cost gate", "cost calc"],
+    status: ["status"],
+    statusAenderung: ["statusänderung", "statusanderung"],
+    entryId: ["entryid", "entry id", "entry_id"]
+  };
+  NB_APP.NB_HEADER_KEY_LIST = Object.keys(NB_APP.NB_HEADER_ALIASES);
+  NB_APP.DASHBOARD_HEADER_ALIASES = {
+    datum: ["datum"],
+    stockId: ["stock id"],
+    letzerTagesliste: ["letzer tageslisteneintrag", "letzter tageslisteneintrag"],
+    tageSeitLetztem: ["tage seit letzten eintrag"],
+    eintraege: ["einträge", "eintrage"],
+    herkunft: ["herkunft"],
+    etDiagnose: ["et/diagnose", "et / diagnose"],
+    grund: ["grund"],
+    tageSeitInput: ["tage seit input"],
+    costGate: ["cost gate"],
+    status: ["status"],
+    statusAenderung: ["statusänderung", "statusanderung"],
+    archivieren: ["archivieren"],
+    bemerkung: ["bemerkung/verlauf", "bemerkung / verlauf"],
+    entryId: ["entryid", "entry id", "entry_id"]
+  };
+  NB_APP.DASHBOARD_HEADER_KEY_LIST = Object.keys(NB_APP.DASHBOARD_HEADER_ALIASES);
+}
+var MAIN_ID = NB_APP.MAIN_ID;
+var SOURCE_ID = NB_APP.SOURCE_ID;
+var ZIELSHEET_ID = NB_APP.ZIELSHEET_ID;
+var ZIELSHEET_NAME = NB_APP.ZIELSHEET_NAME;
+var INPUT_SHEETS = NB_APP.INPUT_SHEETS;
+var INPUT_SHEET_NAMES = NB_APP.INPUT_SHEET_NAMES;
+var INPUT_ARCHIVE_DATA_START_ROW = NB_APP.INPUT_ARCHIVE_DATA_START_ROW;
+var ENTRYID_COL = NB_APP.ENTRYID_COL;
+var DASHBOARD_ENTRYID_COL = NB_APP.DASHBOARD_ENTRYID_COL;
+var NB_ENTRYID_COL = NB_APP.NB_ENTRYID_COL;
+var ENTRYID_HEADER_PATTERNS = NB_APP.ENTRYID_HEADER_PATTERNS;
+var ENTRYID_HEADER_SEARCH_ROWS = NB_APP.ENTRYID_HEADER_SEARCH_ROWS;
+var _entryIdColCache = NB_APP._entryIdColCache;
+var _dashLayoutBySheetId = NB_APP._dashLayoutBySheetId;
+var _nbLayoutBySheetId = NB_APP._nbLayoutBySheetId;
+var NB_HEADER_ALIASES = NB_APP.NB_HEADER_ALIASES;
+var NB_HEADER_KEY_LIST = NB_APP.NB_HEADER_KEY_LIST;
+var DASHBOARD_HEADER_ALIASES = NB_APP.DASHBOARD_HEADER_ALIASES;
+var DASHBOARD_HEADER_KEY_LIST = NB_APP.DASHBOARD_HEADER_KEY_LIST;
 
 function defaultEntryIdCol(sheetName) {
   if (sheetName === "Dashboard") return DASHBOARD_ENTRYID_COL;
@@ -344,11 +360,11 @@ function isStockIdInTagesliste(tages) {
   return !!(tages && tages.count > 0);
 }
 
-const LOCK_WAIT_MS = 30000;
-const ONEDIT_LOCK_WAIT_MS = 5000;
-const QUEUE_LOCK_WAIT_MS = 15000;
-const CLEANUP_LOCK_WAIT_MS = 5000;
-const MAX_EVENTS_PER_RUN = 3;
+var LOCK_WAIT_MS = 30000;
+var ONEDIT_LOCK_WAIT_MS = 5000;
+var QUEUE_LOCK_WAIT_MS = 15000;
+var CLEANUP_LOCK_WAIT_MS = 5000;
+var MAX_EVENTS_PER_RUN = 3;
 
 
 function getMainSS() {
@@ -369,12 +385,12 @@ function withLock(fn, waitMs) {
   try {
     try { acquired = lock.tryLock(waitMs || LOCK_WAIT_MS); } catch (e) { acquired = false; }
     if (!acquired) {
-      try { logDebug("withLock: could not acquire script lock within " + (waitMs || LOCK_WAIT_MS) + "ms"); } catch (e2) {}
+      try { Logger.log("withLock: could not acquire script lock within " + (waitMs || LOCK_WAIT_MS) + "ms"); } catch (e2) {}
       return null;
     }
     return fn();
   } catch (err) {
-    try { logDebug("withLock error: " + err); } catch (e3) {}
+    try { Logger.log("withLock error: " + err); } catch (e3) {}
     return null;
   } finally {
     if (acquired) {
@@ -665,7 +681,7 @@ function ensureEntryIdOnInputRow(sheet, row) {
   return ensureEntryIdAndDate(sheet, row);
 }
 
-const BACKFILL_TAIL_ROWS = 50;
+var BACKFILL_TAIL_ROWS = 50;
 
 function backfillMissingEntryIds(maxRows) {
   const ss = getMainSS();
@@ -1758,7 +1774,7 @@ function archiveCopyFormattedRowToBottom(sheet, srcRow, archive, colCount) {
   archiveSheetRowRange_(sheet, srcRow, lc).copyTo(archiveSheetRowRange_(archive, destRow, lc));
 }
 
-const PENDING_TAGESLISTE_ARCHIVE_PROP = "pendingTageslisteArchives";
+var PENDING_TAGESLISTE_ARCHIVE_PROP = "pendingTageslisteArchives";
 
 function enqueueTageslisteArchive_(stockId) {
   const id = String(stockId || "").trim().toUpperCase();
@@ -2343,4 +2359,23 @@ function installCleanupNachbestellungStatusDateTrigger() {
     .timeBased()
     .everyMinutes(1)
     .create();
+}
+
+function onOpen() {
+  try {
+    if (typeof uxBaseMenueEinrichten === "function") {
+      uxBaseMenueEinrichten();
+      return;
+    }
+  } catch (e) {}
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu("Nachbestellung")
+      .addItem("Control Center...", "uxBaseDialogControlCenterOeffnen")
+      .addToUi();
+  } catch (e2) {
+    try {
+      Logger.log("onOpen: " + e2);
+    } catch (e3) {}
+  }
 }

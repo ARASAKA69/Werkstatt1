@@ -1,17 +1,21 @@
 var UX_NB_DELBUF_KEY = "ux_nb_delbuf_v1";
 var UX_NB_DELBUF_MAX = 100;
-var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v1";
+var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v2";
 var UX_NB_NACHT_KEY = "ux_nb_nachtragen_done_v1";
+var UX_NB_EVENTQUEUE_SHEET = "EventQueue";
+var UX_NB_EVENTQUEUE_KEEP = 500;
 
 function uxBaseMenueEinrichten() {
-  SpreadsheetApp.getUi()
-    .createMenu("Nachbestellung")
-    .addItem("Control Center…", "uxBaseDialogControlCenterOeffnen")
-    .addToUi();
-}
-
-function onOpen() {
-  uxBaseMenueEinrichten();
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu("Nachbestellung")
+      .addItem("Control Center...", "uxBaseDialogControlCenterOeffnen")
+      .addToUi();
+  } catch (e) {
+    try {
+      Logger.log("uxBaseMenueEinrichten: " + e);
+    } catch (e2) {}
+  }
 }
 
 function include(filename) {
@@ -152,7 +156,7 @@ function uxNbCountFilledDataRows_(sheet, dataStartRow) {
   var end = sheet.getLastRow();
   if (end < start) return 0;
   var lastCol = Math.max(1, sheet.getLastColumn());
-  var values = sheet.getRange(start, 1, end - start + 1, lastCol).getValues();
+  var values = sheet.getRange(start, 1, end, lastCol).getValues();
   var count = 0;
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
@@ -164,6 +168,121 @@ function uxNbCountFilledDataRows_(sheet, dataStartRow) {
     }
   }
   return count;
+}
+
+function uxNbEventQueuePlan_(queue, keepMax) {
+  var plan = {
+    ok: false,
+    sheetName: UX_NB_EVENTQUEUE_SHEET,
+    keepMax: keepMax,
+    dataRows: 0,
+    kept: 0,
+    removable: 0,
+    firstKeepRow: 2
+  };
+  if (!queue) return plan;
+  var last = queue.getLastRow();
+  if (last < 2) {
+    plan.ok = true;
+    return plan;
+  }
+  var dataRows = last - 1;
+  plan.dataRows = dataRows;
+  if (dataRows <= keepMax) {
+    plan.kept = dataRows;
+    plan.removable = 0;
+    plan.firstKeepRow = 2;
+    plan.ok = true;
+    return plan;
+  }
+  plan.kept = keepMax;
+  plan.removable = dataRows - keepMax;
+  plan.firstKeepRow = last - keepMax + 1;
+  plan.ok = true;
+  return plan;
+}
+
+function uxNbEventQueueInfo_() {
+  var info = {
+    ok: false,
+    sheetName: UX_NB_EVENTQUEUE_SHEET,
+    keepMax: UX_NB_EVENTQUEUE_KEEP,
+    dataRows: 0,
+    kept: 0,
+    removable: 0
+  };
+  try {
+    var ss = getMainSS();
+    if (!ss) {
+      info.fehler = "Hauptmappe nicht erreichbar.";
+      return info;
+    }
+    var queue = ss.getSheetByName(UX_NB_EVENTQUEUE_SHEET);
+    if (!queue) {
+      info.fehler = "Tabellenblatt EventQueue fehlt.";
+      return info;
+    }
+    var plan = uxNbEventQueuePlan_(queue, UX_NB_EVENTQUEUE_KEEP);
+    if (!plan.ok) {
+      info.fehler = plan.fehler || "EventQueue-Plan fehlgeschlagen.";
+      return info;
+    }
+    info.ok = true;
+    info.dataRows = plan.dataRows;
+    info.kept = plan.kept;
+    info.removable = plan.removable;
+  } catch (e) {
+    info.fehler = String(e);
+  }
+  return info;
+}
+
+function uxNbEventQueueInfo() {
+  return uxNbEventQueueInfo_();
+}
+
+function uxNbEventQueueAufraeumen() {
+  var lock = LockService.getScriptLock();
+  var got = false;
+  try {
+    got = lock.tryLock(30000);
+    if (!got) return { ok: false, fehler: "Konnte keine Sperre bekommen. Bitte erneut versuchen." };
+    var ss = getMainSS();
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+    var queue = ss.getSheetByName(UX_NB_EVENTQUEUE_SHEET);
+    if (!queue) return { ok: false, fehler: "Tabellenblatt EventQueue fehlt." };
+    var plan = uxNbEventQueuePlan_(queue, UX_NB_EVENTQUEUE_KEEP);
+    if (!plan.ok) return { ok: false, fehler: plan.fehler || "Planung fehlgeschlagen." };
+    if (plan.removable <= 0) {
+      return {
+        ok: true,
+        removed: 0,
+        kept: plan.kept || plan.dataRows,
+        dataRows: plan.dataRows,
+        keepMax: UX_NB_EVENTQUEUE_KEEP
+      };
+    }
+    queue.deleteRows(2, plan.removable);
+    var after = uxNbEventQueueInfo_();
+    try {
+      var cache = uxNbHubCacheRead_();
+      if (cache && cache.stats) {
+        cache.stats.eventQueue = after;
+        uxNbHubCacheWrite_(cache);
+      }
+    } catch (e2) {}
+    return {
+      ok: true,
+      removed: plan.removable,
+      kept: after.kept || Math.min(UX_NB_EVENTQUEUE_KEEP, plan.dataRows - plan.removable),
+      dataRows: plan.dataRows,
+      keepMax: UX_NB_EVENTQUEUE_KEEP
+    };
+  } catch (e) {
+    return { ok: false, fehler: String(e) };
+  } finally {
+    if (got) lock.releaseLock();
+  }
 }
 
 function uxNbHubDashboardStats() {
@@ -241,6 +360,19 @@ function uxNbHubDashboardStats() {
     if (watch.processQueue) names.push("processQueue");
     stats.triggers = names;
   } catch (e4) {}
+  try {
+    stats.eventQueue = uxNbEventQueueInfo_();
+  } catch (e5) {
+    stats.eventQueue = {
+      ok: false,
+      sheetName: UX_NB_EVENTQUEUE_SHEET,
+      keepMax: UX_NB_EVENTQUEUE_KEEP,
+      dataRows: 0,
+      kept: 0,
+      removable: 0,
+      fehler: String(e5)
+    };
+  }
   return stats;
 }
 
