@@ -44,6 +44,10 @@
           Dashboard Sync
           <span class="ux-nav-badge" id="navDashBadge">0</span>
         </button>
+        <button type="button" class="ux-nav-item" id="navIntegrity" data-view="integrity">
+          Drift-Check
+          <span class="ux-nav-badge" id="navIntegrityBadge">0</span>
+        </button>
         <p class="ux-nav-footnote">
           <span class="ux-nav-footnote-line">Part of Warehouse Management System</span>
           <span class="ux-nav-footnote-line">by Arasaka</span>
@@ -78,6 +82,11 @@
         <div class="ux-content">
           <section class="ux-view active" id="viewHome">
             <div class="ux-home-scroll">
+            <div class="ux-panel">
+              <p class="ux-panel-title">Auffälligkeiten · kurz & schmerzhaft</p>
+              <p class="ux-panel-desc">Rot = solltest du irgendwann angehen. Kein Panik-Button, eher Reminder. Manuell ist immer besser.</p>
+              <div class="ux-alert-grid" id="alertGrid"></div>
+            </div>
             <div class="ux-panel">
               <p class="ux-panel-title">Gefüllte Zeilen</p>
               <div class="ux-stat-grid" id="sheetCountGrid"></div>
@@ -116,12 +125,20 @@
               </span>
               <span class="ux-nav-badge" id="tileDashBadge">0</span>
             </button>
+            <button type="button" class="ux-nav-tile" id="tileIntegrity">
+              <span class="ux-nav-tile-body">
+                <span class="ux-nav-tile-title">Drift-Check</span>
+                <span class="ux-nav-tile-sub">Doppelte IDs, Exit im Dashboard, Queue hängt – der üble Kram</span>
+              </span>
+              <span class="ux-nav-badge" id="tileIntegrityBadge">0</span>
+            </button>
             </div>
           </section>
           <section class="ux-view" id="viewSync">
             <button type="button" class="ux-btn-back" id="btnBackHomeSync">← zurück</button>
             <div class="ux-toolbar">
               <button type="button" class="ux-btn-copy" id="btnSyncRefresh">Nochmal checken</button>
+              <button type="button" class="ux-btn-primary" id="btnSyncBulk">Alle mit EntryID anstoßen</button>
             </div>
             <div class="ux-status" id="syncStatus"></div>
             <div class="ux-list-wrap" id="syncListWrap">
@@ -137,30 +154,69 @@
               <div class="ux-list" id="syncList"></div>
             </div>
           </section>
-          <section class="ux-view" id="viewDash">
-            <button type="button" class="ux-btn-back" id="btnBackHomeDash">← zurück</button>
-            <div class="ux-toolbar">
+          <section class="ux-view ux-view--dash" id="viewDash">
+            <div class="ux-dash-topbar">
+              <button type="button" class="ux-btn-back" id="btnBackHomeDash">← zurück</button>
+              <details class="ux-dash-maint-fold">
+                <summary class="ux-dash-maint-toggle">Pflege</summary>
+                <div class="ux-dash-maint-pop">
+                  <p class="ux-dash-maint-hint">Lock ist Lock – kurz warten wenn's hängt.</p>
+                  <div class="ux-dash-maint-actions">
+                    <button type="button" class="ux-btn-copy" id="btnDashDayDiffs">Tage neu rechnen</button>
+                    <button type="button" class="ux-btn-copy" id="btnDashExitClean">Exit-Kram raus</button>
+                  </div>
+                  <span class="ux-queue-status ux-dash-maint-status" id="dashMaintStatus"></span>
+                </div>
+              </details>
+            </div>
+            <div class="ux-toolbar ux-dash-action-toolbar">
               <button type="button" class="ux-btn-copy" id="btnDashRefresh">Nochmal checken</button>
+              <button type="button" class="ux-btn-primary" id="btnDashBulk">Alle sicheren rüber</button>
               <button type="button" class="ux-btn-primary" id="btnDashStatusSync">Status jetzt syncen</button>
             </div>
             <p class="ux-dash-sync-note">Oben: fehlen komplett im Dashboard (Entry-ID). Unten: schon im Dashboard, aber Cost Gate / Status leer obwohl Nachbestellung Werte hat.</p>
-            <div class="ux-status" id="dashStatus"></div>
-            <p class="ux-panel-title ux-dash-section-title">Fehlen komplett im Dashboard</p>
-            <div class="ux-list-wrap" id="dashListWrap">
-              <div class="ux-loading" id="dashListLoading" hidden>
+            <div class="ux-status ux-dash-status" id="dashStatus"></div>
+            <div class="ux-dash-lists">
+              <div class="ux-dash-list-block ux-dash-list-block--main">
+                <p class="ux-panel-title ux-dash-section-title">Fehlen komplett im Dashboard</p>
+                <div class="ux-list-wrap" id="dashListWrap">
+                  <div class="ux-loading" id="dashListLoading" hidden>
+                    <div class="ux-spinner" aria-hidden="true">
+                      <svg class="ux-spinner-svg" viewBox="0 0 48 48">
+                        <circle class="ux-spinner-track" cx="24" cy="24" r="20" fill="none"/>
+                        <circle class="ux-spinner-arc" cx="24" cy="24" r="20" fill="none"/>
+                      </svg>
+                    </div>
+                    <span class="ux-loading-text" id="dashListLoadingText">Check läuft…</span>
+                  </div>
+                  <div class="ux-list" id="dashList"></div>
+                </div>
+              </div>
+              <div class="ux-dash-list-block ux-dash-list-block--gap">
+                <p class="ux-panel-title ux-dash-section-title">Status leer / falsch (NB hat Werte)</p>
+                <div class="ux-list-wrap" id="dashGapListWrap">
+                  <div class="ux-list" id="dashGapList"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section class="ux-view" id="viewIntegrity">
+            <button type="button" class="ux-btn-back" id="btnBackHomeIntegrity">← zurück</button>
+            <div class="ux-toolbar">
+              <button type="button" class="ux-btn-copy" id="btnIntegrityRefresh">Nochmal durchscannen</button>
+            </div>
+            <div class="ux-status" id="integrityStatus"></div>
+            <div class="ux-list-wrap" id="integrityListWrap">
+              <div class="ux-loading" id="integrityListLoading" hidden>
                 <div class="ux-spinner" aria-hidden="true">
                   <svg class="ux-spinner-svg" viewBox="0 0 48 48">
                     <circle class="ux-spinner-track" cx="24" cy="24" r="20" fill="none"/>
                     <circle class="ux-spinner-arc" cx="24" cy="24" r="20" fill="none"/>
                   </svg>
                 </div>
-                <span class="ux-loading-text" id="dashListLoadingText">Check läuft…</span>
+                <span class="ux-loading-text" id="integrityListLoadingText">Scan läuft…</span>
               </div>
-              <div class="ux-list" id="dashList"></div>
-            </div>
-            <p class="ux-panel-title ux-dash-section-title">Status leer / falsch (NB hat Werte)</p>
-            <div class="ux-list-wrap" id="dashGapListWrap">
-              <div class="ux-list" id="dashGapList"></div>
+              <div class="ux-list" id="integrityList"></div>
             </div>
           </section>
           <section class="ux-view" id="viewDeleted">
@@ -197,7 +253,7 @@
       var cacheProgressValue = 0;
       var CACHE_RING_C = 2 * Math.PI * 15.5;
 
-      var VIEW_KEYS = ["home", "deleted", "sync", "dash"];
+      var VIEW_KEYS = ["home", "deleted", "sync", "dash", "integrity"];
       var NACHT_TOOLTIP =
         'Klick = ET/Diagnose kurz auf "Nein", dann wieder "Ja". ' +
         "Damit springt der Prozess an und die Zeile soll in Nachbestellung landen – Rest macht das Sheet. Nur 1x klickbar.";
@@ -220,6 +276,10 @@
         dash: {
           title: "Dashboard Sync",
           sub: "Fehlt im Dashboard vs. leere Cost Gate / Status obwohl NB Werte da sind"
+        },
+        integrity: {
+          title: "Drift-Check",
+          sub: "Wo Daten auseinanderlaufen – Duplikate, Exit im Dashboard, Queue hängt. Solche sachen eben.."
         }
       };
 
@@ -310,17 +370,35 @@
         return parts.join(" · ");
       }
 
+      function countBulkEligible(arr, doneSet) {
+        var n = 0;
+        for (var i = 0; i < (arr || []).length; i++) {
+          var eid = String(arr[i].entryId || "").trim();
+          if (!eid) continue;
+          if (doneSet && doneSet[eid]) continue;
+          n++;
+        }
+        return n;
+      }
+
       function showView(name) {
         if (VIEW_KEYS.indexOf(name) === -1) name = "home";
         for (var i = 0; i < VIEW_KEYS.length; i++) {
           var key = VIEW_KEYS[i];
           var active = key === name;
-          document.getElementById("view" + key.charAt(0).toUpperCase() + key.slice(1)).classList.toggle("active", active);
-          document.getElementById("nav" + key.charAt(0).toUpperCase() + key.slice(1)).classList.toggle("active", active);
+          var viewId = "view" + key.charAt(0).toUpperCase() + key.slice(1);
+          var navId = "nav" + key.charAt(0).toUpperCase() + key.slice(1);
+          var viewEl = document.getElementById(viewId);
+          var navEl = document.getElementById(navId);
+          if (viewEl) viewEl.classList.toggle("active", active);
+          if (navEl) navEl.classList.toggle("active", active);
         }
         var meta = VIEW_META[name] || VIEW_META.home;
         document.getElementById("viewTitle").textContent = meta.title;
         document.getElementById("viewSub").textContent = meta.sub;
+        if (name === "integrity") {
+          loadIntegrityFull();
+        }
       }
 
       function updateCacheProgressUi(pct) {
@@ -413,6 +491,7 @@
         setDashStatus(formatDashStatusLine(nd, ng));
         renderDashList(data.dashMissing || []);
         renderDashStatusGapList(data.dashStatusGaps || []);
+        setIntegrityBadges(data.integrityCount != null ? data.integrityCount : 0);
       }
 
       function setCacheLoading(on) {
@@ -557,6 +636,314 @@
         setDelBadges(stats.delBufferCount);
         renderTriggers(stats.triggers);
         renderQueueCleanPanel(stats.eventQueue || null);
+        renderAlerts(stats.alerts || null);
+      }
+
+      function setIntegrityBadges(n) {
+        document.getElementById("navIntegrityBadge").textContent = String(n || 0);
+        document.getElementById("tileIntegrityBadge").textContent = String(n || 0);
+      }
+
+      function renderAlerts(alerts) {
+        var grid = document.getElementById("alertGrid");
+        if (!grid) return;
+        grid.innerHTML = "";
+        if (!alerts) {
+          grid.innerHTML = '<div class="ux-empty ux-empty--inline">Noch kein Stand – Cache neu ziehen.</div>';
+          return;
+        }
+        var ar = alerts.archiveReady || {};
+        var cards = [
+          {
+            cls: ar.total > 0 ? "ux-alert-card--warn" : "ux-alert-card--ok",
+            val: ar.total || 0,
+            label: "Fertig fürs Archiv",
+            sub: (ar.nb || 0) + " NB · " + (ar.exit || 0) + " Exit · fertiggestellt / b2a1"
+          },
+          {
+            cls: (alerts.dashRedDays || 0) > 0 ? "ux-alert-card--bad" : "ux-alert-card--ok",
+            val: alerts.dashRedDays || 0,
+            label: "Dashboard rot",
+            sub: "Tage seit letztem > " + (alerts.dashRedMin || 10) + " – rote Spalte im Dashboard"
+          },
+          {
+            cls: (alerts.nbStatusEmptyOld || 0) > 0 ? "ux-alert-card--warn" : "ux-alert-card--ok",
+            val: alerts.nbStatusEmptyOld || 0,
+            label: "NB Status leer",
+            sub: "schon > " + (alerts.statusEmptyDays || 7) + " Tage ohne Status – nicht normal"
+          }
+        ];
+        for (var i = 0; i < cards.length; i++) {
+          var c = cards[i];
+          var card = document.createElement("div");
+          card.className = "ux-alert-card " + c.cls;
+          card.innerHTML =
+            '<span class="ux-alert-value">' +
+            escapeHtml(String(c.val)) +
+            '</span><span class="ux-alert-label">' +
+            escapeHtml(c.label) +
+            '</span><span class="ux-alert-sub">' +
+            escapeHtml(c.sub) +
+            "</span>";
+          grid.appendChild(card);
+        }
+      }
+
+      function setIntegrityLoading(on, text) {
+        var loading = document.getElementById("integrityListLoading");
+        var list = document.getElementById("integrityList");
+        document.getElementById("integrityListLoadingText").textContent = text || "Scan läuft…";
+        loading.hidden = !on;
+        list.style.visibility = on ? "hidden" : "visible";
+        list.style.pointerEvents = on ? "none" : "";
+      }
+
+      function setIntegrityStatus(t) {
+        document.getElementById("integrityStatus").textContent = t || "";
+      }
+
+      function appendIntegrityDashArchivRow(parent, sm, issueId) {
+        var row = document.createElement("div");
+        row.className = "ux-integrity-sample ux-integrity-sample--row";
+        var text = document.createElement("span");
+        text.className = "ux-integrity-sample-text";
+        text.textContent =
+          "Dash Z." +
+          sm.dashRow +
+          " · " +
+          (sm.stockId || "") +
+          (sm.entryId ? " · " + sm.entryId : "");
+        row.appendChild(text);
+        if (issueId === "dash_no_nb" && sm.dashRow) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "ux-btn-copy ux-integrity-arch-btn";
+          btn.textContent = "Raus & ins Archiv";
+          btn.onclick = function () {
+            if (
+              !confirm(
+                "Dash Z." +
+                  sm.dashRow +
+                  " (" +
+                  (sm.stockId || "") +
+                  ") aus Dashboard ins Archiv schieben?"
+              )
+            ) {
+              return;
+            }
+            btn.disabled = true;
+            btn.textContent = "…";
+            google.script.run
+              .withSuccessHandler(function (res) {
+                if (res && res.ok) {
+                  setIntegrityStatus(
+                    (sm.stockId || "Zeile") + " ist im Archiv – aus Dashboard raus."
+                  );
+                  loadIntegrityFull();
+                  loadHubCache(true);
+                } else {
+                  btn.disabled = false;
+                  btn.textContent = "Raus & ins Archiv";
+                  setIntegrityStatus((res && res.fehler) || "Archiv hat nicht geklappt.");
+                }
+              })
+              .withFailureHandler(function (err) {
+                btn.disabled = false;
+                btn.textContent = "Raus & ins Archiv";
+                setIntegrityStatus("Fehler: " + err);
+              })
+              .uxNbDashZeileInsArchiv(sm.dashRow);
+          };
+          row.appendChild(btn);
+        }
+        parent.appendChild(row);
+      }
+
+      function renderIntegrityList(issues, totalHint) {
+        var el = document.getElementById("integrityList");
+        el.innerHTML = "";
+        if (!issues || !issues.length) {
+          el.innerHTML =
+            '<div class="ux-empty">' +
+            (totalHint ? "Sieht clean aus – " + totalHint + " Funde laut letztem Scan." : "Alles clean – kein Drift gefunden.") +
+            "</div>";
+          return;
+        }
+        for (var i = 0; i < issues.length; i++) {
+          (function (issue) {
+            var card = document.createElement("div");
+            card.className = "ux-card ux-integrity-card";
+            var head = document.createElement("div");
+            head.className = "ux-integrity-head";
+            head.innerHTML =
+              '<span class="ux-integrity-count">' +
+              escapeHtml(String(issue.count || 0)) +
+              "</span>" +
+              '<div><strong class="ux-integrity-title">' +
+              escapeHtml(issue.label || "") +
+              "</strong>" +
+              '<p class="ux-integrity-hint">' +
+              escapeHtml(issue.hint || "") +
+              "</p></div>";
+            card.appendChild(head);
+            var samples = issue.samples || [];
+            for (var s = 0; s < samples.length; s++) {
+              var sm = samples[s];
+              if (sm.dashRow && issue.id === "dash_no_nb") {
+                appendIntegrityDashArchivRow(card, sm, issue.id);
+              } else if (sm.entryId && sm.rows) {
+                var dup = document.createElement("div");
+                dup.className = "ux-integrity-sample";
+                dup.textContent =
+                  "Entry-ID " + sm.entryId + " · Zeilen " + sm.rows.join(", ");
+                card.appendChild(dup);
+              } else if (sm.dashRow) {
+                var dg = document.createElement("div");
+                dg.className = "ux-integrity-sample";
+                dg.textContent =
+                  "Dash Z." +
+                  sm.dashRow +
+                  " · " +
+                  (sm.stockId || "") +
+                  (sm.entryId ? " · " + sm.entryId : "");
+                card.appendChild(dg);
+              } else if (sm.sheetName) {
+                var inp = document.createElement("div");
+                inp.className = "ux-integrity-sample";
+                inp.textContent =
+                  sm.sheetName + " Z." + sm.row + " · " + (sm.stockId || "");
+                card.appendChild(inp);
+              } else if (sm.row) {
+                var q = document.createElement("div");
+                q.className = "ux-integrity-sample";
+                q.textContent =
+                  "Queue Z." + sm.row + " · " + (sm.action || sm.status || "");
+                card.appendChild(q);
+              }
+            }
+            el.appendChild(card);
+          })(issues[i]);
+        }
+      }
+
+      function loadIntegrityFull() {
+        setIntegrityLoading(true, "Scan läuft…");
+        setIntegrityStatus("");
+        google.script.run
+          .withSuccessHandler(function (res) {
+            setIntegrityLoading(false);
+            if (res && res.ok) {
+              setIntegrityBadges(res.total || 0);
+              setIntegrityStatus(
+                res.total
+                  ? res.total + " Funde – nicht alles ist Drama, aber checken lohnt sich."
+                  : "Alles clean – kein Drift."
+              );
+              renderIntegrityList(res.issues || [], res.total);
+            } else {
+              setIntegrityStatus((res && res.fehler) || "Scan hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            setIntegrityLoading(false);
+            setIntegrityStatus("Fehler: " + err);
+          })
+          .uxNbIntegrityCheckFull();
+      }
+
+      function runBulkDash(onDone) {
+        var btn = document.getElementById("btnDashBulk");
+        btn.disabled = true;
+        btn.textContent = "Schieb rüber…";
+        var totalPushed = 0;
+        var totalFail = 0;
+        function chunk() {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (!res || !res.ok) {
+                btn.disabled = false;
+                btn.textContent = "Alle sicheren rüber";
+                setDashStatus((res && res.fehler) || "Bulk hat nicht geklappt.");
+                if (onDone) onDone();
+                return;
+              }
+              totalPushed += res.pushed || 0;
+              totalFail += res.failed || 0;
+              if ((res.remaining || 0) > 0 && (res.pushed || 0) + (res.failed || 0) > 0) {
+                setDashStatus(
+                  totalPushed +
+                    " rüber · noch ~" +
+                    res.remaining +
+                    " offen…"
+                );
+                chunk();
+                return;
+              }
+              btn.disabled = false;
+              btn.textContent = "Alle sicheren rüber";
+              setDashStatus(
+                totalPushed +
+                  " ins Dashboard geschoben" +
+                  (totalFail ? " · " + totalFail + " hat nicht geklappt" : "") +
+                  "."
+              );
+              loadHubCache(true);
+              if (onDone) onDone();
+            })
+            .withFailureHandler(function (err) {
+              btn.disabled = false;
+              btn.textContent = "Alle sicheren rüber";
+              setDashStatus("Fehler: " + err);
+              if (onDone) onDone();
+            })
+            .uxNbDashNachtragenBulk(8);
+        }
+        chunk();
+      }
+
+      function runBulkSync(onDone) {
+        var btn = document.getElementById("btnSyncBulk");
+        btn.disabled = true;
+        btn.textContent = "Stoß an…";
+        var totalOk = 0;
+        var totalFail = 0;
+        function chunk() {
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (!res || !res.ok) {
+                btn.disabled = false;
+                btn.textContent = "Alle mit EntryID anstoßen";
+                setSyncStatus((res && res.fehler) || "Bulk hat nicht geklappt.");
+                if (onDone) onDone();
+                return;
+              }
+              totalOk += res.triggered || 0;
+              totalFail += res.failed || 0;
+              if ((res.remaining || 0) > 0 && (res.triggered || 0) + (res.failed || 0) > 0) {
+                setSyncStatus(totalOk + " angestoßen · noch ~" + res.remaining + " offen…");
+                chunk();
+                return;
+              }
+              btn.disabled = false;
+              btn.textContent = "Alle mit EntryID anstoßen";
+              setSyncStatus(
+                totalOk +
+                  " angestoßen – Sheet macht den Rest" +
+                  (totalFail ? " · " + totalFail + " hat nicht geklappt" : "") +
+                  "."
+              );
+              loadHubCache(true);
+              if (onDone) onDone();
+            })
+            .withFailureHandler(function (err) {
+              btn.disabled = false;
+              btn.textContent = "Alle mit EntryID anstoßen";
+              setSyncStatus("Fehler: " + err);
+              if (onDone) onDone();
+            })
+            .uxNbSyncNachtragenBulk(8);
+        }
+        chunk();
       }
 
       function setListLoading(on, text) {
@@ -979,6 +1366,10 @@
         dashStatusGapArr = arr || [];
         setDashBadges(dashMissingArr.length, dashStatusGapArr.length);
         setDashStatus(formatDashStatusLine(dashMissingArr.length, dashStatusGapArr.length));
+        var gapBlock = document.querySelector(".ux-dash-list-block--gap");
+        if (gapBlock) {
+          gapBlock.classList.toggle("ux-dash-list-block--collapsed", !dashStatusGapArr.length);
+        }
         var el = document.getElementById("dashGapList");
         el.innerHTML = "";
         if (!dashStatusGapArr.length) {
@@ -1061,6 +1452,9 @@
       document.getElementById("navDash").onclick = function () {
         showView("dash");
       };
+      document.getElementById("navIntegrity").onclick = function () {
+        showView("integrity");
+      };
       document.getElementById("tileDeleted").onclick = function () {
         showView("deleted");
       };
@@ -1069,6 +1463,9 @@
       };
       document.getElementById("tileDash").onclick = function () {
         showView("dash");
+      };
+      document.getElementById("tileIntegrity").onclick = function () {
+        showView("integrity");
       };
       document.getElementById("btnBackHome").onclick = function () {
         showView("home");
@@ -1079,11 +1476,94 @@
       document.getElementById("btnBackHomeDash").onclick = function () {
         showView("home");
       };
+      document.getElementById("btnBackHomeIntegrity").onclick = function () {
+        showView("home");
+      };
       document.getElementById("btnSyncRefresh").onclick = function () {
         loadSyncList();
       };
+      document.getElementById("btnSyncBulk").onclick = function () {
+        var n = countBulkEligible(syncMissingArr, nachtragenDoneSet);
+        if (!n) {
+          setSyncStatus("Nix zum Bulk – schon angestoßen oder ohne Entry-ID.");
+          return;
+        }
+        if (
+          !confirm(
+            n +
+              " sichere Fälle anstoßen? (8 pro Runde, ET/Diagnose Ja, mit Entry-ID, noch nicht geklickt)"
+          )
+        ) {
+          return;
+        }
+        runBulkSync();
+      };
       document.getElementById("btnDashRefresh").onclick = function () {
         loadDashList();
+      };
+      document.getElementById("btnDashBulk").onclick = function () {
+        var n = countBulkEligible(dashMissingArr, dashNachtragenDoneSet);
+        if (!n) {
+          setDashStatus("Nix zum Bulk – schon rüber oder ohne Entry-ID.");
+          return;
+        }
+        if (
+          !confirm(
+            n +
+              " sichere Zeilen ins Dashboard? (8 pro Runde, mit Entry-ID, noch nicht geklickt)"
+          )
+        ) {
+          return;
+        }
+        runBulkDash();
+      };
+      document.getElementById("btnIntegrityRefresh").onclick = function () {
+        loadIntegrityFull();
+      };
+      document.getElementById("btnDashDayDiffs").onclick = function () {
+        var btn = document.getElementById("btnDashDayDiffs");
+        btn.disabled = true;
+        document.getElementById("dashMaintStatus").textContent = "Rechne…";
+        google.script.run
+          .withSuccessHandler(function (res) {
+            btn.disabled = false;
+            if (res && res.ok) {
+              document.getElementById("dashMaintStatus").textContent =
+                (res.updated || 0) + " Zeilen angefasst.";
+              loadHubCache(true);
+            } else {
+              document.getElementById("dashMaintStatus").textContent =
+                (res && res.fehler) || "Hat nicht geklappt.";
+            }
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            document.getElementById("dashMaintStatus").textContent = "Fehler: " + err;
+          })
+          .uxNbDashboardDayDiffsNow();
+      };
+      document.getElementById("btnDashExitClean").onclick = function () {
+        if (!confirm("Exit-Zeilen aus dem Dashboard kicken? (EX-Herkunft + Input-Exit Entry-IDs)")) return;
+        var btn = document.getElementById("btnDashExitClean");
+        btn.disabled = true;
+        document.getElementById("dashMaintStatus").textContent = "Räum…";
+        google.script.run
+          .withSuccessHandler(function (res) {
+            btn.disabled = false;
+            if (res && res.ok) {
+              document.getElementById("dashMaintStatus").textContent =
+                (res.removed || 0) + " Zeilen raus.";
+              loadHubCache(true);
+            } else {
+              document.getElementById("dashMaintStatus").textContent =
+                (res && res.fehler) || "Hat nicht geklappt.";
+            }
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            document.getElementById("dashMaintStatus").textContent = "Fehler: " + err;
+          })
+          .uxNbCleanupDashboardExitNow();
       };
       document.getElementById("btnDashStatusSync").onclick = function () {
         var btn = document.getElementById("btnDashStatusSync");

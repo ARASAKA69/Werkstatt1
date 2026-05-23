@@ -2593,3 +2593,132 @@ function onOpen() {
     } catch (e3) {}
   }
 }
+
+function runCleanupDashboardOfInputExitForUi() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return { ok: false, fehler: "Anderer Lauf aktiv (Lock)." };
+  let removed = 0;
+  try {
+    const ss = getMainSS();
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+    const dashboard = ss.getSheetByName("Dashboard");
+    const inputExit = ss.getSheetByName("Input Exit");
+    if (!dashboard || !inputExit) return { ok: false, fehler: "Dashboard oder Input Exit fehlt." };
+    const exitLast = inputExit.getLastRow();
+    const exitIds = new Set();
+    if (exitLast >= 2) {
+      const eidCol = getEntryIdCol(inputExit);
+      const eids = inputExit.getRange(2, eidCol, exitLast - 1, 1).getValues();
+      for (let i = 0; i < eids.length; i++) {
+        const v = String(eids[i][0] || "");
+        if (v) exitIds.add(v);
+      }
+    }
+    const dashLast = dashboard.getLastRow();
+    const layout = getDashboardLayout(dashboard);
+    if (dashLast < layout.dataStartRow) return { ok: true, removed: 0 };
+    const end = dashboardDataEndRow(dashboard, layout);
+    const dashRowCount = end - layout.dataStartRow + 1;
+    const dashEids = dashboard.getRange(layout.dataStartRow, layout.cols.entryId, dashRowCount, 1).getValues();
+    const dashCodes = dashboard.getRange(layout.dataStartRow, layout.cols.herkunft, dashRowCount, 1).getValues();
+    for (let i = dashEids.length - 1; i >= 0; i--) {
+      const eid = String(dashEids[i][0] || "");
+      const code = String(dashCodes[i][0] || "").trim().toUpperCase();
+      if (code === "EX" || (eid && exitIds.has(eid))) {
+        try { dashboard.deleteRow(i + layout.dataStartRow); removed++; } catch (e) {}
+      }
+    }
+    try { logDebug("runCleanupDashboardOfInputExitForUi: removed " + removed); } catch (eLog) {}
+    return { ok: true, removed: removed };
+  } catch (err) {
+    return { ok: false, fehler: String(err && err.message ? err.message : err) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function runUpdateDashboardDayDiffsForUi() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return { ok: false, fehler: "Anderer Lauf aktiv (Lock)." };
+  let updated = 0;
+  try {
+    const ss = getMainSS();
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+    const dashboard = ss.getSheetByName("Dashboard");
+    if (!dashboard) return { ok: false, fehler: "Dashboard fehlt." };
+    const layout = getDashboardLayout(dashboard);
+    const tagesMap = getTageslisteMap();
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    const baseDate = dashboard.getRange("A2").getValue()
+      ? new Date(dashboard.getRange("A2").getValue())
+      : new Date();
+    const lastRow = dashboard.getLastRow();
+    if (lastRow < layout.dataStartRow) return { ok: true, updated: 0 };
+    const end = dashboardDataEndRow(dashboard, layout);
+    const w = layout.lastCol;
+    const numRows = end - layout.dataStartRow + 1;
+    const data = dashboard.getRange(layout.dataStartRow, 1, numRows, w).getValues();
+    const ix = layout.cols;
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const inputDate = row[ix.datum - 1] ? new Date(row[ix.datum - 1]) : null;
+      const key = String(row[ix.stockId - 1] || "").trim();
+      if (!key) continue;
+      const eid = String(row[ix.entryId - 1] || "").trim();
+      const nb = nbSheet ? getNachbestellungValuesByKey(nbSheet, key, eid) : { k: "" };
+      const tages = tagesMap[key.toUpperCase()] || { count: 0, lastDate: null };
+      let cVal, diffD, orangeC;
+      if (!isStockIdInTagesliste(tages)) {
+        cVal = nachbestellungFallbackFromNb(nb);
+        diffD = "";
+        orangeC = true;
+      } else if (tages.lastDate == null || tages.lastDate === "") {
+        cVal = "Kein Datum";
+        diffD = "";
+        orangeC = true;
+      } else {
+        const rowDateC = new Date(tages.lastDate);
+        if (isNaN(rowDateC.getTime())) {
+          cVal = "Kein Datum";
+          diffD = "";
+          orangeC = true;
+        } else {
+          cVal = tages.lastDate;
+          diffD = daysBetween(baseDate, rowDateC);
+          orangeC = false;
+        }
+      }
+      let diffI = "";
+      if (inputDate) diffI = daysBetween(baseDate, inputDate);
+      const dataRow = i + layout.dataStartRow;
+      let cMatch = false;
+      if (orangeC) {
+        cMatch = String(row[ix.letzerTagesliste - 1] || "").trim() === String(cVal || "").trim();
+      } else {
+        const ct = cellDateToTime(row[ix.letzerTagesliste - 1]);
+        const wt = cellDateToTime(cVal);
+        if (ct != null && wt != null) cMatch = ct === wt;
+        else cMatch = String(row[ix.letzerTagesliste - 1]) === String(cVal);
+      }
+      const dMatch =
+        (diffD === "" && (row[ix.tageSeitLetztem - 1] === "" || row[ix.tageSeitLetztem - 1] == null)) ||
+        row[ix.tageSeitLetztem - 1] === diffD;
+      const iMatch =
+        (diffI === "" && (row[ix.tageSeitInput - 1] === "" || row[ix.tageSeitInput - 1] == null)) ||
+        row[ix.tageSeitInput - 1] === diffI;
+      dashboard.getRange(dataRow, ix.letzerTagesliste).setBackground(orangeC ? "#f9cb9c" : "#ffffff");
+      if (!cMatch || !dMatch || !iMatch) {
+        dashboard.getRange(dataRow, ix.letzerTagesliste).setValue(cVal);
+        dashboard.getRange(dataRow, ix.tageSeitLetztem).setValue(diffD);
+        dashboard.getRange(dataRow, ix.tageSeitInput).setValue(diffI);
+        setDashboardTageSeitLetztemBackground(dashboard, layout, dataRow, diffD);
+        updated++;
+      }
+    }
+    return { ok: true, updated: updated };
+  } catch (err) {
+    return { ok: false, fehler: String(err && err.message ? err.message : err) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
