@@ -1,25 +1,27 @@
 var GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 var GMAIL_LOOKUP_TAB = "Lookup";
-var GMAIL_SYNC_MONTHS = 2;
+var GMAIL_SYNC_WEEKS = 4;
+var GMAIL_INCREMENTAL_OVERLAP_MS = 24 * 60 * 60 * 1000;
+var GMAIL_SYNC_PROPERTY_KEY = "GMAIL_LAST_SYNC_MS";
 
 function getGmailSyncCutoff_() {
   var cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - GMAIL_SYNC_MONTHS);
+  cutoff.setDate(cutoff.getDate() - GMAIL_SYNC_WEEKS * 7);
   cutoff.setHours(0, 0, 0, 0);
   return cutoff;
 }
 
-function getGmailSyncAfterQuery_() {
-  return Utilities.formatDate(getGmailSyncCutoff_(), "Europe/Berlin", "yyyy/MM/dd");
+function getGmailSyncAfterQuery_(afterDate) {
+  return Utilities.formatDate(afterDate, "Europe/Berlin", "yyyy/MM/dd");
 }
 
-function fetchGmailThreadsSince_(query, cutoff, seenThreads) {
+function fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages) {
   var threads = [];
   var start = 0;
   var pageSize = 100;
-  var maxPages = 15;
+  var pageLimit = maxPages || 15;
 
-  for (var page = 0; page < maxPages; page++) {
+  for (var page = 0; page < pageLimit; page++) {
     var batch = GmailApp.search(query, start, pageSize);
     if (!batch || batch.length === 0) break;
 
@@ -29,9 +31,7 @@ function fetchGmailThreadsSince_(query, cutoff, seenThreads) {
       var tid = thread.getId();
       if (seenThreads[tid]) continue;
 
-      var messages = thread.getMessages();
-      if (!messages.length) continue;
-      var newestDate = messages[messages.length - 1].getDate();
+      var newestDate = thread.getLastMessageDate();
       if (newestDate.getTime() < cutoff.getTime()) continue;
 
       allOlder = false;
@@ -61,6 +61,42 @@ function getOrCreateLookupSheet_() {
   return sheet;
 }
 
+function getLastSyncTime_(sheet) {
+  var cellVal = sheet.getRange(1, 7).getValue();
+  if (cellVal instanceof Date && !isNaN(cellVal.getTime())) return cellVal;
+  var props = PropertiesService.getScriptProperties().getProperty(GMAIL_SYNC_PROPERTY_KEY);
+  if (props) {
+    var parsed = new Date(Number(props));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+}
+
+function readExistingLookupRows_(sheet) {
+  var rowMap = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return rowMap;
+
+  var data = sheet.getRange(2, 1, lastRow - 1, 4).getValues();
+  for (var i = 0; i < data.length; i++) {
+    var searchKey = String(data[i][0] || "");
+    var stockId = String(data[i][1] || "");
+    if (!searchKey || !stockId) continue;
+
+    var msgDate = data[i][3];
+    var msgTime = msgDate instanceof Date ? msgDate.getTime() : 0;
+    var mapKey = searchKey + "|" + stockId;
+    rowMap[mapKey] = {
+      searchKey: searchKey,
+      stockId: stockId,
+      subject: data[i][2],
+      msgDate: msgDate,
+      msgTime: msgTime
+    };
+  }
+  return rowMap;
+}
+
 function extractSearchKeysFromSubject_(subject) {
   var keys = {};
   var subjectText = String(subject || "");
@@ -84,48 +120,41 @@ function extractSearchKeysFromSubject_(subject) {
   return Object.keys(keys);
 }
 
-function collectGmailLookupRows_() {
-  var rowMap = {};
-  var cutoff = getGmailSyncCutoff_();
-  var afterQuery = getGmailSyncAfterQuery_();
-  var searches = ["STOCK_ID after:" + afterQuery, "label:N4P after:" + afterQuery];
-  var seenThreads = {};
+function addThreadToRowMap_(thread, cutoff, rowMap) {
+  var messages = thread.getMessages();
+  for (var m = messages.length - 1; m >= 0; m--) {
+    var msgDate = messages[m].getDate();
+    if (msgDate.getTime() < cutoff.getTime()) continue;
 
-  for (var s = 0; s < searches.length; s++) {
-    var threads = fetchGmailThreadsSince_(searches[s], cutoff, seenThreads);
-    for (var t = 0; t < threads.length; t++) {
-      var messages = threads[t].getMessages();
-      for (var m = messages.length - 1; m >= 0; m--) {
-        var msgDate = messages[m].getDate();
-        if (msgDate.getTime() < cutoff.getTime()) continue;
+    var subject = String(messages[m].getSubject() || "");
+    var stockMatch = subject.match(/STOCK_ID\s*:\s*([A-Z]{2}\d{3,})/i);
+    if (!stockMatch || !stockMatch[1]) continue;
 
-        var subject = String(messages[m].getSubject() || "");
-        var stockMatch = subject.match(/STOCK_ID\s*:\s*([A-Z]{2}\d{3,})/i);
-        if (!stockMatch || !stockMatch[1]) continue;
-
-        var stockId = String(stockMatch[1]).replace(/\s+/g, "").toUpperCase();
-        var keys = extractSearchKeysFromSubject_(subject);
-        for (var k = 0; k < keys.length; k++) {
-          var searchKey = keys[k];
-          var mapKey = searchKey + "|" + stockId;
-          if (!rowMap[mapKey] || msgDate.getTime() > rowMap[mapKey].msgTime) {
-            rowMap[mapKey] = {
-              searchKey: searchKey,
-              stockId: stockId,
-              subject: subject,
-              msgDate: msgDate,
-              msgTime: msgDate.getTime()
-            };
-          }
-        }
+    var stockId = String(stockMatch[1]).replace(/\s+/g, "").toUpperCase();
+    var keys = extractSearchKeysFromSubject_(subject);
+    for (var k = 0; k < keys.length; k++) {
+      var searchKey = keys[k];
+      var mapKey = searchKey + "|" + stockId;
+      if (!rowMap[mapKey] || msgDate.getTime() > rowMap[mapKey].msgTime) {
+        rowMap[mapKey] = {
+          searchKey: searchKey,
+          stockId: stockId,
+          subject: subject,
+          msgDate: msgDate,
+          msgTime: msgDate.getTime()
+        };
       }
     }
   }
+}
 
+function rowMapToSortedRows_(rowMap, cutoff) {
   var rows = [];
+  var cutoffTime = cutoff.getTime();
   for (var mk in rowMap) {
     if (!Object.prototype.hasOwnProperty.call(rowMap, mk)) continue;
     var item = rowMap[mk];
+    if (item.msgTime < cutoffTime) continue;
     rows.push([item.searchKey, item.stockId, item.subject, item.msgDate]);
   }
   rows.sort(function(a, b) {
@@ -136,22 +165,90 @@ function collectGmailLookupRows_() {
   return rows;
 }
 
-function syncGmailOrdersToSheet() {
-  var sheet = getOrCreateLookupSheet_();
-  var rows = collectGmailLookupRows_();
-  var syncedAt = new Date();
+function collectGmailLookupRows_(existingRowMap, incrementalSince) {
+  var rowMap = existingRowMap || {};
+  var cutoff = getGmailSyncCutoff_();
+  var isIncremental = incrementalSince instanceof Date && !isNaN(incrementalSince.getTime());
+  var searchAfter = cutoff;
 
+  if (isIncremental) {
+    searchAfter = new Date(incrementalSince.getTime() - GMAIL_INCREMENTAL_OVERLAP_MS);
+    if (searchAfter.getTime() < cutoff.getTime()) searchAfter = cutoff;
+  }
+
+  var afterQuery = getGmailSyncAfterQuery_(searchAfter);
+  var query = "(STOCK_ID OR label:N4P) after:" + afterQuery;
+  var maxPages = isIncremental ? 5 : 15;
+  var seenThreads = {};
+  var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages);
+
+  for (var t = 0; t < threads.length; t++) {
+    addThreadToRowMap_(threads[t], cutoff, rowMap);
+  }
+
+  return rowMapToSortedRows_(rowMap, cutoff);
+}
+
+function isGmailQuotaError_(error) {
+  return String(error && error.message ? error.message : error).indexOf("too many times") !== -1;
+}
+
+function writeLookupRows_(sheet, rows, syncedAt) {
   var dataStartRow = 2;
   var lastRow = sheet.getLastRow();
-  if (lastRow > dataStartRow - 1) {
+  if (lastRow >= dataStartRow) {
     sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, 4).clearContent();
   }
   if (rows.length) {
     sheet.getRange(dataStartRow, 1, rows.length, 4).setValues(rows);
   }
   sheet.getRange(1, 7).setValue(syncedAt);
+  PropertiesService.getScriptProperties().setProperty(GMAIL_SYNC_PROPERTY_KEY, String(syncedAt.getTime()));
   SpreadsheetApp.flush();
-  return { success: true, rows: rows.length, syncedAt: syncedAt.toISOString() };
+}
+
+function syncGmailOrdersToSheet() {
+  var sheet = getOrCreateLookupSheet_();
+  var lastSync = getLastSyncTime_(sheet);
+  var existingRowMap = readExistingLookupRows_(sheet);
+
+  try {
+    var rows = collectGmailLookupRows_(existingRowMap, lastSync);
+  } catch (e) {
+    if (isGmailQuotaError_(e)) {
+      return {
+        success: false,
+        error: "Gmail-Tageslimit erreicht",
+        message: String(e.message || e),
+        rows: sheet.getLastRow() > 1 ? sheet.getLastRow() - 1 : 0
+      };
+    }
+    throw e;
+  }
+
+  var syncedAt = new Date();
+  writeLookupRows_(sheet, rows, syncedAt);
+  return { success: true, rows: rows.length, syncedAt: syncedAt.toISOString(), incremental: !!lastSync };
+}
+
+function syncGmailOrdersFull() {
+  var sheet = getOrCreateLookupSheet_();
+  try {
+    var rows = collectGmailLookupRows_({}, null);
+  } catch (e) {
+    if (isGmailQuotaError_(e)) {
+      return {
+        success: false,
+        error: "Gmail-Tageslimit erreicht",
+        message: String(e.message || e)
+      };
+    }
+    throw e;
+  }
+
+  var syncedAt = new Date();
+  writeLookupRows_(sheet, rows, syncedAt);
+  return { success: true, rows: rows.length, syncedAt: syncedAt.toISOString(), full: true };
 }
 
 function installGmailSyncTrigger() {
@@ -161,8 +258,8 @@ function installGmailSyncTrigger() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  ScriptApp.newTrigger("syncGmailOrdersToSheet").timeBased().everyMinutes(2).create();
-  return { success: true, message: "Trigger alle 2 Minuten aktiv" };
+  ScriptApp.newTrigger("syncGmailOrdersToSheet").timeBased().everyMinutes(15).create();
+  return { success: true, message: "Trigger alle 15 Minuten aktiv" };
 }
 
 function testSearchOrder() {
@@ -231,4 +328,8 @@ function searchOrderInGmail_(query) {
 
 function testSyncNow() {
   Logger.log(JSON.stringify(syncGmailOrdersToSheet(), null, 2));
+}
+
+function testSyncFull() {
+  Logger.log(JSON.stringify(syncGmailOrdersFull(), null, 2));
 }

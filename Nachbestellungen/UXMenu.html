@@ -251,6 +251,8 @@
       var cacheReloadBusy = false;
       var cacheProgressTimer = null;
       var cacheProgressValue = 0;
+      var hubLoadToken = 0;
+      var HUB_LOAD_TIMEOUT_MS = 180000;
       var CACHE_RING_C = 2 * Math.PI * 15.5;
 
       var VIEW_KEYS = ["home", "deleted", "sync", "dash", "integrity"];
@@ -491,7 +493,9 @@
         setDashStatus(formatDashStatusLine(nd, ng));
         renderDashList(data.dashMissing || []);
         renderDashStatusGapList(data.dashStatusGaps || []);
-        setIntegrityBadges(data.integrityCount != null ? data.integrityCount : 0);
+        setIntegrityBadges(
+          data.integrityCount != null ? data.integrityCount : 0
+        );
       }
 
       function setCacheLoading(on) {
@@ -518,26 +522,65 @@
         });
       }
 
+      function finishHubLoadState() {
+        setCacheLoading(false);
+        setListLoading(false);
+        setSyncLoading(false);
+        setDashLoading(false);
+      }
+
+      function showHubLoadError(msg) {
+        setSyncStatus("Cache: " + msg);
+        setDashStatus("Cache: " + msg);
+        setStatus("Cache: " + msg);
+        if (document.getElementById("alertGrid")) {
+          document.getElementById("alertGrid").innerHTML =
+            '<div class="ux-empty ux-empty--inline">' + escapeHtml(msg) + "</div>";
+        }
+      }
+
       function loadHubCache(forceReload) {
+        var token = ++hubLoadToken;
+        var timedOut = false;
         setCacheLoading(true);
+        var timeoutId = setTimeout(function () {
+          if (token !== hubLoadToken) return;
+          timedOut = true;
+          finishHubLoadState();
+          showHubLoadError(
+            "Timeout nach " +
+              Math.round(HUB_LOAD_TIMEOUT_MS / 1000) +
+              "s – nochmal „Cache neu ziehen“ oder im Editor runNbAuthReapplyNow."
+          );
+        }, HUB_LOAD_TIMEOUT_MS);
+
+        function handleHubResult(res) {
+          if (token !== hubLoadToken || timedOut) return;
+          clearTimeout(timeoutId);
+          if (res && res.needsReload && !forceReload) {
+            loadHubCache(true);
+            return;
+          }
+          finishHubLoadState();
+          if (res && res.ok && res.data) {
+            applyHubData(res.data);
+            return;
+          }
+          var msg =
+            (res && res.fehler) ||
+            "Hub leer – Berechtigungen prüfen (Editor: runNbAuthReapplyNow).";
+          showHubLoadError(msg);
+        }
+
         var runner = google.script.run
-          .withSuccessHandler(function (res) {
-            setCacheLoading(false);
-            setListLoading(false);
-            setSyncLoading(false);
-            setDashLoading(false);
-            if (res && res.ok && res.data) {
-              applyHubData(res.data);
-            }
-          })
+          .withSuccessHandler(handleHubResult)
           .withFailureHandler(function (err) {
-            setCacheLoading(false);
-            setListLoading(false);
-            setSyncLoading(false);
-            setDashLoading(false);
+            if (token !== hubLoadToken || timedOut) return;
+            clearTimeout(timeoutId);
+            finishHubLoadState();
             if (hubCacheData && hubCacheData.loadedAt) setCacheLabel(hubCacheData.loadedAt);
             else setCacheLabel(null);
-            setSyncStatus("Cache kaputt: " + err);
+            showHubLoadError(String(err));
           });
         if (forceReload) runner.uxNbHubCacheNeuLaden();
         else runner.uxNbHubCacheLesen();
@@ -826,11 +869,28 @@
         }
       }
 
+      var integrityLoadToken = 0;
+      var INTEGRITY_LOAD_TIMEOUT_MS = 180000;
+
       function loadIntegrityFull() {
+        var token = ++integrityLoadToken;
+        var timedOut = false;
         setIntegrityLoading(true, "Scan läuft…");
         setIntegrityStatus("");
+        var timeoutId = setTimeout(function () {
+          if (token !== integrityLoadToken) return;
+          timedOut = true;
+          setIntegrityLoading(false);
+          setIntegrityStatus(
+            "Timeout nach " +
+              Math.round(INTEGRITY_LOAD_TIMEOUT_MS / 1000) +
+              "s – Scan abgebrochen."
+          );
+        }, INTEGRITY_LOAD_TIMEOUT_MS);
         google.script.run
           .withSuccessHandler(function (res) {
+            if (token !== integrityLoadToken || timedOut) return;
+            clearTimeout(timeoutId);
             setIntegrityLoading(false);
             if (res && res.ok) {
               setIntegrityBadges(res.total || 0);
@@ -845,6 +905,8 @@
             }
           })
           .withFailureHandler(function (err) {
+            if (token !== integrityLoadToken || timedOut) return;
+            clearTimeout(timeoutId);
             setIntegrityLoading(false);
             setIntegrityStatus("Fehler: " + err);
           })

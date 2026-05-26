@@ -1,6 +1,8 @@
 var UX_NB_DELBUF_KEY = "ux_nb_delbuf_v1";
 var UX_NB_DELBUF_MAX = 100;
-var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v5";
+var UX_NB_HUB_CACHE_KEY = "ux_nb_hub_cache_v6";
+var UX_NB_HUB_CACHE_TTL = 21600;
+var UX_NB_HUB_CACHE_MAX_BYTES = 95000;
 var UX_NB_ALERT_STATUS_EMPTY_DAYS = 7;
 var UX_NB_ALERT_DASH_RED_DAYS = 10;
 var UX_NB_BULK_CHUNK = 8;
@@ -44,18 +46,74 @@ function uxBaseDialogControlCenterOeffnen(initialView) {
   SpreadsheetApp.getUi().showModalDialog(html, "WMS · NB Control Center");
 }
 
+function uxNbHubCacheClear_() {
+  try {
+    CacheService.getUserCache().remove(UX_NB_HUB_CACHE_KEY);
+  } catch (e) {}
+  try {
+    PropertiesService.getUserProperties().deleteProperty(UX_NB_HUB_CACHE_KEY);
+  } catch (e2) {}
+  try {
+    PropertiesService.getUserProperties().deleteProperty("ux_nb_hub_cache_v5");
+  } catch (e3) {}
+}
+
+function uxNbHubCacheTrimForStore_(data) {
+  var d = data || {};
+  var syncMissing = d.syncMissing || [];
+  var dashMissing = d.dashMissing || [];
+  var dashStatusGaps = d.dashStatusGaps || [];
+  return {
+    ok: d.ok !== false,
+    loadedAt: d.loadedAt || new Date().toISOString(),
+    stats: d.stats || {},
+    delBuffer: d.delBuffer || [],
+    syncMissing: syncMissing.slice(0, 200),
+    syncCount: d.syncCount != null ? d.syncCount : syncMissing.length,
+    nachtragenDone: d.nachtragenDone || [],
+    dashMissing: dashMissing.slice(0, 200),
+    dashSyncCount: d.dashSyncCount != null ? d.dashSyncCount : dashMissing.length,
+    dashNachtragenDone: d.dashNachtragenDone || [],
+    dashStatusGaps: dashStatusGaps.slice(0, 100),
+    dashStatusGapCount: d.dashStatusGapCount != null ? d.dashStatusGapCount : dashStatusGaps.length,
+    integrityCount: d.integrityCount != null ? d.integrityCount : null
+  };
+}
+
 function uxNbHubCacheRead_() {
   try {
-    var raw = PropertiesService.getUserProperties().getProperty(UX_NB_HUB_CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (e) {
+    var raw = CacheService.getUserCache().get(UX_NB_HUB_CACHE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  try {
+    var legacy = PropertiesService.getUserProperties().getProperty(UX_NB_HUB_CACHE_KEY);
+    if (!legacy) legacy = PropertiesService.getUserProperties().getProperty("ux_nb_hub_cache_v5");
+    if (!legacy) return null;
+    var parsed = JSON.parse(legacy);
+    if (parsed && parsed.loadedAt) uxNbHubCacheWrite_(parsed);
+    return parsed;
+  } catch (e2) {
     return null;
   }
 }
 
 function uxNbHubCacheWrite_(data) {
-  PropertiesService.getUserProperties().setProperty(UX_NB_HUB_CACHE_KEY, JSON.stringify(data || {}));
+  var store = uxNbHubCacheTrimForStore_(data);
+  var json = JSON.stringify(store);
+  while (json.length > UX_NB_HUB_CACHE_MAX_BYTES && store.syncMissing.length > 10) {
+    store.syncMissing = store.syncMissing.slice(0, Math.max(10, Math.floor(store.syncMissing.length * 0.7)));
+    store.dashMissing = store.dashMissing.slice(0, Math.max(10, Math.floor(store.dashMissing.length * 0.7)));
+    store.dashStatusGaps = store.dashStatusGaps.slice(0, Math.max(5, Math.floor(store.dashStatusGaps.length * 0.7)));
+    store.delBuffer = store.delBuffer.slice(0, Math.max(5, Math.floor(store.delBuffer.length * 0.7)));
+    json = JSON.stringify(store);
+  }
+  try {
+    CacheService.getUserCache().put(UX_NB_HUB_CACHE_KEY, json, UX_NB_HUB_CACHE_TTL);
+  } catch (e) {}
+  try {
+    PropertiesService.getUserProperties().deleteProperty(UX_NB_HUB_CACHE_KEY);
+    PropertiesService.getUserProperties().deleteProperty("ux_nb_hub_cache_v5");
+  } catch (e2) {}
 }
 
 function uxNbDashNachtragenDoneRead_() {
@@ -126,25 +184,23 @@ function uxNbHubDatenSammeln_() {
   var dashMissing = dash.ok ? dash.missing || [] : [];
   var dashNachtragenDone = uxNbDashNachtragenDoneCleanup_(dashMissing, uxNbDashNachtragenDoneRead_());
   uxNbDashNachtragenDoneWrite_(dashNachtragenDone);
-    var dashGaps = uxNbDashStatusGapListe();
-    var dashStatusGaps = dashGaps.ok ? dashGaps.gaps || [] : [];
-    var integrity = uxNbIntegritySummary_();
-    return {
-      ok: true,
-      loadedAt: new Date().toISOString(),
-      stats: stats,
-      delBuffer: del.ok ? del.arr || [] : [],
-      syncMissing: missing,
-      syncCount: sync.ok ? sync.count || 0 : 0,
-      nachtragenDone: nachtragenDone,
-      dashMissing: dashMissing,
-      dashSyncCount: dash.ok ? dash.count || 0 : 0,
-      dashNachtragenDone: dashNachtragenDone,
-      dashStatusGaps: dashStatusGaps,
-      dashStatusGapCount: dashGaps.ok ? dashGaps.count || 0 : 0,
-      integritySummary: integrity,
-      integrityCount: integrity.ok ? integrity.total || 0 : 0
-    };
+  var dashGaps = uxNbDashStatusGapListe();
+  var dashStatusGaps = dashGaps.ok ? dashGaps.gaps || [] : [];
+  return {
+    ok: true,
+    loadedAt: new Date().toISOString(),
+    stats: stats,
+    delBuffer: del.ok ? del.arr || [] : [],
+    syncMissing: missing,
+    syncCount: sync.ok ? sync.count || 0 : 0,
+    nachtragenDone: nachtragenDone,
+    dashMissing: dashMissing,
+    dashSyncCount: dash.ok ? dash.count || 0 : 0,
+    dashNachtragenDone: dashNachtragenDone,
+    dashStatusGaps: dashStatusGaps,
+    dashStatusGapCount: dashGaps.ok ? dashGaps.count || 0 : 0,
+    integrityCount: null
+  };
 }
 
 function uxNbHubCacheLesen() {
@@ -152,16 +208,38 @@ function uxNbHubCacheLesen() {
   if (cached && cached.loadedAt) {
     return { ok: true, fromCache: true, data: cached };
   }
-  return uxNbHubCacheNeuLaden();
+  return {
+    ok: false,
+    fromCache: false,
+    needsReload: true,
+    fehler: "Kein Cache – wird aufgebaut…",
+    data: null
+  };
 }
 
 function uxNbHubCacheNeuLaden() {
+  var lock = LockService.getUserLock();
+  var got = false;
   try {
+    got = lock.tryLock(8000);
+    if (!got) {
+      var cached = uxNbHubCacheRead_();
+      if (cached && cached.loadedAt) {
+        return { ok: true, fromCache: true, data: cached, fehler: "Aufbau läuft – letzter Stand." };
+      }
+      return { ok: false, fehler: "Cache-Aufbau läuft bereits – kurz warten.", data: null };
+    }
     var data = uxNbHubDatenSammeln_();
     uxNbHubCacheWrite_(data);
     return { ok: true, fromCache: false, data: data };
   } catch (e) {
     return { ok: false, fehler: String(e), data: null };
+  } finally {
+    if (got) {
+      try {
+        lock.releaseLock();
+      } catch (e2) {}
+    }
   }
 }
 
@@ -1445,4 +1523,273 @@ function uxNbDashZeileInsArchiv(dashRow) {
   } catch (err) {
     return { ok: false, fehler: String(err) };
   }
+}
+
+function uxNbAuthLog_(obj) {
+  try {
+    if (typeof obj === "string") {
+      Logger.log(obj);
+      return;
+    }
+    Logger.log(JSON.stringify(obj, null, 2));
+  } catch (e) {}
+}
+
+function uxNbAuthAlert_(title, lines) {
+  var out = [String(title || "NB Auth")];
+  if (lines && lines.length) {
+    for (var i = 0; i < lines.length; i++) out.push(String(lines[i]));
+  }
+  uxNbAuthLog_(out.join("\n"));
+}
+
+function uxNbAuthStatusRaw_() {
+  var info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL);
+  var out = {
+    authorizationStatus: String(info.getAuthorizationStatus()),
+    authUrl: ""
+  };
+  try {
+    if (info.getAuthorizationStatus() === ScriptApp.AuthorizationStatus.REQUIRED) {
+      out.authUrl = info.getAuthorizationUrl();
+    }
+  } catch (e) {}
+  return out;
+}
+
+function uxNbAuthTouchCore_() {
+  var checks = [];
+  function check(name, fn) {
+    try {
+      var v = fn();
+      checks.push({
+        name: name,
+        ok: true,
+        detail: v != null && String(v) !== "" ? String(v).substring(0, 160) : "ok"
+      });
+    } catch (e) {
+      checks.push({ name: name, ok: false, detail: String(e) });
+    }
+  }
+  check("authorizationInfo", function () {
+    return uxNbAuthStatusRaw_().authorizationStatus;
+  });
+  check("activeUserEmail", function () {
+    var e = Session.getActiveUser().getEmail();
+    if (!e) throw new Error("activeUser leer – evtl. fehlende Berechtigung");
+    return e;
+  });
+  check("effectiveUserEmail", function () {
+    return Session.getEffectiveUser().getEmail() || "(leer)";
+  });
+  check("spreadsheetAccess", function () {
+    var ss = getMainSS();
+    if (!ss) {
+      if (typeof MAIN_ID === "undefined" || !MAIN_ID) throw new Error("MAIN_ID fehlt");
+      ss = SpreadsheetApp.openById(MAIN_ID);
+    }
+    if (!ss) throw new Error("Mappe nicht erreichbar");
+    return ss.getName() + " · " + ss.getId();
+  });
+  check("dashboardRead", function () {
+    var ss = getMainSS();
+    if (!ss && typeof MAIN_ID !== "undefined" && MAIN_ID) ss = SpreadsheetApp.openById(MAIN_ID);
+    if (!ss) throw new Error("kein SS");
+    var sh = ss.getSheetByName("Dashboard");
+    if (!sh) throw new Error("Dashboard-Blatt fehlt");
+    return "lastRow=" + sh.getLastRow();
+  });
+  check("scriptTriggers", function () {
+    return "count=" + ScriptApp.getProjectTriggers().length;
+  });
+  check("hubCacheRead", function () {
+    var cached = uxNbHubCacheRead_();
+    if (cached && cached.loadedAt) return "loadedAt=" + cached.loadedAt;
+    return "kein Cache (normal nach Reset)";
+  });
+  return checks;
+}
+
+function uxNbAuthTriggerDialog_() {
+  try {
+    if (typeof MAIN_ID !== "undefined" && MAIN_ID) {
+      return SpreadsheetApp.openById(MAIN_ID).getName();
+    }
+  } catch (e1) {}
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active) return active.getName();
+  } catch (e2) {}
+  return "";
+}
+
+function runNbAuthAuthorizeNow() {
+  var auth = uxNbAuthStatusRaw_();
+  uxNbAuthLog_("Status: " + auth.authorizationStatus);
+  if (auth.authUrl) uxNbAuthLog_("Auth URL:\n" + auth.authUrl);
+  var touched = "";
+  try {
+    touched = uxNbAuthTriggerDialog_();
+    if (touched) uxNbAuthLog_("Spreadsheet ok: " + touched);
+  } catch (e) {
+    uxNbAuthLog_("Spreadsheet-Anfrage (Auth-Dialog): " + e);
+  }
+  return {
+    ok: auth.authorizationStatus !== String(ScriptApp.AuthorizationStatus.REQUIRED),
+    auth: auth,
+    spreadsheet: touched || "",
+    hint: auth.authUrl
+      ? "Falls kein Dialog kam: Auth-URL aus dem Log im Browser öffnen."
+      : "Bereits autorisiert oder Dialog sollte erscheinen."
+  };
+}
+
+function uxNbAuthTouchAllServices_() {
+  return uxNbAuthTouchCore_();
+}
+
+function runNbAuthStatusNow() {
+  var auth = uxNbAuthStatusRaw_();
+  uxNbAuthLog_("Status: " + auth.authorizationStatus);
+  if (auth.authUrl) uxNbAuthLog_("Auth URL:\n" + auth.authUrl);
+  var checks = uxNbAuthTouchCore_();
+  var failed = [];
+  for (var i = 0; i < checks.length; i++) {
+    if (!checks[i].ok) failed.push(checks[i].name + ": " + checks[i].detail);
+  }
+  var lines = [
+    "Status: " + auth.authorizationStatus,
+    "Checks ok: " + (checks.length - failed.length) + " / " + checks.length
+  ];
+  if (auth.authUrl) lines.push("", "Auth-URL (Log):", auth.authUrl);
+  if (failed.length) {
+    lines.push("", "Fehler:");
+    for (var f = 0; f < failed.length; f++) lines.push("· " + failed[f]);
+  } else {
+    lines.push("", "Alles erreichbar – Control Center sollte Daten haben.");
+  }
+  var report = {
+    ok: failed.length === 0 && auth.authorizationStatus !== String(ScriptApp.AuthorizationStatus.REQUIRED),
+    auth: auth,
+    checks: checks,
+    failed: failed,
+    summary: lines
+  };
+  uxNbAuthAlert_("Auth Status", lines);
+  return report;
+}
+
+function runNbAuthResetPermissionsNow() {
+  var cleared = [];
+  try {
+    uxNbHubCacheClear_();
+    cleared.push(UX_NB_HUB_CACHE_KEY);
+  } catch (e) {}
+  var auth = uxNbAuthStatusRaw_();
+  uxNbAuthLog_("Status: " + auth.authorizationStatus);
+  if (auth.authUrl) uxNbAuthLog_("Auth URL:\n" + auth.authUrl);
+  var lines = [
+    "Lokaler Hub-Cache gelöscht.",
+    "",
+    "Google-Zugriff manuell entfernen:",
+    "1. https://myaccount.google.com/permissions",
+    "2. Dieses Apps-Script-Projekt / NB finden",
+    "3. Zugriff entfernen",
+    "4. Im Editor: runNbAuthAuthorizeNow ausführen",
+    "5. Alle Häkchen bei der Abfrage setzen",
+    "6. runNbAuthReapplyNow ausführen",
+    "7. Control Center öffnen + Cache neu ziehen"
+  ];
+  if (auth.authUrl) {
+    lines.push("", "Falls direkt nötig – Auth-URL steht im Log.");
+  }
+  var report = {
+    ok: true,
+    cleared: cleared,
+    revokeUrl: "https://myaccount.google.com/permissions",
+    authUrl: auth.authUrl || "",
+    summary: lines
+  };
+  uxNbAuthAlert_("Auth Reset", lines);
+  return report;
+}
+
+function runNbAuthReapplyNow() {
+  var auth = uxNbAuthStatusRaw_();
+  uxNbAuthLog_("Status: " + auth.authorizationStatus);
+  if (auth.authUrl) uxNbAuthLog_("Auth URL:\n" + auth.authUrl);
+  if (auth.authorizationStatus === String(ScriptApp.AuthorizationStatus.REQUIRED)) {
+    try {
+      uxNbAuthTriggerDialog_();
+    } catch (e0) {
+      uxNbAuthLog_("Auth-Dialog auslösen: " + e0);
+    }
+    var need = [
+      "Autorisierung fehlt.",
+      "",
+      "1. Auth-Dialog im Browser bestätigen ODER",
+      "2. Auth-URL aus dem Log öffnen",
+      "3. Diese Funktion nochmal starten"
+    ];
+    if (auth.authUrl) need.push("", auth.authUrl);
+    var blocked = { ok: false, auth: auth, fehler: "Autorisierung REQUIRED", summary: need };
+    uxNbAuthAlert_("Auth fehlt", need);
+    return blocked;
+  }
+  try {
+    uxNbHubCacheClear_();
+  } catch (e0) {}
+  var checks = uxNbAuthTouchCore_();
+  var failed = [];
+  for (var i = 0; i < checks.length; i++) {
+    if (!checks[i].ok) failed.push(checks[i].name + ": " + checks[i].detail);
+  }
+  var lines = ["Berechtigungen geprüft (ohne Hub-Neubau)."];
+  if (failed.length) {
+    lines.push("", "Noch kaputt:");
+    for (var f = 0; f < failed.length; f++) lines.push("· " + failed[f]);
+    lines.push("", "Tipp: runNbAuthAuthorizeNow oder runNbAuthResetPermissionsNow.");
+  } else {
+    lines.push("", "Sieht gut aus – Control Center öffnen, dann Cache neu ziehen.");
+  }
+  var report = {
+    ok: failed.length === 0,
+    auth: auth,
+    checks: checks,
+    failed: failed,
+    fehler: failed.length ? failed.join(" | ") : "",
+    summary: lines
+  };
+  uxNbAuthAlert_(failed.length ? "Auth teilweise ok" : "Auth ok", lines);
+  return report;
+}
+
+function runNbAuthFullRepairNow() {
+  try {
+    uxNbHubCacheClear_();
+  } catch (e) {}
+  var auth = uxNbAuthStatusRaw_();
+  uxNbAuthLog_("Status: " + auth.authorizationStatus);
+  if (auth.authUrl) uxNbAuthLog_("Auth URL:\n" + auth.authUrl);
+  if (auth.authorizationStatus === String(ScriptApp.AuthorizationStatus.REQUIRED)) {
+    try {
+      uxNbAuthTriggerDialog_();
+    } catch (e0) {
+      uxNbAuthLog_("Auth-Dialog auslösen: " + e0);
+    }
+    var lines = [
+      "Hub-Cache gelöscht.",
+      "",
+      "1. https://myaccount.google.com/permissions",
+      "2. Apps-Script-Zugriff entfernen",
+      "3. runNbAuthAuthorizeNow ausführen",
+      "4. Auth-URL/Dialog – alle Häkchen setzen",
+      "5. runNbAuthReapplyNow nochmal starten"
+    ];
+    if (auth.authUrl) lines.push("", auth.authUrl);
+    var blocked = { ok: false, auth: auth, summary: lines };
+    uxNbAuthAlert_("Auth Komplett-Reparatur", lines);
+    return blocked;
+  }
+  return runNbAuthReapplyNow();
 }
