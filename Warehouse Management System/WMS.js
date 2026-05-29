@@ -1475,6 +1475,8 @@ function getNachbestellungen() {
 
       if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [], lagerortOptions: lagerortOptions, statusOptions: statusOptions };
 
+      var entryIdCol = getSheetEntryIdCol(sheet, NACHBESTELL_ENTRYID_COL);
+
       var entries = [];
       
       for (var i = headerIdx + 1; i < data.length; i++) {
@@ -1517,8 +1519,11 @@ function getNachbestellungen() {
           regalVal = nachbestellungRegalUiFromCell(rawL);
         }
 
+        var entryIdVal = (entryIdCol > 0 && (lastCol >= entryIdCol)) ? String(data[i][entryIdCol - 1] || "").trim() : "";
+
         entries.push({
           row: i + 1,
+          entryId: entryIdVal,
           date: dateStr,
           stockId: stockId,
           url: cols.url !== undefined ? String(data[i][cols.url] || "").trim() : "",
@@ -1549,13 +1554,69 @@ function getNachbestellungen() {
     }
   }
 
-function updateNachbestellung(sheetRow, fieldName, value) {
+function resolveNachbestellungTargetRow(sheet, nbLayout, sheetRow, expectedStockId, expectedEntryId) {
+  var lastRow = Math.max(1, sheet.getLastRow());
+  var stockCol = getNachbestellungStockIdCol(sheet, nbLayout);
+  var eidCol = getSheetEntryIdCol(sheet, NACHBESTELL_ENTRYID_COL);
+  var expStock = normalizeStockId(expectedStockId);
+  var expEntry = String(expectedEntryId || "").trim();
+  var dataStartIdx = Math.max(0, nbLayout.dataStartRow - 1);
+
+  if (!expStock && !expEntry) {
+    return { row: sheetRow, ok: true };
+  }
+
+  if (sheetRow >= 1 && sheetRow <= lastRow) {
+    var rowStock = stockCol > 0 ? normalizeStockId(sheet.getRange(sheetRow, stockCol).getValue()) : "";
+    var rowEntry = eidCol > 0 ? String(sheet.getRange(sheetRow, eidCol).getValue() || "").trim() : "";
+    var entryOk = expEntry ? (rowEntry === expEntry) : true;
+    var stockOk = expStock ? (rowStock === expStock) : true;
+    if (entryOk && stockOk) {
+      return { row: sheetRow, ok: true };
+    }
+  }
+
+  if (expEntry && eidCol > 0) {
+    var eids = sheet.getRange(1, eidCol, lastRow, 1).getValues();
+    var eidMatches = [];
+    for (var i = dataStartIdx; i < eids.length; i++) {
+      if (String(eids[i][0] || "").trim() === expEntry) eidMatches.push(i + 1);
+    }
+    if (eidMatches.length === 1) return { row: eidMatches[0], ok: true, relocated: true };
+    if (eidMatches.length > 1 && expStock && stockCol > 0) {
+      for (var m = 0; m < eidMatches.length; m++) {
+        var rs = normalizeStockId(sheet.getRange(eidMatches[m], stockCol).getValue());
+        if (rs === expStock) return { row: eidMatches[m], ok: true, relocated: true };
+      }
+    }
+  }
+
+  if (expStock && stockCol > 0) {
+    var stocks = sheet.getRange(1, stockCol, lastRow, 1).getValues();
+    var stockMatches = [];
+    for (var j = dataStartIdx; j < stocks.length; j++) {
+      if (normalizeStockId(stocks[j][0]) === expStock) stockMatches.push(j + 1);
+    }
+    if (stockMatches.length === 1) return { row: stockMatches[0], ok: true, relocated: true };
+    if (stockMatches.length > 1) {
+      return { row: -1, ok: false, message: "Mehrere Zeilen mit Stock-ID " + expStock + " gefunden – bitte Liste aktualisieren (🔄) und erneut speichern." };
+    }
+  }
+
+  return { row: -1, ok: false, message: "Zeile für '" + (expStock || expEntry) + "' nicht mehr gefunden – Liste hat sich geändert. Bitte aktualisieren (🔄)." };
+}
+
+function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expectedEntryId) {
     try {
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
       if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
 
       var nbLayout = findNachbestellungSheetLayout(sheet);
+
+      var resolved = resolveNachbestellungTargetRow(sheet, nbLayout, sheetRow, expectedStockId, expectedEntryId);
+      if (!resolved.ok) return { success: false, message: resolved.message };
+      sheetRow = resolved.row;
 
       if (fieldName === "regal") {
         var lagerortCol = nbLayout.lagerortCol;
@@ -1689,25 +1750,43 @@ function getNachbestellungStockIdCol(sheet, nbLayout) {
 
 function findInputExitRowByKeys(exitSheet, stockId, entryId) {
   var lastRow = Math.max(1, exitSheet.getLastRow());
-  if (lastRow < 2) return -1;
+  if (lastRow < 2) return { row: -1, message: "Input Exit: leer" };
   var eidCol = getSheetEntryIdCol(exitSheet, 27);
   var stockCol = 2;
-  if (entryId) {
-    var targetE = String(entryId).trim();
-    if (targetE && eidCol > 0) {
-      var eids = exitSheet.getRange(2, eidCol, lastRow - 1, 1).getValues();
-      for (var i = 0; i < eids.length; i++) {
-        if (String(eids[i][0] || "").trim() === targetE) return i + 2;
-      }
+  var targetE = String(entryId || "").trim();
+
+  if (targetE && eidCol > 0) {
+    var eids = exitSheet.getRange(2, eidCol, lastRow - 1, 1).getValues();
+    var eidMatches = [];
+    for (var i = 0; i < eids.length; i++) {
+      if (String(eids[i][0] || "").trim() === targetE) eidMatches.push(i + 2);
     }
+    if (eidMatches.length === 1) return { row: eidMatches[0] };
+    if (eidMatches.length > 1) {
+      if (stockId) {
+        for (var k = 0; k < eidMatches.length; k++) {
+          if (cellMatchesStockId(exitSheet.getRange(eidMatches[k], stockCol).getValue(), stockId)) {
+            return { row: eidMatches[k] };
+          }
+        }
+      }
+      return { row: -1, message: "Input Exit: EntryID mehrfach vorhanden – bitte prüfen." };
+    }
+    return { row: -1, message: "Input Exit: EntryID nicht gefunden – nichts geändert (kein Fallback, um falsche Zeile zu vermeiden)." };
   }
+
   if (stockId) {
     var stocks = exitSheet.getRange(2, stockCol, lastRow - 1, 1).getValues();
+    var stockMatches = [];
     for (var j = 0; j < stocks.length; j++) {
-      if (cellMatchesStockId(stocks[j][0], stockId)) return j + 2;
+      if (cellMatchesStockId(stocks[j][0], stockId)) stockMatches.push(j + 2);
+    }
+    if (stockMatches.length === 1) return { row: stockMatches[0] };
+    if (stockMatches.length > 1) {
+      return { row: -1, message: "Input Exit: Stock-ID mehrfach vorhanden und keine EntryID – bitte EntryID pflegen." };
     }
   }
-  return -1;
+  return { row: -1, message: "Input Exit: Zeile nicht gefunden" };
 }
 
 function syncNachbestellungStatusToInputExit(ss, nbSheet, sheetRow, statusValue, nbLayout) {
@@ -1719,8 +1798,9 @@ function syncNachbestellungStatusToInputExit(ss, nbSheet, sheetRow, statusValue,
     var stockId = normalizeStockId(nbSheet.getRange(sheetRow, stockCol).getValue());
     var entryId = eidCol > 0 ? String(nbSheet.getRange(sheetRow, eidCol).getValue() || "").trim() : "";
     if (!stockId && !entryId) return "Input Exit: Keine Stock-ID/EntryID";
-    var exitRow = findInputExitRowByKeys(exitSheet, stockId, entryId);
-    if (exitRow === -1) return "Input Exit: Zeile nicht gefunden";
+    var exitMatch = findInputExitRowByKeys(exitSheet, stockId, entryId);
+    var exitRow = exitMatch.row;
+    if (exitRow === -1) return exitMatch.message || "Input Exit: Zeile nicht gefunden";
     var statusCell = exitSheet.getRange(exitRow, INPUT_EXIT_STATUS_COL);
     var allowedSt = getNachbestellungStatusAllowedList(exitSheet, INPUT_EXIT_STATUS_COL);
     var rawSt = String(statusValue || "").trim();
@@ -1872,9 +1952,6 @@ function requestWerkstattauftragPrint(stockId, beschreibung, typ) {
     try {
       var bearbeiter = Session.getActiveUser().getEmail();
       if (bearbeiter !== AUFTRAG_EMAIL) return { success: false, message: "Nicht berechtigt" };
-      if (!nachbestellungTypShouldPrintWerkstattauftrag(typ)) {
-        return { success: false, message: "Druck nur für Erstbestellung falsch, Mechanik Nachbestellung und Q-Check" };
-      }
       var fillMsg = autoFillWerkstattauftrag(stockId, beschreibung);
       var prep = prepareWerkstattauftragPrint(stockId, beschreibung, true);
       if (prep.success) return prep;

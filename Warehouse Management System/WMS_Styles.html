@@ -1914,14 +1914,15 @@
     border-bottom: 2px solid #242d39;
   }
   .nb-detail-inner {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 14px;
+    align-items: stretch;
   }
   .nb-detail-box {
-    flex: 1 1 240px;
-    min-width: 220px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
     background: rgba(255,255,255,0.02);
     border: 1px solid #1d2530;
     border-radius: 14px;
@@ -1974,6 +1975,24 @@
     font-weight: 800;
   }
   .nb-copy-box:hover { background: rgba(163,113,247,0.22); color: #d2a8ff; }
+  .nb-copy-box:last-child { margin-bottom: 0; }
+  .nb-copy-exit {
+    background: rgba(248,81,73,0.10);
+    border: 1px dashed #f85149;
+    color: #f85149;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    text-align: center;
+  }
+  .nb-copy-exit:hover { background: rgba(248,81,73,0.20); color: #ff7b72; }
+  .nb-copy-exit-preview {
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.75;
+    white-space: pre-line;
+    word-break: break-word;
+  }
   .nb-box-purple {
     background: rgba(163,113,247,0.06);
     border-color: rgba(163,113,247,0.35);
@@ -1982,8 +2001,6 @@
   .nb-box-vasold {
     background: rgba(57, 208, 216, 0.06);
     border-color: rgba(57, 208, 216, 0.38);
-    flex: 1 1 100%;
-    min-width: 280px;
   }
   .nb-box-vasold .nb-detail-lbl { color: #39d0d8; }
   .nb-vasold-toggle-row {

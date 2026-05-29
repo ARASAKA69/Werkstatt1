@@ -1165,6 +1165,9 @@
           + '<div class="nb-detail-box"><div class="nb-detail-lbl">Artikel-Nr.</div>'
           +   '<div class="nb-detail-val">' + escapeHtml(e.artikel || '-') + '</div>'
           + '</div>'
+          + '<div class="nb-detail-box"><div class="nb-detail-lbl">Entry-ID</div>'
+          +   '<div class="nb-detail-val" style="font-family:monospace;font-weight:700;color:#3FA0DB;">' + escapeHtml(e.entryId || '-') + '</div>'
+          + '</div>'
           + '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
           +   buildNbStatusSelect(i, e.status, e.row)
           + '</div>'
@@ -1174,7 +1177,9 @@
           + nbVasoldHtml
           + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
           +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
-          +   '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
+          +   (e.entryId ? '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.entryId) + '\')">Entry-ID: ' + escapeHtml(e.entryId) + '</div>' : '')
+          +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
+          +   (nbIsExitOrder(e.typ) ? '<div class="nb-copy-box nb-copy-exit" onclick="copyNbExit(event,' + i + ')">📋 EXIT-Nachricht<span class="nb-copy-exit-preview">' + escapeHtml(e.stockId) + ' / -&gt; ' + escapeHtml(e.teil || '') + ' / EXIT</span></div>' : '')
           + '</div>'
           + '<div class="nb-detail-box nb-box-gold"><div class="nb-detail-lbl">Etiketten</div>'
           +   '<div class="nb-qty-stepper" style="margin-bottom:8px;">'
@@ -1184,7 +1189,7 @@
           +   '</div>'
           +   '<button class="nb-print-btn" style="width:100%;" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
           + '</div>'
-          + (wmsWerkstattPrintEnabled && nbTypShouldPrintWerkstattauftrag(e.typ)
+          + (wmsWerkstattPrintEnabled
             ? '<div class="nb-detail-box nb-box-gold" id="nb-wa-print-wrap-' + i + '"><div class="nb-detail-lbl">Werkstattauftrag</div>'
             +   '<button type="button" class="nb-print-btn" style="width:100%;" id="nb-wa-print-btn-' + i + '" onclick="printNbWerkstattauftrag(event,' + i + ')">Auftrag drucken</button>'
             +   '<div class="nb-vasold-msg" id="nb-wa-print-msg-' + i + '"></div>'
@@ -1408,6 +1413,7 @@
 
     function saveNbStatus(event, sheetRow, value, index) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
+      var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
       var sel = event ? event.target : null;
       if(sel) sel.disabled = true;
       var badge = document.getElementById('nbTotalBadge');
@@ -1441,11 +1447,12 @@
       }).withFailureHandler(function(err) {
         if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
         if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
-      }).updateNachbestellung(sheetRow, 'status', value);
+      }).updateNachbestellung(sheetRow, 'status', value, nbEnt.stockId || '', nbEnt.entryId || '');
     }
 
     function saveNbRegal(event, sheetRow, index) {
       if(event) { event.stopPropagation(); event.preventDefault(); }
+      var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
       var sel = event ? event.target : null;
       var val = sel ? sel.value : '';
       if(sel) sel.disabled = true;
@@ -1467,7 +1474,7 @@
       }).withFailureHandler(function(err) {
         if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
         if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
-      }).updateNachbestellung(sheetRow, 'regal', val);
+      }).updateNachbestellung(sheetRow, 'regal', val, nbEnt.stockId || '', nbEnt.entryId || '');
     }
 
     function refreshNbModal() {
@@ -1526,6 +1533,17 @@
       ta.select();
       document.execCommand('copy');
       document.body.removeChild(ta);
+    }
+
+    function nbIsExitOrder(typ) {
+      return String(typ || '').toLowerCase().indexOf('exit') !== -1;
+    }
+
+    function copyNbExit(event, index) {
+      var ent = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : null;
+      if(!ent) { if(event){ event.stopPropagation(); event.preventDefault(); } return; }
+      var msg = String(ent.stockId || '') + '\n-> ' + String(ent.teil || '') + '\nEXIT';
+      copyNbValue(event, msg);
     }
 
     function printNbLabel(event, stockId, index) {
