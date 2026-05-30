@@ -1,20 +1,25 @@
 var CONFIG = {
     refurbSpreadsheetId: "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM",
     refurbSheetName: "Refurbisment List",
-    refurbHeaderRow: 4,
     refurbStockCol: 2,
     refurbStatusCol: 28,
+    nachbestellSpreadsheetId: "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE",
+    nachbestellSheetName: "Nachbestellung",
+    nachbestellStockCol: 2,
+    nachbestellStatusCol: 13,
+    nachbestellColor: "#9900ff",
     triggerStatus: "Tagesliste",
     lagerSheetName: "LAGER",
     tageslisteSheetName: "Tagesliste",
     greenColor: "#00ff00",
+    manualMoveColor: "#46bdc6",
     removeFromLager: true,
     addMissingToLager: true,
     intervalMinutes: 2,
     activeFromHour: 6,
     activeToHour: 21,
     timezone: "Europe/Berlin",
-    ignoreColors: ["#9900ff", "#00ffff", "#ffff00", "#ff9900", "#ff0000", "#4a86e8"],
+    ignoreColors: ["#00ffff", "#ffff00", "#ff9900", "#ff0000", "#4a86e8"],
     ignoreNoteKeyword: "NACHBESTELLUNG"
 };
 
@@ -69,39 +74,49 @@ function runSync_() {
     var tagesliste = ss.getSheetByName(CONFIG.tageslisteSheetName);
     if (!lager || !tagesliste) return;
 
-    var entries = getRefurbEntries_();
+    var entries = collectEntries_();
     var statusMap = buildStatusMap_(entries);
 
     var lagerData = readSheetData_(lager);
     var tagesData = readSheetData_(tagesliste);
     var tagesRegale = getRegalColumnsFromValues_(tagesData.values);
     var existingTages = getRegalIdsFromValues_(tagesData.values);
-    var lagerById = indexLagerItems_(lagerData);
 
+    var tagesMoveColor = {};
     for (var i = 0; i < entries.length; i++) {
-        if (!isTageslisteStatus_(entries[i].status)) continue;
-        var key = normalizeId_(entries[i].id);
-        var instances = lagerById[key];
-        if (!instances) continue;
-
-        for (var n = 0; n < instances.length; n++) {
-            var item = instances[n];
-            if (isIgnored_(item)) continue;
-
-            if (!existingTages[key]) {
-                var destRow = placeInGap_(tagesliste, tagesData, tagesRegale, item.regal, item.stockId, CONFIG.greenColor);
-                if (destRow) {
-                    existingTages[key] = true;
-                    var destCol = tagesRegale[item.regal].col;
-                    copyNote_(lager, item.row, item.col, tagesliste, destRow, destCol);
-                }
-            }
-
-            if (!existingTages[key]) continue;
-
-            clearCell_(lager, item.row, item.col);
-            sheetDataClear_(lagerData, item.row, item.col);
+        if (isTageslisteStatus_(entries[i].status)) {
+            tagesMoveColor[normalizeId_(entries[i].id)] = entries[i].tagesColor;
         }
+    }
+
+    var manualColor = String(CONFIG.manualMoveColor).toLowerCase();
+    var lagerItems = scanRegaleFromData_(lagerData);
+    for (var li = 0; li < lagerItems.length; li++) {
+        var item = lagerItems[li];
+        var key = normalizeId_(item.stockId);
+        var moveColor = null;
+
+        if (item.background === manualColor) {
+            moveColor = CONFIG.greenColor;
+        } else if (tagesMoveColor.hasOwnProperty(key) && !isIgnored_(item)) {
+            moveColor = tagesMoveColor[key];
+        } else {
+            continue;
+        }
+
+        if (!existingTages[key]) {
+            var destRow = placeInGap_(tagesliste, tagesData, tagesRegale, item.regal, item.stockId, moveColor);
+            if (destRow) {
+                existingTages[key] = true;
+                var destCol = tagesRegale[item.regal].col;
+                copyNote_(lager, item.row, item.col, tagesliste, destRow, destCol);
+            }
+        }
+
+        if (!existingTages[key]) continue;
+
+        clearCell_(lager, item.row, item.col);
+        sheetDataClear_(lagerData, item.row, item.col);
     }
 
     var tagesItems = scanRegaleFromData_(tagesData);
@@ -122,11 +137,24 @@ function runSync_() {
             if (!regalKey) continue;
             var idn = normalizeId_(entries[k].id);
             if (lagerIds[idn]) continue;
-            if (placeInGap_(lager, lagerData, lagerRegale, regalKey, entries[k].id, null)) {
+            if (placeInGap_(lager, lagerData, lagerRegale, regalKey, entries[k].id, entries[k].lagerColor)) {
                 lagerIds[idn] = true;
             }
         }
     }
+}
+
+function collectEntries_() {
+    var list = [];
+    var refurb = getSourceEntries_(CONFIG.refurbSpreadsheetId, CONFIG.refurbSheetName, CONFIG.refurbStockCol, CONFIG.refurbStatusCol);
+    for (var i = 0; i < refurb.length; i++) {
+        list.push({ id: refurb[i].id, status: refurb[i].status, lagerColor: null, tagesColor: CONFIG.greenColor });
+    }
+    var nach = getSourceEntries_(CONFIG.nachbestellSpreadsheetId, CONFIG.nachbestellSheetName, CONFIG.nachbestellStockCol, CONFIG.nachbestellStatusCol);
+    for (var j = 0; j < nach.length; j++) {
+        list.push({ id: nach[j].id, status: nach[j].status, lagerColor: CONFIG.nachbestellColor, tagesColor: CONFIG.nachbestellColor });
+    }
+    return list;
 }
 
 function buildStatusMap_(entries) {
@@ -135,17 +163,6 @@ function buildStatusMap_(entries) {
         var id = normalizeId_(entries[e].id);
         var status = entries[e].status;
         if (!map[id] || isTageslisteStatus_(status)) map[id] = status;
-    }
-    return map;
-}
-
-function indexLagerItems_(data) {
-    var map = {};
-    var items = scanRegaleFromData_(data);
-    for (var i = 0; i < items.length; i++) {
-        var key = normalizeId_(items[i].stockId);
-        if (!map[key]) map[key] = [];
-        map[key].push(items[i]);
     }
     return map;
 }
@@ -170,21 +187,30 @@ function sheetDataClear_(data, row, col) {
     data.notes[row0][col0] = "";
 }
 
-function getRefurbEntries_() {
+function getSourceEntries_(spreadsheetId, sheetName, stockCol, statusCol) {
     var entries = [];
-    var ss = SpreadsheetApp.openById(CONFIG.refurbSpreadsheetId);
-    var sh = ss.getSheetByName(CONFIG.refurbSheetName);
+    var ss = SpreadsheetApp.openById(spreadsheetId);
+    var sh = ss.getSheetByName(sheetName);
     if (!sh) return entries;
     var lastRow = sh.getLastRow();
-    if (lastRow <= CONFIG.refurbHeaderRow) return entries;
-    var startRow = CONFIG.refurbHeaderRow + 1;
-    var maxCol = Math.max(CONFIG.refurbStockCol, CONFIG.refurbStatusCol);
+    if (lastRow < 1) return entries;
+    var maxCol = Math.max(stockCol, statusCol);
     var colLetter = columnToLetter_(maxCol);
-    var values = sh.getRange("A" + startRow + ":" + colLetter + lastRow).getValues();
+    var values = sh.getRange("A1:" + colLetter + lastRow).getValues();
+    var headerRow0 = -1;
     for (var r = 0; r < values.length; r++) {
-        var rawId = values[r][CONFIG.refurbStockCol - 1];
-        var status = values[r][CONFIG.refurbStatusCol - 1];
+        var head = String(values[r][stockCol - 1] || "").trim().toLowerCase();
+        if (head === "stock id" || head === "stockid") {
+            headerRow0 = r;
+            break;
+        }
+    }
+    var start = headerRow0 >= 0 ? headerRow0 + 1 : 0;
+    for (var r2 = start; r2 < values.length; r2++) {
+        var rawId = values[r2][stockCol - 1];
+        var status = values[r2][statusCol - 1];
         if (rawId === "" || rawId === null) continue;
+        if (isRegalHeader_(rawId)) continue;
         entries.push({ id: rawId, status: String(status).trim() });
     }
     return entries;
