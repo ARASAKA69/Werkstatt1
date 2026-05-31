@@ -17,7 +17,7 @@ const NACHBESTELL_ENTRYID_COL = 15;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
-const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzj6XhWgQSAmJ_ypS-ymGi1MEF1RMlhAWKMYQ5Kzf31Nrk6bMqo99wGdpgUiRSPWKtt/exec";
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbyJPYasx9K-j-rNjdAcS3S46GwiEAvrP0sjiuoWf9L2p-u38vx51Bu4WdLxz5rY1sHI/exec";
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 
@@ -1234,6 +1234,95 @@ function getRefurbishmentCachePayload() {
     return { success: false, message: err.message };
   }
 }
+
+  function lagerKistenIsRegalHeader_(v) {
+    return /^\s*regal\s+\d+\.\d+\s*$/i.test(String(v == null ? "" : v));
+  }
+
+  function lagerKistenCategoryLabel_(v) {
+    var s = String(v == null ? "" : v).trim();
+    if (!s) return "";
+    var up = s.toUpperCase();
+    var cats = ["B2A1", "COMPLETE", "TAGESLISTE", "KONTROLLIEREN", "NACHBESTELLT"];
+    if (cats.indexOf(up) !== -1) return s;
+    if (up.indexOf("RÜCKFRAGE") !== -1 || up.indexOf("RUCKFRAGE") !== -1) return s;
+    if (up.indexOf("ÜBERSICHT") !== -1 || up.indexOf("UBERSICHT") !== -1) return s;
+    return "";
+  }
+
+  function lagerKistenNormalizeRegal_(v) {
+    var s = String(v == null ? "" : v).trim();
+    var m = s.match(/(\d+)\.(\d+)/);
+    if (m) return "Regal " + m[1] + "." + m[2];
+    return s;
+  }
+
+  function lagerKistenLooksLikeStockId_(v) {
+    var s = String(v == null ? "" : v).replace(/\s+/g, "").toUpperCase();
+    return /^[A-Z]{2}\d{4,8}$/.test(s);
+  }
+
+  function getLagerKistenCachePayload() {
+    try {
+      var ss = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+      var sheet = ss.getSheetByName("LAGER");
+      if (!sheet) return { success: false, message: "Tab 'LAGER' nicht gefunden!", items: [], notes: [] };
+
+      var range = sheet.getDataRange();
+      var values = range.getValues();
+      var cellNotes = range.getNotes();
+      var backgrounds = range.getBackgrounds();
+      var numRows = values.length;
+      var numCols = numRows ? values[0].length : 0;
+
+      var colorLabelMap = {};
+      for (var lr = 0; lr < numRows; lr++) {
+        for (var lc = 0; lc < numCols; lc++) {
+          var label = lagerKistenCategoryLabel_(values[lr][lc]);
+          if (!label) continue;
+          var hex = String(backgrounds[lr][lc] || "").toLowerCase();
+          if (hex && hex !== "#ffffff" && hex !== "#fff" && !colorLabelMap[hex]) {
+            colorLabelMap[hex] = label;
+          }
+        }
+      }
+
+      var items = [];
+      var looseNotes = [];
+      for (var c = 0; c < numCols; c++) {
+        var currentRegal = "";
+        for (var r = 0; r < numRows; r++) {
+          var raw = values[r][c];
+          var note = (cellNotes[r] && cellNotes[r][c]) ? String(cellNotes[r][c]).trim() : "";
+          if (lagerKistenIsRegalHeader_(raw)) {
+            currentRegal = lagerKistenNormalizeRegal_(raw);
+            continue;
+          }
+          if (lagerKistenCategoryLabel_(raw)) continue;
+          var txt = String(raw == null ? "" : raw).trim();
+          if (!txt) continue;
+          if (lagerKistenLooksLikeStockId_(txt)) {
+            var bg = String(backgrounds[r][c] || "").toLowerCase();
+            items.push({
+              stockId: txt.replace(/\s+/g, "").toUpperCase(),
+              regal: currentRegal,
+              kategorie: colorLabelMap[bg] || "",
+              note: note
+            });
+          } else if (txt.length >= 4 || note) {
+            looseNotes.push({
+              regal: currentRegal,
+              text: txt + (note ? " [Notiz: " + note + "]" : "")
+            });
+          }
+        }
+      }
+
+      return { success: true, version: Date.now(), items: items, notes: looseNotes };
+    } catch (err) {
+      return { success: false, message: err.message, items: [], notes: [] };
+    }
+  }
 
   function saveKommentar(stockId, text) {
     try {
