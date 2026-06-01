@@ -549,23 +549,25 @@
       </div>
       <div class="ai-title-block">
         <div class="ai-title">ARASAKA Assistent</div>
-        <div class="ai-subtitle" id="aiSubtitle">Fragen zu Aufträgen, Bestellungen &amp; Lager</div>
+          <div class="ai-subtitle" id="aiSubtitle">Fragen &amp; Aktionen: Aufträge, Bestellungen &amp; Lager</div>
       </div>
       <span class="ai-cache-hud" id="aiCacheHud">Daten: —</span>
+      <button type="button" class="ai-agent-toggle" id="aiAgentToggle" role="switch" aria-checked="true" onclick="toggleAiAgentMode()" title="Agent-Modus: führt auf Wunsch Änderungen aus (mit Bestätigung). Aus = nur Fragen beantworten.">🤖 Agent: AN</button>
       <button type="button" class="ai-reset-btn" onclick="resetAiChat()" title="Verlauf löschen">🧹 Neu</button>
       <button type="button" class="ai-close" onclick="minimizeAiChat()">Zurück</button>
     </div>
     <div class="ai-body" id="aiChatBody">
       <div class="ai-msg ai-msg--bot">
         <div class="ai-msg-avatar">🤖</div>
-        <div class="ai-msg-bubble">Hi! Ich bin dein WMS-Assistent. Ich sehe die geladenen Daten aus Refurbishment, Nachbestellungen, Reifenausgabe, Übersicht und Gmail-Lookup. Frag mich z.&nbsp;B. ob ein Auftrag komplett ist, welche Teile noch fehlen, wann etwas bestellt wurde oder wo eine Stock-ID im Regal steht.</div>
+          <div class="ai-msg-bubble">Hi! Ich bin dein WMS-Assistent. Ich sehe die geladenen Daten aus Refurbishment, Nachbestellungen, Reifenausgabe, Übersicht, Lager-Kisten und Gmail-Lookup. Frag mich z.&nbsp;B. ob ein Auftrag komplett ist, welche Teile noch fehlen oder wo eine Stock-ID steht.<br><br>Ich kann auch Änderungen für dich machen — z.&nbsp;B. „ergänze bei AB1234567 im Kommentar 'Stoßstange fehlt noch'“ oder „setz die Nachbestellung von AB1234567 auf komplett angeliefert“. Jede Aktion zeige ich dir vorher zur Bestätigung an.</div>
       </div>
     </div>
     <div class="ai-suggest" id="aiSuggest">
       <button type="button" class="ai-chip" onclick="aiQuickAsk(this)">Welche Aufträge sind noch nicht komplett?</button>
       <button type="button" class="ai-chip" onclick="aiQuickAsk(this)">Welche Teile fehlen aktuell?</button>
-      <button type="button" class="ai-chip" onclick="aiQuickAsk(this)">Was steht heute zur Reifenausgabe an?</button>
-    </div>
+        <button type="button" class="ai-chip" onclick="aiQuickAsk(this)">Was steht heute zur Reifenausgabe an?</button>
+        <button type="button" class="ai-chip" onclick="aiQuickAsk(this)">Ergänze einen Kommentar bei einer Stock-ID</button>
+      </div>
     <div class="ai-input-row">
       <textarea id="aiChatInput" class="ai-input" rows="1" placeholder="Frage zu Stock-ID, Bestellnummer, Status…" autocomplete="off"></textarea>
       <button type="button" class="ai-send-btn" id="aiSendBtn" onclick="sendAiChatMessage()">➤</button>

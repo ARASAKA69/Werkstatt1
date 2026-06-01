@@ -21,8 +21,10 @@
   var REFURB_CACHE_POLL_MS = 75000;
 
   var GEMINI_API_KEY = '';
-  var GEMINI_MODEL = 'gemini-3.1-flash-lite';
+  var GEMINI_MODEL = 'gemini-3.5-flash';
   var GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+  var aiPendingTool = null;
+  var aiAgentMode = (localStorage.getItem('arasaka_ai_agent_mode') !== 'off');
   var aiChatHistory = [];
   var aiChatBusy = false;
   var aiChatInited = false;
@@ -4411,7 +4413,7 @@
   }
 
   function buildAiSystemPrompt() {
-    return [
+    var base = [
       'Du bist der "ARASAKA Assistent", ein eingebauter KI-Helfer im Warehouse Management System (WMS) der Werkstatt 1 von Autohero/Auto1.',
       'Du läufst direkt in der WMS-Oberfläche und wirst über das "BY ARASAKA"-Badge geöffnet.',
       '',
@@ -4437,7 +4439,30 @@
       '- Status wie "komplett angeliefert", "angeliefert/bereit", "Fertiggestellt" bedeuten fertig. "bestellt", "teilweise angeliefert", "Lieferrückstand", "nicht bestellt" bedeuten offen/unvollständig.',
       '- Wenn die Live-Daten leer sind, bitte den Nutzer, den Cache im WMS laden zu lassen (Badge ist erst nach dem Laden sinnvoll).',
       '- Gib bei konkreten Aufträgen, wenn vorhanden, Stock-ID, Status, Regal und fehlende/bestellte Teile an.'
-    ].join('\n');
+    ];
+    if (aiAgentMode) {
+      base = base.concat([
+        '',
+        'AKTIONEN (AGENT-MODUS AKTIV):',
+        '- Du kannst Änderungen im WMS ausführen, indem du die bereitgestellten Funktionen (Tools) aufrufst.',
+        '- Wenn der Nutzer eine Änderung oder ein To-do beschreibt (z.B. Kommentar ergänzen, Status setzen, einlagern, Auftrag beenden, Reifen verbuchen), rufe die passende Funktion mit exakten Parametern auf.',
+        '- Verwende ausschließlich Stock-IDs, Regale und Status, die in den LIVE-DATEN vorkommen. Erfinde niemals eine Stock-ID.',
+        '- Für updateNachbestellung ist feld eines von: status, regal, teil, artikel. Der Wert für status MUSS aus "ERLAUBTE NACHBESTELLUNG-STATUS" stammen.',
+        '- Gibt es zu einer Stock-ID mehrere offene Nachbestell-Positionen, gib zusätzlich artikelNr mit oder frage den Nutzer, welche Position gemeint ist.',
+        '- Für processReifenStock muss tabName ein Wert aus "REIFEN-TABELLENBLÄTTER" sein.',
+        '- Jede Aktion wird dem Nutzer VOR der Ausführung zur Bestätigung angezeigt; er kann ablehnen. Führe nur aus, was der Nutzer möchte. Bei Unklarheit frage zuerst nach, statt zu raten.',
+        '- Nach Ausführung erhältst du das Ergebnis (success/message) und fasst es dem Nutzer kurz zusammen. Bei Misserfolg erkläre den Grund.',
+        '- Reine Informationsfragen beantwortest du normal als Text, ohne eine Funktion aufzurufen.'
+      ]);
+    } else {
+      base = base.concat([
+        '',
+        'NUR-LESEN-MODUS (AGENT-MODUS AUS):',
+        '- Der Agent-Modus ist aktuell deaktiviert. Du kannst KEINE Änderungen im WMS vornehmen.',
+        '- Beantworte ausschließlich Fragen anhand der Daten. Wenn der Nutzer eine Änderung wünscht, erkläre höflich, dass er dafür oben rechts den Agent-Modus aktivieren muss (Schalter "🤖 Agent").'
+      ]);
+    }
+    return base.join('\n');
   }
 
   function buildAiDataContext() {
@@ -4569,6 +4594,18 @@
       out.push('');
     }
 
+    if (nbStatusOptions && nbStatusOptions.length) {
+      out.push('### ERLAUBTE NACHBESTELLUNG-STATUS (gültige Werte für updateNachbestellung feld=status)');
+      out.push(nbStatusOptions.join(' | '));
+      out.push('');
+    }
+
+    if (reifenHudCache && reifenHudCache.tabs && reifenHudCache.tabs.length) {
+      out.push('### REIFEN-TABELLENBLÄTTER (gültige tabName-Werte für processReifenStock)');
+      out.push(reifenHudCache.tabs.join(' | '));
+      out.push('');
+    }
+
     if (!out.length) {
       return 'LIVE-DATEN: (noch keine Daten geladen — bitte WMS-Cache laden lassen)';
     }
@@ -4618,9 +4655,32 @@
     inp.style.height = Math.min(140, inp.scrollHeight) + 'px';
   }
 
+  function updateAiAgentToggleUi() {
+    var btn = document.getElementById('aiAgentToggle');
+    if (!btn) return;
+    btn.textContent = aiAgentMode ? '🤖 Agent: AN' : '🔒 Agent: AUS';
+    btn.setAttribute('aria-checked', aiAgentMode ? 'true' : 'false');
+    btn.classList.toggle('ai-agent-toggle--off', !aiAgentMode);
+    var sub = document.getElementById('aiSubtitle');
+    if (sub) sub.textContent = aiAgentMode ? 'Fragen & Aktionen: Aufträge, Bestellungen & Lager' : 'Nur-Lesen-Modus · nur Fragen';
+  }
+
+  function toggleAiAgentMode() {
+    aiAgentMode = !aiAgentMode;
+    try { localStorage.setItem('arasaka_ai_agent_mode', aiAgentMode ? 'on' : 'off'); } catch (e) {}
+    updateAiAgentToggleUi();
+    if (!aiAgentMode && aiPendingTool) {
+      aiCancelPendingTool();
+    }
+    aiAppendMessage('bot', aiAgentMode
+      ? '🤖 Agent-Modus aktiviert — ich kann jetzt Änderungen vorschlagen und nach deiner Bestätigung ausführen.'
+      : '🔒 Agent-Modus aus — ich beantworte nur noch Fragen und nehme keine Änderungen vor.');
+  }
+
   function initAiChat() {
     if (aiChatInited) return;
     aiChatInited = true;
+    updateAiAgentToggleUi();
     var inp = document.getElementById('aiChatInput');
     if (inp) {
       inp.addEventListener('input', autoGrowAiInput);
@@ -4663,6 +4723,8 @@
 
   function resetAiChat() {
     aiChatHistory = [];
+    aiPendingTool = null;
+    aiRefreshSendBtn();
     var body = document.getElementById('aiChatBody');
     if (body) {
       body.innerHTML = '<div class="ai-msg ai-msg--bot"><div class="ai-msg-avatar">🤖</div><div class="ai-msg-bubble">Verlauf gelöscht. Stell mir eine neue Frage zu Aufträgen, Bestellungen oder Lagerplätzen.</div></div>';
@@ -4681,39 +4743,291 @@
     sendAiChatMessage();
   }
 
-  function setAiBusy(busy) {
-    aiChatBusy = busy;
+  function aiRefreshSendBtn() {
     var btn = document.getElementById('aiSendBtn');
-    if (btn) btn.disabled = busy;
+    if (btn) btn.disabled = aiChatBusy || !!aiPendingTool;
   }
 
-  function sendAiChatMessage() {
-    if (aiChatBusy) return;
-    var inp = document.getElementById('aiChatInput');
-    if (!inp) return;
-    var text = String(inp.value || '').trim();
-    if (!text) return;
+  function setAiBusy(busy) {
+    aiChatBusy = busy;
+    aiRefreshSendBtn();
+  }
 
-    inp.value = '';
-    autoGrowAiInput();
-    var suggest = document.getElementById('aiSuggest');
-    if (suggest) suggest.style.display = 'none';
-    aiAppendMessage('user', text);
-    aiChatHistory.push({ role: 'user', parts: [{ text: text }] });
+  var AI_AGENT_TOOLS = [
+    {
+      name: 'appendRefurbKommentar',
+      description: 'Hängt zusätzlichen Text an den bestehenden Anlieferungs-Kommentar eines Auftrags in der Refurbishment-Liste an. Der vorhandene Kommentar bleibt erhalten (wird mit " // " getrennt).',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID des Auftrags' },
+        zusatz: { type: 'STRING', description: 'Der anzuhängende Text' }
+      }, required: ['stockId', 'zusatz'] }
+    },
+    {
+      name: 'setRefurbKommentar',
+      description: 'Überschreibt den kompletten Anlieferungs-Kommentar eines Auftrags in der Refurbishment-Liste mit neuem Text. Nur verwenden, wenn der Kommentar wirklich ersetzt werden soll.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID des Auftrags' },
+        text: { type: 'STRING', description: 'Der neue, vollständige Kommentartext' }
+      }, required: ['stockId', 'text'] }
+    },
+    {
+      name: 'saveRefurbKommentarUndRegal',
+      description: 'Speichert Anlieferungs-Kommentar und optional ein Regal und setzt den Status auf "Teilweise angeliefert". Nur verwenden, wenn der Auftrag NICHT fertig ist und eingelagert werden muss.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID des Auftrags' },
+        text: { type: 'STRING', description: 'Kommentartext' },
+        regal: { type: 'STRING', description: 'Optionales Regal, z.B. "Regal 3.4"' }
+      }, required: ['stockId', 'text'] }
+    },
+    {
+      name: 'einlagern',
+      description: 'Setzt den Lagerplatz (Regal) eines Auftrags in der Refurbishment-Liste, z.B. "Regal 3.4".',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID des Auftrags' },
+        regal: { type: 'STRING', description: 'Regal, z.B. "Regal 3.4"' }
+      }, required: ['stockId', 'regal'] }
+    },
+    {
+      name: 'updateNachbestellung',
+      description: 'Ändert ein Feld einer offenen Nachbestellung. feld ist eines von status, regal, teil, artikel. Bei feld=status muss der Wert aus der Liste ERLAUBTE NACHBESTELLUNG-STATUS stammen.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID der Nachbestellung' },
+        feld: { type: 'STRING', enum: ['status', 'regal', 'teil', 'artikel'], description: 'Das zu ändernde Feld' },
+        wert: { type: 'STRING', description: 'Der neue Wert' },
+        artikelNr: { type: 'STRING', description: 'Optional: Artikel-Nr zur Unterscheidung, falls mehrere offene Positionen dieselbe Stock-ID haben' }
+      }, required: ['stockId', 'feld', 'wert'] }
+    },
+    {
+      name: 'triggerCarolMission',
+      description: 'Beendet einen Auftrag: setzt Status auf "Herausgegeben", Regal auf "Tagesliste" und startet die Carol-Mission.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID des Auftrags' }
+      }, required: ['stockId'] }
+    },
+    {
+      name: 'processReifenStock',
+      description: 'Verbucht Reifen für eine Stock-ID auf einem Reifen-Tabellenblatt. angeliefert=true => als "Ja"/da, false => als "Nein"/fehlt. tabName muss ein Wert aus REIFEN-TABELLENBLÄTTER sein.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID' },
+        tabName: { type: 'STRING', description: 'Name des Reifen-Tabellenblatts' },
+        angeliefert: { type: 'BOOLEAN', description: 'true = Reifen da, false = Reifen fehlt' }
+      }, required: ['stockId', 'tabName', 'angeliefert'] }
+    },
+    {
+      name: 'processNachbestellVasoldWss',
+      description: 'Trägt für eine Stock-ID die Vasold-WSS-Liste ein. wssJa=true setzt WSS auf Ja, gummi=true vermerkt Gummileiste vorhanden.',
+      parameters: { type: 'OBJECT', properties: {
+        stockId: { type: 'STRING', description: 'Stock-ID' },
+        wssJa: { type: 'BOOLEAN', description: 'WSS = Ja eintragen' },
+        gummi: { type: 'BOOLEAN', description: 'Gummileiste vorhanden vermerken' }
+      }, required: ['stockId'] }
+    }
+  ];
 
+  function aiFindFunctionCall(parts) {
+    if (!parts) return null;
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] && parts[i].functionCall) return parts[i].functionCall;
+    }
+    return null;
+  }
+
+  function aiExtractText(parts) {
+    var t = '';
+    if (parts) {
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i] && parts[i].text) t += parts[i].text;
+      }
+    }
+    return t;
+  }
+
+  function aiFindRefurbRow(stockId) {
+    if (!refurbCache || !refurbCache.rows) return null;
+    var sid = normalizeStockIdJs(stockId);
+    for (var i = 0; i < refurbCache.rows.length; i++) {
+      if (cellMatchesStockIdJs(refurbCache.rows[i][0], sid)) return refurbCache.rows[i];
+    }
+    return null;
+  }
+
+  function aiResolveNbEntry(stockId, artikelNr) {
+    if (!nbAllEntries || !nbAllEntries.length) return { error: 'Keine Nachbestellungen geladen.' };
+    var sid = normalizeStockIdJs(stockId);
+    var matches = [];
+    for (var i = 0; i < nbAllEntries.length; i++) {
+      if (normalizeStockIdJs(nbAllEntries[i].stockId) === sid) matches.push(nbAllEntries[i]);
+    }
+    if (!matches.length) return { error: 'Keine offene Nachbestellung mit Stock-ID ' + sid + ' gefunden.' };
+    if (matches.length > 1 && artikelNr) {
+      var an = String(artikelNr).replace(/\s+/g, '').toLowerCase();
+      var f = matches.filter(function(m) {
+        return String(m.artikel || '').replace(/\s+/g, '').toLowerCase().indexOf(an) !== -1;
+      });
+      if (f.length === 1) return { entry: f[0] };
+      if (f.length > 1) return { error: 'Mehrere Positionen passen zu Artikel-Nr ' + artikelNr + '.' };
+      return { error: 'Keine Position mit Artikel-Nr ' + artikelNr + ' für ' + sid + '.' };
+    }
+    if (matches.length > 1) {
+      var arts = matches.map(function(m) { return m.artikel || (m.teil || '(ohne Artikel-Nr)'); });
+      return { error: 'Mehrere offene Nachbestellungen für ' + sid + ' (' + matches.length + '). Bitte Artikel-Nr angeben. Optionen: ' + arts.join(', ') };
+    }
+    return { entry: matches[0] };
+  }
+
+  function aiRunServer(fnName, argsArr) {
+    return new Promise(function(resolve) {
+      var runner = google.script.run
+        .withSuccessHandler(function(r) { resolve(r || { success: true }); })
+        .withFailureHandler(function(err) { resolve({ success: false, message: (err && err.message) || 'Serverfehler' }); });
+      runner[fnName].apply(runner, argsArr);
+    });
+  }
+
+  function aiExecuteTool(name, args) {
+    args = args || {};
+    try {
+      switch (name) {
+        case 'appendRefurbKommentar': {
+          var row = aiFindRefurbRow(args.stockId);
+          if (!row) return Promise.resolve({ success: false, message: 'Stock-ID ' + args.stockId + ' nicht in Refurbishment gefunden.' });
+          var cur = String(row[4] || '').trim();
+          var combined = cur ? (cur + ' // ' + String(args.zusatz || '')) : String(args.zusatz || '');
+          return aiRunServer('saveKommentar', [args.stockId, combined]);
+        }
+        case 'setRefurbKommentar':
+          return aiRunServer('saveKommentar', [args.stockId, String(args.text || '')]);
+        case 'saveRefurbKommentarUndRegal':
+          return aiRunServer('saveKommentarUndRegal', [args.stockId, String(args.text || ''), String(args.regal || '')]);
+        case 'einlagern':
+          return aiRunServer('einlagern', [args.stockId, String(args.regal || '')]);
+        case 'updateNachbestellung': {
+          var res = aiResolveNbEntry(args.stockId, args.artikelNr);
+          if (res.error) return Promise.resolve({ success: false, message: res.error });
+          var en = res.entry;
+          return aiRunServer('updateNachbestellung', [en.row, String(args.feld || ''), String(args.wert || ''), en.stockId, en.entryId]);
+        }
+        case 'triggerCarolMission':
+          return aiRunServer('triggerCarolMission', [args.stockId]);
+        case 'processReifenStock':
+          return aiRunServer('processReifenStock', [String(args.tabName || ''), args.stockId, !!args.angeliefert]);
+        case 'processNachbestellVasoldWss':
+          return aiRunServer('processNachbestellVasoldWss', [args.stockId, !!args.wssJa, !!args.gummi]);
+        default:
+          return Promise.resolve({ success: false, message: 'Unbekannte Aktion: ' + name });
+      }
+    } catch (e) {
+      return Promise.resolve({ success: false, message: 'Fehler: ' + (e && e.message ? e.message : e) });
+    }
+  }
+
+  function aiDescribeTool(name, args) {
+    args = args || {};
+    switch (name) {
+      case 'appendRefurbKommentar':
+        return '📝 Refurbishment-Kommentar bei **' + args.stockId + '** ergänzen um:\n„' + args.zusatz + '“';
+      case 'setRefurbKommentar':
+        return '📝 Refurbishment-Kommentar bei **' + args.stockId + '** ersetzen durch:\n„' + args.text + '“';
+      case 'saveRefurbKommentarUndRegal':
+        return '📦 Bei **' + args.stockId + '** Kommentar „' + args.text + '“ speichern' + (args.regal ? ', Regal **' + args.regal + '**' : '') + ' und Status → „Teilweise angeliefert“.';
+      case 'einlagern':
+        return '📦 **' + args.stockId + '** einlagern in **' + (args.regal || '?') + '**.';
+      case 'updateNachbestellung':
+        return '🔧 Nachbestellung **' + args.stockId + '**' + (args.artikelNr ? ' (Art. ' + args.artikelNr + ')' : '') + ': Feld **' + args.feld + '** → „' + args.wert + '“.';
+      case 'triggerCarolMission':
+        return '🚀 Auftrag **' + args.stockId + '** beenden (Status „Herausgegeben“, Regal „Tagesliste“) & Carol starten.';
+      case 'processReifenStock':
+        return '🛞 Reifen für **' + args.stockId + '** auf Blatt „' + (args.tabName || '?') + '“ als ' + (args.angeliefert ? 'DA (Ja)' : 'FEHLT (Nein)') + ' verbuchen.';
+      case 'processNachbestellVasoldWss':
+        return '🪟 Vasold-WSS für **' + args.stockId + '**: ' + (args.wssJa ? 'WSS = Ja' : '') + (args.gummi ? (args.wssJa ? ' + ' : '') + 'Gummileiste vorhanden' : '') + '.';
+      default:
+        return 'Aktion: ' + name + ' ' + JSON.stringify(args);
+    }
+  }
+
+  function aiRequestToolConfirmation(name, args) {
+    aiPendingTool = { name: name, args: args };
+    var body = document.getElementById('aiChatBody');
+    if (!body) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg--bot';
+    wrap.innerHTML =
+      '<div class="ai-msg-avatar">🤖</div>' +
+      '<div class="ai-msg-bubble ai-tool-card">' +
+        '<div class="ai-tool-title">⚡ Aktion vorgeschlagen</div>' +
+        '<div class="ai-tool-desc">' + aiRenderInline(aiDescribeTool(name, args)) + '</div>' +
+        '<div class="ai-tool-actions">' +
+          '<button type="button" class="ai-tool-btn ai-tool-run" onclick="aiConfirmPendingTool()">✅ Ausführen</button>' +
+          '<button type="button" class="ai-tool-btn ai-tool-cancel" onclick="aiCancelPendingTool()">✖ Abbrechen</button>' +
+        '</div>' +
+        '<div class="ai-tool-result" style="display:none;"></div>' +
+      '</div>';
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+    aiPendingTool.cardEl = wrap;
+    aiRefreshSendBtn();
+  }
+
+  function aiShowToolResult(card, result) {
+    if (!card) return;
+    var acts = card.querySelector('.ai-tool-actions');
+    if (acts) acts.style.display = 'none';
+    var box = card.querySelector('.ai-tool-result');
+    if (box) {
+      var ok = !!(result && result.success);
+      box.style.display = 'block';
+      box.className = 'ai-tool-result ' + (ok ? 'ai-tool-result--ok' : 'ai-tool-result--err');
+      box.innerHTML = (ok ? '✅ ' : '⚠️ ') + aiRenderInline(String((result && result.message) || (ok ? 'Erledigt.' : 'Fehlgeschlagen.')));
+    }
+  }
+
+  function aiConfirmPendingTool() {
+    if (!aiPendingTool) return;
+    var pend = aiPendingTool;
+    aiPendingTool = null;
+    aiRefreshSendBtn();
+    var card = pend.cardEl;
+    if (card) {
+      var acts = card.querySelector('.ai-tool-actions');
+      if (acts) acts.innerHTML = '<span class="ai-tool-running"><span class="hud-spin hud-spin--sm"></span> wird ausgeführt…</span>';
+    }
+    aiExecuteTool(pend.name, pend.args).then(function(result) {
+      aiShowToolResult(card, result);
+      aiChatHistory.push({ role: 'user', parts: [{ functionResponse: { name: pend.name, response: (result && typeof result === 'object') ? result : { value: String(result) } } }] });
+      aiRunTurn();
+    });
+  }
+
+  function aiCancelPendingTool() {
+    if (!aiPendingTool) return;
+    var pend = aiPendingTool;
+    aiPendingTool = null;
+    aiRefreshSendBtn();
+    var card = pend.cardEl;
+    if (card) {
+      var acts = card.querySelector('.ai-tool-actions');
+      if (acts) acts.innerHTML = '<span class="ai-tool-cancelled">✖ Abgebrochen</span>';
+    }
+    aiChatHistory.push({ role: 'user', parts: [{ functionResponse: { name: pend.name, response: { status: 'abgebrochen', message: 'Der Nutzer hat die Aktion abgelehnt.' } } }] });
+    aiRunTurn();
+  }
+
+  function aiRunTurn() {
     setAiBusy(true);
     var typing = aiShowTyping();
-
     var systemText = buildAiSystemPrompt() + '\n\n' + buildAiDataContext();
     var payload = {
       system_instruction: { parts: [{ text: systemText }] },
-      contents: aiChatHistory.slice(-16),
+      contents: aiChatHistory.slice(-24),
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.2,
         maxOutputTokens: 8192,
         thinkingConfig: { thinkingBudget: 0 }
       }
     };
+    if (aiAgentMode) {
+      payload.tools = [{ functionDeclarations: AI_AGENT_TOOLS }];
+    }
 
     fetch(GEMINI_API_BASE + GEMINI_MODEL + ':generateContent', {
       method: 'POST',
@@ -4732,21 +5046,19 @@
         aiAppendMessage('bot', '⚠️ Fehler von Gemini: ' + errMsg);
         return;
       }
-      var answer = '';
-      try {
-        var cand = res.data.candidates && res.data.candidates[0];
-        if (cand && cand.content && cand.content.parts) {
-          for (var k = 0; k < cand.content.parts.length; k++) {
-            if (cand.content.parts[k].text) answer += cand.content.parts[k].text;
-          }
-        }
-        if (!answer && cand && cand.finishReason) {
-          answer = '(Keine Antwort — Grund: ' + cand.finishReason + ')';
-        } else if (answer && cand && cand.finishReason === 'MAX_TOKENS') {
-          answer += '\n\n… (Antwort gekürzt — frag gern weiter für mehr Details)';
-        }
-      } catch (e) {
-        answer = '';
+      var cand = res.data.candidates && res.data.candidates[0];
+      var content = (cand && cand.content) ? cand.content : { parts: [] };
+      var fnCall = aiFindFunctionCall(content.parts);
+      if (fnCall) {
+        aiChatHistory.push({ role: 'model', parts: content.parts });
+        aiRequestToolConfirmation(fnCall.name, fnCall.args || {});
+        return;
+      }
+      var answer = aiExtractText(content.parts);
+      if (!answer && cand && cand.finishReason && cand.finishReason !== 'STOP') {
+        answer = '(Keine Antwort — Grund: ' + cand.finishReason + ')';
+      } else if (answer && cand && cand.finishReason === 'MAX_TOKENS') {
+        answer += '\n\n… (Antwort gekürzt — frag gern weiter für mehr Details)';
       }
       if (!answer) answer = '⚠️ Keine Antwort erhalten.';
       aiAppendMessage('bot', answer);
@@ -4756,5 +5068,21 @@
       setAiBusy(false);
       aiAppendMessage('bot', '⚠️ Verbindungsfehler: ' + (err && err.message ? err.message : err));
     });
+  }
+
+  function sendAiChatMessage() {
+    if (aiChatBusy || aiPendingTool) return;
+    var inp = document.getElementById('aiChatInput');
+    if (!inp) return;
+    var text = String(inp.value || '').trim();
+    if (!text) return;
+
+    inp.value = '';
+    autoGrowAiInput();
+    var suggest = document.getElementById('aiSuggest');
+    if (suggest) suggest.style.display = 'none';
+    aiAppendMessage('user', text);
+    aiChatHistory.push({ role: 'user', parts: [{ text: text }] });
+    aiRunTurn();
   }
 </script>
