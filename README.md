@@ -1,1 +1,1 @@
-# ARASAKA - Scripts
+# ARASAKA - Warehouse Management System

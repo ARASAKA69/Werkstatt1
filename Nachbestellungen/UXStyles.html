@@ -206,6 +206,29 @@ body {
   font-weight: 700;
   white-space: nowrap;
 }
+.ux-cache-updating {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wms-orange-bright);
+  white-space: nowrap;
+}
+.ux-cache-updating[hidden] {
+  display: none;
+}
+.ux-cache-updating-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wms-orange-bright);
+  animation: ux-cache-updating-pulse 1s ease-in-out infinite;
+}
+@keyframes ux-cache-updating-pulse {
+  0%, 100% { opacity: 0.3; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
 .ux-cache-reload-btn {
   position: relative;
   min-width: 148px;
@@ -1020,6 +1043,44 @@ button:disabled {
   align-items: center;
   margin-bottom: 12px;
   flex-shrink: 0;
+}
+.ux-del-toolbar {
+  justify-content: space-between;
+}
+.ux-del-selectall {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wms-text);
+  cursor: pointer;
+  user-select: none;
+}
+.ux-del-selectall input,
+.ux-del-card-check {
+  width: 17px;
+  height: 17px;
+  cursor: pointer;
+  accent-color: var(--wms-orange);
+}
+.ux-del-card-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wms-text-muted);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 12px;
+}
+.ux-del-card--checked {
+  border-color: rgba(248, 81, 73, 0.55);
+  box-shadow: 0 6px 20px rgba(248, 81, 73, 0.18);
+}
+.ux-del-card--checked .ux-del-card-select {
+  color: var(--wms-red);
 }
 .ux-tip-wrap {
   position: relative;

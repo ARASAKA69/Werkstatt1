@@ -174,6 +174,40 @@ function uxNbHubDatenSammeln_() {
   try {
     if (typeof ensureDashboardStatusSyncTrigger_ === "function") ensureDashboardStatusSyncTrigger_();
   } catch (e0) {}
+  var collected = null;
+  try {
+    collected = uxNbHubCollectAll_();
+  } catch (eC) {
+    collected = null;
+  }
+  if (!collected || !collected.ok) {
+    return uxNbHubDatenSammelnLegacy_();
+  }
+  var missing = collected.syncMissing || [];
+  var nachtragenDone = uxNbNachtragenDoneCleanup_(missing, uxNbNachtragenDoneRead_());
+  uxNbNachtragenDoneWrite_(nachtragenDone);
+  var dashMissing = collected.dashMissing || [];
+  var dashNachtragenDone = uxNbDashNachtragenDoneCleanup_(dashMissing, uxNbDashNachtragenDoneRead_());
+  uxNbDashNachtragenDoneWrite_(dashNachtragenDone);
+  var dashStatusGaps = collected.dashStatusGaps || [];
+  return {
+    ok: true,
+    loadedAt: new Date().toISOString(),
+    stats: collected.stats,
+    delBuffer: collected.delBuffer || [],
+    syncMissing: missing,
+    syncCount: missing.length,
+    nachtragenDone: nachtragenDone,
+    dashMissing: dashMissing,
+    dashSyncCount: dashMissing.length,
+    dashNachtragenDone: dashNachtragenDone,
+    dashStatusGaps: dashStatusGaps,
+    dashStatusGapCount: dashStatusGaps.length,
+    integrityCount: null
+  };
+}
+
+function uxNbHubDatenSammelnLegacy_() {
   var stats = uxNbHubDashboardStats();
   var del = uxNbDelBufferRead_();
   var sync = uxNbSyncMissingInputsListe();
@@ -200,6 +234,266 @@ function uxNbHubDatenSammeln_() {
     dashStatusGaps: dashStatusGaps,
     dashStatusGapCount: dashGaps.ok ? dashGaps.count || 0 : 0,
     integrityCount: null
+  };
+}
+
+function uxNbRowHasAnyValue_(row) {
+  for (var c = 0; c < row.length; c++) {
+    if (String(row[c] || "").trim()) return true;
+  }
+  return false;
+}
+
+function uxNbHubActiveTriggers_() {
+  var names = [];
+  try {
+    var watch = {
+      cleanupNachbestellungStatusDate: false,
+      archiveFertiggestelltRows: false,
+      processQueue: false,
+      syncDashboardStatusSyncTrigger: false
+    };
+    var triggers = ScriptApp.getProjectTriggers();
+    for (var t = 0; t < triggers.length; t++) {
+      var fn = triggers[t].getHandlerFunction();
+      if (Object.prototype.hasOwnProperty.call(watch, fn)) watch[fn] = true;
+    }
+    if (watch.cleanupNachbestellungStatusDate) names.push("cleanupNachbestellungStatusDate");
+    if (watch.archiveFertiggestelltRows) names.push("archiveFertiggestelltRows");
+    if (watch.processQueue) names.push("processQueue");
+    if (watch.syncDashboardStatusSyncTrigger) names.push("syncDashboardStatusSyncTrigger");
+  } catch (e) {}
+  return names;
+}
+
+function uxNbHubCollectAll_() {
+  var ss = getMainSS();
+  if (!ss) return { ok: false };
+
+  var nbSheet = ss.getSheetByName("Nachbestellung");
+  var dashboard = ss.getSheetByName("Dashboard");
+  var exitSheet = ss.getSheetByName("Input Exit");
+
+  var exitIds = {};
+  var exitCount = 0;
+  if (exitSheet) {
+    var exLast = exitSheet.getLastRow();
+    if (exLast >= 2) {
+      var exEidCol = getEntryIdCol(exitSheet);
+      var exWidth = Math.max(exitSheet.getLastColumn(), exEidCol, 1);
+      var exVals = exitSheet.getRange(2, 1, exLast - 1, exWidth).getValues();
+      var exCountStart = inputSheetArchiveDataStart("Input Exit");
+      for (var xe = 0; xe < exVals.length; xe++) {
+        var exRowNo = 2 + xe;
+        var exEid = String(exVals[xe][exEidCol - 1] || "").trim();
+        if (exEid) exitIds[exEid] = true;
+        if (exRowNo >= exCountStart && uxNbRowHasAnyValue_(exVals[xe])) exitCount++;
+      }
+    }
+  }
+
+  var nbIds = {};
+  var nbStatusMap = {};
+  var nbCount = 0;
+  var nbStatusEmptyOld = 0;
+  if (nbSheet) {
+    var nbLo = getNachbestellungLayout(nbSheet);
+    var nbLast = nbSheet.getLastRow();
+    if (nbLast >= nbLo.dataStartRow) {
+      var nbTrim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+      var nbWidth = Math.max(
+        nbLo.lastCol,
+        nbLo.cols.entryId,
+        nbLo.cols.statusAenderung,
+        nbLo.cols.status,
+        nbLo.cols.costGate,
+        nbLo.cols.stockId,
+        1
+      );
+      var nbVals = nbSheet.getRange(nbLo.dataStartRow, 1, nbLast - nbLo.dataStartRow + 1, nbWidth).getValues();
+      var nbDataEnd = nbLast > nbTrim ? nbLast - nbTrim : nbLast;
+      var nbEffRows = nbDataEnd - nbLo.dataStartRow + 1;
+      if (nbEffRows < 0) nbEffRows = 0;
+      var nbEidIdx = nbLo.cols.entryId - 1;
+      var nbIIdx = nbLo.cols.costGate - 1;
+      var nbKIdx = nbLo.cols.status - 1;
+      var nbLIdx = nbLo.cols.statusAenderung - 1;
+      var nbStockIdx = nbLo.cols.stockId - 1;
+      var nbToday = new Date();
+      for (var ni = 0; ni < nbVals.length; ni++) {
+        if (uxNbRowHasAnyValue_(nbVals[ni])) nbCount++;
+        if (ni >= nbEffRows) continue;
+        var nrow = nbVals[ni];
+        var neid = String(nrow[nbEidIdx] || "").trim();
+        if (neid) {
+          nbIds[neid] = true;
+          nbStatusMap[neid] = { i: nrow[nbIIdx] || "", k: nrow[nbKIdx] || "", l: nrow[nbLIdx] || "" };
+        }
+        if (!isCellFilled(nrow[nbKIdx]) && String(nrow[nbStockIdx] || "").trim() && neid) {
+          var ndt = nrow[0];
+          if (ndt) {
+            var nage = daysBetween(nbToday, new Date(ndt));
+            if (nage !== "" && nage !== null && Number(nage) >= UX_NB_ALERT_STATUS_EMPTY_DAYS) nbStatusEmptyOld++;
+          }
+        }
+      }
+    }
+  }
+
+  var dashIds = {};
+  var dashStatusGaps = [];
+  var dashRedDays = 0;
+  if (dashboard) {
+    var dLo = getDashboardLayout(dashboard);
+    var dLast = dashboard.getLastRow();
+    if (dLast >= dLo.dataStartRow) {
+      var dVals = dashboard.getRange(dLo.dataStartRow, 1, dLast - dLo.dataStartRow + 1, dLo.lastCol).getValues();
+      var dEntryIdx = dLo.cols.entryId - 1;
+      var dStockIdx = dLo.cols.stockId - 1;
+      var dHerkIdx = dLo.cols.herkunft - 1;
+      var dCostIdx = dLo.cols.costGate - 1;
+      var dStatusIdx = dLo.cols.status - 1;
+      var dStatusAendIdx = dLo.cols.statusAenderung - 1;
+      var dTageIdx = dLo.cols.tageSeitLetztem - 1;
+      var dTrim = dLo.dataEndTrimBottomRows != null ? dLo.dataEndTrimBottomRows : 3;
+      var dRedEnd = Math.max(dLo.dataStartRow, dLast - dTrim);
+      var dRedEffRows = dRedEnd - dLo.dataStartRow + 1;
+      for (var dii = 0; dii < dVals.length; dii++) {
+        var drow = dVals[dii];
+        var deid = String(drow[dEntryIdx] || "").trim();
+        if (deid) dashIds[deid] = true;
+        if (dii < dRedEffRows) {
+          var tv = drow[dTageIdx];
+          if (tv !== "" && tv != null) {
+            var dnum = Number(tv);
+            if (!isNaN(dnum) && dnum > UX_NB_ALERT_DASH_RED_DAYS) dashRedDays++;
+          }
+        }
+        var dstock = String(drow[dStockIdx] || "").trim();
+        if (!deid || !dstock) continue;
+        if (exitIds[deid]) continue;
+        var nbm = nbStatusMap[deid];
+        if (!nbm) continue;
+        var nbHas = isCellFilled(nbm.i) || isCellFilled(nbm.k) || isCellFilled(nbm.l);
+        if (!nbHas) continue;
+        var curI = drow[dCostIdx];
+        var curK = drow[dStatusIdx];
+        var curL = drow[dStatusAendIdx];
+        if (
+          String(curI) === String(nbm.i) &&
+          String(curK) === String(nbm.k) &&
+          uxNbSameDashStatusDate_(curL, nbm.l)
+        ) continue;
+        dashStatusGaps.push({
+          dashRow: dLo.dataStartRow + dii,
+          stockId: dstock,
+          entryId: deid,
+          herkunft: String(drow[dHerkIdx] || "").trim(),
+          nbCostGate: String(nbm.i || ""),
+          nbStatus: String(nbm.k || "")
+        });
+      }
+    }
+  }
+
+  var sheetCounts = {
+    "Input Mechanik": 0,
+    "Input Q-Check": 0,
+    "Input Lack": 0,
+    "Input Exit": exitCount,
+    Nachbestellung: nbCount
+  };
+  var syncMissing = [];
+  var dashMissing = [];
+
+  for (var k = 0; k < INPUT_SHEET_NAMES.length; k++) {
+    var sheetName = INPUT_SHEET_NAMES[k];
+    var sheet = ss.getSheetByName(sheetName);
+    if (!sheet) continue;
+    var start = inputSheetArchiveDataStart(sheetName);
+    var last = sheet.getLastRow();
+    if (last < start) continue;
+    var eidCol = getEntryIdCol(sheet);
+    var width = Math.max(sheet.getLastColumn(), eidCol, 6);
+    var vals = sheet.getRange(start, 1, last - start + 1, width).getValues();
+
+    if (sheetName !== "Input Exit") {
+      var cnt = 0;
+      for (var ci = 0; ci < vals.length; ci++) {
+        if (uxNbRowHasAnyValue_(vals[ci])) cnt++;
+      }
+      sheetCounts[sheetName] = cnt;
+    }
+
+    var isDashSheet = UX_NB_DASH_INPUT_SHEETS.indexOf(sheetName) !== -1;
+    var syncRows = last === start ? 1 : last - start;
+    if (syncRows < 0) syncRows = 0;
+    var herk = INPUT_SHEETS[sheetName] || "";
+
+    for (var r = 0; r < vals.length; r++) {
+      var rowData = vals[r];
+      var stockId = String(rowData[1] || "").trim();
+      if (!stockId) continue;
+      if (uxNbNormEtDiagnose_(rowData[2]) !== "ja") continue;
+      if (!isInputRowComplete(rowData)) continue;
+      var entryId = String(rowData[eidCol - 1] || "").trim();
+      var rowNo = start + r;
+
+      if (r < syncRows) {
+        if (!entryId) {
+          syncMissing.push({ sheetName: sheetName, row: rowNo, stockId: stockId, entryId: "", herkunft: herk });
+        } else if (!nbIds[entryId]) {
+          syncMissing.push({ sheetName: sheetName, row: rowNo, stockId: stockId, entryId: entryId, herkunft: herk });
+        }
+      }
+
+      if (isDashSheet) {
+        if (!entryId) {
+          dashMissing.push({ sheetName: sheetName, row: rowNo, stockId: stockId, entryId: "", herkunft: herk });
+        } else if (!exitIds[entryId] && !dashIds[entryId]) {
+          dashMissing.push({ sheetName: sheetName, row: rowNo, stockId: stockId, entryId: entryId, herkunft: herk });
+        }
+      }
+    }
+  }
+
+  syncMissing.sort(function (a, b) {
+    if (a.sheetName !== b.sheetName) return a.sheetName < b.sheetName ? -1 : 1;
+    return a.row - b.row;
+  });
+  dashMissing.sort(function (a, b) {
+    if (a.sheetName !== b.sheetName) return a.sheetName < b.sheetName ? -1 : 1;
+    return a.row - b.row;
+  });
+
+  var delRead = uxNbDelBufferRead_();
+  var delArr = delRead.ok ? delRead.arr || [] : [];
+
+  var alerts = {
+    archiveReady: uxNbArchiveReadyCount_(),
+    dashRedDays: dashRedDays,
+    nbStatusEmptyOld: nbStatusEmptyOld,
+    statusEmptyDays: UX_NB_ALERT_STATUS_EMPTY_DAYS,
+    dashRedMin: UX_NB_ALERT_DASH_RED_DAYS
+  };
+
+  var stats = {
+    ok: true,
+    delBufferCount: delArr.length,
+    sheetCounts: sheetCounts,
+    triggers: uxNbHubActiveTriggers_(),
+    userEmail: uxNbDelBufferUser_(),
+    alerts: alerts,
+    eventQueue: uxNbEventQueueInfo_()
+  };
+
+  return {
+    ok: true,
+    stats: stats,
+    delBuffer: delArr,
+    syncMissing: syncMissing,
+    dashMissing: dashMissing,
+    dashStatusGaps: dashStatusGaps
   };
 }
 
@@ -289,7 +583,7 @@ function uxNbCountFilledDataRows_(sheet, dataStartRow) {
   var end = sheet.getLastRow();
   if (end < start) return 0;
   var lastCol = Math.max(1, sheet.getLastColumn());
-  var values = sheet.getRange(start, 1, end, lastCol).getValues();
+  var values = sheet.getRange(start, 1, end - start + 1, lastCol).getValues();
   var count = 0;
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
@@ -542,8 +836,8 @@ function uxNbBuildDashboardEntryIdSet_(dashboard) {
   var eids = dashboard.getRange(
     layout.dataStartRow,
     layout.cols.entryId,
-    last,
-    layout.cols.entryId
+    last - layout.dataStartRow + 1,
+    1
   ).getValues();
   for (var i = 0; i < eids.length; i++) {
     var eid = String(eids[i][0] || "").trim();
@@ -658,8 +952,8 @@ function uxNbDashMissingListe() {
       var end = sheet.getLastRow();
       if (end < start) continue;
       var eidCol = getEntryIdCol(sheet);
-      var dataBlock = sheet.getRange(start, 1, end, 6).getValues();
-      var eidBlock = sheet.getRange(start, eidCol, end, eidCol).getValues();
+      var dataBlock = sheet.getRange(start, 1, end - start + 1, 6).getValues();
+      var eidBlock = sheet.getRange(start, eidCol, end - start + 1, 1).getValues();
       for (var r = 0; r < dataBlock.length; r++) {
         var rowData = dataBlock[r];
         var stockId = String(rowData[1] || "").trim();
@@ -756,8 +1050,8 @@ function uxNbSyncMissingInputsListe() {
       var end = inputSheetArchiveDataEnd(sheet, start);
       if (end == null || end < start) continue;
       var eidCol = getEntryIdCol(sheet);
-      var dataBlock = sheet.getRange(start, 1, end, 6).getValues();
-      var eidBlock = sheet.getRange(start, eidCol, end, eidCol).getValues();
+      var dataBlock = sheet.getRange(start, 1, end - start + 1, 6).getValues();
+      var eidBlock = sheet.getRange(start, eidCol, end - start + 1, 1).getValues();
       for (var r = 0; r < dataBlock.length; r++) {
         var rowData = dataBlock[r];
         var stockId = String(rowData[1] || "").trim();
@@ -808,6 +1102,24 @@ function uxNbDelBufferEndgueltigEntfernen(id) {
       if (String(arr[i].id) !== String(id)) next.push(arr[i]);
     }
     return { ok: true, arr: next };
+  });
+}
+
+function uxNbDelBufferBulkEntfernen(ids) {
+  if (!ids || !ids.length) return { ok: false, fehler: "Nichts markiert." };
+  var idSet = {};
+  for (var i = 0; i < ids.length; i++) {
+    var id = String(ids[i] || "").trim();
+    if (id) idSet[id] = true;
+  }
+  return uxNbDelBufferWithLock_(function (arr) {
+    var next = [];
+    var removed = 0;
+    for (var j = 0; j < arr.length; j++) {
+      if (idSet[String(arr[j].id)]) removed++;
+      else next.push(arr[j]);
+    }
+    return { ok: true, arr: next, removed: removed };
   });
 }
 
@@ -1320,8 +1632,8 @@ function uxNbIntegrityCheck(summaryOnly) {
       var end = inputSheetArchiveDataEnd(sh, start);
       if (end == null || end < start) continue;
       var eidCol = getEntryIdCol(sh);
-      var dataBlock = sh.getRange(start, 1, end, 6).getValues();
-      var eidBlock = sh.getRange(start, eidCol, end, eidCol).getValues();
+      var dataBlock = sh.getRange(start, 1, end - start + 1, 6).getValues();
+      var eidBlock = sh.getRange(start, eidCol, end - start + 1, 1).getValues();
       for (var ri = 0; ri < dataBlock.length; ri++) {
         if (!String(dataBlock[ri][1] || "").trim()) continue;
         if (uxNbNormEtDiagnose_(dataBlock[ri][2]) !== "ja") continue;

@@ -74,6 +74,9 @@
                 </span>
               </button>
               <span class="ux-cache-time" id="cacheLoadedAt">Stand: --</span>
+              <span class="ux-cache-updating" id="cacheUpdating" hidden aria-hidden="true">
+                <span class="ux-cache-updating-dot"></span>Aktualisiere…
+              </span>
             </div>
             <strong id="userEmail">—</strong>
             <span id="loadedAt">—</span>
@@ -104,34 +107,6 @@
                 <span class="ux-queue-status" id="queueCleanStatus"></span>
               </div>
             </div>
-            <button type="button" class="ux-nav-tile" id="tileDeleted">
-              <span class="ux-nav-tile-body">
-                <span class="ux-nav-tile-title">Gelöschte Einträge</span>
-                <span class="ux-nav-tile-sub">Stock-ID gelöscht? Wiederherstellen oder endgültig weg</span>
-              </span>
-              <span class="ux-nav-badge" id="tileDelBadge">0</span>
-            </button>
-            <button type="button" class="ux-nav-tile" id="tileSync">
-              <span class="ux-nav-tile-body">
-                <span class="ux-nav-tile-title">NB Sync · Inputs</span>
-                <span class="ux-nav-tile-sub">Fehlt in Nachbestellung? Nachtragen oder IDs kopieren</span>
-              </span>
-              <span class="ux-nav-badge" id="tileSyncBadge">0</span>
-            </button>
-            <button type="button" class="ux-nav-tile" id="tileDash">
-              <span class="ux-nav-tile-body">
-                <span class="ux-nav-tile-title">Dashboard Sync</span>
-                <span class="ux-nav-tile-sub">Mechanik, Q-Check, Lack fehlen im Dashboard? Hier rüber schieben</span>
-              </span>
-              <span class="ux-nav-badge" id="tileDashBadge">0</span>
-            </button>
-            <button type="button" class="ux-nav-tile" id="tileIntegrity">
-              <span class="ux-nav-tile-body">
-                <span class="ux-nav-tile-title">Drift-Check</span>
-                <span class="ux-nav-tile-sub">Doppelte IDs, Exit im Dashboard, Queue hängt – der üble Kram</span>
-              </span>
-              <span class="ux-nav-badge" id="tileIntegrityBadge">0</span>
-            </button>
             </div>
           </section>
           <section class="ux-view" id="viewSync">
@@ -221,6 +196,15 @@
           </section>
           <section class="ux-view" id="viewDeleted">
             <button type="button" class="ux-btn-back" id="btnBackHome">← zurück</button>
+            <div class="ux-toolbar ux-del-toolbar">
+              <label class="ux-del-selectall">
+                <input type="checkbox" id="delSelectAll" />
+                <span>Alle markieren</span>
+              </label>
+              <button type="button" class="ux-btn-ghost ux-del-bulk-btn" id="btnDelBulk" disabled>
+                Markierte löschen (0)
+              </button>
+            </div>
             <div class="ux-status" id="status"></div>
             <div class="ux-list-wrap" id="listWrap">
               <div class="ux-loading" id="listLoading" hidden>
@@ -243,6 +227,7 @@
       var hubCacheData = null;
       var hubStats = null;
       var delBufferArr = [];
+      var delSelected = {};
       var syncMissingArr = [];
       var dashMissingArr = [];
       var dashStatusGapArr = [];
@@ -254,6 +239,9 @@
       var hubLoadToken = 0;
       var HUB_LOAD_TIMEOUT_MS = 180000;
       var CACHE_RING_C = 2 * Math.PI * 15.5;
+      var HUB_LS_KEY = "ux_nb_hub_cache_client_v1";
+      var HUB_STALE_MS = 120000;
+      var cacheUpdatingCount = 0;
 
       var VIEW_KEYS = ["home", "deleted", "sync", "dash", "integrity"];
       var NACHT_TOOLTIP =
@@ -350,18 +338,15 @@
 
       function setDelBadges(n) {
         document.getElementById("navDelBadge").textContent = String(n);
-        document.getElementById("tileDelBadge").textContent = String(n);
       }
 
       function setSyncBadges(n) {
         document.getElementById("navSyncBadge").textContent = String(n);
-        document.getElementById("tileSyncBadge").textContent = String(n);
       }
 
       function setDashBadges(missingCount, gapCount) {
         var n = (missingCount || 0) + (gapCount || 0);
         document.getElementById("navDashBadge").textContent = String(n);
-        document.getElementById("tileDashBadge").textContent = String(n);
       }
 
       function formatDashStatusLine(missingCount, gapCount) {
@@ -498,6 +483,37 @@
         );
       }
 
+      function saveClientCache(data) {
+        if (!data || !data.loadedAt) return;
+        try {
+          localStorage.setItem(HUB_LS_KEY, JSON.stringify(data));
+        } catch (e) {}
+      }
+
+      function loadClientCache() {
+        try {
+          var raw = localStorage.getItem(HUB_LS_KEY);
+          if (!raw) return null;
+          var parsed = JSON.parse(raw);
+          return parsed && parsed.loadedAt ? parsed : null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      function hubDataAgeMs(data) {
+        if (!data || !data.loadedAt) return null;
+        var t = new Date(data.loadedAt).getTime();
+        if (isNaN(t)) return null;
+        return Date.now() - t;
+      }
+
+      function setCacheUpdating(on) {
+        cacheUpdatingCount = Math.max(0, cacheUpdatingCount + (on ? 1 : -1));
+        var el = document.getElementById("cacheUpdating");
+        if (el) el.hidden = cacheUpdatingCount <= 0;
+      }
+
       function setCacheLoading(on) {
         var btn = document.getElementById("btnCacheReload");
         var label = btn.querySelector(".ux-cache-reload-label");
@@ -539,13 +555,21 @@
         }
       }
 
-      function loadHubCache(forceReload) {
+      function loadHubCache(forceReload, opts) {
+        opts = opts || {};
+        var silent = !!opts.silent;
+        var thenRefresh = !!opts.thenRefresh;
         var token = ++hubLoadToken;
         var timedOut = false;
-        setCacheLoading(true);
+        if (silent) setCacheUpdating(true);
+        else setCacheLoading(true);
         var timeoutId = setTimeout(function () {
           if (token !== hubLoadToken) return;
           timedOut = true;
+          if (silent) {
+            setCacheUpdating(false);
+            return;
+          }
           finishHubLoadState();
           showHubLoadError(
             "Timeout nach " +
@@ -554,16 +578,33 @@
           );
         }, HUB_LOAD_TIMEOUT_MS);
 
+        function finishState() {
+          if (silent) setCacheUpdating(false);
+          else finishHubLoadState();
+        }
+
         function handleHubResult(res) {
           if (token !== hubLoadToken || timedOut) return;
           clearTimeout(timeoutId);
           if (res && res.needsReload && !forceReload) {
-            loadHubCache(true);
+            if (silent) setCacheUpdating(false);
+            loadHubCache(true, { silent: silent });
             return;
           }
-          finishHubLoadState();
+          finishState();
           if (res && res.ok && res.data) {
             applyHubData(res.data);
+            saveClientCache(res.data);
+            if (thenRefresh && res.fromCache) {
+              var age = hubDataAgeMs(res.data);
+              if (age == null || age > HUB_STALE_MS) {
+                loadHubCache(true, { silent: true });
+              }
+            }
+            return;
+          }
+          if (silent && hubCacheData && hubCacheData.loadedAt) {
+            setCacheLabel(hubCacheData.loadedAt);
             return;
           }
           var msg =
@@ -577,9 +618,10 @@
           .withFailureHandler(function (err) {
             if (token !== hubLoadToken || timedOut) return;
             clearTimeout(timeoutId);
-            finishHubLoadState();
+            finishState();
             if (hubCacheData && hubCacheData.loadedAt) setCacheLabel(hubCacheData.loadedAt);
             else setCacheLabel(null);
+            if (silent && hubCacheData && hubCacheData.loadedAt) return;
             showHubLoadError(String(err));
           });
         if (forceReload) runner.uxNbHubCacheNeuLaden();
@@ -684,7 +726,6 @@
 
       function setIntegrityBadges(n) {
         document.getElementById("navIntegrityBadge").textContent = String(n || 0);
-        document.getElementById("tileIntegrityBadge").textContent = String(n || 0);
       }
 
       function renderAlerts(alerts) {
@@ -1022,20 +1063,99 @@
         document.getElementById("status").textContent = t || "";
       }
 
+      function delSelectedIds() {
+        var ids = [];
+        for (var k in delSelected) {
+          if (delSelected[k]) ids.push(k);
+        }
+        return ids;
+      }
+
+      function updateDelBulkUi() {
+        var ids = delSelectedIds();
+        var btn = document.getElementById("btnDelBulk");
+        if (btn) {
+          btn.textContent = "Markierte löschen (" + ids.length + ")";
+          btn.disabled = ids.length === 0;
+        }
+        var all = document.getElementById("delSelectAll");
+        if (all) {
+          var total = delBufferArr.length;
+          all.checked = total > 0 && ids.length === total;
+          all.indeterminate = ids.length > 0 && ids.length < total;
+        }
+      }
+
+      function runDelBulkDelete() {
+        var ids = delSelectedIds();
+        if (!ids.length) return;
+        if (!confirm(ids.length + " markierte Einträge endgültig aus dem Puffer löschen?")) return;
+        var btn = document.getElementById("btnDelBulk");
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = "Lösche…";
+        }
+        setListLoading(true, "Lösche markierte…");
+        setStatus("");
+        google.script.run
+          .withSuccessHandler(function (res) {
+            if (res && res.ok) {
+              delSelected = {};
+              setStatus((res.removed || 0) + " endgültig gelöscht.");
+              loadHubCache(true);
+            } else {
+              setListLoading(false);
+              updateDelBulkUi();
+              setStatus((res && res.fehler) || "Löschen hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            setListLoading(false);
+            updateDelBulkUi();
+            setStatus("Fehler: " + err);
+          })
+          .uxNbDelBufferBulkEntfernen(ids);
+      }
+
       function renderList(arr) {
         delBufferArr = arr || [];
         setDelBadges(delBufferArr.length);
         if (hubStats) hubStats.delBufferCount = delBufferArr.length;
+        var present = {};
+        for (var p = 0; p < delBufferArr.length; p++) present[String(delBufferArr[p].id)] = true;
+        var pruned = {};
+        for (var key in delSelected) {
+          if (delSelected[key] && present[key]) pruned[key] = true;
+        }
+        delSelected = pruned;
         var el = document.getElementById("list");
         el.innerHTML = "";
         if (!delBufferArr.length) {
           el.innerHTML = '<div class="ux-empty">Puffer leer – nix zum Wiederherstellen.</div>';
+          updateDelBulkUi();
           return;
         }
         for (var i = 0; i < delBufferArr.length; i++) {
           (function (entry) {
             var card = document.createElement("div");
-            card.className = "ux-card";
+            card.className = "ux-card ux-del-card";
+            var selRow = document.createElement("label");
+            selRow.className = "ux-del-card-select";
+            var selBox = document.createElement("input");
+            selBox.type = "checkbox";
+            selBox.className = "ux-del-card-check";
+            selBox.checked = !!delSelected[String(entry.id)];
+            selBox.onchange = function () {
+              if (selBox.checked) delSelected[String(entry.id)] = true;
+              else delete delSelected[String(entry.id)];
+              card.classList.toggle("ux-del-card--checked", selBox.checked);
+              updateDelBulkUi();
+            };
+            card.classList.toggle("ux-del-card--checked", selBox.checked);
+            var selText = document.createElement("span");
+            selText.textContent = "Zum Löschen markieren";
+            selRow.appendChild(selBox);
+            selRow.appendChild(selText);
             var top = document.createElement("div");
             top.className = "ux-card-top";
             top.innerHTML =
@@ -1118,12 +1238,14 @@
             };
             actions.appendChild(bRestore);
             actions.appendChild(bRemove);
+            card.appendChild(selRow);
             card.appendChild(top);
             card.appendChild(dw);
             card.appendChild(actions);
             el.appendChild(card);
           })(delBufferArr[i]);
         }
+        updateDelBulkUi();
       }
 
       function loadDeletedList(keepSpinner) {
@@ -1136,6 +1258,21 @@
         setSyncLoading(true, "Lade…");
         setDashLoading(true, "Lade…");
         loadHubCache(false);
+      }
+
+      function bootHub() {
+        var cached = loadClientCache();
+        var hadLocal = false;
+        if (cached) {
+          applyHubData(cached);
+          hadLocal = true;
+        }
+        if (!hadLocal) {
+          setListLoading(true, "Lade…");
+          setSyncLoading(true, "Lade…");
+          setDashLoading(true, "Lade…");
+        }
+        loadHubCache(false, { silent: hadLocal, thenRefresh: true });
       }
 
       function setDashLoading(on, text) {
@@ -1473,6 +1610,7 @@
             setDashLoading(false);
             if (res && res.ok && res.data) {
               applyHubData(res.data);
+              saveClientCache(res.data);
             } else {
               setDashStatus((res && res.fehler) || "Check hat nicht geklappt.");
             }
@@ -1491,6 +1629,7 @@
             setSyncLoading(false);
             if (res && res.ok && res.data) {
               applyHubData(res.data);
+              saveClientCache(res.data);
             } else {
               setSyncStatus((res && res.fehler) || "Check hat nicht geklappt.");
             }
@@ -1517,20 +1656,21 @@
       document.getElementById("navIntegrity").onclick = function () {
         showView("integrity");
       };
-      document.getElementById("tileDeleted").onclick = function () {
-        showView("deleted");
-      };
-      document.getElementById("tileSync").onclick = function () {
-        showView("sync");
-      };
-      document.getElementById("tileDash").onclick = function () {
-        showView("dash");
-      };
-      document.getElementById("tileIntegrity").onclick = function () {
-        showView("integrity");
-      };
       document.getElementById("btnBackHome").onclick = function () {
         showView("home");
+      };
+      document.getElementById("delSelectAll").onchange = function () {
+        var on = this.checked;
+        delSelected = {};
+        if (on) {
+          for (var i = 0; i < delBufferArr.length; i++) {
+            delSelected[String(delBufferArr[i].id)] = true;
+          }
+        }
+        renderList(delBufferArr);
+      };
+      document.getElementById("btnDelBulk").onclick = function () {
+        runDelBulkDelete();
       };
       document.getElementById("btnBackHomeSync").onclick = function () {
         showView("home");
@@ -1730,7 +1870,7 @@
       });
       window.addEventListener("resize", resizeDialogToViewport);
 
-      refreshAll();
+      bootHub();
       showView(VIEW_KEYS.indexOf(initialView) !== -1 ? initialView : "home");
     </script>
   </body>
