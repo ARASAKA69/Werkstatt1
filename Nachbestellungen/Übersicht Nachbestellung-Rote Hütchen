@@ -366,6 +366,8 @@ var QUEUE_LOCK_WAIT_MS = 15000;
 var CLEANUP_LOCK_WAIT_MS = 5000;
 var DASH_SYNC_LOCK_WAIT_MS = 30000;
 var MAX_EVENTS_PER_RUN = 3;
+var QUEUE_TIME_BUDGET_MS = 240000;
+var QUEUE_EVENTS_PER_CYCLE = 25;
 
 
 function getMainSS() {
@@ -1232,22 +1234,25 @@ function processQueue() {
   try {
     processPendingTageslisteArchives_();
   } catch (e) {}
-  const MAX_LOCK_CYCLES = 8;
+  const runStartTime = Date.now();
+  const tagesMap = getTageslisteMap();
+  const MAX_LOCK_CYCLES = 40;
   for (let k = 0; k < MAX_LOCK_CYCLES; k++) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(QUEUE_LOCK_WAIT_MS)) return;
     let processed = 0;
     try {
-      processed = runQueueProcessor() || 0;
+      processed = runQueueProcessor(tagesMap, runStartTime) || 0;
     } finally {
       try { lock.releaseLock(); } catch (e) {}
     }
     if (processed === 0) break;
+    if (Date.now() - runStartTime > QUEUE_TIME_BUDGET_MS) break;
     Utilities.sleep(150);
   }
 }
 
-function runQueueProcessor() {
+function runQueueProcessor(tagesMap, runStartTime) {
   const ss = getMainSS();
   if (!ss) return 0;
   const queue = ss.getSheetByName("EventQueue");
@@ -1259,7 +1264,8 @@ function runQueueProcessor() {
   const nbSheet = ss.getSheetByName("Nachbestellung");
   if (!dashboard || !nbSheet) return 0;
 
-  const tagesMap = getTageslisteMap();
+  if (!tagesMap) tagesMap = getTageslisteMap();
+  if (!runStartTime) runStartTime = Date.now();
   const data = queue.getRange(1, 1, last, 10).getValues();
 
   const latestIdxByKey = {};
@@ -1288,8 +1294,11 @@ function runQueueProcessor() {
       continue;
     }
 
-    if (processedCount >= MAX_EVENTS_PER_RUN) {
-      logDebug("runQueueProcessor: Batch-Limit erreicht, Rest beim nächsten Lauf");
+    if (Date.now() - runStartTime > QUEUE_TIME_BUDGET_MS) {
+      logDebug("runQueueProcessor: Zeit-Budget erreicht, Rest beim nächsten Lauf");
+      break;
+    }
+    if (processedCount >= QUEUE_EVENTS_PER_CYCLE) {
       break;
     }
 
@@ -1597,7 +1606,7 @@ function getTageslisteMap() {
   if (!sheet) return map;
   const last = sheet.getLastRow();
   if (last < 2) return map;
-  const data = sheet.getRange(2, 1, last, 5).getValues();
+  const data = sheet.getRange(2, 1, last - 1, 5).getValues();
   for (let i = 0; i < data.length; i++) {
     const date = data[i][0];
     const key = String(data[i][4] || "").trim();
