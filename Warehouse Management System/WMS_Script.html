@@ -984,14 +984,34 @@
     if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
   }
 
+  var nbPendingFocusStock = '';
+
+  function applyNbPendingFocus() {
+    if(!nbPendingFocusStock) return;
+    var key = nbPendingFocusStock;
+    nbPendingFocusStock = '';
+    for(var i = 0; i < nbDisplayEntries.length; i++) {
+      if(normalizeStockInput(nbDisplayEntries[i].stockId) === key) {
+        var detail = document.getElementById('nb-detail-' + i);
+        if(detail && !detail.classList.contains('open')) toggleNbDetail(i);
+        var row = detail ? detail.previousElementSibling : null;
+        if(row && row.scrollIntoView) {
+          try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch(e) { row.scrollIntoView(); }
+        }
+        break;
+      }
+    }
+  }
+
   function openNbModal() {
     document.getElementById('nbModal').classList.add('open');
     if(nbSessionActive && nbDataReady) {
       filterNbBySearch();
+      applyNbPendingFocus();
       return;
     }
     nbSessionActive = true;
-    document.getElementById('nbSearchInput').value = '';
+    if(!nbPendingFocusStock) document.getElementById('nbSearchInput').value = '';
     document.getElementById('nbTableBody').innerHTML = hudLoadingRowHtml(8, 'Lade Nachbestellungen…');
     document.getElementById('nbTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
     closeNbAutocomplete();
@@ -1003,13 +1023,140 @@
       nbAllEntries = res.entries || [];
       nbFilteredEntries = nbAllEntries;
       nbDataReady = true;
+      setNbChooserCache(res.entries || []);
       document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
       nbLagerortOptions = res.lagerortOptions || [];
       nbStatusOptions = res.statusOptions || [];
-      renderNbTable(nbAllEntries);
+      if(document.getElementById('nbSearchInput').value.trim()) {
+        filterNbBySearch();
+      } else {
+        renderNbTable(nbAllEntries);
+      }
+      applyNbPendingFocus();
     }).withFailureHandler(function(err) {
       document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
     }).getNachbestellungen();
+  }
+
+  function openNbForStock(stockId) {
+    nbPendingFocusStock = normalizeStockInput(stockId);
+    var inp = document.getElementById('nbSearchInput');
+    if(inp) inp.value = stockId;
+    openNbModal();
+  }
+
+  var nbChooserStock = '';
+  var nbChooserCache = [];
+  var nbChooserCacheReady = false;
+  var nbChooserCacheLoading = false;
+
+  function setNbChooserCache(entries) {
+    nbChooserCache = entries || [];
+    nbChooserCacheReady = true;
+  }
+
+  function loadNbChooserCache(force) {
+    if(nbChooserCacheLoading) return;
+    if(nbChooserCacheReady && !force) return;
+    nbChooserCacheLoading = true;
+    google.script.run.withSuccessHandler(function(res) {
+      nbChooserCacheLoading = false;
+      if(res && res.success) setNbChooserCache(res.entries || []);
+    }).withFailureHandler(function() {
+      nbChooserCacheLoading = false;
+    }).getNachbestellungen();
+  }
+
+  function closeNbChooser() {
+    var m = document.getElementById('nbChooseModal');
+    if(m) m.classList.remove('open');
+  }
+
+  function openNbFromChooser() {
+    var stock = nbChooserStock;
+    closeNbChooser();
+    if(stock) openNbForStock(stock);
+  }
+
+  function nbChooserStatusClass(status) {
+    var s = String(status || '').toLowerCase();
+    if(s.indexOf('angeliefert') !== -1 || s === 'fertiggestellt' || s === 'konsi-lager' || s === 'konsilager') return 'is-green';
+    if(s === 'nicht bestellt' || s.indexOf('rückstand') !== -1 || s.indexOf('rueckstand') !== -1) return 'is-red';
+    return '';
+  }
+
+  function showNbChooser(stockId, entries) {
+    nbChooserStock = stockId;
+    var stockEl = document.getElementById('nbChooseStock');
+    if(stockEl) stockEl.innerText = stockId;
+    var prev = document.getElementById('nbChoosePreview');
+    if(prev) {
+      var html = '';
+      for(var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var statusTxt = e.status || '-';
+        var teil = String(e.teil || '').trim();
+        var artikel = String(e.artikel || '').trim();
+        var desc = teil || artikel;
+        var meta = '';
+        if(e.regal) meta += '<span><b>Lagerort:</b> ' + escapeHtml(e.regal) + '</span>';
+        if(artikel && artikel.toLowerCase() !== teil.toLowerCase()) meta += '<span><b>Artikel:</b> ' + escapeHtml(artikel) + '</span>';
+        if(e.date) meta += '<span><b>Datum:</b> ' + escapeHtml(e.date) + '</span>';
+        html += '<div class="nb-choose-item' + (e.closed ? ' is-closed' : '') + '">'
+          + '<div class="nb-choose-item-top">'
+          +   '<span class="nb-choose-item-typ">' + escapeHtml(e.typ || desc || 'Nachbestellung') + '</span>'
+          +   '<span class="nb-choose-item-status ' + nbChooserStatusClass(statusTxt) + '">' + escapeHtml(statusTxt) + '</span>'
+          + '</div>'
+          + (desc && e.typ ? '<div class="nb-choose-item-meta"><span>' + escapeHtml(desc) + '</span></div>' : '')
+          + (meta ? '<div class="nb-choose-item-meta">' + meta + '</div>' : '')
+          + '</div>';
+      }
+      prev.innerHTML = html;
+    }
+    document.getElementById('nbChooseModal').classList.add('open');
+  }
+
+  function nbEntriesForStock(stockId) {
+    var key = normalizeStockInput(stockId);
+    if(!key) return [];
+    return (nbChooserCache || []).filter(function(e) {
+      return normalizeStockInput(e.stockId) === key;
+    });
+  }
+
+  function maybeShowNbChooser(stockId) {
+    if(!stockId) return;
+    if(nbChooserCacheReady) {
+      var matches = nbEntriesForStock(stockId);
+      if(matches.length) showNbChooser(stockId, matches);
+      return;
+    }
+    loadNbChooserCache(false);
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success && res.entries && res.entries.length
+        && normalizeStockInput(stockId) === normalizeStockInput(currentStock)) {
+        showNbChooser(stockId, res.entries);
+      }
+    }).getNachbestellungenForStock(stockId);
+  }
+
+  function handleNotFoundNbCheck(stockId, errMsg) {
+    function openIt() {
+      setStatus('📦 Nicht in Refurbishment – in Nachbestellung gefunden.', '#F27420');
+      openNbForStock(stockId);
+    }
+    if(nbChooserCacheReady) {
+      if(nbEntriesForStock(stockId).length) { openIt(); return; }
+      setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+      return;
+    }
+    loadNbChooserCache(false);
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success && res.entries && res.entries.length) openIt();
+      else setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+    }).withFailureHandler(function() {
+      setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+    }).getNachbestellungenForStock(stockId);
   }
 
   var NB_STATUS_FALLBACK = ["bestellt", "nicht bestellt", "teilweise angeliefert", "komplett angeliefert", "Lieferrückstand", "B2A1", "Fertiggestellt", "Konsi-Lager"];
@@ -3007,6 +3154,7 @@
         nbStatusOptions = res.statusOptions || [];
         nbSessionActive = true;
         nbDataReady = true;
+        setNbChooserCache(res.entries || []);
         var nbb = document.getElementById('nbTotalBadge');
         if (nbb) nbb.innerText = nbAllEntries.length + ' offen';
       }
@@ -3187,10 +3335,12 @@
       }
       toggleUI(true);
       startShelfRefresh();
+
+      maybeShowNbChooser(id);
     } else {
       updateB2a1KandidatBadgeFromSchaeden('');
-      setStatus('❌ FEHLER: ' + res.message, '#f85149');
       toggleUI(true);
+      handleNotFoundNbCheck(id, res.message);
     }
   }
 
@@ -3522,14 +3672,16 @@
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closeWmsMainMenu);
     document.addEventListener('keydown', function(e) {
-      if(e.key === 'Escape') closeWmsMainMenu();
+      if(e.key === 'Escape') { closeWmsMainMenu(); closeNbChooser(); }
     });
   })();
 
   loadRefurbishmentCache(true);
   startRefurbishmentBackgroundRefresh();
+  loadNbChooserCache(true);
+  setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) loadRefurbishmentCache(true);
+    if (!document.hidden) { loadRefurbishmentCache(true); loadNbChooserCache(true); }
   });
 
   (function initWmsStandaloneExtras() {

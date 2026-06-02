@@ -1643,6 +1643,92 @@ function getNachbestellungen() {
     }
   }
 
+function getNachbestellungenForStock(stockId) {
+    try {
+      var wantStock = normalizeStockId(stockId);
+      if (!wantStock) return { success: true, entries: [], openCount: 0, closedCount: 0 };
+
+      var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+      var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+      if (!sheet) return { success: false, message: "Tab '" + NACHBESTELL_TAB + "' nicht gefunden!", entries: [] };
+
+      var layout = findNachbestellungSheetLayout(sheet);
+      var statusCol = layout.statusCol;
+      var lagerortCol = layout.lagerortCol;
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+      if (lagerortCol > lastCol) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lastCol);
+      if (statusCol > lastCol) statusCol = Math.min(NACHBESTELL_STATUS_COL, lastCol);
+      var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+      var headerIdx = layout.headerRow - 1;
+      var header = data[headerIdx];
+      var cols = {};
+      for (var c = 0; c < header.length; c++) {
+        var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+        if (!cols.date && (txt === "datum" || txt === "date")) cols.date = c;
+        if (!cols.stock && (txt.indexOf("stock") !== -1)) cols.stock = c;
+        if (!cols.url && (txt.indexOf("carol") !== -1 || txt.indexOf("url") !== -1 || txt.indexOf("link") !== -1)) cols.url = c;
+        if (!cols.typ && (txt.indexOf("typ") !== -1 || txt.indexOf("art") !== -1 || txt.indexOf("bestellung") !== -1 || txt.indexOf("beschreibung") !== -1)) cols.typ = c;
+        if (!cols.teil && (txt.indexOf("teil") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1)) cols.teil = c;
+        if (!cols.artikel && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
+      }
+      cols.status = statusCol - 1;
+
+      if (cols.stock === undefined) {
+        for (var bc = 0; bc < header.length; bc++) {
+          var sample = String(data[headerIdx + 1] ? data[headerIdx + 1][bc] : "").trim();
+          if (/^[A-Z]{2}\d{4,}/.test(sample)) { cols.stock = bc; break; }
+        }
+      }
+      if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
+
+      var entryIdCol = getSheetEntryIdCol(sheet, NACHBESTELL_ENTRYID_COL);
+
+      var entries = [];
+      var openCount = 0;
+      var closedCount = 0;
+      for (var i = headerIdx + 1; i < data.length; i++) {
+        var rowStock = normalizeStockId(data[i][cols.stock]);
+        if (!rowStock || rowStock !== wantStock) continue;
+
+        var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
+        var isClosed = nachbestellungIsClosedStatus(rawStatus);
+        if (isClosed) closedCount++; else openCount++;
+
+        var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
+        var dateStr = "";
+        if (dateVal instanceof Date) {
+          dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
+        } else if (Object.prototype.toString.call(dateVal) === '[object Date]') {
+          dateStr = Utilities.formatDate(dateVal, "Europe/Berlin", "dd.MM.yyyy");
+        } else {
+          dateStr = String(dateVal || "");
+        }
+
+        var regalVal = "";
+        if (lastCol >= lagerortCol) regalVal = nachbestellungRegalUiFromCell(data[i][lagerortCol - 1]);
+
+        entries.push({
+          row: i + 1,
+          entryId: (entryIdCol > 0 && lastCol >= entryIdCol) ? String(data[i][entryIdCol - 1] || "").trim() : "",
+          date: dateStr,
+          stockId: String(data[i][cols.stock] || "").trim(),
+          typ: cols.typ !== undefined ? String(data[i][cols.typ] || "").trim() : "",
+          teil: cols.teil !== undefined ? String(data[i][cols.teil] || "").trim() : "",
+          artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
+          status: rawStatus,
+          regal: regalVal,
+          closed: isClosed
+        });
+      }
+
+      return { success: true, stockId: stockId, entries: entries, openCount: openCount, closedCount: closedCount };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [] };
+    }
+  }
+
 function resolveNachbestellungTargetRow(sheet, nbLayout, sheetRow, expectedStockId, expectedEntryId) {
   var lastRow = Math.max(1, sheet.getLastRow());
   var stockCol = getNachbestellungStockIdCol(sheet, nbLayout);

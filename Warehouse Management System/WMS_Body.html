@@ -381,6 +381,30 @@
   </div>
 </div>
 
+<div class="nb-choose-modal" id="nbChooseModal" onclick="if(event.target===this)closeNbChooser()">
+  <div class="nb-choose-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Auftrag gefunden</div>
+      <button type="button" class="nb-choose-x" onclick="closeNbChooser()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub">
+      Für <span class="nb-choose-stock" id="nbChooseStock">—</span> existiert auch eine Nachbestellung.<br>
+      Wo möchtest du weiterarbeiten?
+    </div>
+    <div class="nb-choose-preview" id="nbChoosePreview"></div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="closeNbChooser()">
+        <span class="nb-choose-btn-ico">🔧</span>
+        <span class="nb-choose-btn-txt">Refurbishment</span>
+      </button>
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" id="nbChooseNbBtn" onclick="openNbFromChooser()">
+        <span class="nb-choose-btn-ico">📦</span>
+        <span class="nb-choose-btn-txt">Nachbestellung</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="reifen-modal" id="reifenModal">
   <div class="reifen-dialog">
     <div class="reifen-header">
