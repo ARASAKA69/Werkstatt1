@@ -560,15 +560,24 @@ function getAvailableReifenStockIds(tabName) {
 
       var headerRow = sheet.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheet.getLastColumn()))).getValues()[0];
       var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
+      var groesseCol = getColIndex(headerRow, ["größe", "groesse"]);
+      var lastIndexCol = getColIndex(headerRow, ["lastindex", "last"]);
+      var gwIndexCol = getColIndex(headerRow, ["gwindex", "gw"]);
       var stockData = sheet.getRange(startRow, search.stockCol, numRows, 1).getValues();
       var statusData = angeliefertCol !== -1 ? sheet.getRange(startRow, angeliefertCol, numRows, 1).getValues() : [];
+      var groesseData = groesseCol !== -1 ? sheet.getRange(startRow, groesseCol, numRows, 1).getValues() : [];
+      var lastIndexData = lastIndexCol !== -1 ? sheet.getRange(startRow, lastIndexCol, numRows, 1).getValues() : [];
+      var gwIndexData = gwIndexCol !== -1 ? sheet.getRange(startRow, gwIndexCol, numRows, 1).getValues() : [];
       var ids = [];
       for (var i = 0; i < stockData.length; i++) {
         var val = normalizeStockId(stockData[i][0]);
         if (val) {
           ids.push({
             id: val,
-            status: angeliefertCol !== -1 ? String(statusData[i][0] || "").trim().toLowerCase() : ""
+            status: angeliefertCol !== -1 ? String(statusData[i][0] || "").trim().toLowerCase() : "",
+            groesse: groesseCol !== -1 ? String(groesseData[i][0] || "").trim() : "",
+            lastindex: lastIndexCol !== -1 ? String(lastIndexData[i][0] || "").trim() : "",
+            gwindex: gwIndexCol !== -1 ? String(gwIndexData[i][0] || "").trim() : ""
           });
         }
       }

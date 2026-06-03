@@ -420,7 +420,11 @@
     </div>
     <div class="reifen-body-outer">
     <div class="reifen-body">
-      <div class="reifen-field">
+      <div class="reifen-mode-row">
+        <button type="button" class="reifen-mode-btn is-active" id="reifenModeLieferBtn" onclick="setReifenMode('lieferschein')">📄 Lieferschein</button>
+        <button type="button" class="reifen-mode-btn" id="reifenModeScanBtn" onclick="setReifenMode('scan')">📷 Scan</button>
+      </div>
+      <div class="reifen-field" id="reifenTabField">
         <div class="field-label">Tabellenblatt wählen</div>
         <select id="reifenTabSelect" onchange="onReifenTabChange()">
           <option value="">Lade Tabellenblätter...</option>
@@ -434,11 +438,13 @@
         </div>
       </div>
       <button class="btn btn-blue" onclick="verifyReifenStock()">ID prüfen</button>
+      <div class="reifen-scan-choices" id="reifenScanChoices" style="display:none;"></div>
       <div class="reifen-actions">
         <button class="reifen-action-btn" id="reifenBtnJa" onclick="executeReifenAction(true)">✅ DA (JA)</button>
         <button class="reifen-action-btn" id="reifenBtnNein" onclick="executeReifenAction(false)">❌ FEHLT (NEIN)</button>
       </div>
       <div class="reifen-status" id="reifenStatus">Bitte Tabellenblatt auswählen und Stock-ID eingeben...</div>
+      <div class="reifen-scan-panel" id="reifenScanPanel" style="display:none;"></div>
       <div class="reifen-info-box" id="reifenInfoBox">
         <div class="reifen-location" id="reifenLocationInfo"></div>
         <div class="reifen-copy-title">Falls Auto-Druck fehlschlägt</div>

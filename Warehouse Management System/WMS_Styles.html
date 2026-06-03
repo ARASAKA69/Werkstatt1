@@ -2791,6 +2791,94 @@
     line-height: 1.5;
     color: #8b949e;
   }
+  .reifen-mode-row {
+    display: flex;
+    gap: 8px;
+    padding: 4px;
+    background: rgba(13, 17, 23, 0.75);
+    border: 1px solid #242d39;
+    border-radius: 14px;
+  }
+  .reifen-mode-btn {
+    flex: 1;
+    padding: 12px 10px;
+    border-radius: 11px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #8b949e;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.18s;
+  }
+  .reifen-mode-btn:hover {
+    color: #c9d1d9;
+  }
+  .reifen-mode-btn.is-active {
+    background: linear-gradient(180deg, #3FA0DB 0%, #2b7fb8 100%);
+    color: #0d1117;
+    border-color: transparent;
+  }
+  .reifen-scan-choices {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    background: rgba(242, 116, 32, 0.08);
+    border: 1px solid rgba(242, 116, 32, 0.35);
+    border-radius: 14px;
+    padding: 12px;
+  }
+  .reifen-scan-choices-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: #F27420;
+    text-align: center;
+  }
+  .reifen-scan-choice-btn {
+    padding: 12px 14px;
+    border-radius: 11px;
+    border: 1px solid #354152;
+    background: #0f141c;
+    color: #3FA0DB;
+    font-size: 15px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.18s;
+  }
+  .reifen-scan-choice-btn:hover {
+    border-color: #3FA0DB;
+    background: #131a24;
+  }
+  .reifen-scan-panel {
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    background: rgba(13, 17, 23, 0.75);
+    border: 1px solid #242d39;
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .reifen-scan-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #c9d1d9;
+  }
+  .reifen-scan-row .reifen-scan-lbl {
+    color: #8b949e;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .reifen-scan-row.is-ok .reifen-scan-val {
+    color: #56d364;
+  }
+  .reifen-scan-row.is-warn .reifen-scan-val {
+    color: #F27420;
+  }
   .reifen-actions {
     display: flex;
     gap: 10px;
