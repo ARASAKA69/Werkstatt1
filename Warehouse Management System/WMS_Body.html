@@ -445,6 +445,13 @@
       </div>
       <div class="reifen-status" id="reifenStatus">Bitte Tabellenblatt auswählen und Stock-ID eingeben...</div>
       <div class="reifen-scan-panel" id="reifenScanPanel" style="display:none;"></div>
+      <div class="reifen-batch" id="reifenBatchPanel" style="display:none;">
+        <div class="reifen-batch-head">
+          <span class="reifen-batch-title">📦 Sammel-Scan <span id="reifenBatchCount">(0)</span></span>
+          <button type="button" class="reifen-batch-clear" onclick="clearReifenBatch()">Liste leeren</button>
+        </div>
+        <div class="reifen-batch-list" id="reifenBatchList"></div>
+      </div>
       <div class="reifen-info-box" id="reifenInfoBox">
         <div class="reifen-location" id="reifenLocationInfo"></div>
         <div class="reifen-copy-title">Falls Auto-Druck fehlschlägt</div>
@@ -496,6 +503,18 @@
     <div class="reifen-actions">
       <button class="reifen-action-btn active-ja" onclick="confirmReifenFinished(true)">✅ JA</button>
       <button class="reifen-action-btn active-nein" onclick="confirmReifenFinished(false)">❌ NEIN</button>
+    </div>
+  </div>
+</div>
+
+<div class="reifen-confirm" id="reifenQtyConfirmModal">
+  <div class="reifen-confirm-dialog">
+    <div class="reifen-confirm-text" id="reifenQtyConfirmText">
+      Unvollständig gescannt.
+    </div>
+    <div class="reifen-actions">
+      <button class="reifen-action-btn active-ja" onclick="confirmReifenQty(true)">✅ JA, buchen</button>
+      <button class="reifen-action-btn active-nein" onclick="confirmReifenQty(false)">❌ NEIN</button>
     </div>
   </div>
 </div>

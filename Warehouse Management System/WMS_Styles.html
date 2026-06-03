@@ -2879,6 +2879,101 @@
   .reifen-scan-row.is-warn .reifen-scan-val {
     color: #F27420;
   }
+  .reifen-batch {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    background: rgba(13, 17, 23, 0.75);
+    border: 1px solid #242d39;
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .reifen-batch-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .reifen-batch-title {
+    font-size: 14px;
+    font-weight: 800;
+    color: #c9d1d9;
+  }
+  .reifen-batch-clear {
+    background: rgba(248, 81, 73, 0.12);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.25);
+    border-radius: 10px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: 0.18s;
+  }
+  .reifen-batch-clear:hover {
+    background: rgba(248, 81, 73, 0.2);
+  }
+  .reifen-batch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 280px;
+    overflow: auto;
+  }
+  .reifen-batch-empty {
+    text-align: center;
+    color: #6e7681;
+    font-size: 13px;
+    padding: 10px;
+  }
+  .reifen-batch-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: 11px;
+    border: 1px solid #2a3340;
+    background: #0f141c;
+    cursor: pointer;
+    transition: 0.16s;
+  }
+  .reifen-batch-item:hover {
+    border-color: #3FA0DB;
+    background: #131a24;
+  }
+  .reifen-batch-item.is-warn {
+    border-color: rgba(242, 116, 32, 0.5);
+    background: rgba(242, 116, 32, 0.08);
+  }
+  .reifen-batch-stock {
+    font-size: 15px;
+    font-weight: 800;
+    color: #3FA0DB;
+    flex-shrink: 0;
+  }
+  .reifen-batch-meta {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    color: #8b949e;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .reifen-batch-pk {
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: #c9d1d9;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+  }
+  .reifen-batch-item.is-warn .reifen-batch-pk {
+    color: #F27420;
+  }
   .reifen-actions {
     display: flex;
     gap: 10px;
