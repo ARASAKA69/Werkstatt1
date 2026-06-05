@@ -305,6 +305,60 @@ function findRowFast(sheet, searchTermsHeader, stockId) {
     return { row: -1, headerIdx: headerIdx, stockCol: stockCol };
   }
 
+function canonicalTireSizeServer(str) {
+    var m = String(str || "").match(/(\d{3})\s*\/\s*(\d{2})\s*[A-Z]{0,2}\s*R?\s*(\d{2})/i);
+    return m ? (m[1] + "/" + m[2] + "/" + m[3]) : "";
+  }
+
+function findReifenStockRowsDetailed(sheet, stockId) {
+    stockId = normalizeStockId(stockId);
+    var lastRow = Math.max(1, sheet.getLastRow());
+    var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+    var headerData = sheet.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
+    var headerIdx = findHeaderRow(headerData, ["stockid", "stock"]);
+    if (headerIdx === -1) return { headerIdx: -1, stockCol: -1, header: null, angeliefertCol: -1, matches: [] };
+    var header = headerData[headerIdx];
+    var stockCol = getColIndex(header, ["stockid", "stock"]);
+    if (stockCol === -1) return { headerIdx: headerIdx, stockCol: -1, header: header, angeliefertCol: -1, matches: [] };
+    var angeliefertCol = getColIndex(header, ["angeliefert"]);
+    var groesseCol = getColIndex(header, ["größe", "groesse"]);
+    var lastIndexCol = getColIndex(header, ["lastindex", "last"]);
+    var gwIndexCol = getColIndex(header, ["gwindex", "gw"]);
+    var startRow = headerIdx + 2;
+    var numRows = lastRow - startRow + 1;
+    var matches = [];
+    if (numRows > 0) {
+      var data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
+      for (var i = 0; i < data.length; i++) {
+        if (!cellMatchesStockId(data[i][stockCol - 1], stockId)) continue;
+        matches.push({
+          row: startRow + i,
+          status: angeliefertCol !== -1 ? String(data[i][angeliefertCol - 1] || "").trim().toLowerCase() : "",
+          groesse: groesseCol !== -1 ? String(data[i][groesseCol - 1] || "").trim() : "",
+          lastindex: lastIndexCol !== -1 ? String(data[i][lastIndexCol - 1] || "").trim() : "",
+          gwindex: gwIndexCol !== -1 ? String(data[i][gwIndexCol - 1] || "").trim() : ""
+        });
+      }
+    }
+    return { headerIdx: headerIdx, stockCol: stockCol, header: header, angeliefertCol: angeliefertCol, matches: matches };
+  }
+
+function pickReifenUnbookedRow(matches, sizeHint) {
+    var unbooked = [];
+    for (var i = 0; i < matches.length; i++) {
+      if (matches[i].status !== "ja" && matches[i].status !== "nein") unbooked.push(matches[i]);
+    }
+    var sizeCanon = canonicalTireSizeServer(sizeHint);
+    var chosen = null;
+    if (sizeCanon) {
+      for (var u = 0; u < unbooked.length; u++) {
+        if (canonicalTireSizeServer(unbooked[u].groesse) === sizeCanon) { chosen = unbooked[u]; break; }
+      }
+    }
+    if (!chosen && unbooked.length) chosen = unbooked[0];
+    return { unbooked: unbooked, chosen: chosen };
+  }
+
 function getReifenSheet() {
     return SpreadsheetApp.openById(REIFEN_SHEET_ID);
   }
@@ -595,16 +649,12 @@ function checkReifenStock(tabName, stockId) {
       var sheet = getReifenSheetTab(tabName);
       if (!sheet) return { found: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
 
-      var search = findRowFast(sheet, ["stockid", "stock"], stockId);
-      if (search.headerIdx === -1) return { found: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
-      if (search.row === -1) return { found: false, message: "Stock-ID '" + stockId + "' in '" + sheet.getName() + "' nicht gefunden!" };
-      var headerRow = sheet.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheet.getLastColumn()))).getValues()[0];
-      var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
-      if (angeliefertCol !== -1) {
-        var currentStatus = String(sheet.getRange(search.row, angeliefertCol).getValue() || "").trim().toLowerCase();
-        if (currentStatus === "ja" || currentStatus === "nein") {
-          return { found: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheet.getName() + "' bereits verbucht!" };
-        }
+      var det = findReifenStockRowsDetailed(sheet, stockId);
+      if (det.headerIdx === -1) return { found: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
+      if (!det.matches.length) return { found: false, message: "Stock-ID '" + stockId + "' in '" + sheet.getName() + "' nicht gefunden!" };
+      var pick = pickReifenUnbookedRow(det.matches, null);
+      if (!pick.chosen) {
+        return { found: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheet.getName() + "' bereits verbucht!" };
       }
       return { found: true, message: "Stock-ID gefunden! Bitte Status auswählen:" };
     } catch (err) {
@@ -612,7 +662,7 @@ function checkReifenStock(tabName, stockId) {
     }
   }
 
-function processReifenStock(tabName, stockId, isDelivered) {
+function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
     try {
       stockId = normalizeStockId(stockId);
       var sheetSeng = getReifenSheetTab(tabName);
@@ -623,22 +673,25 @@ function processReifenStock(tabName, stockId, isDelivered) {
 
       var tireInfo = "UNBEKANNT _X";
       var mengeValNum = 1;
-      var search = findRowFast(sheetSeng, ["stockid", "stock"], stockId);
-      if (search.headerIdx === -1) return { success: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
-      if (search.row === -1) return { success: false, message: "Stock-ID '" + stockId + "' in '" + sheetSeng.getName() + "' nicht gefunden!" };
+      var det = findReifenStockRowsDetailed(sheetSeng, stockId);
+      if (det.headerIdx === -1) return { success: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
+      if (!det.matches.length) return { success: false, message: "Stock-ID '" + stockId + "' in '" + sheetSeng.getName() + "' nicht gefunden!" };
+      var pick = pickReifenUnbookedRow(det.matches, sizeHint);
+      if (!pick.chosen) return { success: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheetSeng.getName() + "' bereits verbucht!" };
 
-      var headerRow = sheetSeng.getRange(search.headerIdx + 1, 1, 1, Math.max(1, Math.min(80, sheetSeng.getLastColumn()))).getValues()[0];
-      var angeliefertCol = getColIndex(headerRow, ["angeliefert"]);
+      var search = { row: pick.chosen.row, headerIdx: det.headerIdx, stockCol: det.stockCol };
+      var headerRow = det.header;
+      var angeliefertCol = det.angeliefertCol;
       var mengeCol = getColIndex(headerRow, ["menge", "anzahl"]);
       var groesseCol = getColIndex(headerRow, ["größe", "groesse"]);
       var lastIndexCol = getColIndex(headerRow, ["lastindex", "last"]);
       var gwIndexCol = getColIndex(headerRow, ["gwindex", "gw"]);
-      if (angeliefertCol !== -1) {
-        var existingStatus = String(sheetSeng.getRange(search.row, angeliefertCol).getValue() || "").trim().toLowerCase();
-        if (existingStatus === "ja" || existingStatus === "nein") {
-          return { success: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheetSeng.getName() + "' bereits verbucht!" };
-        }
+
+      var remaining = [];
+      for (var ri = 0; ri < pick.unbooked.length; ri++) {
+        if (pick.unbooked[ri].row !== search.row) remaining.push(pick.unbooked[ri]);
       }
+      var remainingNext = remaining.length ? remaining[0] : null;
 
       var mengeVal = mengeCol !== -1 ? sheetSeng.getRange(search.row, mengeCol).getValue() : "1";
       mengeValNum = parseInt(mengeVal, 10) || 1;
@@ -694,7 +747,11 @@ function processReifenStock(tabName, stockId, isDelivered) {
         stockId: stockId,
         tireInfo: tireInfo,
         locationText: locationText,
-        menge: mengeValNum
+        menge: mengeValNum,
+        remainingUnbooked: remaining.length,
+        remainingSize: remainingNext ? remainingNext.groesse : "",
+        remainingLast: remainingNext ? remainingNext.lastindex : "",
+        remainingGw: remainingNext ? remainingNext.gwindex : ""
       };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message };
