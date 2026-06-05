@@ -2,46 +2,29 @@ var DPL_SOURCE_FILE_ID = '13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM';
 
 var DPL_SOURCE_SHEET = 'Daily Planning List';
 
-var DPL_CACHE_TTL = 18000;
+var DPL_CACHE_TTL = 21600;
 
-var DPL_STOCK_PREFIX = 'DPL_S_';
+var DPL_REFRESH_MINUTES = 5;
+
+var DPL_MAP_CHUNK_KEY = 'DPL_MAP_';
+
+var DPL_MAP_COUNT_KEY = 'DPL_MAP_COUNT';
+
+var DPL_LAST_REFRESH_KEY = 'DPL_LAST_REFRESH';
+
+var DPL_MAX_CHUNK = 95000;
+
+var DPL_NOINFO_COLOR = '#FF9900';
 
 var DPL_COLS = [2, 8, 9, 12, 13, 14, 15, 16];
 
 function dplNormalizeStockId(v) {
 
-  return String(v || '').replace(/\s+/g, '').toUpperCase();
+  return String(v == null ? '' : v).replace(/[\s\u00A0\u200B\u200C\u200D\uFEFF]+/g, '').toUpperCase();
 
 }
 
-function dplFlushCacheEntries(cache, batchEntries, ttl) {
-
-  var keys = Object.keys(batchEntries);
-  var idx = 0;
-  var MAX_CHUNK = 85000;
-
-  while (idx < keys.length) {
-
-    var slice = {};
-    var size = 0;
-
-    while (idx < keys.length) {
-      var k = keys[idx];
-      var val = batchEntries[k];
-      var cost = k.length + val.length + 2;
-      if (size > 0 && size + cost > MAX_CHUNK) break;
-      slice[k] = val;
-      size += cost;
-      idx++;
-    }
-
-    if (Object.keys(slice).length > 0) {
-      cache.putAll(slice, ttl);
-    }
-  }
-}
-
-function dplLoadAllSourceEntries() {
+function dplBuildMap() {
 
   var sourceSs = SpreadsheetApp.openById(DPL_SOURCE_FILE_ID);
 
@@ -49,36 +32,214 @@ function dplLoadAllSourceEntries() {
 
   var sourceData = sourceSh.getDataRange().getValues();
 
-  var strMap = {};
-
   var byNorm = {};
 
   var i;
 
-  for (i = 1; i < sourceData.length; i++) {
+  for (i = 0; i < sourceData.length; i++) {
 
     var keyNorm = dplNormalizeStockId(sourceData[i][1]);
 
     if (!keyNorm) continue;
 
-    var rowValues = DPL_COLS.map(function(c) {
+    byNorm[keyNorm] = DPL_COLS.map(function(c) {
 
       return sourceData[i][c];
 
     });
 
-    strMap[DPL_STOCK_PREFIX + keyNorm] = JSON.stringify(rowValues);
+  }
 
-    byNorm[keyNorm] = rowValues;
+  return byNorm;
+
+}
+
+function dplStoreMap(byNorm) {
+
+  var cache = CacheService.getScriptCache();
+
+  var json = JSON.stringify(byNorm);
+
+  var toPut = {};
+
+  var count = 0;
+
+  var pos;
+
+  for (pos = 0; pos < json.length; pos += DPL_MAX_CHUNK) {
+
+    toPut[DPL_MAP_CHUNK_KEY + count] = json.substring(pos, pos + DPL_MAX_CHUNK);
+
+    count++;
 
   }
- 
-  return { strMap: strMap, byNorm: byNorm };
+
+  if (count === 0) {
+
+    toPut[DPL_MAP_CHUNK_KEY + '0'] = '{}';
+
+    count = 1;
+
+  }
+
+  toPut[DPL_MAP_COUNT_KEY] = String(count);
+
+  toPut[DPL_LAST_REFRESH_KEY] = String(Date.now());
+
+  cache.putAll(toPut, DPL_CACHE_TTL);
+
+}
+
+function dplReadMap() {
+
+  var cache = CacheService.getScriptCache();
+
+  var countStr = cache.get(DPL_MAP_COUNT_KEY);
+
+  if (!countStr) return null;
+
+  var count = parseInt(countStr, 10);
+
+  if (!count || count < 1) return null;
+
+  var keys = [];
+
+  var i;
+
+  for (i = 0; i < count; i++) keys.push(DPL_MAP_CHUNK_KEY + i);
+
+  var got = cache.getAll(keys);
+
+  var json = '';
+
+  for (i = 0; i < count; i++) {
+
+    var part = got[DPL_MAP_CHUNK_KEY + i];
+
+    if (part == null) return null;
+
+    json += part;
+
+  }
+
+  try {
+
+    return JSON.parse(json);
+
+  } catch (err) {
+
+    return null;
+
+  }
+
+}
+
+function dplGetMap() {
+
+  var map = dplReadMap();
+
+  if (map) return map;
+
+  try {
+
+    map = dplBuildMap();
+
+    dplStoreMap(map);
+
+    return map;
+
+  } catch (err) {
+
+    console.error('Cache empty and cannot build from source here (no permission); relying on scheduled refresh: ' + err);
+
+    return {};
+
+  }
+
+}
+
+function dplRefreshCache() {
+
+  var map = dplBuildMap();
+
+  dplStoreMap(map);
+
+  console.log('Daily Planning cache refreshed: ' + Object.keys(map).length + ' entries');
+
+}
+
+function dplFillRow(sh, row, vals) {
+
+  if (vals && vals.length) {
+
+    var pad = vals.slice(0, 8);
+
+    while (pad.length < 8) pad.push('');
+
+    sh.getRange(row, 6, 1, 8).setValues([pad]);
+
+    sh.getRange(row, 5).setBackground(null);
+
+  } else {
+
+    sh.getRange(row, 6, 1, 8).clearContent();
+
+    sh.getRange(row, 5).setBackground(DPL_NOINFO_COLOR);
+
+  }
+
+}
+
+function dplProcessSingleRowCore(ss, sheetName, row) {
+
+  var sh = ss.getSheetByName(sheetName);
+
+  if (!sh || row < 2) return;
+
+  var input = String(sh.getRange(row, 5).getValue() || '').trim();
+
+  if (!input) {
+
+    sh.getRange(row, 6, 1, 8).clearContent();
+
+    sh.getRange(row, 5).setBackground(null);
+
+    return;
+
+  }
+
+  if (row >= 3) {
+
+    var ac = sh.getRange(row - 1, 1, 2, 3).getValues();
+
+    if ((ac[1][0] === '' || ac[1][0] == null) && ac[0][0] !== '' && ac[0][0] != null) {
+
+      sh.getRange(row, 1).setValue(ac[0][0]);
+
+    }
+
+    if ((ac[1][2] === '' || ac[1][2] == null) && ac[0][2] !== '' && ac[0][2] != null) {
+
+      sh.getRange(row, 3).setValue(ac[0][2]);
+
+    }
+
+  }
+
+  var norm = dplNormalizeStockId(input);
+
+  var map = dplGetMap();
+
+  var vals = map[norm];
+
+  console.log('Tagesliste row ' + row + ' stockId "' + norm + '" -> ' + (vals && vals.length ? 'FOUND, filled' : 'NOT FOUND, marked orange'));
+
+  dplFillRow(sh, row, vals);
 
 }
 
 function dplProcessDownwardCore(ss, sheetName, startRow) {
-   
+
   var sh = ss.getSheetByName(sheetName);
 
   if (!sh || startRow < 2) return;
@@ -91,7 +252,7 @@ function dplProcessDownwardCore(ss, sheetName, startRow) {
 
   var colE = sh.getRange(startRow, 5, numRows, 1).getValues();
 
-  var meta = [];
+  var rows = [];
 
   var i;
 
@@ -101,76 +262,103 @@ function dplProcessDownwardCore(ss, sheetName, startRow) {
 
     if (!inputRaw) break;
 
-    meta.push({ sh: sh, row: startRow + i, norm: dplNormalizeStockId(inputRaw) });
+    rows.push({ row: startRow + i, norm: dplNormalizeStockId(inputRaw) });
 
   }
 
-  if (!meta.length) return;
+  if (!rows.length) return;
 
-  for (i = 0; i < meta.length; i++) {
-    var r = meta[i].row;
-    if (r >= 3) {
-      var above = sh.getRange(r - 1, 1, 1, 3).getValues()[0];
-      var curA = sh.getRange(r, 1).getValue();
-      var curC = sh.getRange(r, 3).getValue();
-      if (!curA && above[0]) sh.getRange(r, 1).setValue(above[0]);
-      if (!curC && above[2]) sh.getRange(r, 3).setValue(above[2]);
-    }
-  }
+  var lastMetaRow = rows[rows.length - 1].row;
 
-  var cache = CacheService.getScriptCache();
+  var blockTop = startRow >= 3 ? startRow - 1 : startRow;
 
-  var needFull = false;
+  var acVals = sh.getRange(blockTop, 1, lastMetaRow - blockTop + 1, 3).getValues();
 
-  for (i = 0; i < meta.length; i++) {
+  for (i = 0; i < rows.length; i++) {
 
-    if (!cache.get(DPL_STOCK_PREFIX + meta[i].norm)) {
+    var r = rows[i].row;
 
-      needFull = true;
+    if (r < 3) continue;
 
-      break;
+    var ai = r - blockTop;
+
+    if ((acVals[ai][0] === '' || acVals[ai][0] == null) && acVals[ai - 1][0] !== '' && acVals[ai - 1][0] != null) {
+
+      acVals[ai][0] = acVals[ai - 1][0];
 
     }
 
-  }
+    if ((acVals[ai][2] === '' || acVals[ai][2] == null) && acVals[ai - 1][2] !== '' && acVals[ai - 1][2] != null) {
 
-  var pack = null;
-
-  if (needFull) {
-
-    pack = dplLoadAllSourceEntries();
-
-    dplFlushCacheEntries(cache, pack.strMap, DPL_CACHE_TTL);
-
-  }
-
-  for (i = 0; i < meta.length; i++) {
-
-    var m = meta[i];
-
-    var vals = null;
-
-    var ck = cache.get(DPL_STOCK_PREFIX + m.norm);
-
-    if (ck) {
-
-      vals = JSON.parse(ck);
-
-    } else if (pack && pack.byNorm[m.norm]) {
-
-      vals = pack.byNorm[m.norm];
+      acVals[ai][2] = acVals[ai - 1][2];
 
     }
+
+  }
+
+  var aColumn = [];
+
+  var cColumn = [];
+
+  var rr;
+
+  for (rr = startRow; rr <= lastMetaRow; rr++) {
+
+    aColumn.push([acVals[rr - blockTop][0]]);
+
+    cColumn.push([acVals[rr - blockTop][2]]);
+
+  }
+
+  sh.getRange(startRow, 1, aColumn.length, 1).setValues(aColumn);
+
+  sh.getRange(startRow, 3, cColumn.length, 1).setValues(cColumn);
+
+  var map = dplGetMap();
+
+  var out = [];
+
+  var eBg = [];
+
+  for (i = 0; i < rows.length; i++) {
+
+    var vals = map[rows[i].norm];
 
     if (vals && vals.length) {
+
       var pad = vals.slice(0, 8);
+
       while (pad.length < 8) pad.push('');
-      m.sh.getRange(m.row, 6, 1, 8).setValues([pad]);
+
+      out.push(pad);
+
+      eBg.push([null]);
+
     } else {
 
-      m.sh.getRange(m.row, 6, 1, 8).clearContent();
+      out.push(['', '', '', '', '', '', '', '']);
+
+      eBg.push([DPL_NOINFO_COLOR]);
 
     }
+
+  }
+
+  sh.getRange(startRow, 6, out.length, 8).setValues(out);
+
+  sh.getRange(startRow, 5, eBg.length, 1).setBackgrounds(eBg);
+
+}
+
+function dplProcessSingleRow(ss, sheetName, row) {
+
+  try {
+
+    dplProcessSingleRowCore(ss, sheetName, row);
+
+  } catch (err) {
+
+    console.error('dplProcessSingleRow row ' + row + ': ' + err);
 
   }
 
@@ -180,7 +368,7 @@ function dplProcessDownward(ss, sheetName, startRow) {
 
   var lock = LockService.getScriptLock();
 
-  if (!lock.tryLock(10000)) return;
+  if (!lock.tryLock(30000)) return;
 
   try {
 
@@ -188,7 +376,7 @@ function dplProcessDownward(ss, sheetName, startRow) {
 
   } catch (err) {
 
-    Logger.log(String(err));
+    console.error('dplProcessDownward startRow ' + startRow + ': ' + err);
 
   } finally {
 
@@ -206,7 +394,7 @@ function dplProcessDownFromSelection() {
 
   var name = sh.getName();
 
-  if (name !== 'Tagesliste' && name !== 'Nachbestellungen') return;
+  if (name !== 'Tagesliste') return;
 
   var row = ss.getActiveRange().getRow();
 
@@ -219,53 +407,62 @@ function dplProcessDownFromSelection() {
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Daily Planning')
     .addItem('Ab dieser Zeile nach unten verarbeiten', 'dplProcessDownFromSelection')
+    .addItem('Cache jetzt aktualisieren', 'dplRefreshCache')
     .addItem('Trigger installieren', 'dplInstallTrigger')
     .addToUi();
 }
 
-function dplOnEdit(e) {
+function onEdit(e) {
 
   if (!e || !e.range) return;
 
   var sheet = e.range.getSheet();
 
-  var sheetName = sheet.getName();
+  if (sheet.getName() !== 'Tagesliste') return;
 
   var row = e.range.getRow();
 
   var col = e.range.getColumn();
 
-  if ((sheetName !== 'Tagesliste' && sheetName !== 'Nachbestellungen') || col !== 5 || row < 2) return;
+  if (col !== 5 || row < 2) return;
 
-  var inputValue = String(e.range.getValue() || '').trim();
+  console.log('onEdit fired for Tagesliste!E' + row);
 
-  if (!inputValue) {
-    sheet.getRange(row, 6, 1, 8).clearContent();
-    return;
-  }
+  dplProcessSingleRow(e.source, 'Tagesliste', row);
 
-  if (row >= 3) {
-    var above = sheet.getRange(row - 1, 1, 1, 3).getValues()[0];
-    var curA = sheet.getRange(row, 1).getValue();
-    var curC = sheet.getRange(row, 3).getValue();
-    if (!curA && above[0]) sheet.getRange(row, 1).setValue(above[0]);
-    if (!curC && above[2]) sheet.getRange(row, 3).setValue(above[2]);
-  }
+}
 
-  dplProcessDownward(e.source, sheetName, row);
+function dplOnEdit(e) {
+
+  onEdit(e);
 
 }
 
 function dplInstallTrigger() {
+
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var triggers = ScriptApp.getUserTriggers(ss);
-  for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'dplOnEdit') {
+
+  var triggers = ScriptApp.getProjectTriggers();
+
+  var i;
+
+  for (i = 0; i < triggers.length; i++) {
+
+    var fn = triggers[i].getHandlerFunction();
+
+    if (fn === 'dplOnEdit' || fn === 'dplRefreshCache' || fn === 'onEdit') {
+
       ScriptApp.deleteTrigger(triggers[i]);
+
     }
+
   }
-  ScriptApp.newTrigger('dplOnEdit')
-    .forSpreadsheet(ss)
-    .onEdit()
+
+  ScriptApp.newTrigger('dplRefreshCache')
+    .timeBased()
+    .everyMinutes(DPL_REFRESH_MINUTES)
     .create();
+
+  dplRefreshCache();
+
 }
