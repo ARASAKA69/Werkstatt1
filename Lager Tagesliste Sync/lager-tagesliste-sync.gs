@@ -131,15 +131,23 @@ function runSync_() {
 
     if (CONFIG.addMissingToLager) {
         var lagerRegale = getRegalColumnsFromValues_(lagerData.values);
-        var lagerIds = getRegalIdsFromValues_(lagerData.values);
+        var lagerLocations = getRegalIdLocations_(lagerData.values);
         for (var k = 0; k < entries.length; k++) {
             var regalKey = parseRegalStatus_(entries[k].status);
             if (!regalKey) continue;
             var idn = normalizeId_(entries[k].id);
-            if (lagerIds[idn]) continue;
-            if (placeInGap_(lager, lagerData, lagerRegale, regalKey, entries[k].id, entries[k].lagerColor)) {
-                lagerIds[idn] = true;
+            var loc = lagerLocations[idn];
+            if (loc && loc.regal === regalKey) continue;
+            var destRow = placeInGap_(lager, lagerData, lagerRegale, regalKey, entries[k].id, entries[k].lagerColor);
+            if (!destRow) continue;
+            if (loc) {
+                var oldCell = lager.getRange(loc.row, loc.col);
+                oldCell.clearContent();
+                oldCell.setBackground(null);
+                oldCell.clearNote();
+                sheetDataClear_(lagerData, loc.row, loc.col);
             }
+            lagerLocations[idn] = { regal: regalKey, row: destRow, col: lagerRegale[regalKey].col };
         }
     }
 }
@@ -388,4 +396,156 @@ function columnToLetter_(col) {
         col = Math.floor((col - 1) / 26);
     }
     return letter;
+}
+
+function debugAllToLager() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var lager = ss.getSheetByName(CONFIG.lagerSheetName);
+    if (!lager) {
+        Logger.log("LAGER sheet not found.");
+        return;
+    }
+    var lagerData = readSheetData_(lager);
+    var lagerRegale = getRegalColumnsFromValues_(lagerData.values);
+    var lagerLocations = getRegalIdLocations_(lagerData.values);
+
+    Logger.log("Recognized LAGER regals: " + Object.keys(lagerRegale).join(", "));
+
+    var entries = collectEntries_();
+    var withRegal = 0;
+    var wouldPlace = 0;
+    var skipNoRegal = 0;
+    var dupSameRegal = 0;
+    var dupWrongRegal = 0;
+    var skipNoHeader = 0;
+    var skipNoSlot = 0;
+
+    for (var i = 0; i < entries.length; i++) {
+        var status = entries[i].status;
+        var regalKey = parseRegalStatus_(status);
+        if (!regalKey) {
+            skipNoRegal++;
+            continue;
+        }
+        withRegal++;
+        var idn = normalizeId_(entries[i].id);
+
+        var loc = lagerLocations[idn];
+        if (loc) {
+            if (loc.regal === regalKey) {
+                dupSameRegal++;
+            } else {
+                dupWrongRegal++;
+                Logger.log("WRONG REGAL: id=" + entries[i].id + " currently in " + loc.regal + " but Refurbishment says " + regalKey);
+            }
+            continue;
+        }
+
+        var pos = lagerRegale[regalKey];
+        if (!pos) {
+            skipNoHeader++;
+            Logger.log("SKIP no header in LAGER: id=" + entries[i].id + " status='" + status + "' regal=" + regalKey);
+            continue;
+        }
+
+        var col0 = pos.col - 1;
+        var headerRow0 = pos.row - 1;
+        var endRow0 = getRegalEndRow0_(lagerData.values, headerRow0, col0);
+        var row = findFirstEmptyRow_(lagerData.values, headerRow0, col0, endRow0);
+        var row0 = row - 1;
+        var blocked = (row0 <= headerRow0) || (row0 >= endRow0 && endRow0 < lagerData.values.length);
+        if (blocked) {
+            skipNoSlot++;
+            Logger.log("SKIP no free slot: id=" + entries[i].id + " status='" + status + "' regal=" + regalKey);
+            continue;
+        }
+        wouldPlace++;
+    }
+
+    Logger.log("---- SUMMARY ----");
+    Logger.log("total source entries: " + entries.length);
+    Logger.log("with valid Regal: " + withRegal + " | without parseable Regal: " + skipNoRegal);
+    Logger.log("would be placed (new): " + wouldPlace);
+    Logger.log("already in correct regal: " + dupSameRegal);
+    Logger.log("present but in WRONG regal (would need move): " + dupWrongRegal);
+    Logger.log("skipped missing header: " + skipNoHeader);
+    Logger.log("skipped no free slot: " + skipNoSlot);
+}
+
+function getRegalIdLocations_(values) {
+    var map = {};
+    var numRows = values.length;
+    var numCols = numRows ? values[0].length : 0;
+    for (var c = 0; c < numCols; c++) {
+        for (var r = 0; r < numRows; r++) {
+            if (!isRegalHeader_(values[r][c])) continue;
+            var regalKey = normalizeRegal_(values[r][c]);
+            var endRow0 = getRegalEndRow0_(values, r, c);
+            for (var rr = r + 1; rr < endRow0; rr++) {
+                var v = values[rr][c];
+                if (v === "" || v === null) continue;
+                if (isRegalHeader_(v)) break;
+                var idn = normalizeId_(v);
+                if (!map.hasOwnProperty(idn)) {
+                    map[idn] = { regal: regalKey, row: rr + 1, col: c + 1 };
+                }
+            }
+        }
+    }
+    return map;
+}
+
+function debugStockId(stockId) {
+    var target = normalizeId_(stockId);
+    var entries = collectEntries_();
+    var found = null;
+    for (var i = 0; i < entries.length; i++) {
+        if (normalizeId_(entries[i].id) === target) {
+            found = entries[i];
+            break;
+        }
+    }
+    if (!found) {
+        Logger.log("[" + stockId + "] not found in Refurbishment/Nachbestellung sources.");
+        return;
+    }
+    Logger.log("[" + stockId + "] source status = '" + found.status + "'");
+
+    var regalKey = parseRegalStatus_(found.status);
+    Logger.log("parseRegalStatus_ => " + regalKey);
+    Logger.log("isTageslisteStatus_ => " + isTageslisteStatus_(found.status));
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var lager = ss.getSheetByName(CONFIG.lagerSheetName);
+    if (!lager) {
+        Logger.log("LAGER sheet not found.");
+        return;
+    }
+    var lagerData = readSheetData_(lager);
+    var lagerRegale = getRegalColumnsFromValues_(lagerData.values);
+    var lagerIds = getRegalIdsFromValues_(lagerData.values);
+
+    Logger.log("Already present in LAGER? " + (lagerIds[target] ? "YES => skipped by duplicate check" : "no"));
+
+    if (!regalKey) {
+        Logger.log("Status does not parse to a valid Regal (range 1.1-5.8, must contain word 'regal').");
+        return;
+    }
+
+    var pos = lagerRegale[regalKey];
+    if (!pos) {
+        Logger.log("Regal header '" + regalKey + "' NOT recognized in LAGER => box can never be placed.");
+        Logger.log("Recognized LAGER regals: " + Object.keys(lagerRegale).join(", "));
+        return;
+    }
+
+    var col0 = pos.col - 1;
+    var headerRow0 = pos.row - 1;
+    var endRow0 = getRegalEndRow0_(lagerData.values, headerRow0, col0);
+    var row = findFirstEmptyRow_(lagerData.values, headerRow0, col0, endRow0);
+    var row0 = row - 1;
+    var blocked = (row0 <= headerRow0) || (row0 >= endRow0 && endRow0 < lagerData.values.length);
+    Logger.log("Regal '" + regalKey + "' header at row " + pos.row + ", col " + pos.col +
+        ", blockEndsBeforeRow " + (endRow0 + 1) + ", firstEmptyRow " + row +
+        (blocked ? " => NO FREE SLOT, box skipped" : " => free slot found, box would be placed"));
 }
