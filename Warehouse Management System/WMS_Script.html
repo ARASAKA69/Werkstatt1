@@ -255,6 +255,16 @@
   }).observe(shelfSelectEl, { childList: true, subtree: true });
   syncShelfTriggerFromNative();
 
+  function allRegalShelfList() {
+    var arr = [];
+    for (var i = 1; i <= 9; i++) {
+      for (var j = 1; j <= 8; j++) {
+        arr.push('Regal ' + i + '.' + j);
+      }
+    }
+    return arr;
+  }
+
   function compareRegalShelfNames(nameA, nameB) {
     var mA = String(nameA || '').match(/^Regal\s+(\d+)\.(\d+)$/i);
     var mB = String(nameB || '').match(/^Regal\s+(\d+)\.(\d+)$/i);
@@ -271,26 +281,9 @@
     return String(nameA || '').localeCompare(String(nameB || ''), 'de');
   }
 
-  function forEachShelfMapKeySorted(shelfMap, fn) {
-    var keys = [];
-    var k;
-    for (k in shelfMap) {
-      if (Object.prototype.hasOwnProperty.call(shelfMap, k)) keys.push(k);
-    }
-    keys.sort(compareRegalShelfNames);
-    for (var i = 0; i < keys.length; i++) {
-      fn(keys[i], shelfMap[keys[i]]);
-    }
-  }
+  function startShelfRefresh() {}
 
-  function startShelfRefresh() {
-    stopShelfRefresh();
-    shelfRefreshTimer = setInterval(refreshShelfCounts, 2000);
-  }
-
-  function stopShelfRefresh() {
-    if(shelfRefreshTimer) { clearInterval(shelfRefreshTimer); shelfRefreshTimer = null; }
-  }
+  function stopShelfRefresh() {}
 
   function isRegalTagesliste(regal) {
     return String(regal || '').trim().toLowerCase() === 'tagesliste';
@@ -311,74 +304,6 @@
     }
   }
 
-  function refreshShelfCounts() {
-    if(!currentStock || shelfDropdownOpen) return;
-    function applyShelfMapFromCounts(shelfMap) {
-      if(shelfDropdownOpen) return;
-      var sel = document.getElementById('shelfSelect');
-      var currentVal = sel.value;
-      var serverRegal = (sel.dataset.serverRegal || '').trim();
-      var currentRegal = serverRegal;
-      if(!currentRegal) {
-        var labTxt = document.getElementById('currentShelfLabel').innerText.trim();
-        currentRegal = labTxt.indexOf('Aktuell: ') === 0 ? labTxt.replace('Aktuell: ', '').trim() : labTxt;
-      }
-      sel.innerHTML = '';
-      if(isRegalTagesliste(currentRegal)) {
-        sel.innerHTML = '<option value="Tagesliste">Tagesliste</option>';
-        forEachShelfMapKeySorted(shelfMap, function(name, cnt) {
-          if(cnt < 5) {
-            sel.innerHTML += '<option value="' + name + '">' + name + ' (' + cnt + '/5)</option>';
-          }
-        });
-        document.getElementById('currentShelfCountBadge').style.display = 'none';
-        var restoredSel = false;
-        if(currentVal) {
-          for(var ci = 0; ci < sel.options.length; ci++) {
-            if(sel.options[ci].value === currentVal) {
-              sel.value = currentVal;
-              restoredSel = true;
-              break;
-            }
-          }
-        }
-        if(!restoredSel && isRegalTagesliste(serverRegal)) sel.value = 'Tagesliste';
-        applyTageslisteShelfUi(serverRegal);
-        return;
-      }
-      if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER') {
-        var cnt = shelfMap[currentRegal] !== undefined ? shelfMap[currentRegal] : '?';
-        sel.innerHTML += '<option value="' + currentRegal + '">' + currentRegal + ' (AKTUELL ' + cnt + '/5)</option>';
-      } else {
-        sel.innerHTML = '<option value="">-- FREIES REGAL WÄHLEN --</option>';
-      }
-      forEachShelfMapKeySorted(shelfMap, function(name, cnt) {
-        if(name !== currentRegal && cnt < 5) {
-          sel.innerHTML += '<option value="' + name + '">' + name + ' (' + cnt + '/5)</option>';
-        }
-      });
-      if(currentVal) sel.value = currentVal;
-      applyTageslisteShelfUi(currentRegal);
-      var badge = document.getElementById('currentShelfCountBadge');
-      if(currentRegal && currentRegal !== '-' && currentRegal !== 'LEER' && shelfMap[currentRegal] !== undefined) {
-        var c = shelfMap[currentRegal];
-        badge.style.display = 'inline-flex';
-        badge.innerText = 'In ' + currentRegal + ' ' + (c === 1 ? 'ist' : 'sind') + ' ' + c + ' ' + (c === 1 ? 'Kiste' : 'Kisten');
-      }
-    }
-    if (refurbCache && refurbCache.counts) {
-      applyShelfMapFromCounts(refurbCache.counts);
-      return;
-    }
-    google.script.run.withSuccessHandler(function(res) {
-      if(!res.success || shelfDropdownOpen) return;
-      var shelfMap = {};
-      for(var i = 0; i < res.shelves.length; i++) {
-        shelfMap[res.shelves[i].name] = res.shelves[i].count;
-      }
-      applyShelfMapFromCounts(shelfMap);
-    }).getShelfCounts();
-  }
   reifenStockInput.addEventListener('input', function() {
     currentVerifiedReifenStock = "";
     setReifenActionState(false);
@@ -3466,36 +3391,11 @@
     return sid !== '' && cv === sid;
   }
 
-  function normalizeRegalKeyForCountClient(val) {
-    if (val === '' || val == null) return '';
-    if (typeof val === 'number' && isFinite(val)) {
-      var a = Math.floor(val);
-      var rest = val - a;
-      var b = Math.round(rest * 10 + 1e-6);
-      if (a >= 1 && a <= 9 && b >= 1 && b <= 8) return 'Regal ' + a + '.' + b;
-      return '';
-    }
-    var s = String(val || '').trim().replace(/,/g, '.');
-    if (!s) return '';
-    var low = s.toLowerCase();
-    if (low === 'tagesliste' || low === 'lack' || low === 'exit') return '';
-    var m = s.match(/^regal\s+(\d+)\s*\.\s*(\d+)$/i);
-    if (m) return 'Regal ' + parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
-    m = s.match(/^(\d+)\s*\.\s*(\d+)$/);
-    if (m) {
-      var a2 = parseInt(m[1], 10);
-      var b2 = parseInt(m[2], 10);
-      if (a2 >= 1 && a2 <= 9 && b2 >= 1 && b2 <= 8) return 'Regal ' + a2 + '.' + b2;
-    }
-    return '';
-  }
-
   function computeWmsFromCache(stockId, cache) {
-    if (!cache || !cache.rows || !cache.counts) return null;
+    if (!cache || !cache.rows) return null;
     var sid = normalizeStockIdJs(stockId);
     if (!sid) return { success: false, message: 'Keine Stock-ID' };
     var rows = cache.rows;
-    var counts = cache.counts;
     var hitIdx = -1;
     for (var s = 0; s < rows.length; s++) {
       if (cellMatchesStockIdJs(rows[s][0], sid)) {
@@ -3503,13 +3403,7 @@
         break;
       }
     }
-    var availableShelves = [];
-    for (var shelf in counts) {
-      if (Object.prototype.hasOwnProperty.call(counts, shelf) && counts[shelf] < 5) {
-        availableShelves.push({ name: shelf, count: counts[shelf] });
-      }
-    }
-    var result = { success: false, freeShelves: availableShelves };
+    var result = { success: false };
     if (hitIdx >= 0) {
       var rowData = rows[hitIdx];
       result.success = true;
@@ -3521,9 +3415,6 @@
       result.regal = String(rowData[6] || '');
       result.reifenStatus = String(rowData[7] || '');
       result.markeModel = String(rowData[8] || '');
-      var curKey = normalizeRegalKeyForCountClient(result.regal);
-      result.currentShelfCount = (curKey && Object.prototype.hasOwnProperty.call(counts, curKey)) ? counts[curKey] : (counts[result.regal] || 0);
-      result.currentShelfCapacity = 5;
     } else {
       result.message = 'Stock-ID in Refurbisment List nicht gefunden!';
     }
@@ -3748,22 +3639,11 @@
       currentMarkeModel = res.markeModel || '';
 
       setCommentText(res.kommAnlieferung || '');
-      var shelfCountBadge = document.getElementById('currentShelfCountBadge');
       var regalVal = (res.regal || '').trim();
       if (isRegalTagesliste(regalVal)) {
         document.getElementById('currentShelfLabel').innerText = '';
-        shelfCountBadge.style.display = 'none';
       } else {
         document.getElementById('currentShelfLabel').innerText = 'Aktuell: ' + (res.regal || 'LEER');
-        if (/^Regal\s+\d+\.\d+$/i.test(res.regal || '')) {
-          var shelfCount = res.currentShelfCount || 0;
-          var shelfWord = shelfCount === 1 ? 'Kiste' : 'Kisten';
-          var shelfVerb = shelfCount === 1 ? 'ist' : 'sind';
-          shelfCountBadge.style.display = 'inline-flex';
-          shelfCountBadge.innerText = 'In ' + res.regal + ' ' + shelfVerb + ' ' + shelfCount + ' ' + shelfWord;
-        } else {
-          shelfCountBadge.style.display = 'none';
-        }
       }
 
       var badge = document.getElementById('badgeReifen');
@@ -3816,30 +3696,19 @@
       var currentRegal = (res.regal || '').trim();
       sel.dataset.serverRegal = currentRegal;
       sel.innerHTML = '';
-      var sortedFree = (res.freeShelves || []).slice().sort(function(a, b) {
-        return compareRegalShelfNames(a.name, b.name);
-      });
-      currentShelves = sortedFree;
-      if (currentRegal) {
-        if (isRegalTagesliste(currentRegal)) {
-          sel.innerHTML = '<option value="Tagesliste" selected>Tagesliste</option>';
-          sortedFree.forEach(function(s) {
-            sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-          });
-        } else {
-          sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + ' (AKTUELL)</option>';
-          sortedFree.forEach(function(s) {
-            if (s.name !== currentRegal) {
-              sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-            }
-          });
-        }
-      } else {
-        sel.innerHTML = '<option value="" selected>-- FREIES REGAL WÄHLEN --</option>';
-        sortedFree.forEach(function(s) {
-          sel.innerHTML += '<option value="' + s.name + '">' + s.name + ' (' + s.count + '/5)</option>';
-        });
+      var allShelves = allRegalShelfList();
+      currentShelves = allShelves.map(function(name) { return { name: name }; });
+      if (isRegalTagesliste(currentRegal)) {
+        sel.innerHTML += '<option value="Tagesliste" selected>Tagesliste</option>';
+      } else if (!currentRegal) {
+        sel.innerHTML += '<option value="" selected>-- REGAL WÄHLEN --</option>';
+      } else if (allShelves.indexOf(currentRegal) === -1) {
+        sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + '</option>';
       }
+      allShelves.forEach(function(name) {
+        var selAttr = (name === currentRegal) ? ' selected' : '';
+        sel.innerHTML += '<option value="' + name + '"' + selAttr + '>' + name + '</option>';
+      });
       applyTageslisteShelfUi(currentRegal);
 
       document.getElementById('btnCarol').disabled = !res.carolUrl;
@@ -3851,7 +3720,6 @@
         setStatus('✅ Daten für ' + id + ' geladen!', '#56d364');
       }
       toggleUI(true);
-      startShelfRefresh();
 
       maybeShowNbChooser(id);
     } else {

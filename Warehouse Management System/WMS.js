@@ -235,27 +235,6 @@ function nachbestellungLagerortToSheetValue(raw, allowedList) {
   return null;
 }
 
-function mergeNachbestellungenRegalIntoCounts(counts) {
-  try {
-    var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
-    var sheet = ss.getSheetByName(NACHBESTELL_TAB);
-    if (!sheet || !counts) return;
-    var layout = findNachbestellungSheetLayout(sheet);
-    var col = layout.lagerortCol;
-    var lastRow = Math.max(1, sheet.getLastRow());
-    var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
-    if (col > lastCol) col = Math.min(NACHBESTELL_REGAL_COL, lastCol);
-    var startRow = layout.dataStartRow;
-    var numRows = lastRow - startRow + 1;
-    if (numRows <= 0) return;
-    var regalColData = sheet.getRange(startRow, col, numRows, 1).getValues();
-    for (var r = 0; r < regalColData.length; r++) {
-      var key = normalizeRegalKeyForCount(regalColData[r][0]);
-      if (key && counts.hasOwnProperty(key)) counts[key]++;
-    }
-  } catch (err) {}
-}
-
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
   }
@@ -1142,39 +1121,6 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     }
   }
 
-  function getShelfCounts() {
-    try {
-      var ss = SpreadsheetApp.getActiveSpreadsheet();
-      var sheet = ss.getSheetByName("Refurbisment List");
-      if (!sheet) return { success: false, shelves: [] };
-
-      var lastRow = Math.max(2, sheet.getLastRow());
-      var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
-
-      var counts = {};
-      for (var i = 1; i <= 9; i++) {
-        for (var j = 1; j <= 8; j++) {
-          counts["Regal " + i + "." + j] = 0;
-        }
-      }
-      for (var r = 1; r < regalColData.length; r++) {
-        var regalVal = String(regalColData[r][0] || "").trim();
-        var rk = normalizeRegalKeyForCount(regalVal);
-        if (rk && counts.hasOwnProperty(rk)) counts[rk]++;
-      }
-
-      mergeNachbestellungenRegalIntoCounts(counts);
-
-      var shelves = [];
-      for (var shelf in counts) {
-        shelves.push({ name: shelf, count: counts[shelf] });
-      }
-      return { success: true, shelves: shelves };
-    } catch (err) {
-      return { success: false, shelves: [] };
-    }
-  }
-
   function fetchWmsData(stockId) {
     try {
       stockId = normalizeStockId(stockId);
@@ -1186,24 +1132,8 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
   
       var lastRow = Math.max(2, sheet.getLastRow());
       var stockColData = sheet.getRange(1, 2, lastRow, 1).getValues();
-      var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
       var result = { success: false };
       var hitRow = -1;
-  
-      var counts = {};
-      for (var i = 1; i <= 9; i++) {
-        for (var j = 1; j <= 8; j++) {
-          counts["Regal " + i + "." + j] = 0;
-        }
-      }
-  
-      for (var r = 1; r < regalColData.length; r++) {
-        var regalVal = String(regalColData[r][0] || "").trim();
-        var rk2 = normalizeRegalKeyForCount(regalVal);
-        if (rk2 && counts.hasOwnProperty(rk2)) counts[rk2]++;
-      }
-
-      mergeNachbestellungenRegalIntoCounts(counts);
 
       for (var s = 1; s < stockColData.length; s++) {
         if (cellMatchesStockId(stockColData[s][0], stockId)) {
@@ -1211,14 +1141,6 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
           break;
         }
       }
-  
-      var availableShelves = [];
-      for (var shelf in counts) {
-        if (counts[shelf] < 5) {
-          availableShelves.push({ name: shelf, count: counts[shelf] });
-        }
-      }
-      result.freeShelves = availableShelves;
   
       if (hitRow > 0) {
         var rowData = sheet.getRange(hitRow, 1, 1, 30).getValues()[0];
@@ -1231,9 +1153,6 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
         result.regal = String(rowData[27] || "");
         result.reifenStatus = String(rowData[29] || "");
         result.markeModel = String(rowData[12] || "");
-        var curKey = normalizeRegalKeyForCount(result.regal);
-        result.currentShelfCount = (curKey && counts.hasOwnProperty(curKey)) ? counts[curKey] : (counts[result.regal] || 0);
-        result.currentShelfCapacity = 5;
       } else {
         result.message = "Stock-ID in Refurbisment List nicht gefunden!";
       }
@@ -1264,20 +1183,6 @@ function getRefurbishmentCachePayload() {
       ]);
     }
 
-    var regalColData = sheet.getRange(1, 28, lastRow, 1).getValues();
-    var counts = {};
-    for (var i = 1; i <= 9; i++) {
-      for (var j = 1; j <= 8; j++) {
-        counts["Regal " + i + "." + j] = 0;
-      }
-    }
-    for (var r = 1; r < regalColData.length; r++) {
-      var regalVal = String(regalColData[r][0] || "").trim();
-      var rk2 = normalizeRegalKeyForCount(regalVal);
-      if (rk2 && counts.hasOwnProperty(rk2)) counts[rk2]++;
-    }
-    mergeNachbestellungenRegalIntoCounts(counts);
-
     var gmailLookup = [];
     try {
       var lookupSs = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
@@ -1293,7 +1198,6 @@ function getRefurbishmentCachePayload() {
       version: Date.now(),
       lastRow: lastRow,
       rows: rows,
-      counts: counts,
       gmailLookup: gmailLookup
     };
   } catch (err) {
