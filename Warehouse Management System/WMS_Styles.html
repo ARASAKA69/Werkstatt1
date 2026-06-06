@@ -1563,6 +1563,126 @@
   @keyframes hudSpin {
     to { transform: rotate(360deg); }
   }
+  .regal-scan-btn {
+    width: 100%;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: rgba(61, 158, 220, 0.12);
+    color: #3FA0DB;
+    border: 2px solid rgba(61, 158, 220, 0.34);
+    padding: 12px 16px;
+    font-size: 16px;
+    font-weight: 800;
+    border-radius: 14px;
+    cursor: pointer;
+    font-family: inherit;
+    box-sizing: border-box;
+    letter-spacing: 0.4px;
+    transition: border-color 0.15s, background 0.15s, transform 0.15s;
+  }
+  .regal-scan-btn:hover {
+    border-color: #3FA0DB;
+    background: rgba(61, 158, 220, 0.2);
+    transform: translateY(-1px);
+  }
+  .regal-scan-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(9, 13, 19, 0.62);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .regal-scan-overlay.open {
+    display: flex;
+  }
+  .regal-scan-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 34px 44px;
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(21, 27, 35, 0.97) 0%, rgba(14, 19, 26, 0.97) 100%);
+    border: 2px solid rgba(61, 158, 220, 0.45);
+    box-shadow: 0 24px 56px rgba(0, 0, 0, 0.55);
+    max-width: 460px;
+    width: calc(100% - 48px);
+  }
+  .regal-scan-icon {
+    font-size: 46px;
+    line-height: 1;
+    animation: regalScanPulse 1.4s ease-in-out infinite;
+  }
+  @keyframes regalScanPulse {
+    0%, 100% { transform: scale(1); opacity: 0.85; }
+    50% { transform: scale(1.12); opacity: 1; }
+  }
+  .regal-scan-title {
+    color: #3FA0DB;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 0.5px;
+    text-align: center;
+  }
+  .regal-scan-hint {
+    color: #9da7b3;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.4;
+    max-width: 360px;
+  }
+  .regal-scan-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: #0d1117;
+    color: #E88435;
+    border: 2.5px solid rgba(242, 116, 32, 0.4);
+    border-radius: 14px;
+    padding: 14px 16px;
+    font-size: 22px;
+    font-weight: 800;
+    text-align: center;
+    font-family: inherit;
+    letter-spacing: 0.5px;
+  }
+  .regal-scan-input:focus {
+    outline: none;
+    border-color: #3FA0DB;
+    box-shadow: 0 0 0 3px rgba(61, 158, 220, 0.22);
+  }
+  .regal-scan-status {
+    color: #3FA0DB;
+    font-size: 15px;
+    font-weight: 800;
+    text-align: center;
+    min-height: 20px;
+    line-height: 1.35;
+  }
+  .regal-scan-close {
+    margin-top: 4px;
+    background: rgba(248, 81, 73, 0.12);
+    color: #f85149;
+    border: 2px solid rgba(248, 81, 73, 0.4);
+    padding: 11px 26px;
+    font-size: 15px;
+    font-weight: 800;
+    border-radius: 12px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .regal-scan-close:hover {
+    background: rgba(248, 81, 73, 0.22);
+    border-color: #f85149;
+  }
   .hud-load-cell {
     padding: 26px 18px !important;
     text-align: center !important;

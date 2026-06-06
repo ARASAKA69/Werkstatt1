@@ -304,6 +304,84 @@
     }
   }
 
+  function normalizeScannedRegal(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    if(!s) return '';
+    var m = s.match(/(\d+)\s*\.\s*(\d+)/);
+    if(!m) return '';
+    var day = parseInt(m[1], 10);
+    var slot = parseInt(m[2], 10);
+    if(isNaN(day) || isNaN(slot)) return '';
+    if(day < 1 || day > 9 || slot < 1 || slot > 8) return '';
+    return 'Regal ' + day + '.' + slot;
+  }
+
+  function setRegalScanStatus(msg, color) {
+    var el = document.getElementById('regalScanStatus');
+    if(!el) return;
+    el.textContent = msg;
+    el.style.color = color || '#9da7b3';
+  }
+
+  function openRegalScan() {
+    if(!currentStock || !String(currentStock).trim()) {
+      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+      return;
+    }
+    var ov = document.getElementById('regalScanOverlay');
+    var inp = document.getElementById('regalScanInput');
+    if(!ov || !inp) return;
+    ov.classList.add('open');
+    ov.setAttribute('aria-hidden', 'false');
+    inp.value = '';
+    setRegalScanStatus('Warte auf Scan…', '#3FA0DB');
+    setTimeout(function() { inp.focus(); }, 50);
+  }
+
+  function closeRegalScan() {
+    var ov = document.getElementById('regalScanOverlay');
+    if(!ov) return;
+    ov.classList.remove('open');
+    ov.setAttribute('aria-hidden', 'true');
+    var inp = document.getElementById('regalScanInput');
+    if(inp) inp.value = '';
+  }
+
+  function applyScannedRegalAndSave(raw) {
+    var regal = normalizeScannedRegal(raw);
+    if(!regal) {
+      setRegalScanStatus("❌ Ungültiger Regal-Barcode: '" + String(raw || '').trim() + "'", '#f85149');
+      var bad = document.getElementById('regalScanInput');
+      if(bad) { bad.value = ''; bad.focus(); }
+      return;
+    }
+    var sel = document.getElementById('shelfSelect');
+    if(sel) {
+      if(allRegalShelfList().indexOf(regal) === -1) {
+        sel.innerHTML += '<option value="' + regal + '">' + regal + '</option>';
+      }
+      sel.value = regal;
+      syncShelfTriggerFromNative();
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+    setRegalScanStatus("✅ " + regal + " erkannt – speichere…", '#56d364');
+    closeRegalScan();
+    saveKommentarUndRegalFlow();
+  }
+
+  var regalScanInputEl = document.getElementById('regalScanInput');
+  if(regalScanInputEl) {
+    regalScanInputEl.addEventListener('keydown', function(e) {
+      if(e.key === 'Enter') {
+        e.preventDefault();
+        applyScannedRegalAndSave(this.value);
+      } else if(e.key === 'Escape') {
+        e.preventDefault();
+        closeRegalScan();
+      }
+    });
+  }
+
   reifenStockInput.addEventListener('input', function() {
     currentVerifiedReifenStock = "";
     setReifenActionState(false);

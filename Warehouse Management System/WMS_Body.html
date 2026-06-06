@@ -178,6 +178,7 @@
           </div>
           <select id="shelfSelect" class="shelf-dd-native"><option value="">Lade Regale...</option></select>
         </div>
+        <button type="button" class="regal-scan-btn" id="regalScanBtn" onclick="openRegalScan()">📷 Regal scannen</button>
         <div class="b2a1-kandidat-badge-wrap" id="b2a1KandidatBadgeWrap">
           <div class="b2a1-kandidat-badge" id="b2a1KandidatBadge">B2A1 Kandidat</div>
           <div class="b2a1-kandidat-hint" id="b2a1KandidatHint">Bitte in Carol gegen kontrollieren ob Auto B2A1 ist!</div>
@@ -188,6 +189,17 @@
     <div class="workspace-merge-action">
       <div style="color:#9da7b3;font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
       <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
+    </div>
+  </div>
+
+  <div class="regal-scan-overlay" id="regalScanOverlay" aria-hidden="true">
+    <div class="regal-scan-card">
+      <div class="regal-scan-icon">📷</div>
+      <div class="regal-scan-title">Regal scannen</div>
+      <div class="regal-scan-hint">Box ins Regal stellen und den Regal-Barcode scannen…</div>
+      <input type="text" id="regalScanInput" class="regal-scan-input" placeholder="Regal Barcode…" autocomplete="off" spellcheck="false">
+      <div class="regal-scan-status" id="regalScanStatus">Warte auf Scan…</div>
+      <button type="button" class="regal-scan-close" onclick="closeRegalScan()">✖ Abbrechen</button>
     </div>
   </div>
 
