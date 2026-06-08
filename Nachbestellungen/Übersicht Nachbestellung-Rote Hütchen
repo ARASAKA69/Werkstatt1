@@ -368,7 +368,90 @@ var DASH_SYNC_LOCK_WAIT_MS = 30000;
 var MAX_EVENTS_PER_RUN = 3;
 var QUEUE_TIME_BUDGET_MS = 240000;
 var QUEUE_EVENTS_PER_CYCLE = 25;
+var RECONCILE_GUARD_MS = 8000;
 
+function normStatusKey_(val) {
+  return String(val == null ? "" : val)
+    .trim()
+    .toLowerCase()
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function statusRank_(val) {
+  const s = normStatusKey_(val);
+  if (!s) return 0;
+  if (s === "fertiggestellt" || s === "b2a1") return 90;
+  if (s.indexOf("komplett angeliefert") !== -1 || s === "konsi-lager") return 80;
+  if (s.indexOf("teilweise angeliefert") !== -1) return 60;
+  if (s.indexOf("lieferr") !== -1 || s.indexOf("rueckstand") !== -1) return 55;
+  if (s === "bestellt") return 50;
+  if (s === "nicht bestellt") return 30;
+  if (s.indexOf("nicht notwendig") !== -1) return 10;
+  return 40;
+}
+
+function pickReconcileStatusPair_(nbK, nbL, exK, exL) {
+  const isEmpty = function (v) {
+    return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+  };
+  const tsMs = function (v) {
+    if (!v) return 0;
+    try { return new Date(v).getTime() || 0; } catch (e) { return 0; }
+  };
+  const nbEmpty = isEmpty(nbK);
+  const exEmpty = isEmpty(exK);
+  if (nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "none" };
+  if (nbEmpty && !exEmpty) return { k: exK, l: exL, from: "exit" };
+  if (!nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "nb" };
+
+  if (String(nbK) === String(exK)) {
+    const nbDate = tsMs(nbL);
+    const exDate = tsMs(exL);
+    if (nbDate >= exDate) return { k: nbK, l: nbL, from: "nb" };
+    return { k: exK, l: exL, from: "exit" };
+  }
+
+  const nbDate = tsMs(nbL);
+  const exDate = tsMs(exL);
+  let from = "nb";
+  if (nbDate && !exDate) {
+    from = "nb";
+  } else if (exDate && !nbDate) {
+    from = !isEmpty(nbK) ? "nb" : "exit";
+  } else if (nbDate >= exDate) {
+    from = "nb";
+  } else {
+    from = "exit";
+  }
+
+  let pickK = from === "nb" ? nbK : exK;
+  let pickL = from === "nb" ? nbL : exL;
+  const otherK = from === "nb" ? exK : nbK;
+  const otherL = from === "nb" ? exL : nbL;
+
+  if (statusRank_(pickK) <= 10 && statusRank_(otherK) >= 80) {
+    pickK = otherK;
+    pickL = otherL;
+    from = from === "nb" ? "exit" : "nb";
+  }
+
+  return { k: pickK, l: pickL, from: from };
+}
+
+function markReconcileWrite_() {
+  try {
+    PropertiesService.getScriptProperties().setProperty("nbReconcileWriteMs", String(Date.now()));
+  } catch (e) {}
+}
+
+function isRecentReconcileWrite_() {
+  try {
+    const ms = Number(PropertiesService.getScriptProperties().getProperty("nbReconcileWriteMs") || 0);
+    return ms > 0 && (Date.now() - ms) < RECONCILE_GUARD_MS;
+  } catch (e) {}
+  return false;
+}
 
 function getMainSS() {
   try {
@@ -782,6 +865,7 @@ function handleEdit(e, sheet, name, row, col) {
 
 function mirrorNachbestellungInputExitEdits(e, sheet, name) {
   if (!e || !e.range || !sheet) return;
+  if (isRecentReconcileWrite_()) return;
   if (name !== "Nachbestellung" && name !== "Input Exit") return;
   const range = e.range;
   const startRow = range.getRow();
@@ -2342,19 +2426,33 @@ function reconcileNachbestellungInputExit(ss) {
     const exK = exitBlock[xi][4];
     const exL = exitBlock[xi][5];
 
-    const nbDate = tsMs(nbL);
-    const exDate = tsMs(exL);
-    const nbNewer = nbDate >= exDate;
+    const picked = pickReconcileStatusPair_(nbK, nbL, exK, exL);
+    const pickK = picked.k;
+    const pickL = picked.l;
 
-    if (!sameVal(nbK, exK) || !sameVal(nbL, exL)) {
-      if (nbNewer) {
-        exitSheet.getRange(xi + 2, 11, 1, 2).setValues([[nbK, nbL]]);
-        exitBlock[xi][4] = nbK; exitBlock[xi][5] = nbL;
+    if (!sameVal(nbK, pickK) || !sameVal(nbL, pickL) || !sameVal(exK, pickK) || !sameVal(exL, pickL)) {
+      markReconcileWrite_();
+      if (picked.from === "nb") {
+        exitSheet.getRange(xi + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        exitBlock[xi][4] = pickK; exitBlock[xi][5] = pickL;
         exitWrites++;
-      } else {
-        nbSheet.getRange(i + 2, 11, 1, 2).setValues([[exK, exL]]);
-        nbBlockI[i][2] = exK; nbBlockI[i][3] = exL;
+      } else if (picked.from === "exit") {
+        nbSheet.getRange(i + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        nbBlockI[i][2] = pickK; nbBlockI[i][3] = pickL;
         nbWrites++;
+        try {
+          logDebug(
+            "reconcile status: entryId=" + eid +
+            " NB '" + String(nbK) + "' -> '" + String(pickK) + "' (from Input Exit)"
+          );
+        } catch (eLog) {}
+      } else if (picked.from === "nb") {
+        try {
+          logDebug(
+            "reconcile status: entryId=" + eid +
+            " Exit '" + String(exK) + "' -> '" + String(pickK) + "' (from Nachbestellung)"
+          );
+        } catch (eLog2) {}
       }
     }
 
