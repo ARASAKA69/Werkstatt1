@@ -1719,7 +1719,8 @@
     var qty = parseInt(qtyInput ? qtyInput.value : "1", 10);
     if(isNaN(qty) || qty <= 0) return;
     var typedInitials = document.getElementById('dymoInitials').value.trim();
-    var initials = typedInitials || "LAGER";
+    var initials = (typedInitials || "LAGER").toUpperCase();
+    stockId = normalizeStockInput(stockId);
     try {
       if(typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) return;
       var printers = dymo.label.framework.getPrinters();
@@ -3710,7 +3711,7 @@
 
   function applyFetchWmsResult(res, id) {
     if (res.success) {
-      currentStock = id;
+      currentStock = normalizeStockInput(id);
       currentCarolUrl = res.carolUrl;
       currentSchaedenText = res.schaeden || '';
       currentBestellungText = res.kommBestellung || '';
@@ -3937,12 +3938,13 @@
     if(opts.requireInitials && !typedInitials) {
       return { success: false, skipped: true };
     }
-    var initials = typedInitials || "LAGER";
+    var initials = (typedInitials || "LAGER").toUpperCase();
     localStorage.setItem('arasaka_dymo_initials', initials);
     var stockForLabel = currentStock;
     if (opts.stockId != null && String(opts.stockId).replace(/\s+/g, '') !== '') {
       stockForLabel = String(opts.stockId).trim();
     }
+    stockForLabel = normalizeStockInput(stockForLabel);
     if (!stockForLabel) {
       if(!opts.silent) setStatus("❌ Keine Stock-ID für DYMO.", "#f85149");
       return { success: false, skipped: false, message: "Keine Stock-ID" };
@@ -4003,7 +4005,9 @@
 
   function printReifenDymoLabels(stockId, tireInfo, mengeStr) {
     var typedInitials = document.getElementById('dymoInitials').value.trim();
-    var initials = typedInitials || "LAGER";
+    var initials = (typedInitials || "LAGER").toUpperCase();
+    stockId = normalizeStockInput(stockId);
+    tireInfo = String(tireInfo || '').trim().toUpperCase();
     localStorage.setItem('arasaka_dymo_initials', initials);
     try {
       if (typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
@@ -4035,6 +4039,11 @@
 
       firePrint(stockId, menge);
       firePrint(tireInfo, 1);
+      if (typeof REIFEN_EXTRA_LABEL_XML !== 'undefined' && REIFEN_EXTRA_LABEL_XML) {
+        var extraLabel = dymo.label.framework.openLabelXml(REIFEN_EXTRA_LABEL_XML);
+        var extraParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: 1 });
+        extraLabel.print(printerName, extraParams);
+      }
       return { success: true };
     } catch (err) {
       return { success: false, message: err.message };
