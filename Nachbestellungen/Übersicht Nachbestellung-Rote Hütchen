@@ -370,101 +370,73 @@ var QUEUE_TIME_BUDGET_MS = 240000;
 var QUEUE_EVENTS_PER_CYCLE = 25;
 var RECONCILE_GUARD_MS = 8000;
 
-function isExitPriorityStatus_(statusVal) {
-  if (typeof isFertiggestelltStatus_ === "function") {
-    return isFertiggestelltStatus_(statusVal, statusVal);
-  }
-  const s = String(statusVal == null ? "" : statusVal)
+function normStatusKey_(val) {
+  return String(val == null ? "" : val)
     .trim()
     .toLowerCase()
     .replace(/\u00a0/g, " ")
     .replace(/\s+/g, " ");
-  return s === "fertiggestellt" || s === "b2a1";
 }
 
-function sameCellVal_(a, b) {
+function statusRank_(val) {
+  const s = normStatusKey_(val);
+  if (!s) return 0;
+  if (s === "fertiggestellt" || s === "b2a1") return 90;
+  if (s.indexOf("komplett angeliefert") !== -1 || s === "konsi-lager") return 80;
+  if (s.indexOf("teilweise angeliefert") !== -1) return 60;
+  if (s.indexOf("lieferr") !== -1 || s.indexOf("rueckstand") !== -1) return 55;
+  if (s === "bestellt") return 50;
+  if (s === "nicht bestellt") return 30;
+  if (s.indexOf("nicht notwendig") !== -1) return 10;
+  return 40;
+}
+
+function pickReconcileStatusPair_(nbK, nbL, exK, exL) {
   const isEmpty = function (v) {
     return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
   };
-  if (isEmpty(a) && isEmpty(b)) return true;
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
-  return String(a) === String(b);
-}
+  const tsMs = function (v) {
+    if (!v) return 0;
+    try { return new Date(v).getTime() || 0; } catch (e) { return 0; }
+  };
+  const nbEmpty = isEmpty(nbK);
+  const exEmpty = isEmpty(exK);
+  if (nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "none" };
+  if (nbEmpty && !exEmpty) return { k: exK, l: exL, from: "exit" };
+  if (!nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "nb" };
 
-function syncNachbestellungInputExitStatus_(nbSheet, nbRow, exitSheet, exitRow) {
-  if (!nbSheet || !exitSheet || nbRow < 2 || exitRow < 2) {
-    return { nbWritten: false, exitWritten: false };
-  }
-  let nbK = "";
-  let nbL = "";
-  let exK = "";
-  let exL = "";
-  try {
-    nbK = nbSheet.getRange(nbRow, 11).getValue();
-    nbL = nbSheet.getRange(nbRow, 12).getValue();
-    exK = exitSheet.getRange(exitRow, 11).getValue();
-    exL = exitSheet.getRange(exitRow, 12).getValue();
-  } catch (e) {
-    return { nbWritten: false, exitWritten: false };
+  if (String(nbK) === String(exK)) {
+    const nbDate = tsMs(nbL);
+    const exDate = tsMs(exL);
+    if (nbDate >= exDate) return { k: nbK, l: nbL, from: "nb" };
+    return { k: exK, l: exL, from: "exit" };
   }
 
-  let targetK = nbK;
-  let targetL = nbL;
-  let writeNb = false;
-  let writeExit = false;
-
-  if (isExitPriorityStatus_(exK)) {
-    targetK = exK;
-    targetL = exL;
-    writeNb = !sameCellVal_(nbK, targetK) || !sameCellVal_(nbL, targetL);
+  const nbDate = tsMs(nbL);
+  const exDate = tsMs(exL);
+  let from = "nb";
+  if (nbDate && !exDate) {
+    from = "nb";
+  } else if (exDate && !nbDate) {
+    from = !isEmpty(nbK) ? "nb" : "exit";
+  } else if (nbDate >= exDate) {
+    from = "nb";
   } else {
-    writeExit = !sameCellVal_(exK, targetK) || !sameCellVal_(exL, targetL);
+    from = "exit";
   }
 
-  if (!writeNb && !writeExit) {
-    return { nbWritten: false, exitWritten: false };
+  let pickK = from === "nb" ? nbK : exK;
+  let pickL = from === "nb" ? nbL : exL;
+  const otherK = from === "nb" ? exK : nbK;
+  const otherL = from === "nb" ? exL : nbL;
+
+  if (statusRank_(pickK) <= 10 && statusRank_(otherK) >= 80) {
+    pickK = otherK;
+    pickL = otherL;
+    from = from === "nb" ? "exit" : "nb";
   }
 
-  markReconcileWrite_();
-  if (writeNb) {
-    try { nbSheet.getRange(nbRow, 11, 1, 2).setValues([[targetK, targetL]]); } catch (e) {}
-  }
-  if (writeExit) {
-    try { exitSheet.getRange(exitRow, 11, 1, 2).setValues([[targetK, targetL]]); } catch (e) {}
-  }
-  return { nbWritten: writeNb, exitWritten: writeExit };
-}
-
-function syncNachbestellungInputExitStatusByNbRow_(nbSheet, nbRow) {
-  if (!nbSheet || nbRow < 2) return { nbWritten: false, exitWritten: false };
-  let entryId = "";
-  try { entryId = String(nbSheet.getRange(nbRow, getEntryIdCol(nbSheet)).getValue() || ""); } catch (e) {}
-  if (!entryId) return { nbWritten: false, exitWritten: false };
-  let exitSheet = null;
-  try {
-    const ss = nbSheet.getParent() || getMainSS();
-    exitSheet = ss.getSheetByName("Input Exit");
-  } catch (e) {}
-  if (!exitSheet) return { nbWritten: false, exitWritten: false };
-  const exitRow = findRowByEntryId(exitSheet, getEntryIdCol(exitSheet), entryId, 2);
-  if (exitRow === -1) return { nbWritten: false, exitWritten: false };
-  return syncNachbestellungInputExitStatus_(nbSheet, nbRow, exitSheet, exitRow);
-}
-
-function syncNachbestellungInputExitStatusByExitRow_(exitSheet, exitRow) {
-  if (!exitSheet || exitRow < 2) return { nbWritten: false, exitWritten: false };
-  let entryId = "";
-  try { entryId = String(exitSheet.getRange(exitRow, getEntryIdCol(exitSheet)).getValue() || ""); } catch (e) {}
-  if (!entryId) return { nbWritten: false, exitWritten: false };
-  let nbSheet = null;
-  try {
-    const ss = exitSheet.getParent() || getMainSS();
-    nbSheet = ss.getSheetByName("Nachbestellung");
-  } catch (e) {}
-  if (!nbSheet) return { nbWritten: false, exitWritten: false };
-  const nbRow = findRowByEntryId(nbSheet, getEntryIdCol(nbSheet), entryId, 2);
-  if (nbRow === -1) return { nbWritten: false, exitWritten: false };
-  return syncNachbestellungInputExitStatus_(nbSheet, nbRow, exitSheet, exitRow);
+  return { k: pickK, l: pickL, from: from };
 }
 
 function markReconcileWrite_() {
@@ -491,6 +463,24 @@ function getMainSS() {
   } catch (e) {
     return null;
   }
+}
+
+// FIX (2): einmaliger, gecachter SOURCE-Zugriffstest.
+// Verhindert die "openById Berechtigungen reichen nicht aus"-Fehler im
+// Nutzer-onEdit: ohne Zugriff wird der per-Edit Dashboard-Refresh
+// uebersprungen; der Owner-Trigger erledigt ihn.
+var _sourceAccessChecked = false;
+var _sourceAccessOk = false;
+function hasSourceAccess_() {
+  if (_sourceAccessChecked) return _sourceAccessOk;
+  _sourceAccessChecked = true;
+  try {
+    SpreadsheetApp.openById(SOURCE_ID);
+    _sourceAccessOk = true;
+  } catch (e) {
+    _sourceAccessOk = false;
+  }
+  return _sourceAccessOk;
 }
 
 function withLock(fn, waitMs) {
@@ -690,6 +680,10 @@ function applyNachbestellungState(nbSheet, key, rowData, entryId) {
   return "noop";
 }
 
+// FIX (1): Alle blattveraendernden Schritte (Cascade-Delete, Dashboard-Archiv,
+// Spiegelung NB<->Input Exit) laufen jetzt unter withLock() und sind damit mit
+// Queue/Reconcile/Dashboard-Sync serialisiert -> keine Kollision beim Archiv-/
+// Zeilen-Umzug mehr.
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
@@ -698,36 +692,44 @@ function onEdit(e) {
   const col = e.range.getColumn();
 
   if (name === "Nachbestellung" && col === 2 && row >= 2) {
-    let nbCleared = false;
-    try {
-      nbCleared = handleNachbestellungStockIdEdit(e, sheet, row);
-    } catch (err) {
-      try { logDebug("NB stockId cascade error: " + err); } catch (e) {}
-    }
-    if (nbCleared) return;
+    const cleared = withLock(function () {
+      try {
+        return handleNachbestellungStockIdEdit(e, sheet, row);
+      } catch (err) {
+        try { logDebug("NB stockId cascade error: " + err); } catch (e2) {}
+        return false;
+      }
+    }, QUEUE_LOCK_WAIT_MS);
+    if (cleared) return;
   }
 
   if (INPUT_SHEETS[name] && col === 2 && row >= 2 &&
       e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
-    let inputCleared = false;
-    try {
-      inputCleared = handleInputStockIdCascade(e, sheet, name, row);
-    } catch (err) {
-      try { logDebug("Input stockId cascade error: " + err); } catch (e2) {}
-    }
-    if (inputCleared) return;
+    const cleared = withLock(function () {
+      try {
+        return handleInputStockIdCascade(e, sheet, name, row);
+      } catch (err) {
+        try { logDebug("Input stockId cascade error: " + err); } catch (e2) {}
+        return false;
+      }
+    }, QUEUE_LOCK_WAIT_MS);
+    if (cleared) return;
   }
 
   if (name === "Dashboard" && e.range.getNumRows() === 1 && e.range.getNumColumns() === 1) {
-    try {
-      const layout = getDashboardLayout(sheet);
-      if (col === layout.cols.archivieren && row >= layout.dataStartRow) {
-        handleDashboardArchiveCheckbox_(sheet, row, layout);
-        return;
+    let handled = false;
+    withLock(function () {
+      try {
+        const layout = getDashboardLayout(sheet);
+        if (col === layout.cols.archivieren && row >= layout.dataStartRow) {
+          handleDashboardArchiveCheckbox_(sheet, row, layout);
+          handled = true;
+        }
+      } catch (err) {
+        try { logDebug("Dashboard archive onEdit error: " + err); } catch (e2) {}
       }
-    } catch (err) {
-      try { logDebug("Dashboard archive onEdit error: " + err); } catch (e2) {}
-    }
+    }, QUEUE_LOCK_WAIT_MS);
+    if (handled) return;
   }
 
   withLock(function () {
@@ -735,11 +737,10 @@ function onEdit(e) {
       try { ensureEntryIdsForEditRange(sheet, e.range); } catch (err) {}
     }
     handleEdit(e, sheet, name, row, col);
+    try {
+      mirrorNachbestellungInputExitEdits(e, sheet, name);
+    } catch (err) {}
   }, ONEDIT_LOCK_WAIT_MS);
-
-  try {
-    mirrorNachbestellungInputExitEdits(e, sheet, name);
-  } catch (err) {}
 
   if (INPUT_SHEETS[name] && row >= 2) {
     try {
@@ -905,6 +906,8 @@ function mirrorNachbestellungInputExitEdits(e, sheet, name) {
   }
 }
 
+// FIX (2): der openById-abhaengige Dashboard-Refresh laeuft nur noch mit
+// SOURCE-Zugriff; ohne Zugriff uebernimmt der Owner-Trigger den Refresh.
 function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol) {
   const colHit = function (c) { return c >= startCol && c <= endCol; };
 
@@ -924,12 +927,13 @@ function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol)
         const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
         sheet.getRange(row, 12).setValue(stamp);
       } catch (err) { logDebug("set NB L date failed: " + err); }
-    }
-    if (colHit(11) || colHit(12)) {
-      try { syncNachbestellungInputExitStatusByNbRow_(sheet, row); } catch (err) { logDebug("sync NB/Exit status failed: " + err); }
+      try { syncNachbestellungColumnToInputExit(sheet, row, 11, 11); } catch (err) { logDebug("sync NB K->Exit K failed: " + err); }
+      try { syncNachbestellungColumnToInputExit(sheet, row, 12, 12); } catch (err) { logDebug("sync NB L->Exit L failed: " + err); }
     }
     if (colHit(9) || colHit(11) || colHit(12)) {
-      try { updateDashboardFromNachbestellungRow(sheet, row); } catch (err) { logDebug("dashboard update failed: " + err); }
+      if (hasSourceAccess_()) {
+        try { updateDashboardFromNachbestellungRow(sheet, row); } catch (err) { logDebug("dashboard update failed: " + err); }
+      }
     }
   }
 
@@ -943,8 +947,14 @@ function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol)
     if (colHit(10)) {
       try { syncInputExitColumnToNachbestellung(sheet, row, 10, 10); } catch (err) { logDebug("sync Exit J->NB J failed: " + err); }
     }
-    if (colHit(11) || colHit(12)) {
-      try { syncNachbestellungInputExitStatusByExitRow_(sheet, row); } catch (err) { logDebug("sync NB/Exit status failed: " + err); }
+    if (colHit(11)) {
+      try {
+        const kVal = sheet.getRange(row, 11).getValue();
+        const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
+        sheet.getRange(row, 12).setValue(stamp);
+      } catch (err) {}
+      try { syncInputExitColumnToNachbestellung(sheet, row, 11, 11); } catch (err) { logDebug("sync Exit K->NB K failed: " + err); }
+      try { syncInputExitColumnToNachbestellung(sheet, row, 12, 12); } catch (err) { logDebug("sync Exit L->NB L failed: " + err); }
     }
   }
 }
@@ -1212,7 +1222,6 @@ function syncNachbestellungColumnToInputExit(nbSheet, row, srcCol, targetCol) {
 }
 
 function syncInputExitColumnToNachbestellung(exitSheet, row, srcCol, targetCol) {
-  if (srcCol === 11 || srcCol === 12 || targetCol === 11 || targetCol === 12) return;
   let stockId = "";
   try { stockId = String(exitSheet.getRange(row, 2).getValue() || "").trim(); } catch (e) {}
   let entryId = "";
@@ -2424,6 +2433,11 @@ function reconcileNachbestellungInputExit(ss) {
     if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
     return String(a) === String(b);
   };
+  const tsMs = function (v) {
+    if (!v) return 0;
+    try { return new Date(v).getTime() || 0; } catch (e) { return 0; }
+  };
+
   let nbWrites = 0;
   let exitWrites = 0;
 
@@ -2445,17 +2459,33 @@ function reconcileNachbestellungInputExit(ss) {
     const exK = exitBlock[xi][4];
     const exL = exitBlock[xi][5];
 
-    if (!sameVal(nbK, exK) || !sameVal(nbL, exL)) {
-      const statusRes = syncNachbestellungInputExitStatus_(nbSheet, i + 2, exitSheet, xi + 2);
-      if (statusRes.nbWritten) {
-        nbBlockI[i][2] = isExitPriorityStatus_(exK) ? exK : nbK;
-        nbBlockI[i][3] = isExitPriorityStatus_(exK) ? exL : nbL;
-        nbWrites++;
-      }
-      if (statusRes.exitWritten) {
-        exitBlock[xi][4] = nbK;
-        exitBlock[xi][5] = nbL;
+    const picked = pickReconcileStatusPair_(nbK, nbL, exK, exL);
+    const pickK = picked.k;
+    const pickL = picked.l;
+
+    if (!sameVal(nbK, pickK) || !sameVal(nbL, pickL) || !sameVal(exK, pickK) || !sameVal(exL, pickL)) {
+      markReconcileWrite_();
+      if (picked.from === "nb") {
+        exitSheet.getRange(xi + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        exitBlock[xi][4] = pickK; exitBlock[xi][5] = pickL;
         exitWrites++;
+      } else if (picked.from === "exit") {
+        nbSheet.getRange(i + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        nbBlockI[i][2] = pickK; nbBlockI[i][3] = pickL;
+        nbWrites++;
+        try {
+          logDebug(
+            "reconcile status: entryId=" + eid +
+            " NB '" + String(nbK) + "' -> '" + String(pickK) + "' (from Input Exit)"
+          );
+        } catch (eLog) {}
+      } else if (picked.from === "nb") {
+        try {
+          logDebug(
+            "reconcile status: entryId=" + eid +
+            " Exit '" + String(exK) + "' -> '" + String(pickK) + "' (from Nachbestellung)"
+          );
+        } catch (eLog2) {}
       }
     }
 
@@ -2649,6 +2679,10 @@ function installDashboardStatusSyncTrigger() {
     .create();
 }
 
+// FIX (2): laeuft als Owner alle 5 min und aktualisiert jetzt zusaetzlich die
+// Tagesliste-/Tage-Spalten (updateDashboardDayDiffs) im Owner-Kontext, damit
+// der aus onEdit entfernte per-Edit Refresh kompensiert wird. Beide Funktionen
+// holen/geben ihren Lock nacheinander frei (kein verschachtelter Lock).
 function syncDashboardStatusSyncTrigger() {
   try {
     const res = syncDashboardStatusFromNachbestellung(DASH_SYNC_LOCK_WAIT_MS);
@@ -2658,6 +2692,11 @@ function syncDashboardStatusSyncTrigger() {
     }
   } catch (e) {
     try { Logger.log("syncDashboardStatusSyncTrigger error: " + e); } catch (e3) {}
+  }
+  try {
+    updateDashboardDayDiffs();
+  } catch (e4) {
+    try { Logger.log("syncDashboardStatusSyncTrigger dayDiffs error: " + e4); } catch (e5) {}
   }
 }
 
@@ -2669,6 +2708,8 @@ function ensureDashboardStatusSyncTrigger_() {
   installDashboardStatusSyncTrigger();
 }
 
+// FIX (3): Reconcile-Takt 1 min -> 5 min (weniger Schreibwellen/Ueberlappung).
+// Nach dem Einfuegen EINMAL ausfuehren, damit der Trigger neu gesetzt wird.
 function installCleanupNachbestellungStatusDateTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
@@ -2678,71 +2719,14 @@ function installCleanupNachbestellungStatusDateTrigger() {
   }
   ScriptApp.newTrigger("cleanupNachbestellungStatusDate")
     .timeBased()
-    .everyMinutes(1)
+    .everyMinutes(5)
     .create();
-}
-
-function installProcessQueueTrigger() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "processQueue") {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-  ScriptApp.newTrigger("processQueue")
-    .timeBased()
-    .everyMinutes(1)
-    .create();
-}
-
-function ensureProcessQueueTrigger_() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "processQueue") return;
-  }
-  installProcessQueueTrigger();
-}
-
-function ensureCleanupNachbestellungStatusDateTrigger_() {
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === "cleanupNachbestellungStatusDate") return;
-  }
-  installCleanupNachbestellungStatusDateTrigger();
-}
-
-function reinstallAllNachbestellungTriggers() {
-  const names = [
-    "processQueue",
-    "cleanupNachbestellungStatusDate",
-    "syncDashboardStatusSyncTrigger"
-  ];
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = triggers.length - 1; i >= 0; i--) {
-    if (names.indexOf(triggers[i].getHandlerFunction()) !== -1) {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-  installProcessQueueTrigger();
-  installCleanupNachbestellungStatusDateTrigger();
-  installDashboardStatusSyncTrigger();
-  return { ok: true, reinstalled: names };
-}
-
-function runProcessQueueNow() {
-  processQueue();
 }
 
 function onOpen() {
   try {
     ensureDashboardStatusSyncTrigger_();
   } catch (e0) {}
-  try {
-    ensureProcessQueueTrigger_();
-  } catch (e0b) {}
-  try {
-    ensureCleanupNachbestellungStatusDateTrigger_();
-  } catch (e0c) {}
   try {
     if (typeof uxBaseMenueEinrichten === "function") {
       uxBaseMenueEinrichten();
