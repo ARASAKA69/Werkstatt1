@@ -76,6 +76,8 @@ function uxNbHubCacheTrimForStore_(data) {
     dashNachtragenDone: d.dashNachtragenDone || [],
     dashStatusGaps: dashStatusGaps.slice(0, 100),
     dashStatusGapCount: d.dashStatusGapCount != null ? d.dashStatusGapCount : dashStatusGaps.length,
+    exitStatusGaps: (d.exitStatusGaps || []).slice(0, 100),
+    exitStatusGapCount: d.exitStatusGapCount != null ? d.exitStatusGapCount : (d.exitStatusGaps || []).length,
     integrityCount: d.integrityCount != null ? d.integrityCount : null
   };
 }
@@ -487,13 +489,22 @@ function uxNbHubCollectAll_() {
     eventQueue: uxNbEventQueueInfo_()
   };
 
+  var exitStatusGaps = [];
+  try {
+    if (typeof findInputExitStatusGaps_ === "function") {
+      var exitGapRes = findInputExitStatusGaps_(ss);
+      if (exitGapRes && exitGapRes.ok) exitStatusGaps = exitGapRes.gaps || [];
+    }
+  } catch (eExitGap) {}
+
   return {
     ok: true,
     stats: stats,
     delBuffer: delArr,
     syncMissing: syncMissing,
     dashMissing: dashMissing,
-    dashStatusGaps: dashStatusGaps
+    dashStatusGaps: dashStatusGaps,
+    exitStatusGaps: exitStatusGaps
   };
 }
 
@@ -1028,6 +1039,14 @@ function uxNbDashSyncStatusNow() {
   return syncDashboardStatusFromNachbestellung(
     typeof DASH_SYNC_LOCK_WAIT_MS !== "undefined" ? DASH_SYNC_LOCK_WAIT_MS : 30000
   );
+}
+
+function uxNbInputExitStatusSyncNow() {
+  if (typeof syncNachbestellungStatusToInputExit !== "function") {
+    return { ok: false, fehler: "Sync-Funktion fehlt im Script." };
+  }
+  var waitMs = typeof UI_SYNC_LOCK_WAIT_MS !== "undefined" ? UI_SYNC_LOCK_WAIT_MS : 120000;
+  return syncNachbestellungStatusToInputExit(null, { lockWaitMs: waitMs });
 }
 
 function uxNbNormEtDiagnose_(v) {

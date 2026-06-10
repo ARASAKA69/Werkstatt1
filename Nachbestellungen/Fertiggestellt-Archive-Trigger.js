@@ -166,15 +166,27 @@ function moveFertiggestelltRowsOnSheet_(ss, sourceName, archiveName, boundsFn) {
 }
 
 function archiveFertiggestelltRows() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(FERTIG_ARCHIVE_LOCK_MS)) return;
+  let lock = null;
+  if (typeof acquireScriptLock_ === "function") {
+    lock = acquireScriptLock_(FERTIG_ARCHIVE_LOCK_MS);
+  } else {
+    lock = LockService.getScriptLock();
+    if (!lock.tryLock(FERTIG_ARCHIVE_LOCK_MS)) lock = null;
+  }
+  if (!lock) {
+    try {
+      if (typeof logDebug === "function") {
+        logDebug("archiveFertiggestelltRows: LOCK nicht frei – Lauf übersprungen (Cleanup/Queue/Sync aktiv?)");
+      }
+    } catch (e) {}
+    return { ok: false, fehler: "Lock nicht frei – anderer Script-Lauf aktiv. Kurz warten und runFertiggestelltArchiveNow erneut ausführen." };
+  }
   try {
     const ss = getFertigArchiveSpreadsheet_();
-    if (!ss) return;
-    let total = 0;
+    if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
     const nbMoved = moveFertiggestelltRowsOnSheet_(ss, "Nachbestellung", "Nachbestellung_Archiv", nachbestellungFertigBounds_);
     const exitMoved = moveFertiggestelltRowsOnSheet_(ss, "Input Exit", "Input Exit_Archiv", inputExitFertigBounds_);
-    total = nbMoved + exitMoved;
+    const total = nbMoved + exitMoved;
     try {
       if (typeof logDebug === "function") {
         logDebug(
@@ -182,6 +194,9 @@ function archiveFertiggestelltRows() {
         );
       }
     } catch (e) {}
+    return { ok: true, nbMoved: nbMoved, exitMoved: exitMoved, total: total };
+  } catch (err) {
+    return { ok: false, fehler: String(err && err.message ? err.message : err) };
   } finally {
     try {
       lock.releaseLock();
@@ -189,7 +204,7 @@ function archiveFertiggestelltRows() {
   }
 }
 
-function installFertiggestelltArchiveTrigger() {
+function installFertiggestelltArchiveTrigger_(silent) {
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === FERTIG_ARCHIVE_TRIGGER_FN) {
@@ -202,6 +217,7 @@ function installFertiggestelltArchiveTrigger() {
     .everyDays(1)
     .inTimezone(FERTIG_ARCHIVE_TRIGGER_TZ)
     .create();
+  if (silent) return;
   try {
     SpreadsheetApp.getUi().alert(
       "Archiv-Trigger installiert (Status: Fertiggestellt, B2A1).\n" +
@@ -212,6 +228,10 @@ function installFertiggestelltArchiveTrigger() {
         ")."
     );
   } catch (e) {}
+}
+
+function installFertiggestelltArchiveTrigger() {
+  installFertiggestelltArchiveTrigger_(false);
 }
 
 function uninstallFertiggestelltArchiveTrigger() {
@@ -233,8 +253,26 @@ function uninstallFertiggestelltArchiveTrigger() {
 }
 
 function runFertiggestelltArchiveNow() {
-  archiveFertiggestelltRows();
+  const res = archiveFertiggestelltRows();
   try {
-    SpreadsheetApp.getUi().alert("Archivierung ausgeführt (Fertiggestellt + B2A1).");
+    if (res && res.ok) {
+      SpreadsheetApp.getUi().alert(
+        "Archivierung fertig.\n" +
+          "Nachbestellung: " + (res.nbMoved || 0) + " Zeilen\n" +
+          "Input Exit: " + (res.exitMoved || 0) + " Zeilen\n" +
+          "(Status: Fertiggestellt oder B2A1)"
+      );
+    } else {
+      SpreadsheetApp.getUi().alert((res && res.fehler) || "Archivierung hat nicht geklappt.");
+    }
   } catch (e) {}
+  return res;
+}
+
+function ensureFertiggestelltArchiveTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === FERTIG_ARCHIVE_TRIGGER_FN) return;
+  }
+  installFertiggestelltArchiveTrigger_(true);
 }

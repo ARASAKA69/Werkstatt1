@@ -80,18 +80,47 @@ function defaultEntryIdCol(sheetName) {
   return ENTRYID_COL;
 }
 
+function _looksLikeEntryId_(v) {
+  const s = String(v || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+}
+
 function _detectEntryIdColRaw(sheet) {
   if (!sheet) return 0;
   try {
     const lastCol = sheet.getLastColumn();
     if (lastCol < 1) return 0;
     const lastRow = sheet.getLastRow();
-    const scanRows = Math.min(ENTRYID_HEADER_SEARCH_ROWS, Math.max(1, lastRow));
+    const scanRows = Math.min(15, Math.max(1, lastRow));
     const headers = sheet.getRange(1, 1, scanRows, lastCol).getValues();
     for (let r = 0; r < headers.length; r++) {
       for (let c = 0; c < headers[r].length; c++) {
         const h = String(headers[r][c] || "").trim().toLowerCase().replace(/\s+/g, " ");
         if (ENTRYID_HEADER_PATTERNS.indexOf(h) !== -1) return c + 1;
+      }
+    }
+    const name = sheet.getName();
+    let dataStart = 2;
+    if (INPUT_SHEETS[name]) {
+      dataStart = inputSheetArchiveDataStart(name);
+    } else if (name === "Nachbestellung") {
+      try { dataStart = getNachbestellungLayout(sheet).dataStartRow; } catch (e) {}
+    }
+    if (lastRow >= dataStart) {
+      const sampleEnd = Math.min(lastRow, dataStart + 40);
+      const sampleRows = sampleEnd - dataStart + 1;
+      const candidates = name === "Nachbestellung"
+        ? [NB_ENTRYID_COL, ENTRYID_COL]
+        : [ENTRYID_COL, NB_ENTRYID_COL];
+      for (let ci = 0; ci < candidates.length; ci++) {
+        const col = candidates[ci];
+        if (col > lastCol) continue;
+        const vals = sheet.getRange(dataStart, col, sampleRows, 1).getValues();
+        let hits = 0;
+        for (let i = 0; i < vals.length; i++) {
+          if (_looksLikeEntryId_(vals[i][0])) hits++;
+        }
+        if (hits >= 2) return col;
       }
     }
   } catch (e) {}
@@ -365,6 +394,7 @@ var ONEDIT_LOCK_WAIT_MS = 5000;
 var QUEUE_LOCK_WAIT_MS = 15000;
 var CLEANUP_LOCK_WAIT_MS = 5000;
 var DASH_SYNC_LOCK_WAIT_MS = 30000;
+var UI_SYNC_LOCK_WAIT_MS = 120000;
 var MAX_EVENTS_PER_RUN = 3;
 var QUEUE_TIME_BUDGET_MS = 240000;
 var QUEUE_EVENTS_PER_CYCLE = 25;
@@ -483,6 +513,19 @@ function hasSourceAccess_() {
   return _sourceAccessOk;
 }
 
+function acquireScriptLock_(waitMs) {
+  const lock = LockService.getScriptLock();
+  const ms = waitMs != null ? waitMs : LOCK_WAIT_MS;
+  try {
+    if (lock.tryLock(Math.min(ms, 3000))) return lock;
+  } catch (e) {}
+  try {
+    lock.waitLock(ms);
+    return lock;
+  } catch (e2) {}
+  return null;
+}
+
 function withLock(fn, waitMs) {
   const lock = LockService.getScriptLock();
   let acquired = false;
@@ -576,15 +619,310 @@ function buildInputExitEntryIdSet_(ss) {
   if (!ss) return set;
   const sheet = ss.getSheetByName("Input Exit");
   if (!sheet) return set;
-  const last = sheet.getLastRow();
-  if (last < 2) return set;
+  const start = inputSheetArchiveDataStart("Input Exit");
+  const end = inputSheetArchiveDataEnd(sheet, start);
+  if (end == null || end < start) return set;
   const eidCol = getEntryIdCol(sheet);
-  const vals = sheet.getRange(2, eidCol, last - 1, 1).getValues();
+  const vals = sheet.getRange(start, eidCol, end - start + 1, 1).getValues();
   for (let i = 0; i < vals.length; i++) {
     const eid = String(vals[i][0] || "").trim();
     if (eid) set[eid] = true;
   }
   return set;
+}
+
+function reconcileValueSame_(a, b) {
+  const isEmpty = function (v) {
+    return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+  };
+  if (isEmpty(a) && isEmpty(b)) return true;
+  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
+  return String(a) === String(b);
+}
+
+function buildInputExitRowIndexMaps_(exitSheet) {
+  const start = inputSheetArchiveDataStart("Input Exit");
+  const end = inputSheetArchiveDataEnd(exitSheet, start);
+  const maps = { byEid: {}, byStock: {}, start: start, end: end };
+  if (!exitSheet || end == null || end < start) return maps;
+  const eidCol = getEntryIdCol(exitSheet);
+  const numRows = end - start + 1;
+  const eids = exitSheet.getRange(start, eidCol, numRows, 1).getValues();
+  const stocks = exitSheet.getRange(start, 2, numRows, 1).getValues();
+  for (let i = 0; i < numRows; i++) {
+    const sheetRow = start + i;
+    const eid = String(eids[i][0] || "").trim();
+    const stock = String(stocks[i][0] || "").trim().toUpperCase();
+    if (eid) maps.byEid[eid] = sheetRow;
+    if (stock) maps.byStock[stock] = sheetRow;
+  }
+  return maps;
+}
+
+function normStockKey_(stockId) {
+  return String(stockId || "").trim().toUpperCase();
+}
+
+function getStockIdFromCell_(sheet, row, col) {
+  if (!sheet || !row || !col) return "";
+  try {
+    const range = sheet.getRange(row, col);
+    const v = range.getValue();
+    if (v != null && String(v).trim()) return String(v).trim();
+    const rt = range.getRichTextValue();
+    if (rt) {
+      const t = rt.getText();
+      if (t && String(t).trim()) return String(t).trim();
+    }
+  } catch (e) {}
+  return "";
+}
+
+function findInputExitSheetRow_(maps, entryId, stockId) {
+  const eid = String(entryId || "").trim();
+  if (eid) {
+    if (maps.byEid[eid]) return maps.byEid[eid];
+    return -1;
+  }
+  const key = normStockKey_(stockId);
+  if (key && maps.byStock[key]) return maps.byStock[key];
+  return -1;
+}
+
+function findNachbestellungExitRow_(nbSheet, entryId, stockId) {
+  if (!nbSheet) return -1;
+  const nbLo = getNachbestellungLayout(nbSheet);
+  const nbLast = nbSheet.getLastRow();
+  const nbTrim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+  const nbEnd = nbLast > nbTrim ? nbLast - nbTrim : nbLast;
+  if (nbEnd < nbLo.dataStartRow) return -1;
+  const eid = String(entryId || "").trim();
+  if (eid) {
+    const row = findRowByEntryId(nbSheet, nbLo.cols.entryId, eid, nbLo.dataStartRow);
+    if (row !== -1 && isNachbestellungExitMechanikRow_(nbSheet, row)) return row;
+    return -1;
+  }
+  const stockKey = normStockKey_(stockId);
+  if (!stockKey) return -1;
+  const nbNumRows = nbEnd - nbLo.dataStartRow + 1;
+  const stocks = nbSheet.getRange(nbLo.dataStartRow, nbLo.cols.stockId, nbNumRows, 1).getValues();
+  for (let i = stocks.length - 1; i >= 0; i--) {
+    const candidate = nbLo.dataStartRow + i;
+    if (normStockKey_(stocks[i][0]) !== stockKey) continue;
+    if (isNachbestellungExitMechanikRow_(nbSheet, candidate)) return candidate;
+  }
+  return -1;
+}
+
+function isNachbestellungExitMechanikRow_(nbSheet, row) {
+  if (!nbSheet || row < 2) return false;
+  try {
+    const val = String(nbSheet.getRange(row, 3).getValue() || "")
+      .trim().toLowerCase().replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+    return val.indexOf("exit mechanik") !== -1;
+  } catch (e) {}
+  return false;
+}
+
+function getNachbestellungMirrorCols_(nbSheet) {
+  const lo = getNachbestellungLayout(nbSheet);
+  return {
+    dataStartRow: lo.dataStartRow,
+    stockId: lo.cols.stockId,
+    preis: 6,
+    costGate: lo.cols.costGate,
+    carol: 10,
+    status: lo.cols.status,
+    statusAenderung: lo.cols.statusAenderung,
+    entryId: lo.cols.entryId
+  };
+}
+
+function buildNachbestellungToExitPayload_(nbSheet, row, exitSheet, exitMaps) {
+  if (!nbSheet || !exitSheet || row < 2) return { code: "SKIP" };
+  if (!isNachbestellungExitMechanikRow_(nbSheet, row)) return { code: "SKIP" };
+  const cols = getNachbestellungMirrorCols_(nbSheet);
+  if (row < cols.dataStartRow) return { code: "SKIP" };
+  const stockId = getStockIdFromCell_(nbSheet, row, cols.stockId);
+  let entryId = "";
+  try { entryId = String(nbSheet.getRange(row, cols.entryId).getValue() || "").trim(); } catch (e) {}
+  if (!stockId && !entryId) return { code: "SKIP" };
+  if (!exitMaps || exitMaps.end == null) return { code: "NO_EXIT" };
+  const exitRow = findInputExitSheetRow_(exitMaps, entryId, stockId);
+  if (exitRow === -1) return { code: "NO_MATCH", stockId: stockId, entryId: entryId };
+  const src = nbSheet.getRange(row, cols.preis, 1, 7).getValues()[0];
+  const nbF = src[0];
+  const nbI = src[cols.costGate - cols.preis];
+  const nbJ = src[cols.carol - cols.preis];
+  const nbK = src[cols.status - cols.preis];
+  const nbL = src[cols.statusAenderung - cols.preis];
+  const cur = exitSheet.getRange(exitRow, 7, 1, 6).getValues()[0];
+  const out = [cur[0], cur[1], cur[2], cur[3], cur[4], cur[5]];
+  let changed = false;
+  if (isCellFilled(nbF) && !reconcileValueSame_(nbF, cur[0])) { out[0] = nbF; changed = true; }
+  if (isCellFilled(nbI) && !reconcileValueSame_(nbI, cur[2])) { out[2] = nbI; changed = true; }
+  if (isCellFilled(nbJ) && !reconcileValueSame_(nbJ, cur[3])) { out[3] = nbJ; changed = true; }
+  if (isCellFilled(nbK) && !reconcileValueSame_(nbK, cur[4])) { out[4] = nbK; changed = true; }
+  if (isCellFilled(nbL) && !reconcileValueSame_(nbL, cur[5])) { out[5] = nbL; changed = true; }
+  if (!changed) return { code: "OK", stockId: stockId };
+  return { code: "WRITE", exitRow: exitRow, vals: out, stockId: stockId };
+}
+
+function pushNachbestellungRowToInputExit_(nbSheet, row) {
+  let exitSheet = null;
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet() || nbSheet.getParent() || getMainSS();
+    exitSheet = ss.getSheetByName("Input Exit");
+  } catch (e) {}
+  if (!exitSheet) return false;
+  const exitMaps = buildInputExitRowIndexMaps_(exitSheet);
+  const payload = buildNachbestellungToExitPayload_(nbSheet, row, exitSheet, exitMaps);
+  if (!payload || payload.code !== "WRITE") return false;
+  try {
+    exitSheet.getRange(payload.exitRow, 7, 1, 6).setValues([payload.vals]);
+    return true;
+  } catch (e) {
+    try {
+      logDebug("push NB->Exit write failed exitRow=" + payload.exitRow + " stock=" + payload.stockId + " err=" + e);
+    } catch (e2) {}
+    return false;
+  }
+}
+
+function findInputExitStatusGaps_(ss) {
+  ss = ss || getMainSS();
+  if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar.", gaps: [], count: 0 };
+  const nbSheet = ss.getSheetByName("Nachbestellung");
+  const exitSheet = ss.getSheetByName("Input Exit");
+  if (!nbSheet || !exitSheet) {
+    return { ok: false, fehler: "Nachbestellung oder Input Exit fehlt.", gaps: [], count: 0 };
+  }
+  const nbLo = getNachbestellungLayout(nbSheet);
+  const exitMaps = buildInputExitRowIndexMaps_(exitSheet);
+  const nbLast = nbSheet.getLastRow();
+  const trim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+  const nbEnd = nbLast > trim ? nbLast - trim : nbLast;
+  if (nbEnd < nbLo.dataStartRow || exitMaps.end == null) {
+    return { ok: true, gaps: [], count: 0 };
+  }
+  const nbNumRows = nbEnd - nbLo.dataStartRow + 1;
+  const nbWidth = Math.max(12, nbLo.cols.entryId);
+  const nbBlock = nbSheet.getRange(nbLo.dataStartRow, 1, nbNumRows, nbWidth).getValues();
+  const eidIdx = nbLo.cols.entryId - 1;
+  const cgIdx = nbLo.cols.costGate - 1;
+  const stIdx = nbLo.cols.status - 1;
+  const saIdx = nbLo.cols.statusAenderung - 1;
+  const gaps = [];
+  const preisIdx = 5;
+  const carolIdx = 9;
+  for (let i = 0; i < nbBlock.length; i++) {
+    const nbRow = nbLo.dataStartRow + i;
+    if (!isNachbestellungExitMechanikRow_(nbSheet, nbRow)) continue;
+    const stockId = String(nbBlock[i][nbLo.cols.stockId - 1] || "").trim();
+    const entryId = String(nbBlock[i][eidIdx] || "").trim();
+    if (!stockId && !entryId) continue;
+    const nbF = nbBlock[i][preisIdx];
+    const nbI = nbBlock[i][cgIdx];
+    const nbJ = nbBlock[i][carolIdx];
+    const nbK = nbBlock[i][stIdx];
+    const nbL = nbBlock[i][saIdx];
+    const nbHas = isCellFilled(nbF) || isCellFilled(nbI) || isCellFilled(nbJ) || isCellFilled(nbK) || isCellFilled(nbL);
+    if (!nbHas) continue;
+    const exitRow = findInputExitSheetRow_(exitMaps, entryId, stockId);
+    if (exitRow === -1) continue;
+    const cur = exitSheet.getRange(exitRow, 7, 1, 6).getValues()[0];
+    if (
+      reconcileValueSame_(nbF, cur[0]) &&
+      reconcileValueSame_(nbI, cur[2]) &&
+      reconcileValueSame_(nbJ, cur[3]) &&
+      reconcileValueSame_(nbK, cur[4]) &&
+      reconcileValueSame_(nbL, cur[5])
+    ) continue;
+    gaps.push({
+      exitRow: exitRow,
+      stockId: stockId,
+      entryId: entryId,
+      nbCostGate: String(nbI || ""),
+      nbCarol: String(nbJ || ""),
+      nbStatus: String(nbK || "")
+    });
+  }
+  return { ok: true, gaps: gaps, count: gaps.length };
+}
+
+function syncNachbestellungStatusToInputExit(ss, options) {
+  ss = ss || getMainSS();
+  if (!ss) return { ok: false, fehler: "Hauptmappe nicht erreichbar." };
+  options = options || {};
+  const lockWait = options.lockWaitMs != null ? options.lockWaitMs : UI_SYNC_LOCK_WAIT_MS;
+  clearEntryIdColCache();
+  const lock = acquireScriptLock_(lockWait);
+  if (!lock) {
+    return {
+      ok: false,
+      fehler: "Lock nicht frei (Cleanup/Queue/onEdit). 1–2 Min warten, dann erneut. EventQueue-SKIPPED ist normal (Duplikat-Dedup)."
+    };
+  }
+  let updated = 0;
+  let scanned = 0;
+  let noMatch = 0;
+  let alreadyOk = 0;
+  let writeFailed = 0;
+  try {
+    const nbSheet = ss.getSheetByName("Nachbestellung");
+    const exitSheet = ss.getSheetByName("Input Exit");
+    if (!nbSheet || !exitSheet) return { ok: false, fehler: "Nachbestellung oder Input Exit fehlt." };
+    const nbLo = getNachbestellungLayout(nbSheet);
+    const exitMaps = buildInputExitRowIndexMaps_(exitSheet);
+    const nbLast = nbSheet.getLastRow();
+    const trim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+    const nbEnd = nbLast > trim ? nbLast - trim : nbLast;
+    if (nbEnd < nbLo.dataStartRow || exitMaps.end == null) {
+      return { ok: true, updated: 0, scanned: 0, noMatch: 0, alreadyOk: 0, writeFailed: 0 };
+    }
+    const pending = [];
+    for (let row = nbLo.dataStartRow; row <= nbEnd; row++) {
+      if (!isNachbestellungExitMechanikRow_(nbSheet, row)) continue;
+      scanned++;
+      const payload = buildNachbestellungToExitPayload_(nbSheet, row, exitSheet, exitMaps);
+      if (!payload) continue;
+      if (payload.code === "NO_MATCH") noMatch++;
+      else if (payload.code === "OK") alreadyOk++;
+      else if (payload.code === "WRITE") pending.push(payload);
+    }
+    markReconcileWrite_();
+    for (let p = 0; p < pending.length; p++) {
+      try {
+        exitSheet.getRange(pending[p].exitRow, 7, 1, 6).setValues([pending[p].vals]);
+        updated++;
+      } catch (e) {
+        writeFailed++;
+        try {
+          logDebug("sync NB->Exit write failed row=" + pending[p].exitRow + " stock=" + pending[p].stockId + " err=" + e);
+        } catch (eLog) {}
+      }
+    }
+    try { SpreadsheetApp.flush(); } catch (eFlush) {}
+    try {
+      logDebug(
+        "syncNachbestellungStatusToInputExit: updated=" + updated +
+        " scanned=" + scanned + " noMatch=" + noMatch +
+        " alreadyOk=" + alreadyOk + " writeFailed=" + writeFailed
+      );
+    } catch (eLog2) {}
+    return {
+      ok: true,
+      updated: updated,
+      scanned: scanned,
+      noMatch: noMatch,
+      alreadyOk: alreadyOk,
+      writeFailed: writeFailed
+    };
+  } catch (err) {
+    return { ok: false, fehler: String(err && err.message ? err.message : err) };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
 }
 
 function buildNachbestellungStatusByEntryIdMap_(nbSheet) {
@@ -732,14 +1070,28 @@ function onEdit(e) {
     if (handled) return;
   }
 
+  if (name === "Nachbestellung") {
+    try {
+      if (!isRecentReconcileWrite_()) {
+        mirrorNachbestellungInputExitEdits(e, sheet, name);
+      }
+    } catch (errNb) {
+      try { logDebug("NB->Exit mirror (no lock) failed: " + errNb); } catch (eLogNb) {}
+    }
+  }
+
   withLock(function () {
     if (INPUT_SHEETS[name] && row >= 2) {
       try { ensureEntryIdsForEditRange(sheet, e.range); } catch (err) {}
     }
     handleEdit(e, sheet, name, row, col);
-    try {
-      mirrorNachbestellungInputExitEdits(e, sheet, name);
-    } catch (err) {}
+    if (name === "Input Exit") {
+      try {
+        if (!isRecentReconcileWrite_()) {
+          mirrorNachbestellungInputExitEdits(e, sheet, name);
+        }
+      } catch (errEx) {}
+    }
   }, ONEDIT_LOCK_WAIT_MS);
 
   if (INPUT_SHEETS[name] && row >= 2) {
@@ -894,7 +1246,7 @@ function handleEdit(e, sheet, name, row, col) {
 
 function mirrorNachbestellungInputExitEdits(e, sheet, name) {
   if (!e || !e.range || !sheet) return;
-  if (isRecentReconcileWrite_()) return;
+  if (name === "Input Exit" && isRecentReconcileWrite_()) return;
   if (name !== "Nachbestellung" && name !== "Input Exit") return;
   const range = e.range;
   const startRow = range.getRow();
@@ -911,33 +1263,37 @@ function mirrorNachbestellungInputExitEdits(e, sheet, name) {
 function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol) {
   const colHit = function (c) { return c >= startCol && c <= endCol; };
 
-  if (name === "Nachbestellung" && row >= 2) {
-    if (colHit(6)) {
-      try { syncNachbestellungColumnToInputExit(sheet, row, 6, 7); } catch (err) { logDebug("sync NB F->Exit G failed: " + err); }
+  if (name === "Nachbestellung") {
+    const cols = getNachbestellungMirrorCols_(sheet);
+    if (row < cols.dataStartRow) return;
+    const mirrorCols = [cols.preis, cols.costGate, cols.carol, cols.status, cols.statusAenderung];
+    let hit = false;
+    for (let mi = 0; mi < mirrorCols.length; mi++) {
+      if (colHit(mirrorCols[mi])) { hit = true; break; }
     }
-    if (colHit(9)) {
-      try { syncNachbestellungColumnToInputExit(sheet, row, 9, 9); } catch (err) { logDebug("sync NB I->Exit I failed: " + err); }
-    }
-    if (colHit(10)) {
-      try { syncNachbestellungColumnToInputExit(sheet, row, 10, 10); } catch (err) { logDebug("sync NB J->Exit J failed: " + err); }
-    }
-    if (colHit(11)) {
+    if (hit) {
+      if (colHit(cols.status)) {
+        try {
+          const kVal = sheet.getRange(row, cols.status).getValue();
+          const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
+          sheet.getRange(row, cols.statusAenderung).setValue(stamp);
+        } catch (err) { logDebug("set NB L date failed: " + err); }
+      }
       try {
-        const kVal = sheet.getRange(row, 11).getValue();
-        const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
-        sheet.getRange(row, 12).setValue(stamp);
-      } catch (err) { logDebug("set NB L date failed: " + err); }
-      try { syncNachbestellungColumnToInputExit(sheet, row, 11, 11); } catch (err) { logDebug("sync NB K->Exit K failed: " + err); }
-      try { syncNachbestellungColumnToInputExit(sheet, row, 12, 12); } catch (err) { logDebug("sync NB L->Exit L failed: " + err); }
+        if (!pushNachbestellungRowToInputExit_(sheet, row)) {
+          logDebug("push NB->Exit: no write row=" + row);
+        }
+      } catch (err) { logDebug("push NB->Exit failed row " + row + ": " + err); }
     }
-    if (colHit(9) || colHit(11) || colHit(12)) {
+    if (colHit(cols.costGate) || colHit(cols.status) || colHit(cols.statusAenderung)) {
       if (hasSourceAccess_()) {
         try { updateDashboardFromNachbestellungRow(sheet, row); } catch (err) { logDebug("dashboard update failed: " + err); }
       }
     }
   }
 
-  if (name === "Input Exit" && row >= 2) {
+  const exitDataStart = inputSheetArchiveDataStart("Input Exit");
+  if (name === "Input Exit" && row >= exitDataStart) {
     if (colHit(7)) {
       try { syncInputExitColumnToNachbestellung(sheet, row, 7, 6); } catch (err) { logDebug("sync Exit G->NB F failed: " + err); }
     }
@@ -1164,60 +1520,10 @@ function syncInputRowToNachbestellung(sheet, row) {
 }
 
 function syncNachbestellungColumnToInputExit(nbSheet, row, srcCol, targetCol) {
-  let stockId = "";
-  try { stockId = String(nbSheet.getRange(row, 2).getValue() || "").trim(); } catch (e) {}
-  let entryId = "";
-  try { entryId = String(nbSheet.getRange(row, getEntryIdCol(nbSheet)).getValue() || ""); } catch (e) {}
-
-  if (!stockId && !entryId) {
-    logDebug("syncToExit: no stockId/entryId in Nachbestellung row " + row);
-    return;
-  }
-
-  let value;
-  try { value = nbSheet.getRange(row, srcCol).getValue(); } catch (e) {
-    logDebug("syncToExit: cannot read srcCol " + srcCol + " row " + row + ": " + e);
-    return;
-  }
-
-  let exitSheet = null;
   try {
-    const ss = nbSheet.getParent() || SpreadsheetApp.getActiveSpreadsheet();
-    exitSheet = ss.getSheetByName("Input Exit");
-  } catch (e) {}
-  if (!exitSheet) {
-    logDebug("syncToExit: Input Exit sheet not found");
-    return;
-  }
-
-  const last = exitSheet.getLastRow();
-  if (last < 2) {
-    logDebug("syncToExit: Input Exit empty");
-    return;
-  }
-
-  let exitRow = -1;
-
-  if (entryId) {
-    try {
-      const eids = exitSheet.getRange(2, getEntryIdCol(exitSheet), last - 1, 1).getValues();
-      const targetE = String(entryId);
-      for (let i = 0; i < eids.length; i++) {
-        if (String(eids[i][0]) === targetE) { exitRow = i + 2; break; }
-      }
-    } catch (e) {}
-  }
-
-  if (exitRow === -1) {
-    logDebug("syncToExit: no Input Exit row for stockId=" + stockId + " entryId=" + entryId);
-    return;
-  }
-
-  try {
-    exitSheet.getRange(exitRow, targetCol).setValue(value);
-    logDebug("syncToExit: wrote '" + value + "' to Input Exit row " + exitRow + " col " + targetCol);
+    pushNachbestellungRowToInputExit_(nbSheet, row);
   } catch (e) {
-    logDebug("syncToExit: write failed row " + exitRow + " col " + targetCol + ": " + e);
+    logDebug("syncToExit failed row " + row + " col " + targetCol + ": " + e);
   }
 }
 
@@ -1248,23 +1554,19 @@ function syncInputExitColumnToNachbestellung(exitSheet, row, srcCol, targetCol) 
     return;
   }
 
-  const last = nbSheet.getLastRow();
-  if (last < 2) {
+  const nbLo = getNachbestellungLayout(nbSheet);
+  const nbLast = nbSheet.getLastRow();
+  const nbTrim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+  const nbEnd = nbLast > nbTrim ? nbLast - nbTrim : nbLast;
+  if (nbEnd < nbLo.dataStartRow) {
     logDebug("syncToNB: Nachbestellung empty");
     return;
   }
 
   let nbRow = -1;
-
-  if (entryId) {
-    try {
-      const eids = nbSheet.getRange(2, getEntryIdCol(nbSheet), last - 1, 1).getValues();
-      const targetE = String(entryId);
-      for (let i = 0; i < eids.length; i++) {
-        if (String(eids[i][0]) === targetE) { nbRow = i + 2; break; }
-      }
-    } catch (e) {}
-  }
+  try {
+    nbRow = findNachbestellungExitRow_(nbSheet, entryId, stockId);
+  } catch (e) {}
 
   if (nbRow === -1) {
     logDebug("syncToNB: no Nachbestellung row for stockId=" + stockId + " entryId=" + entryId);
@@ -1553,6 +1855,10 @@ function runQueueProcessor(tagesMap, runStartTime) {
       if (sheetName === "Input Exit" || code === "EX") {
         removeDashboardRowByEntryId(dashboard, effectiveEntryId);
         applyNachbestellungState(nbSheet, liveKey, rowData, effectiveEntryId);
+        try {
+          const nbRow = findNachbestellungExitRow_(nbSheet, effectiveEntryId, liveKey);
+          if (nbRow !== -1) pushNachbestellungRowToInputExit_(nbSheet, nbRow);
+        } catch (ePush) {}
         queue.getRange(i + 1, 7).setValue("DONE");
         continue;
       }
@@ -2408,44 +2714,58 @@ function reconcileNachbestellungInputExit(ss) {
   const exitSheet = ss.getSheetByName("Input Exit");
   if (!nbSheet || !exitSheet) return;
 
+  const nbLo = getNachbestellungLayout(nbSheet);
+  const exitStart = inputSheetArchiveDataStart("Input Exit");
+  const exitEnd = inputSheetArchiveDataEnd(exitSheet, exitStart);
   const nbLast = nbSheet.getLastRow();
-  const exitLast = exitSheet.getLastRow();
-  if (nbLast < 2 || exitLast < 2) return;
+  if (nbLast < nbLo.dataStartRow || exitEnd == null || exitEnd < exitStart) return;
 
-  const exitEids = exitSheet.getRange(2, getEntryIdCol(exitSheet), exitLast - 1, 1).getValues();
-  const exitBlock = exitSheet.getRange(2, 7, exitLast - 1, 6).getValues();
+  const exitEidCol = getEntryIdCol(exitSheet);
+  const exitNumRows = exitEnd - exitStart + 1;
+  const exitEids = exitSheet.getRange(exitStart, exitEidCol, exitNumRows, 1).getValues();
+  const exitBlock = exitSheet.getRange(exitStart, 7, exitNumRows, 6).getValues();
 
   const exitByEid = {};
+  const exitByStock = {};
+  const exitStocks = exitSheet.getRange(exitStart, 2, exitNumRows, 1).getValues();
   for (let i = 0; i < exitEids.length; i++) {
-    const eid = String(exitEids[i][0] || "");
+    const eid = String(exitEids[i][0] || "").trim();
+    const stock = normStockKey_(exitStocks[i][0]);
     if (eid) exitByEid[eid] = i;
+    if (stock) exitByStock[stock] = i;
   }
 
-  const nbEids = nbSheet.getRange(2, getEntryIdCol(nbSheet), nbLast - 1, 1).getValues();
-  const nbBlockF = nbSheet.getRange(2, 6, nbLast - 1, 1).getValues();
-  const nbBlockI = nbSheet.getRange(2, 9, nbLast - 1, 4).getValues();
+  const nbTrim = nbLo.dataEndTrimBottomRows != null ? nbLo.dataEndTrimBottomRows : 1;
+  const nbEnd = nbLast > nbTrim ? nbLast - nbTrim : nbLast;
+  if (nbEnd < nbLo.dataStartRow) return;
+
+  const nbEidCol = nbLo.cols.entryId;
+  const nbStockCol = nbLo.cols.stockId;
+  const nbNumRows = nbEnd - nbLo.dataStartRow + 1;
+  const nbEids = nbSheet.getRange(nbLo.dataStartRow, nbEidCol, nbNumRows, 1).getValues();
+  const nbStocks = nbSheet.getRange(nbLo.dataStartRow, nbStockCol, nbNumRows, 1).getValues();
+  const nbBlockF = nbSheet.getRange(nbLo.dataStartRow, 6, nbNumRows, 1).getValues();
+  const nbBlockI = nbSheet.getRange(nbLo.dataStartRow, 9, nbNumRows, 4).getValues();
 
   const isEmpty = function (v) {
     return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
   };
-  const sameVal = function (a, b) {
-    if (isEmpty(a) && isEmpty(b)) return true;
-    if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime();
-    return String(a) === String(b);
-  };
-  const tsMs = function (v) {
-    if (!v) return 0;
-    try { return new Date(v).getTime() || 0; } catch (e) { return 0; }
-  };
+  const sameVal = reconcileValueSame_;
 
   let nbWrites = 0;
   let exitWrites = 0;
 
   for (let i = 0; i < nbEids.length; i++) {
-    const eid = String(nbEids[i][0] || "");
+    const nbRow = nbLo.dataStartRow + i;
+    if (!isNachbestellungExitMechanikRow_(nbSheet, nbRow)) continue;
+    const eid = String(nbEids[i][0] || "").trim();
+    const stock = normStockKey_(nbStocks[i][0]);
     let xi = -1;
     if (eid && (eid in exitByEid)) xi = exitByEid[eid];
+    else if (stock && (stock in exitByStock)) xi = exitByStock[stock];
     if (xi === -1) continue;
+
+    const exitRow = exitStart + xi;
 
     const nbF = nbBlockF[i][0];
     const nbI = nbBlockI[i][0];
@@ -2466,11 +2786,11 @@ function reconcileNachbestellungInputExit(ss) {
     if (!sameVal(nbK, pickK) || !sameVal(nbL, pickL) || !sameVal(exK, pickK) || !sameVal(exL, pickL)) {
       markReconcileWrite_();
       if (picked.from === "nb") {
-        exitSheet.getRange(xi + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        exitSheet.getRange(exitRow, 11, 1, 2).setValues([[pickK, pickL]]);
         exitBlock[xi][4] = pickK; exitBlock[xi][5] = pickL;
         exitWrites++;
       } else if (picked.from === "exit") {
-        nbSheet.getRange(i + 2, 11, 1, 2).setValues([[pickK, pickL]]);
+        nbSheet.getRange(nbRow, 11, 1, 2).setValues([[pickK, pickL]]);
         nbBlockI[i][2] = pickK; nbBlockI[i][3] = pickL;
         nbWrites++;
         try {
@@ -2479,41 +2799,40 @@ function reconcileNachbestellungInputExit(ss) {
             " NB '" + String(nbK) + "' -> '" + String(pickK) + "' (from Input Exit)"
           );
         } catch (eLog) {}
-      } else if (picked.from === "nb") {
-        try {
-          logDebug(
-            "reconcile status: entryId=" + eid +
-            " Exit '" + String(exK) + "' -> '" + String(pickK) + "' (from Nachbestellung)"
-          );
-        } catch (eLog2) {}
       }
     }
 
     if (!sameVal(nbF, exG)) {
-      if (isEmpty(nbF) && !isEmpty(exG)) {
-        nbSheet.getRange(i + 2, 6).setValue(exG);
-        nbWrites++;
-      } else if (!isEmpty(nbF) && isEmpty(exG)) {
-        exitSheet.getRange(xi + 2, 7).setValue(nbF);
+      if (!isEmpty(nbF)) {
+        markReconcileWrite_();
+        exitSheet.getRange(exitRow, 7).setValue(nbF);
+        exitBlock[xi][0] = nbF;
         exitWrites++;
+      } else if (!isEmpty(exG)) {
+        nbSheet.getRange(nbRow, 6).setValue(exG);
+        nbWrites++;
       }
     }
     if (!sameVal(nbI, exI)) {
-      if (isEmpty(nbI) && !isEmpty(exI)) {
-        nbSheet.getRange(i + 2, 9).setValue(exI);
-        nbWrites++;
-      } else if (!isEmpty(nbI) && isEmpty(exI)) {
-        exitSheet.getRange(xi + 2, 9).setValue(nbI);
+      if (!isEmpty(nbI)) {
+        markReconcileWrite_();
+        exitSheet.getRange(exitRow, 9).setValue(nbI);
+        exitBlock[xi][2] = nbI;
         exitWrites++;
+      } else if (!isEmpty(exI)) {
+        nbSheet.getRange(nbRow, 9).setValue(exI);
+        nbWrites++;
       }
     }
     if (!sameVal(nbJ, exJ)) {
-      if (isEmpty(nbJ) && !isEmpty(exJ)) {
-        nbSheet.getRange(i + 2, 10).setValue(exJ);
-        nbWrites++;
-      } else if (!isEmpty(nbJ) && isEmpty(exJ)) {
-        exitSheet.getRange(xi + 2, 10).setValue(nbJ);
+      if (!isEmpty(nbJ)) {
+        markReconcileWrite_();
+        exitSheet.getRange(exitRow, 10).setValue(nbJ);
+        exitBlock[xi][3] = nbJ;
         exitWrites++;
+      } else if (!isEmpty(exJ)) {
+        nbSheet.getRange(nbRow, 10).setValue(exJ);
+        nbWrites++;
       }
     }
   }
@@ -2727,6 +3046,11 @@ function onOpen() {
   try {
     ensureDashboardStatusSyncTrigger_();
   } catch (e0) {}
+  try {
+    if (typeof ensureFertiggestelltArchiveTrigger_ === "function") {
+      ensureFertiggestelltArchiveTrigger_();
+    }
+  } catch (e0b) {}
   try {
     if (typeof uxBaseMenueEinrichten === "function") {
       uxBaseMenueEinrichten();

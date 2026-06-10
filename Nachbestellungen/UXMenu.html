@@ -114,8 +114,17 @@
             <div class="ux-toolbar">
               <button type="button" class="ux-btn-copy" id="btnSyncRefresh">Nochmal checken</button>
               <button type="button" class="ux-btn-primary" id="btnSyncBulk">Alle mit EntryID anstoßen</button>
+              <button type="button" class="ux-btn-primary" id="btnExitStatusSync">Exit I–L von NB syncen</button>
             </div>
+            <p class="ux-dash-sync-note">Oben: Input fehlt in Nachbestellung. Unten: Input Exit hat leere oder falsche Preis / Cost Gate / Carol / Status obwohl Nachbestellung (Exit Mechanik) Werte hat (F→G, I–L).</p>
             <div class="ux-status" id="syncStatus"></div>
+            <div class="ux-dash-list-block ux-dash-list-block--gap" id="exitGapBlock">
+              <p class="ux-panel-title ux-dash-section-title">Input Exit · Status leer / falsch (NB hat Werte)</p>
+              <div class="ux-list-wrap" id="exitGapListWrap">
+                <div class="ux-list" id="exitGapList"></div>
+              </div>
+            </div>
+            <p class="ux-panel-title ux-dash-section-title">Fehlt in Nachbestellung</p>
             <div class="ux-list-wrap" id="syncListWrap">
               <div class="ux-loading" id="syncListLoading" hidden>
                 <div class="ux-spinner" aria-hidden="true">
@@ -231,6 +240,7 @@
       var syncMissingArr = [];
       var dashMissingArr = [];
       var dashStatusGapArr = [];
+      var exitStatusGapArr = [];
       var nachtragenDoneSet = {};
       var dashNachtragenDoneSet = {};
       var cacheReloadBusy = false;
@@ -473,6 +483,7 @@
             : "Alles clean – nix fehlt in NB."
         );
         renderSyncList(data.syncMissing || []);
+        renderExitStatusGapList(data.exitStatusGaps || []);
         var nd = data.dashSyncCount != null ? data.dashSyncCount : (data.dashMissing || []).length;
         var ng = data.dashStatusGapCount != null ? data.dashStatusGapCount : (data.dashStatusGaps || []).length;
         setDashStatus(formatDashStatusLine(nd, ng));
@@ -1339,6 +1350,52 @@
         }
       }
 
+      function renderExitStatusGapList(arr) {
+        exitStatusGapArr = arr || [];
+        var gapBlock = document.getElementById("exitGapBlock");
+        if (gapBlock) {
+          gapBlock.classList.toggle("ux-dash-list-block--collapsed", !exitStatusGapArr.length);
+        }
+        var el = document.getElementById("exitGapList");
+        if (!el) return;
+        el.innerHTML = "";
+        if (!exitStatusGapArr.length) {
+          el.innerHTML =
+            '<div class="ux-empty">Input Exit ist zu NB I–L synchron – keine Abweichungen.</div>';
+          return;
+        }
+        for (var i = 0; i < exitStatusGapArr.length; i++) {
+          (function (item) {
+            var card = document.createElement("div");
+            card.className = "ux-card";
+            card.innerHTML =
+              '<div class="ux-card-top">' +
+              '<div class="ux-kv"><label>Exit-Zeile</label><span>' +
+              escapeHtml(String(item.exitRow != null ? item.exitRow : "—")) +
+              "</span></div>" +
+              '<div class="ux-kv"><label>NB Cost Gate</label><span>' +
+              escapeHtml(item.nbCostGate || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>NB Carol</label><span>' +
+              escapeHtml(item.nbCarol || "—") +
+              "</span></div>" +
+              '<div class="ux-kv"><label>NB Status</label><span>' +
+              escapeHtml(item.nbStatus || "—") +
+              "</span></div>" +
+              "</div>" +
+              '<div class="ux-copy-row">' +
+              '<div class="ux-id-chip"><label>Stock-ID</label>' +
+              escapeHtml(item.stockId || "—") +
+              "</div>" +
+              '<div class="ux-id-chip"><label>Entry-ID</label>' +
+              escapeHtml(item.entryId || "—") +
+              "</div>" +
+              "</div>";
+            el.appendChild(card);
+          })(exitStatusGapArr[i]);
+        }
+      }
+
       function renderSyncList(arr) {
         syncMissingArr = arr || [];
         setSyncBadges(syncMissingArr.length);
@@ -1683,6 +1740,49 @@
       };
       document.getElementById("btnSyncRefresh").onclick = function () {
         loadSyncList();
+      };
+      document.getElementById("btnExitStatusSync").onclick = function () {
+        var btn = document.getElementById("btnExitStatusSync");
+        var n = exitStatusGapArr ? exitStatusGapArr.length : 0;
+        if (
+          n &&
+          !confirm(
+            n +
+              " Abweichungen gefunden – Preis, Cost Gate, Carol eingetragen, Status und Statusänderung von Nachbestellung nach Input Exit kopieren?"
+          )
+        ) {
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = "Sync läuft…";
+        google.script.run
+          .withSuccessHandler(function (res) {
+            btn.disabled = false;
+            btn.textContent = "Exit I–L von NB syncen";
+            if (res && res.ok) {
+              var msg =
+                (res.updated || 0) +
+                " Exit-Zeilen aktualisiert";
+              if (res.scanned != null) msg += " · " + res.scanned + " Exit-Mechanik-Zeilen geprüft";
+              if (res.alreadyOk != null && res.alreadyOk > 0) msg += " · " + res.alreadyOk + " schon ok";
+              if (res.noMatch != null && res.noMatch > 0) {
+                msg += " · " + res.noMatch + " ohne Stock-ID-Treffer in Input Exit";
+              }
+              if (res.writeFailed != null && res.writeFailed > 0) {
+                msg += " · " + res.writeFailed + " Schreibfehler (Schutz auf Input Exit G–L?)";
+              }
+              setSyncStatus(msg + ".");
+              loadHubCache(true);
+            } else {
+              setSyncStatus((res && res.fehler) || "Sync hat nicht geklappt.");
+            }
+          })
+          .withFailureHandler(function (err) {
+            btn.disabled = false;
+            btn.textContent = "Exit I–L von NB syncen";
+            setSyncStatus("Fehler: " + err);
+          })
+          .uxNbInputExitStatusSyncNow();
       };
       document.getElementById("btnSyncBulk").onclick = function () {
         var n = countBulkEligible(syncMissingArr, nachtragenDoneSet);
