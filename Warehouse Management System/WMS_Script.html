@@ -316,6 +316,8 @@
     return 'Regal ' + day + '.' + slot;
   }
 
+  var regalScanNbTarget = null;
+
   function setRegalScanStatus(msg, color) {
     var el = document.getElementById('regalScanStatus');
     if(!el) return;
@@ -323,11 +325,7 @@
     el.style.color = color || '#9da7b3';
   }
 
-  function openRegalScan() {
-    if(!currentStock || !String(currentStock).trim()) {
-      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
-      return;
-    }
+  function openRegalScanOverlay() {
     var ov = document.getElementById('regalScanOverlay');
     var inp = document.getElementById('regalScanInput');
     if(!ov || !inp) return;
@@ -338,6 +336,21 @@
     setTimeout(function() { inp.focus(); }, 50);
   }
 
+  function openRegalScan() {
+    if(!currentStock || !String(currentStock).trim()) {
+      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+      return;
+    }
+    regalScanNbTarget = null;
+    openRegalScanOverlay();
+  }
+
+  function openNbRegalScan(event, sheetRow, index) {
+    if(event) { event.stopPropagation(); event.preventDefault(); }
+    regalScanNbTarget = { sheetRow: sheetRow, index: index };
+    openRegalScanOverlay();
+  }
+
   function closeRegalScan() {
     var ov = document.getElementById('regalScanOverlay');
     if(!ov) return;
@@ -345,6 +358,23 @@
     ov.setAttribute('aria-hidden', 'true');
     var inp = document.getElementById('regalScanInput');
     if(inp) inp.value = '';
+    regalScanNbTarget = null;
+  }
+
+  function nbFindRegalOptionValue(regal, sel) {
+    if(!sel || !regal) return '';
+    for(var i = 0; i < sel.options.length; i++) {
+      var optVal = sel.options[i].value;
+      if(nbLagerortOptionsMatch(regal, optVal)) return optVal;
+    }
+    var m = String(regal || '').match(/^Regal\s+(\d+)\.(\d+)$/i);
+    if(m) {
+      var shortVal = parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
+      for(var j = 0; j < sel.options.length; j++) {
+        if(sel.options[j].value === shortVal) return shortVal;
+      }
+    }
+    return '';
   }
 
   function applyScannedRegalAndSave(raw) {
@@ -353,6 +383,26 @@
       setRegalScanStatus("❌ Ungültiger Regal-Barcode: '" + String(raw || '').trim() + "'", '#f85149');
       var bad = document.getElementById('regalScanInput');
       if(bad) { bad.value = ''; bad.focus(); }
+      return;
+    }
+    if(regalScanNbTarget) {
+      var nbTarget = regalScanNbTarget;
+      var nbSel = document.getElementById('nb-regal-sel-' + nbTarget.index);
+      if(!nbSel) {
+        setRegalScanStatus('❌ Regal-Auswahl nicht gefunden', '#f85149');
+        return;
+      }
+      var nbOptVal = nbFindRegalOptionValue(regal, nbSel);
+      if(!nbOptVal) {
+        setRegalScanStatus('❌ ' + regal + ' nicht in der Regal-Liste', '#f85149');
+        var nbBad = document.getElementById('regalScanInput');
+        if(nbBad) { nbBad.value = ''; nbBad.focus(); }
+        return;
+      }
+      nbSel.value = nbOptVal;
+      setRegalScanStatus('✅ ' + regal + ' erkannt – speichere…', '#56d364');
+      closeRegalScan();
+      saveNbRegal({ stopPropagation: function() {}, preventDefault: function() {}, target: nbSel }, nbTarget.sheetRow, nbTarget.index);
       return;
     }
     var sel = document.getElementById('shelfSelect');
@@ -1340,6 +1390,7 @@
         + '</div>'
         + '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
         +   '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
+        +   '<button type="button" class="regal-scan-btn" onclick="openNbRegalScan(event,' + e.row + ',' + i + ')">📷 Regal scannen</button>'
         + '</div>'
         + nbVasoldHtml
         + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
@@ -3414,12 +3465,23 @@
     renderCommentEditor(commentText, matchedWords, preserveCaret);
   }
 
+  function schaedenNeedsReifen(text) {
+    var s = String(text || '');
+    if (/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i.test(s)) return true;
+    if (/Reifen\s+(?:vorne|hinten)\s+(?:links?|rechts?)\s+(?:erneuern|ersetzen)/i.test(s)) return true;
+    return false;
+  }
+
+  function highlightReifenSchaedenHtml(html) {
+    html = html.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span class="highlight-red">$1</span>');
+    html = html.replace(/(Reifen\s+(?:vorne|hinten)\s+(?:links?|rechts?)\s+(?:erneuern|ersetzen))/gi, '<span class="highlight-red">$1</span>');
+    return html;
+  }
+
   function formatSchaeden(text) {
     if(!text || !text.trim()) return "-";
     var reifenHighlight = function(s) {
-      var html = escapeHtml(s);
-      html = html.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span class="highlight-red">$1</span>');
-      return html;
+      return highlightReifenSchaedenHtml(escapeHtml(s));
     };
     var parts = text.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
     if(parts.length <= 1) {
@@ -3726,9 +3788,8 @@
       }
 
       var badge = document.getElementById('badgeReifen');
-      var reifenPattern = /(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/i;
       var sengPattern = /(Reifen Seng)/i;
-      var hasTires = reifenPattern.test(res.schaeden) || sengPattern.test(res.kommBestellung);
+      var hasTires = schaedenNeedsReifen(res.schaeden) || sengPattern.test(res.kommBestellung);
 
       if (hasTires) {
         badge.style.display = 'inline-block';
