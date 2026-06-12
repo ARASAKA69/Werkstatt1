@@ -399,6 +399,10 @@ var MAX_EVENTS_PER_RUN = 3;
 var QUEUE_TIME_BUDGET_MS = 240000;
 var QUEUE_EVENTS_PER_CYCLE = 25;
 var RECONCILE_GUARD_MS = 8000;
+var EVENT_QUEUE_TRIM_AT = 1000;
+var EVENT_QUEUE_KEEP = 500;
+var EVENT_QUEUE_CLEANUP_TRIGGER_FN = "cleanupEventQueueTrigger";
+var EVENT_QUEUE_CLEANUP_INTERVAL_MIN = 20;
 
 function normStatusKey_(val) {
   return String(val == null ? "" : val)
@@ -421,6 +425,14 @@ function statusRank_(val) {
   return 40;
 }
 
+function isExitOnlyMirrorStatus_(val) {
+  const s = normStatusKey_(val);
+  if (!s) return false;
+  if (s === "fertiggestellt" || s === "b2a1") return true;
+  if (s.indexOf("nicht notwendig") !== -1) return true;
+  return false;
+}
+
 function pickReconcileStatusPair_(nbK, nbL, exK, exL) {
   const isEmpty = function (v) {
     return v === "" || v === null || v === undefined || (typeof v === "string" && v.trim() === "");
@@ -432,6 +444,11 @@ function pickReconcileStatusPair_(nbK, nbL, exK, exL) {
   const nbEmpty = isEmpty(nbK);
   const exEmpty = isEmpty(exK);
   if (nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "none" };
+  if (!exEmpty && isExitOnlyMirrorStatus_(exK)) return { k: exK, l: exL, from: "exit" };
+  if (!nbEmpty && isExitOnlyMirrorStatus_(nbK)) {
+    if (!exEmpty) return { k: exK, l: exL, from: "exit" };
+    return { k: nbK, l: nbL, from: "none" };
+  }
   if (nbEmpty && !exEmpty) return { k: exK, l: exL, from: "exit" };
   if (!nbEmpty && exEmpty) return { k: nbK, l: nbL, from: "nb" };
 
@@ -442,31 +459,7 @@ function pickReconcileStatusPair_(nbK, nbL, exK, exL) {
     return { k: exK, l: exL, from: "exit" };
   }
 
-  const nbDate = tsMs(nbL);
-  const exDate = tsMs(exL);
-  let from = "nb";
-  if (nbDate && !exDate) {
-    from = "nb";
-  } else if (exDate && !nbDate) {
-    from = !isEmpty(nbK) ? "nb" : "exit";
-  } else if (nbDate >= exDate) {
-    from = "nb";
-  } else {
-    from = "exit";
-  }
-
-  let pickK = from === "nb" ? nbK : exK;
-  let pickL = from === "nb" ? nbL : exL;
-  const otherK = from === "nb" ? exK : nbK;
-  const otherL = from === "nb" ? exL : nbL;
-
-  if (statusRank_(pickK) <= 10 && statusRank_(otherK) >= 80) {
-    pickK = otherK;
-    pickL = otherL;
-    from = from === "nb" ? "exit" : "nb";
-  }
-
-  return { k: pickK, l: pickL, from: from };
+  return { k: nbK, l: nbL, from: "nb" };
 }
 
 function markReconcileWrite_() {
@@ -495,10 +488,6 @@ function getMainSS() {
   }
 }
 
-// FIX (2): einmaliger, gecachter SOURCE-Zugriffstest.
-// Verhindert die "openById Berechtigungen reichen nicht aus"-Fehler im
-// Nutzer-onEdit: ohne Zugriff wird der per-Edit Dashboard-Refresh
-// uebersprungen; der Owner-Trigger erledigt ihn.
 var _sourceAccessChecked = false;
 var _sourceAccessOk = false;
 function hasSourceAccess_() {
@@ -762,8 +751,8 @@ function buildNachbestellungToExitPayload_(nbSheet, row, exitSheet, exitMaps) {
   if (isCellFilled(nbF) && !reconcileValueSame_(nbF, cur[0])) { out[0] = nbF; changed = true; }
   if (isCellFilled(nbI) && !reconcileValueSame_(nbI, cur[2])) { out[2] = nbI; changed = true; }
   if (isCellFilled(nbJ) && !reconcileValueSame_(nbJ, cur[3])) { out[3] = nbJ; changed = true; }
-  if (isCellFilled(nbK) && !reconcileValueSame_(nbK, cur[4])) { out[4] = nbK; changed = true; }
-  if (isCellFilled(nbL) && !reconcileValueSame_(nbL, cur[5])) { out[5] = nbL; changed = true; }
+  if (isCellFilled(nbK) && !reconcileValueSame_(nbK, cur[4]) && !isExitOnlyMirrorStatus_(nbK)) { out[4] = nbK; changed = true; }
+  if (isCellFilled(nbL) && !reconcileValueSame_(nbL, cur[5]) && !isExitOnlyMirrorStatus_(nbK)) { out[5] = nbL; changed = true; }
   if (!changed) return { code: "OK", stockId: stockId };
   return { code: "WRITE", exitRow: exitRow, vals: out, stockId: stockId };
 }
@@ -1018,10 +1007,6 @@ function applyNachbestellungState(nbSheet, key, rowData, entryId) {
   return "noop";
 }
 
-// FIX (1): Alle blattveraendernden Schritte (Cascade-Delete, Dashboard-Archiv,
-// Spiegelung NB<->Input Exit) laufen jetzt unter withLock() und sind damit mit
-// Queue/Reconcile/Dashboard-Sync serialisiert -> keine Kollision beim Archiv-/
-// Zeilen-Umzug mehr.
 function onEdit(e) {
   if (!e || !e.range) return;
   const sheet = e.range.getSheet();
@@ -1258,8 +1243,6 @@ function mirrorNachbestellungInputExitEdits(e, sheet, name) {
   }
 }
 
-// FIX (2): der openById-abhaengige Dashboard-Refresh laeuft nur noch mit
-// SOURCE-Zugriff; ohne Zugriff uebernimmt der Owner-Trigger den Refresh.
 function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol) {
   const colHit = function (c) { return c >= startCol && c <= endCol; };
 
@@ -1272,18 +1255,24 @@ function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol)
       if (colHit(mirrorCols[mi])) { hit = true; break; }
     }
     if (hit) {
+      let nbStatusVal = "";
       if (colHit(cols.status)) {
         try {
           const kVal = sheet.getRange(row, cols.status).getValue();
+          nbStatusVal = kVal;
           const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
           sheet.getRange(row, cols.statusAenderung).setValue(stamp);
         } catch (err) { logDebug("set NB L date failed: " + err); }
+      } else {
+        try { nbStatusVal = sheet.getRange(row, cols.status).getValue(); } catch (err) {}
       }
-      try {
-        if (!pushNachbestellungRowToInputExit_(sheet, row)) {
-          logDebug("push NB->Exit: no write row=" + row);
-        }
-      } catch (err) { logDebug("push NB->Exit failed row " + row + ": " + err); }
+      if (!isExitOnlyMirrorStatus_(nbStatusVal)) {
+        try {
+          if (!pushNachbestellungRowToInputExit_(sheet, row)) {
+            logDebug("push NB->Exit: no write row=" + row);
+          }
+        } catch (err) { logDebug("push NB->Exit failed row " + row + ": " + err); }
+      }
     }
     if (colHit(cols.costGate) || colHit(cols.status) || colHit(cols.statusAenderung)) {
       if (hasSourceAccess_()) {
@@ -1308,9 +1297,11 @@ function mirrorNachbestellungInputExitPerRow(sheet, name, row, startCol, endCol)
         const kVal = sheet.getRange(row, 11).getValue();
         const stamp = (kVal !== "" && kVal !== null) ? new Date() : "";
         sheet.getRange(row, 12).setValue(stamp);
+        if (isExitOnlyMirrorStatus_(kVal)) {
+          try { syncInputExitColumnToNachbestellung(sheet, row, 11, 11); } catch (err) { logDebug("sync Exit K->NB K failed: " + err); }
+          try { syncInputExitColumnToNachbestellung(sheet, row, 12, 12); } catch (err) { logDebug("sync Exit L->NB L failed: " + err); }
+        }
       } catch (err) {}
-      try { syncInputExitColumnToNachbestellung(sheet, row, 11, 11); } catch (err) { logDebug("sync Exit K->NB K failed: " + err); }
-      try { syncInputExitColumnToNachbestellung(sheet, row, 12, 12); } catch (err) { logDebug("sync Exit L->NB L failed: " + err); }
     }
   }
 }
@@ -2660,7 +2651,6 @@ function cleanupNachbestellungStatusDate() {
     clearStaleStatusDateOnSheet(ss.getSheetByName("Nachbestellung"), 11, 12, "Nachbestellung");
     clearStaleStatusDateOnSheet(ss.getSheetByName("Input Exit"), 11, 12, "Input Exit");
     try { reconcileNachbestellungInputExit(ss); } catch (err) { logDebug("reconcile failed: " + err); }
-    try { cleanupEventQueue(ss); } catch (err) { logDebug("queue cleanup failed: " + err); }
     try { processPendingTageslisteArchives_(); } catch (err) { logDebug("pending Tagesliste archive failed: " + err); }
   } finally {
     try { lock.releaseLock(); } catch (e) {}
@@ -2669,41 +2659,51 @@ function cleanupNachbestellungStatusDate() {
 
 function cleanupEventQueue(ss) {
   ss = ss || getMainSS();
-  if (!ss) return;
+  if (!ss) return { removed: 0, kept: 0 };
   const queue = ss.getSheetByName("EventQueue");
-  if (!queue) return;
+  if (!queue) return { removed: 0, kept: 0 };
   const last = queue.getLastRow();
-  if (last < 200) return;
+  if (last < 2) return { removed: 0, kept: 0 };
+  const dataRows = last - 1;
+  if (dataRows < EVENT_QUEUE_TRIM_AT) return { removed: 0, kept: dataRows };
+  const removable = dataRows - EVENT_QUEUE_KEEP;
+  if (removable <= 0) return { removed: 0, kept: dataRows };
+  queue.deleteRows(2, removable);
+  try { logDebug("cleanupEventQueue: " + removable + " Zeilen entfernt, " + EVENT_QUEUE_KEEP + " behalten"); } catch (e) {}
+  return { removed: removable, kept: EVENT_QUEUE_KEEP };
+}
 
-  const data = queue.getRange(2, 1, last - 1, 7).getValues();
-  const now = Date.now();
-  const LOG_TTL_MS = 4 * 60 * 60 * 1000;
-  const DONE_TTL_MS = 6 * 60 * 60 * 1000;
+function cleanupEventQueueTrigger() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(CLEANUP_LOCK_WAIT_MS)) return;
+  try {
+    cleanupEventQueue(getMainSS());
+  } catch (err) {
+    try { logDebug("cleanupEventQueueTrigger failed: " + err); } catch (e) {}
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
 
-  let deleteUpTo = 0;
-  for (let i = 0; i < data.length; i++) {
-    const ts = data[i][0];
-    const action = data[i][1];
-    const status = data[i][6];
-    const tsMs = ts ? new Date(ts).getTime() : 0;
-    const ageMs = tsMs ? (now - tsMs) : Infinity;
-    const isLog = action === "_LOG";
-    const isDone = status === "DONE" || status === "SKIPPED" || status === "CANCELLED" ||
-      (typeof status === "string" && status.indexOf("ERROR") === 0);
-
-    if (isLog && ageMs > LOG_TTL_MS) {
-      deleteUpTo = i + 1;
-    } else if (isDone && ageMs > DONE_TTL_MS) {
-      deleteUpTo = i + 1;
-    } else {
-      break;
+function installEventQueueCleanupTrigger() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === EVENT_QUEUE_CLEANUP_TRIGGER_FN) {
+      ScriptApp.deleteTrigger(triggers[i]);
     }
   }
+  ScriptApp.newTrigger(EVENT_QUEUE_CLEANUP_TRIGGER_FN)
+    .timeBased()
+    .everyMinutes(EVENT_QUEUE_CLEANUP_INTERVAL_MIN)
+    .create();
+}
 
-  if (deleteUpTo > 0) {
-    queue.deleteRows(2, deleteUpTo);
-    Logger.log("cleanupEventQueue: " + deleteUpTo + " Zeilen entfernt");
+function ensureEventQueueCleanupTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === EVENT_QUEUE_CLEANUP_TRIGGER_FN) return;
   }
+  installEventQueueCleanupTrigger();
 }
 
 
@@ -2998,10 +2998,6 @@ function installDashboardStatusSyncTrigger() {
     .create();
 }
 
-// FIX (2): laeuft als Owner alle 5 min und aktualisiert jetzt zusaetzlich die
-// Tagesliste-/Tage-Spalten (updateDashboardDayDiffs) im Owner-Kontext, damit
-// der aus onEdit entfernte per-Edit Refresh kompensiert wird. Beide Funktionen
-// holen/geben ihren Lock nacheinander frei (kein verschachtelter Lock).
 function syncDashboardStatusSyncTrigger() {
   try {
     const res = syncDashboardStatusFromNachbestellung(DASH_SYNC_LOCK_WAIT_MS);
@@ -3027,8 +3023,6 @@ function ensureDashboardStatusSyncTrigger_() {
   installDashboardStatusSyncTrigger();
 }
 
-// FIX (3): Reconcile-Takt 1 min -> 5 min (weniger Schreibwellen/Ueberlappung).
-// Nach dem Einfuegen EINMAL ausfuehren, damit der Trigger neu gesetzt wird.
 function installCleanupNachbestellungStatusDateTrigger() {
   const triggers = ScriptApp.getProjectTriggers();
   for (let i = 0; i < triggers.length; i++) {
@@ -3051,6 +3045,9 @@ function onOpen() {
       ensureFertiggestelltArchiveTrigger_();
     }
   } catch (e0b) {}
+  try {
+    ensureEventQueueCleanupTrigger_();
+  } catch (e0c) {}
   try {
     if (typeof uxBaseMenueEinrichten === "function") {
       uxBaseMenueEinrichten();

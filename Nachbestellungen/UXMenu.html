@@ -100,7 +100,7 @@
             </div>
             <div class="ux-panel ux-queue-panel">
               <p class="ux-panel-title">Queue-Log aufräumen</p>
-              <p class="ux-queue-desc">EventQueue · behält die 500 neuesten Zeilen (älteste werden gelöscht).</p>
+              <p class="ux-queue-desc">EventQueue · ab 1000 Zeilen automatisch auf 500 kürzen (alle 20 Min.).</p>
               <div class="ux-queue-stats" id="queueCleanStats">—</div>
               <div class="ux-queue-actions">
                 <button type="button" class="ux-btn-primary" id="btnQueueClean">Queue cleanen</button>
@@ -284,14 +284,16 @@
       };
 
       var TRIGGER_LABELS = {
-        cleanupNachbestellungStatusDate: "Status-Datum aufräumen (minütlich)",
-        archiveFertiggestelltRows: "Fertig-Archiv (täglich)",
+        cleanupNachbestellungStatusDate: "Status-Datum aufräumen (5 Min.)",
+        archiveFertiggestelltRows: "Fertig/B2A1-Archiv (23:00)",
+        cleanupEventQueueTrigger: "EventQueue aufräumen (20 Min.)",
         processQueue: "Queue abarbeiten",
         syncDashboardStatusSyncTrigger: "Dashboard Status-Sync (5 Min.)"
       };
       var ALL_TRIGGERS = [
         "cleanupNachbestellungStatusDate",
         "archiveFertiggestelltRows",
+        "cleanupEventQueueTrigger",
         "processQueue",
         "syncDashboardStatusSyncTrigger"
       ];
@@ -696,9 +698,11 @@
         if (info.removable <= 0) {
           statsEl.textContent =
             info.dataRows +
-            " Zeilen · alles innerhalb der letzten " +
+            " Zeilen · Aufräumen ab " +
+            (info.trimAt || 1000) +
+            " (bleiben " +
             (info.keepMax || 500) +
-            " (ab heute) · nichts zu löschen.";
+            ") · noch nichts zu löschen.";
           if (btn) btn.disabled = true;
           return;
         }

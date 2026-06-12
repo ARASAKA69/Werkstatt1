@@ -9,6 +9,7 @@ var UX_NB_BULK_CHUNK = 8;
 var UX_NB_NACHT_KEY = "ux_nb_nachtragen_done_v1";
 var UX_NB_EVENTQUEUE_SHEET = "EventQueue";
 var UX_NB_EVENTQUEUE_KEEP = 500;
+var UX_NB_EVENTQUEUE_TRIM_AT = 1000;
 var UX_NB_DASH_INPUT_SHEETS = ["Input Mechanik", "Input Q-Check", "Input Lack"];
 var UX_NB_DASH_NACHT_KEY = "ux_nb_dash_nachtragen_done_v1";
 
@@ -252,6 +253,7 @@ function uxNbHubActiveTriggers_() {
     var watch = {
       cleanupNachbestellungStatusDate: false,
       archiveFertiggestelltRows: false,
+      cleanupEventQueueTrigger: false,
       processQueue: false,
       syncDashboardStatusSyncTrigger: false
     };
@@ -262,6 +264,7 @@ function uxNbHubActiveTriggers_() {
     }
     if (watch.cleanupNachbestellungStatusDate) names.push("cleanupNachbestellungStatusDate");
     if (watch.archiveFertiggestelltRows) names.push("archiveFertiggestelltRows");
+    if (watch.cleanupEventQueueTrigger) names.push("cleanupEventQueueTrigger");
     if (watch.processQueue) names.push("processQueue");
     if (watch.syncDashboardStatusSyncTrigger) names.push("syncDashboardStatusSyncTrigger");
   } catch (e) {}
@@ -608,11 +611,13 @@ function uxNbCountFilledDataRows_(sheet, dataStartRow) {
   return count;
 }
 
-function uxNbEventQueuePlan_(queue, keepMax) {
+function uxNbEventQueuePlan_(queue, keepMax, trimAt) {
+  trimAt = trimAt != null ? trimAt : UX_NB_EVENTQUEUE_TRIM_AT;
   var plan = {
     ok: false,
     sheetName: UX_NB_EVENTQUEUE_SHEET,
     keepMax: keepMax,
+    trimAt: trimAt,
     dataRows: 0,
     kept: 0,
     removable: 0,
@@ -626,7 +631,7 @@ function uxNbEventQueuePlan_(queue, keepMax) {
   }
   var dataRows = last - 1;
   plan.dataRows = dataRows;
-  if (dataRows <= keepMax) {
+  if (dataRows < trimAt) {
     plan.kept = dataRows;
     plan.removable = 0;
     plan.firstKeepRow = 2;
@@ -645,6 +650,7 @@ function uxNbEventQueueInfo_() {
     ok: false,
     sheetName: UX_NB_EVENTQUEUE_SHEET,
     keepMax: UX_NB_EVENTQUEUE_KEEP,
+    trimAt: UX_NB_EVENTQUEUE_TRIM_AT,
     dataRows: 0,
     kept: 0,
     removable: 0
@@ -785,6 +791,7 @@ function uxNbHubDashboardStats() {
     var watch = {
       cleanupNachbestellungStatusDate: false,
       archiveFertiggestelltRows: false,
+      cleanupEventQueueTrigger: false,
       processQueue: false,
       syncDashboardStatusSyncTrigger: false
     };
@@ -796,6 +803,7 @@ function uxNbHubDashboardStats() {
     var names = [];
     if (watch.cleanupNachbestellungStatusDate) names.push("cleanupNachbestellungStatusDate");
     if (watch.archiveFertiggestelltRows) names.push("archiveFertiggestelltRows");
+    if (watch.cleanupEventQueueTrigger) names.push("cleanupEventQueueTrigger");
     if (watch.processQueue) names.push("processQueue");
     if (watch.syncDashboardStatusSyncTrigger) names.push("syncDashboardStatusSyncTrigger");
     stats.triggers = names;
