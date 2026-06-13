@@ -3,10 +3,15 @@ const FERTIG_ARCHIVE_STATUSES = {
   fertiggestellt: true,
   b2a1: true
 };
-const FERTIG_ARCHIVE_LOCK_MS = 120000;
+const FERTIG_ARCHIVE_LOCK_MS = 240000;
+const FERTIG_ARCHIVE_LOCK_ATTEMPTS = 2;
+const FERTIG_ARCHIVE_RETRY_PAUSE_MS = 10000;
+const FERTIG_ARCHIVE_DEFERRED_FN = "archiveFertiggestelltRowsDeferred";
+const FERTIG_ARCHIVE_DEFERRED_DELAY_MS = 1200000;
 const FERTIG_ARCHIVE_TRIGGER_FN = "archiveFertiggestelltRows";
 const FERTIG_ARCHIVE_TRIGGER_TZ = "Europe/Berlin";
 const FERTIG_ARCHIVE_TRIGGER_HOUR = 23;
+const FERTIG_ARCHIVE_TRIGGER_MINUTE = 52;
 
 function normFertigHeader_(s) {
   return String(s || "")
@@ -165,15 +170,77 @@ function moveFertiggestelltRowsOnSheet_(ss, sourceName, archiveName, boundsFn) {
   return moved;
 }
 
-function archiveFertiggestelltRows() {
-  let lock = null;
-  if (typeof acquireScriptLock_ === "function") {
-    lock = acquireScriptLock_(FERTIG_ARCHIVE_LOCK_MS);
-  } else {
-    lock = LockService.getScriptLock();
-    if (!lock.tryLock(FERTIG_ARCHIVE_LOCK_MS)) lock = null;
+function acquireFertigArchiveLock_() {
+  for (let attempt = 1; attempt <= FERTIG_ARCHIVE_LOCK_ATTEMPTS; attempt++) {
+    const lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(FERTIG_ARCHIVE_LOCK_MS);
+      return { lock: lock, attempt: attempt };
+    } catch (e) {
+      try {
+        if (typeof logDebug === "function") {
+          logDebug(
+            "archiveFertiggestelltRows: Lock-Versuch " +
+              attempt +
+              "/" +
+              FERTIG_ARCHIVE_LOCK_ATTEMPTS +
+              " nach " +
+              FERTIG_ARCHIVE_LOCK_MS +
+              "ms fehlgeschlagen"
+          );
+        }
+      } catch (e2) {}
+      if (attempt < FERTIG_ARCHIVE_LOCK_ATTEMPTS) {
+        Utilities.sleep(FERTIG_ARCHIVE_RETRY_PAUSE_MS);
+      }
+    }
   }
+  return null;
+}
+
+function removeFertigDeferredTriggers_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === FERTIG_ARCHIVE_DEFERRED_FN) {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+}
+
+function scheduleFertigArchiveDeferred_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    if (props.getProperty("fertigArchiveDeferred")) return;
+    removeFertigDeferredTriggers_();
+    props.setProperty("fertigArchiveDeferred", String(Date.now()));
+    ScriptApp.newTrigger(FERTIG_ARCHIVE_DEFERRED_FN)
+      .timeBased()
+      .after(FERTIG_ARCHIVE_DEFERRED_DELAY_MS)
+      .create();
+    if (typeof logDebug === "function") {
+      logDebug(
+        "archiveFertiggestelltRows: Nachhol-Trigger in " + FERTIG_ARCHIVE_DEFERRED_DELAY_MS / 60000 + " Min geplant"
+      );
+    }
+  } catch (e) {}
+}
+
+function archiveFertiggestelltRowsDeferred() {
+  removeFertigDeferredTriggers_();
+  try {
+    PropertiesService.getScriptProperties().deleteProperty("fertigArchiveDeferred");
+  } catch (e) {}
+  return archiveFertiggestelltRows({ deferred: true });
+}
+
+function archiveFertiggestelltRows(options) {
+  options = options || {};
+  const acquired = acquireFertigArchiveLock_();
+  const lock = acquired ? acquired.lock : null;
   if (!lock) {
+    if (!options.deferred && !options.manual) {
+      scheduleFertigArchiveDeferred_();
+    }
     try {
       if (typeof logDebug === "function") {
         logDebug("archiveFertiggestelltRows: LOCK nicht frei – Lauf übersprungen (Cleanup/Queue/Sync aktiv?)");
@@ -213,17 +280,27 @@ function installFertiggestelltArchiveTrigger_(silent) {
   }
   ScriptApp.newTrigger(FERTIG_ARCHIVE_TRIGGER_FN)
     .timeBased()
-    .atHour(FERTIG_ARCHIVE_TRIGGER_HOUR)
     .everyDays(1)
+    .atHour(FERTIG_ARCHIVE_TRIGGER_HOUR)
+    .nearMinute(FERTIG_ARCHIVE_TRIGGER_MINUTE)
     .inTimezone(FERTIG_ARCHIVE_TRIGGER_TZ)
     .create();
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      "fertigArchiveTriggerCfg",
+      FERTIG_ARCHIVE_TRIGGER_HOUR + ":" + FERTIG_ARCHIVE_TRIGGER_MINUTE + "@" + FERTIG_ARCHIVE_TRIGGER_TZ
+    );
+  } catch (eCfg) {}
   if (silent) return;
   try {
     SpreadsheetApp.getUi().alert(
       "Archiv-Trigger installiert (Status: Fertiggestellt, B2A1).\n" +
-        "Läuft täglich um " +
+        "Läuft täglich um ca. " +
         FERTIG_ARCHIVE_TRIGGER_HOUR +
-        ":00 Uhr (" +
+        ":" +
+        (FERTIG_ARCHIVE_TRIGGER_MINUTE < 10 ? "0" : "") +
+        FERTIG_ARCHIVE_TRIGGER_MINUTE +
+        " Uhr (" +
         FERTIG_ARCHIVE_TRIGGER_TZ +
         ")."
     );
@@ -253,7 +330,7 @@ function uninstallFertiggestelltArchiveTrigger() {
 }
 
 function runFertiggestelltArchiveNow() {
-  const res = archiveFertiggestelltRows();
+  const res = archiveFertiggestelltRows({ manual: true });
   try {
     if (res && res.ok) {
       SpreadsheetApp.getUi().alert(
@@ -270,9 +347,21 @@ function runFertiggestelltArchiveNow() {
 }
 
 function ensureFertiggestelltArchiveTrigger_() {
+  const cfgKey = "fertigArchiveTriggerCfg";
+  const cfgWant =
+    FERTIG_ARCHIVE_TRIGGER_HOUR + ":" + FERTIG_ARCHIVE_TRIGGER_MINUTE + "@" + FERTIG_ARCHIVE_TRIGGER_TZ;
+  let cfgHave = "";
+  try {
+    cfgHave = PropertiesService.getScriptProperties().getProperty(cfgKey) || "";
+  } catch (e) {}
   const triggers = ScriptApp.getProjectTriggers();
+  let hasMain = false;
   for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === FERTIG_ARCHIVE_TRIGGER_FN) return;
+    if (triggers[i].getHandlerFunction() === FERTIG_ARCHIVE_TRIGGER_FN) hasMain = true;
   }
+  if (hasMain && cfgHave === cfgWant) return;
   installFertiggestelltArchiveTrigger_(true);
+  try {
+    PropertiesService.getScriptProperties().setProperty(cfgKey, cfgWant);
+  } catch (e2) {}
 }

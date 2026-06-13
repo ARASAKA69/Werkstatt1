@@ -1407,6 +1407,7 @@ function getRefurbishmentCachePayload() {
         entries.push({
           stockId: stockId,
           regal: regal,
+          schaeden: String(data[i][22] || ""),
           kommBestellung: String(data[i][23] || ""),
           kommAnlieferung: String(data[i][24] || ""),
           regalReifen: String(data[i][29] || ""),

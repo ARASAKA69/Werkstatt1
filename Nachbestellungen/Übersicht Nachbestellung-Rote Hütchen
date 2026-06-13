@@ -403,6 +403,7 @@ var EVENT_QUEUE_TRIM_AT = 1000;
 var EVENT_QUEUE_KEEP = 500;
 var EVENT_QUEUE_CLEANUP_TRIGGER_FN = "cleanupEventQueueTrigger";
 var EVENT_QUEUE_CLEANUP_INTERVAL_MIN = 20;
+var EVENT_QUEUE_CLEANUP_LOCK_WAIT_MS = 90000;
 
 function normStatusKey_(val) {
   return String(val == null ? "" : val)
@@ -1660,6 +1661,17 @@ function processQueue() {
     if (Date.now() - runStartTime > QUEUE_TIME_BUDGET_MS) break;
     Utilities.sleep(150);
   }
+  try {
+    const lock = LockService.getScriptLock();
+    if (lock.tryLock(QUEUE_LOCK_WAIT_MS)) {
+      try {
+        const ss = getMainSS();
+        if (ss) cleanupEventQueue(ss);
+      } finally {
+        try { lock.releaseLock(); } catch (e) {}
+      }
+    }
+  } catch (e) {}
 }
 
 function runQueueProcessor(tagesMap, runStartTime) {
@@ -2652,6 +2664,7 @@ function cleanupNachbestellungStatusDate() {
     clearStaleStatusDateOnSheet(ss.getSheetByName("Input Exit"), 11, 12, "Input Exit");
     try { reconcileNachbestellungInputExit(ss); } catch (err) { logDebug("reconcile failed: " + err); }
     try { processPendingTageslisteArchives_(); } catch (err) { logDebug("pending Tagesliste archive failed: " + err); }
+    try { cleanupEventQueue(ss); } catch (err) { logDebug("cleanupEventQueue in status cleanup failed: " + err); }
   } finally {
     try { lock.releaseLock(); } catch (e) {}
   }
@@ -2674,8 +2687,25 @@ function cleanupEventQueue(ss) {
 }
 
 function cleanupEventQueueTrigger() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(CLEANUP_LOCK_WAIT_MS)) return;
+  let lock = null;
+  if (typeof acquireScriptLock_ === "function") {
+    lock = acquireScriptLock_(EVENT_QUEUE_CLEANUP_LOCK_WAIT_MS);
+  } else {
+    lock = LockService.getScriptLock();
+    try {
+      lock.waitLock(EVENT_QUEUE_CLEANUP_LOCK_WAIT_MS);
+    } catch (e) {
+      lock = null;
+    }
+  }
+  if (!lock) {
+    try {
+      logDebug(
+        "cleanupEventQueueTrigger: LOCK nicht frei nach " + EVENT_QUEUE_CLEANUP_LOCK_WAIT_MS + "ms – übersprungen"
+      );
+    } catch (e) {}
+    return;
+  }
   try {
     cleanupEventQueue(getMainSS());
   } catch (err) {
@@ -2696,13 +2726,27 @@ function installEventQueueCleanupTrigger() {
     .timeBased()
     .everyMinutes(EVENT_QUEUE_CLEANUP_INTERVAL_MIN)
     .create();
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      "eventQueueCleanupTriggerCfg",
+      String(EVENT_QUEUE_CLEANUP_INTERVAL_MIN)
+    );
+  } catch (e) {}
 }
 
 function ensureEventQueueCleanupTrigger_() {
+  const cfgKey = "eventQueueCleanupTriggerCfg";
+  const cfgWant = String(EVENT_QUEUE_CLEANUP_INTERVAL_MIN);
+  let cfgHave = "";
+  try {
+    cfgHave = PropertiesService.getScriptProperties().getProperty(cfgKey) || "";
+  } catch (e) {}
   const triggers = ScriptApp.getProjectTriggers();
+  let hasTrigger = false;
   for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === EVENT_QUEUE_CLEANUP_TRIGGER_FN) return;
+    if (triggers[i].getHandlerFunction() === EVENT_QUEUE_CLEANUP_TRIGGER_FN) hasTrigger = true;
   }
+  if (hasTrigger && cfgHave === cfgWant) return;
   installEventQueueCleanupTrigger();
 }
 
@@ -3036,6 +3080,14 @@ function installCleanupNachbestellungStatusDateTrigger() {
     .create();
 }
 
+function ensureCleanupNachbestellungStatusDateTrigger_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "cleanupNachbestellungStatusDate") return;
+  }
+  installCleanupNachbestellungStatusDateTrigger();
+}
+
 function onOpen() {
   try {
     ensureDashboardStatusSyncTrigger_();
@@ -3048,6 +3100,9 @@ function onOpen() {
   try {
     ensureEventQueueCleanupTrigger_();
   } catch (e0c) {}
+  try {
+    ensureCleanupNachbestellungStatusDateTrigger_();
+  } catch (e0d) {}
   try {
     if (typeof uxBaseMenueEinrichten === "function") {
       uxBaseMenueEinrichten();

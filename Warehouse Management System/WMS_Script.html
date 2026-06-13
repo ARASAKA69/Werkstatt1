@@ -566,6 +566,45 @@
     return "color:#d0d7de;";
   }
 
+  function overviewNeedsReifen(entry) {
+    return schaedenNeedsReifen(entry.schaeden) || /Reifen Seng/i.test(entry.kommBestellung || '');
+  }
+
+  function overviewReifenDelivered(entry) {
+    var rStatus = String(entry.regalReifen || '').toLowerCase().replace(/\s+/g, '');
+    if (rStatus === 'werkstatt1') return true;
+    if (/reifen\s+da\b/i.test(entry.kommAnlieferung || '')) return true;
+    if (rStatus === 'reifennichtvorhanden') return false;
+    return null;
+  }
+
+  function getOverviewReifenLabel(entry) {
+    if (!overviewNeedsReifen(entry)) {
+      var raw = String(entry.regalReifen || '').trim();
+      return raw || '-';
+    }
+    var delivered = overviewReifenDelivered(entry);
+    if (delivered === true) return 'Reifen da';
+    if (delivered === false) return 'Reifen nicht da';
+    return 'Reifen offen';
+  }
+
+  function getOverviewReifenStyle(entry) {
+    if (!overviewNeedsReifen(entry)) return getReifenStyle(entry.regalReifen);
+    var delivered = overviewReifenDelivered(entry);
+    if (delivered === true) return "color:#56d364;font-weight:800;";
+    if (delivered === false) return "color:#f85149;font-weight:800;";
+    return "color:#F27420;font-weight:800;";
+  }
+
+  function overviewPrintSchaedenHtml(text) {
+    if (!text || !String(text).trim()) return '-';
+    var html = escapeHtml(String(text)).replace(/\n/g, '<br>');
+    html = html.replace(/(Reifen VA ersetzen|Reifen HA ersetzen|Reifen \(2\) ersetzen|Reifen \(4\) ersetzen)/gi, '<span style="color:#c00;font-weight:700;">$1</span>');
+    html = html.replace(/(Reifen\s+(?:vorne|hinten)\s+(?:links?|rechts?)\s+(?:erneuern|ersetzen))/gi, '<span style="color:#c00;font-weight:700;">$1</span>');
+    return html;
+  }
+
   function formatOverviewComment(text, compareText) {
     var s = String(text || "");
     if(!s.trim()) return '<span style="color:#6e7681;">-</span>';
@@ -585,7 +624,9 @@
       var e = entries[i];
       var isDone = !!doneMap[e.stockId];
       var statusStyle = getStatusStyle(e.status);
-      var reifenStyle = getReifenStyle(e.regalReifen);
+      var reifenLabel = getOverviewReifenLabel(e);
+      var reifenStyle = getOverviewReifenStyle(e);
+      var schaedenHtml = formatSchaeden(e.schaeden);
       var bestellHtml = formatOverviewComment(e.kommBestellung, e.kommAnlieferung);
       var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
       html += '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + '" onclick="toggleOverviewEntry(' + i + ')">'  
@@ -594,15 +635,16 @@
         + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
         + '<td style="color:#E88435;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
         + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
-        + '<td><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></td>'
+        + '<td><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></td>'
         + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
         + '</tr>';
       html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
         + '<td colspan="7">'
         + '<div class="ov-detail-inner">'
+        + '<div class="ov-detail-box wide"><div class="ov-detail-lbl">Schäden (Manueller Input)</div><div class="ov-detail-val schaeden-list">' + schaedenHtml + '</div></div>'
         + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Bestellung</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
         + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Anlieferung</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">Regal Reifen</div><div class="ov-detail-val"><span style="' + reifenStyle + '">' + escapeHtml(e.regalReifen || '-') + '</span></div></div>'
+        + '<div class="ov-detail-box"><div class="ov-detail-lbl">Reifen</div><div class="ov-detail-val"><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></div></div>'
         + '</div>'
         + '</td>'
         + '</tr>';
@@ -683,7 +725,7 @@
     var rows = '';
     for (var j = 0; j < sorted.length; j++) {
       var e = sorted[j];
-      var reifen = String(e.regalReifen || '').trim() || '-';
+      var reifen = getOverviewReifenLabel(e);
       rows += '<tr>'
         + '<td>' + (j + 1) + '</td>'
         + '<td style="font-weight:700;">' + escapeHtml(e.stockId) + '</td>'
@@ -715,12 +757,15 @@
     var rows = '';
     for (var j = 0; j < sorted.length; j++) {
       var e = sorted[j];
-      var reifen = String(e.regalReifen || '').trim() || '-';
+      var reifen = getOverviewReifenLabel(e);
+      var reifenStyle = getOverviewReifenStyle(e);
+      var reifenColor = reifenStyle.indexOf('#56d364') !== -1 ? '#0a7a2f' : (reifenStyle.indexOf('#f85149') !== -1 ? '#b00020' : (reifenStyle.indexOf('#F27420') !== -1 ? '#b35c00' : '#111'));
       rows += '<tr>'
         + '<td>' + (j + 1) + '</td>'
         + '<td class="sid">' + escapeHtml(e.stockId) + '</td>'
         + '<td class="reg">' + escapeHtml(e.regal) + '</td>'
-        + '<td>' + escapeHtml(reifen) + '</td>'
+        + '<td style="font-weight:700;color:' + reifenColor + ';">' + escapeHtml(reifen) + '</td>'
+        + '<td class="note">' + overviewPrintSchaedenHtml(e.schaeden) + '</td>'
         + '<td class="note">' + overviewPrintCellText(e.kommBestellung) + '</td>'
         + '<td class="note">' + overviewPrintCellText(e.kommAnlieferung) + '</td>'
         + '</tr>';
@@ -731,19 +776,19 @@
       + 'body{font-family:Arial,sans-serif;margin:16px;color:#111;}'
       + 'h2{margin:0 0 4px 0;font-size:17px;}'
       + '.sub{color:#555;font-size:11px;margin-bottom:12px;}'
-      + 'table{width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;}'
-      + 'th,td{border:1px solid #999;padding:5px 8px;text-align:left;vertical-align:top;}'
-      + 'th{background:#eee;font-weight:700;font-size:10px;}'
+      + 'table{width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;}'
+      + 'th,td{border:1px solid #999;padding:4px 6px;text-align:left;vertical-align:top;}'
+      + 'th{background:#eee;font-weight:700;font-size:9px;}'
       + 'tr:nth-child(even){background:#f7f7f7;}'
       + 'td.sid,td.reg{font-weight:700;}'
       + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
-      + 'col.c-n{width:28px;}col.c-sid{width:72px;}col.c-reg{width:64px;}col.c-rf{width:56px;}col.c-et{width:auto;}col.c-an{width:auto;}'
+      + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-rf{width:52px;}col.c-sch{width:22%;}col.c-et{width:auto;}col.c-an{width:auto;}'
       + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
       + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
-      + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-rf"><col class="c-et"><col class="c-an"></colgroup>'
-      + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
+      + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-rf"><col class="c-sch"><col class="c-et"><col class="c-an"></colgroup>'
+      + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th><th>Sch\u00e4den</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</body></html>';
   }
@@ -5213,14 +5258,15 @@
 
     if (ovAllEntries && ovAllEntries.length) {
       out.push('### UEBERSICHT Stock-ID + Regal (' + ovAllEntries.length + ')');
-      out.push('Format: Stock-ID | Regal | Status | Reifen');
+      out.push('Format: Stock-ID | Regal | Status | Reifen | Schäden');
       for (i = 0; i < ovAllEntries.length; i++) {
         e = ovAllEntries[i];
         out.push([
           aiClean(e.stockId) || '-',
           aiClean(e.regal) || '-',
           aiClean(e.status) || '-',
-          aiClean(e.regalReifen) || '-'
+          aiClean(getOverviewReifenLabel(e)) || '-',
+          aiClean(e.schaeden) || '-'
         ].join(' | '));
       }
       out.push('');
