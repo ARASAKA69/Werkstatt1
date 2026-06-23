@@ -1851,7 +1851,7 @@ function uxNbDashZeileInsArchiv(dashRow) {
     if (!lock.tryLock(30000)) return { ok: false, fehler: "Anderer Lauf aktiv (Lock)." };
     try {
       var width = Math.max(layout.lastCol || 0, dashboard.getLastColumn());
-      var moved = archiveDashboardRowAt_(ss, dashboard, r, layout, stockId, entryId || null, width);
+      var moved = archiveDashboardRowAt_(ss, dashboard, r, layout, stockId, null, width);
       if (!moved) return { ok: false, fehler: "Zeile konnte nicht archiviert werden." };
       return { ok: true, stockId: stockId, entryId: entryId, dashRow: r };
     } finally {
