@@ -641,6 +641,16 @@ function checkReifenStock(tabName, stockId) {
     }
   }
 
+function formatReifenRegalLabel(val) {
+    var s = String(val || "").trim();
+    if (!s || String(s).toLowerCase() === "tagesliste") return "";
+    var m = s.match(/^Regal\s+(\d+)\.(\d+)$/i);
+    if (m) return "Regal " + m[1] + "." + m[2];
+    m = s.match(/^(\d+)\.(\d+)$/);
+    if (m) return "Regal " + m[1] + "." + m[2];
+    return "";
+  }
+
 function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
     try {
       stockId = normalizeStockId(stockId);
@@ -699,9 +709,12 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
 
       var hemauMsg = "";
       var locationText = "Lagerplatz unbekannt";
+      var regalLabel = "";
       if (hemauRow !== -1) {
         var oldLocation = String(sheetHemau.getRange(hemauRow, 28).getValue() || "").trim();
-        if (oldLocation !== "") locationText = "Kiste steht in Regal " + oldLocation;
+        regalLabel = formatReifenRegalLabel(oldLocation);
+        if (regalLabel) locationText = "Kiste steht in " + regalLabel;
+        else if (oldLocation !== "") locationText = "Kiste steht in " + oldLocation;
 
         var currentComment = String(sheetHemau.getRange(hemauRow, 25).getValue() || "");
         if (isDelivered) {
@@ -726,6 +739,7 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
         stockId: stockId,
         tireInfo: tireInfo,
         locationText: locationText,
+        regal: regalLabel,
         menge: mengeValNum,
         remainingUnbooked: remaining.length,
         remainingSize: remainingNext ? remainingNext.groesse : "",

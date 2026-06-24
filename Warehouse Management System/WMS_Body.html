@@ -435,7 +435,7 @@
         <button type="button" class="reifen-mode-btn is-active" id="reifenModeLieferBtn" onclick="setReifenMode('lieferschein')">📄 Lieferschein</button>
         <button type="button" class="reifen-mode-btn" id="reifenModeScanBtn" onclick="setReifenMode('scan')">📷 Scan</button>
       </div>
-      <div class="reifen-field" id="reifenTabField">
+      <div class="reifen-field" id="reifenTabField" style="display:none;">
         <div class="field-label">Tabellenblatt wählen</div>
         <select id="reifenTabSelect" onchange="onReifenTabChange()">
           <option value="">Lade Tabellenblätter...</option>
@@ -454,7 +454,7 @@
         <button class="reifen-action-btn" id="reifenBtnJa" onclick="executeReifenAction(true)">✅ DA (JA)</button>
         <button class="reifen-action-btn" id="reifenBtnNein" onclick="executeReifenAction(false)">❌ FEHLT (NEIN)</button>
       </div>
-      <div class="reifen-status" id="reifenStatus">Bitte Tabellenblatt auswählen und Stock-ID eingeben...</div>
+      <div class="reifen-status" id="reifenStatus">Stock-ID eingeben – wird automatisch in allen Blättern (heute + 7 Tage) gesucht.</div>
       <div class="reifen-scan-panel" id="reifenScanPanel" style="display:none;"></div>
       <div class="reifen-batch" id="reifenBatchPanel" style="display:none;">
         <div class="reifen-batch-head">
