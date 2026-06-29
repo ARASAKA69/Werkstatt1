@@ -47,15 +47,16 @@
 - [x] The entry inside search bar letters should be always upper case so even when i copy this or write in small and priunt it should print in upper case not in lower letter always be upper case cause StockID is always Uppercase, means not only visually uppercase as it is now, it also needs to be the input upper case when copy it out.
 - [x] when WSS inside Comment get added and end the order, then auto update Vasold list IF exist. if not create a new Entry with the link from refurbishment StockID on same row as stock id + add Windschutzscheibe "Vorhanden" on dropdown.
 - [x] Nachbestelleung when EXIT is Complete, some orders doesnt change inside the sheet even they exist. Fixing the entry, re-check if its completed before telling that its saved.
+- [x] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, so means to make sure all on page get translated to any language we need it to what the WMS windows shows for my collegues which dont speaks german it would be a great help.
+- [x] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred + when we save any order with comment and regal not only show saving ontop but lets also blur all out so we cant click and do anything until he is completly done and reloaded the order maybe make a small overlay with loading spinner and telling what its doing.
+
 -----
 
 
 
 # Offen
 
+- [] ESC to end an operation if needed eg. when saving anything.
 
-- [ ] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
+- [] Making sure Reifen annahme will also be minimied in the toolbar on bottom so we can reoppen it anytime we need it (this window is not in the list so it does not appear in the Toolbar on bottom as minimized) 
 
-- [ ] ESC to end an operation if needed.
-
-- [ ] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred + when we save any order with comment and regal not only show saving ontop but lets also blur all out so we cant click and do anything until he is completly done and reloaded the order maybe make a small overlay with loading spinner and telling what its doing.

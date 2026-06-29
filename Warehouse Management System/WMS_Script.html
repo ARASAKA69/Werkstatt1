@@ -472,6 +472,10 @@
     var tx = document.getElementById('hudBusyText');
     if(!el) return;
     if(active) {
+      try {
+        var ae = document.activeElement;
+        if(ae && typeof ae.blur === 'function' && ae !== document.body) ae.blur();
+      } catch(e) {}
       el.classList.add('open');
       el.setAttribute('aria-hidden', 'false');
       if(tx) tx.textContent = message || '';
@@ -3984,9 +3988,17 @@
   function saveKomm() {
     var text = getCommentText();
     setStatus("Speichere Kommentar...", "#F27420");
+    toggleUI(false);
+    setHudBusy(true, 'Speichere Kommentar…');
     google.script.run.withSuccessHandler(function(res) {
       setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
+      setHudBusy(false);
+      toggleUI(true);
       if (res.success) loadRefurbishmentCache(true);
+    }).withFailureHandler(function(err) {
+      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      setHudBusy(false);
+      toggleUI(true);
     }).saveKommentar(currentStock, text);
   }
 
@@ -4008,24 +4020,44 @@
     if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
     if(!regal) {
       setStatus("💾 Speichere nur Kommentar (kein Regal gewählt)...", "#F27420");
+      toggleUI(false);
+      setHudBusy(true, 'Speichere Kommentar… (kein Regal)');
       google.script.run.withSuccessHandler(function(res) {
         if(res.success) {
           pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#F27420" };
           document.getElementById('searchInput').value = currentStock;
+          setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
           loadRefurbishmentCache(true, function() { loadData(); });
         } else {
           setStatus("❌ " + res.message, "#f85149");
+          setHudBusy(false);
+          toggleUI(true);
         }
+      }).withFailureHandler(function(err) {
+        setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+        setHudBusy(false);
+        toggleUI(true);
       }).saveKommentarUndRegal(currentStock, text, "");
       return;
     }
     setStatus("💾 Speichere Kommentar + Regal...", "#F27420");
+    toggleUI(false);
+    setHudBusy(true, 'Speichere Kommentar + Regal…');
     google.script.run.withSuccessHandler(function(res) {
-      setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
       if(res.success) {
+        setStatus("✅ " + res.message, "#56d364");
         document.getElementById('searchInput').value = currentStock;
+        setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
         loadRefurbishmentCache(true, function() { loadData(); });
+      } else {
+        setStatus("❌ " + res.message, "#f85149");
+        setHudBusy(false);
+        toggleUI(true);
       }
+    }).withFailureHandler(function(err) {
+      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      setHudBusy(false);
+      toggleUI(true);
     }).saveKommentarUndRegal(currentStock, text, regal);
   }
 
@@ -4033,13 +4065,24 @@
     var regal = document.getElementById('shelfSelect').value;
     if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
     setStatus("Buche Regal...", "#F27420");
+    toggleUI(false);
+    setHudBusy(true, 'Buche Regal…');
     google.script.run.withSuccessHandler(function(res) {
-      setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
       if(res.success) {
+        setStatus("✅ " + res.message, "#56d364");
         document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
         document.getElementById('searchInput').value = currentStock;
+        setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
         loadRefurbishmentCache(true, function() { loadData(); });
+      } else {
+        setStatus("❌ " + res.message, "#f85149");
+        setHudBusy(false);
+        toggleUI(true);
       }
+    }).withFailureHandler(function(err) {
+      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      setHudBusy(false);
+      toggleUI(true);
     }).einlagern(currentStock, regal);
   }
 
@@ -4332,7 +4375,7 @@
       { id: 'overview', modalId: 'overviewModal', dialogCls: 'overview-dialog', headerCls: 'overview-header', title: 'Übersicht', icon: '📋',
         defaultSize: { w: 1280, h: 820 }, openFn: 'openStockOverview', minFn: 'minimizeStockOverview', closeFn: 'closeStockOverview',
         session: function() { try { return (typeof ovSessionActive !== 'undefined' && ovSessionActive) && (typeof ovAllEntries !== 'undefined' && ovAllEntries && ovAllEntries.length > 0); } catch(e) { return false; } } },
-      { id: 'ra', modalId: 'raModal', dialogCls: 'ra-dialog', headerCls: 'ra-header', title: 'Heutige Reifenausgabe', icon: '🛞',
+      { id: 'ra', modalId: 'raModal', dialogCls: 'ra-dialog', headerCls: 'ra-header', title: 'Reifen Ausgabe', icon: '🛞',
         defaultSize: { w: 1200, h: 800 }, openFn: 'openRaModal', minFn: 'minimizeRaModal', closeFn: null,
         session: function() { try { return (typeof raSessionActive !== 'undefined' && raSessionActive) && (typeof raAllEntries !== 'undefined' && raAllEntries && raAllEntries.length > 0); } catch(e) { return false; } } },
       { id: 'nb', modalId: 'nbModal', dialogCls: 'nb-dialog', headerCls: 'nb-header', title: 'Nachbestellungen', icon: '📦',
@@ -5061,6 +5104,151 @@
         var next = sw.classList.contains('is-light') ? 'dark' : 'light';
         apply(next);
       });
+    })();
+
+    (function initWmsLangSwitcher() {
+      var dd = byId('wmsLangDd');
+      var trigger = byId('wmsLangTrigger');
+      var panel = byId('wmsLangPanel');
+      var triggerFlag = byId('wmsLangTriggerFlag');
+      var triggerText = byId('wmsLangTriggerText');
+      if (!dd || !trigger || !panel) return;
+
+      var LANGS = [
+        { code: 'de', flag: '🇩🇪', name: 'Deutsch' },
+        { code: 'en', flag: '🇬🇧', name: 'English' },
+        { code: 'tr', flag: '🇹🇷', name: 'Türkçe' },
+        { code: 'pl', flag: '🇵🇱', name: 'Polski' },
+        { code: 'ro', flag: '🇷🇴', name: 'Română' },
+        { code: 'ru', flag: '🇷🇺', name: 'Русский' },
+        { code: 'uk', flag: '🇺🇦', name: 'Українська' },
+        { code: 'it', flag: '🇮🇹', name: 'Italiano' },
+        { code: 'hr', flag: '🇭🇷', name: 'Hrvatski' },
+        { code: 'sr', flag: '🇷🇸', name: 'Srpski' },
+        { code: 'bs', flag: '🇧🇦', name: 'Bosanski' },
+        { code: 'sq', flag: '🇦🇱', name: 'Shqip' },
+        { code: 'bg', flag: '🇧🇬', name: 'Български' },
+        { code: 'cs', flag: '🇨🇿', name: 'Čeština' },
+        { code: 'hu', flag: '🇭🇺', name: 'Magyar' },
+        { code: 'fr', flag: '🇫🇷', name: 'Français' },
+        { code: 'es', flag: '🇪🇸', name: 'Español' },
+        { code: 'pt', flag: '🇵🇹', name: 'Português' },
+        { code: 'ar', flag: '🇸🇦', name: 'العربية' }
+      ];
+      var LS_KEY = 'arasaka_wms_lang';
+
+      function getStored() {
+        try { return localStorage.getItem(LS_KEY) || 'de'; } catch (e) { return 'de'; }
+      }
+      function store(code) {
+        try { localStorage.setItem(LS_KEY, code); } catch (e) {}
+      }
+      function findLang(code) {
+        for (var i = 0; i < LANGS.length; i++) { if (LANGS[i].code === code) return LANGS[i]; }
+        return LANGS[0];
+      }
+      function setCookie(val) {
+        document.cookie = 'googtrans=' + val + ';path=/';
+        try { document.cookie = 'googtrans=' + val + ';path=/;domain=' + location.hostname; } catch (e) {}
+      }
+      function setOpen(isOpen) {
+        panel.hidden = !isOpen;
+        trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        dd.classList.toggle('is-open', isOpen);
+      }
+      function reflect(code) {
+        var l = findLang(code);
+        if (triggerFlag) triggerFlag.textContent = l.flag;
+        if (triggerText) triggerText.textContent = l.name;
+        var items = panel.querySelectorAll('.wms-lang-item');
+        for (var i = 0; i < items.length; i++) {
+          items[i].classList.toggle('is-active', items[i].getAttribute('data-code') === code);
+        }
+      }
+      function clearCookie() {
+        var expo = ';expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/';
+        document.cookie = 'googtrans=' + expo;
+        try { document.cookie = 'googtrans=' + expo + ';domain=' + location.hostname; } catch (e) {}
+        try { document.cookie = 'googtrans=' + expo + ';domain=.' + location.hostname; } catch (e) {}
+      }
+      function applyTranslation(code, allowReload) {
+        if (!code || code === 'de') {
+          clearCookie();
+          var rtries = 0;
+          (function restoreOriginal() {
+            var combo = document.querySelector('.goog-te-combo');
+            if (combo) {
+              combo.value = '';
+              combo.dispatchEvent(new Event('change'));
+              setTimeout(function() {
+                var c2 = document.querySelector('.goog-te-combo');
+                if (c2) { c2.value = ''; c2.dispatchEvent(new Event('change')); }
+              }, 250);
+            } else if (rtries++ < 25) {
+              setTimeout(restoreOriginal, 250);
+            }
+          })();
+          return;
+        }
+        setCookie('/de/' + code);
+        var tries = 0;
+        (function trySet() {
+          var combo = document.querySelector('.goog-te-combo');
+          if (combo) {
+            combo.value = code;
+            combo.dispatchEvent(new Event('change'));
+          } else if (tries++ < 25) {
+            setTimeout(trySet, 300);
+          }
+        })();
+      }
+      function selectLang(code) {
+        store(code);
+        reflect(code);
+        setOpen(false);
+        applyTranslation(code, true);
+      }
+
+      LANGS.forEach(function(l) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'wms-lang-item';
+        b.setAttribute('role', 'option');
+        b.setAttribute('data-code', l.code);
+        b.setAttribute('translate', 'no');
+        b.innerHTML = '<span class="wms-lang-item-flag">' + l.flag + '</span>'
+          + '<span class="wms-lang-item-name">' + l.name + '</span>'
+          + '<span class="wms-lang-item-check">✓</span>';
+        b.addEventListener('click', function(e) { e.stopPropagation(); selectLang(l.code); });
+        panel.appendChild(b);
+      });
+
+      trigger.addEventListener('click', function(e) { e.stopPropagation(); setOpen(panel.hidden); });
+      panel.addEventListener('click', function(e) { e.stopPropagation(); });
+      document.addEventListener('click', function(e) {
+        if (!dd.contains(e.target)) setOpen(false);
+      }, true);
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') setOpen(false);
+      });
+
+      function killGoogleBanner() {
+        try {
+          var frames = document.querySelectorAll('.goog-te-banner-frame, iframe.goog-te-banner-frame, .skiptranslate iframe');
+          for (var i = 0; i < frames.length; i++) {
+            if (frames[i] && frames[i].style) frames[i].style.setProperty('display', 'none', 'important');
+          }
+          if (document.body) document.body.style.setProperty('top', '0px', 'important');
+          var html = document.documentElement;
+          if (html) html.style.setProperty('top', '0px', 'important');
+        } catch (e) {}
+      }
+      killGoogleBanner();
+      setInterval(killGoogleBanner, 700);
+
+      var current = getStored();
+      reflect(current);
+      if (current && current !== 'de') applyTranslation(current, false);
     })();
 
     (function initCollapsibleCards() {

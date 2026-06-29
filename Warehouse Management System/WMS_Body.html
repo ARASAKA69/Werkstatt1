@@ -6,7 +6,7 @@
           <button type="button" class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
           <button type="button" class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
           <button type="button" class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
-          <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Heutige Reifenausgabe</button>
+          <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Reifen Ausgabe</button>
         </div>
         <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
           <button type="button" class="wms-menutrigger" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
@@ -41,7 +41,7 @@
               <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="ra" role="menuitem" onclick="openRaModal(); closeWmsMainMenu();">
                 <span class="wms-menuitem-icon">🚚</span>
                 <span class="wms-menuitem-body">
-                  <span class="wms-menuitem-title">Heutige Reifenausgabe</span>
+                  <span class="wms-menuitem-title">Reifen Ausgabe</span>
                   <span class="wms-menuitem-sub">Heute &amp; Morgen</span>
                 </span>
               </button>
@@ -96,6 +96,18 @@
                 </button>
               </div>
             </div>
+            <div class="wms-menugroup" role="presentation" translate="no">
+              <div class="wms-menugroup-label">Sprache / Language</div>
+              <div class="wms-lang-dd" id="wmsLangDd">
+                <button type="button" class="wms-lang-trigger" id="wmsLangTrigger" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="wms-lang-trigger-flag" id="wmsLangTriggerFlag">🇩🇪</span>
+                  <span class="wms-lang-trigger-text" id="wmsLangTriggerText">Deutsch</span>
+                  <span class="wms-lang-chevron" aria-hidden="true">▼</span>
+                </button>
+                <div class="wms-lang-panel" id="wmsLangPanel" role="listbox" hidden></div>
+              </div>
+              <div class="wms-lang-note">Automatische Übersetzung via Google · Original = Deutsch</div>
+            </div>
           </div>
         </div>
       </nav>
@@ -104,7 +116,7 @@
           <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Temp/main/autohero-logo.png" alt="AUTOHERO">
           <span class="eyebrow">Warehouse Management System</span>
         </div>
-        <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v1.8</span>
+        <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v1.9</span>
       </div>
       <div class="topbar-cache-cluster">
         <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
@@ -158,7 +170,7 @@
     <div class="workspace-split">
       <div class="workspace-panel">
         <div class="sub-title">Kommentar Anlieferung</div>
-        <div id="editAnlieferung" class="comment-editor" contenteditable="true" spellcheck="false" data-placeholder="Notizen..." title="Strg+S: Nur Kommentar speichern (ohne Status oder Regal)"></div>
+        <div id="editAnlieferung" class="comment-editor notranslate" translate="no" contenteditable="true" spellcheck="false" data-placeholder="Notizen..." title="Strg+S: Nur Kommentar speichern (ohne Status oder Regal)"></div>
       </div>
 
       <div class="workspace-panel">
@@ -323,7 +335,7 @@
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
       <div class="ra-header-top">
-        <div class="ra-title">🛞 Heutige Reifenausgabe</div>
+        <div class="ra-title">🛞 Reifen Ausgabe</div>
         <span id="raTotalBadge" class="ra-total-badge ra-total-loading">...</span>
       </div>
       <div class="ra-toolbar">
