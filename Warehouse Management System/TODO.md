@@ -44,7 +44,12 @@
 - [x] When set any Nachbestellkung into Teilweise angelierfert, it should be able to set a Regal place to store this first box. Done and fixed too.
 - [x] Kisten Ausgabe System (Carol + Drive Script): NA / Ausgabe / Retoure Kommentare wie abgesprochen, Dupe-Handling mit Timestamp + gleicher Dateiname, Ordner „Kisten Duplicate Uploads“ + Logs, Bridge per POST JSON, HUD clean ohne Tech-Kram (Debug nur Konsole mit Flag). Details siehe `Kisten Ausgabe System/TODO.md`.
 - [x] Refurbisment List Cache im Main HUD: ein Sheet-Pull baut rows + Regal-Counts (inkl. Nachbestellungen-Merge wie im Server) — Stock-ID + Bestellnummer-Suche erst lokal, sonst Fallback Server. Background-Refresh ca. 75s + Tab wieder aktiv. Nach Saves / Reifen-Buchung / Carol-Flow wird Cache neu geladen; Regal-Dropdown-Refresh nutzt Cache wenn da statt getShelfCounts every 2s.
+- [x] The entry inside search bar letters should be always upper case so even when i copy this or write in small and priunt it should print in upper case not in lower letter always be upper case cause StockID is always Uppercase, means not only visually uppercase as it is now, it also needs to be the input upper case when copy it out.
+- [x] when WSS inside Comment get added and end the order, then auto update Vasold list IF exist. if not create a new Entry with the link from refurbishment StockID on same row as stock id + add Windschutzscheibe "Vorhanden" on dropdown.
+- [x] Nachbestelleung when EXIT is Complete, some orders doesnt change inside the sheet even they exist. Fixing the entry, re-check if its completed before telling that its saved.
 -----
+
+
 
 # Offen
 
@@ -52,7 +57,5 @@
 - [ ] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, and making sure also the 2 first cards with values input get Translated. For now oonly German and English. German is Main language, english will use the translator before load in all data of any order.
 
 - [ ] ESC to end an operation if needed.
-- [ ] when WSS inside Comment get added and end the order, then auto update Vasold list IF exist. if not create a new Entry with the link from refurbishment StockID on same row as stock id + add Windschutzscheibe "Vorhanden" on dropdown.
-- [ ] The entry inside search bar letters should be always upper case so even when i copy this or write in small and priunt it should print in upper case not in lower letter always be upper case cause StockID is always Uppercase, means not only visually uppercase as it is now, it also needs to be the input upper case when copy it out.
-- [ ] Nachbestelleung when EXIT is Complete, some orders doesnt change inside the sheet even they exist. Fixing the entry, re-check if its completed before telling that its saved.
-- [ ] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred.
+
+- [ ] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred + when we save any order with comment and regal not only show saving ontop but lets also blur all out so we cant click and do anything until he is completly done and reloaded the order maybe make a small overlay with loading spinner and telling what its doing.
