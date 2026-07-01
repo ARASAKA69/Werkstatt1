@@ -415,16 +415,28 @@ function pzExtractOrderNumber_(text) {
   return "";
 }
 
-function pzExtractReference_(text) {
+function pzIsRejectedRef_(v) {
+  return /^(PDE|RDE)/i.test(String(v || "").trim());
+}
+
+function pzExtractReference_(text, orderNumber) {
   var t = String(text || "");
-  var m = t.match(/Kunden-?Referenz[:\s]+([A-Z0-9]{4,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1])) return m[1];
+  var order = String(orderNumber || "").toUpperCase().replace(/\s+/g, "");
+
+  var m = t.match(/Kunden-?Referenz[:\s]+([A-Z]{1,4}\d{3,})/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
 
   m = t.match(/Referenznummer[:\s]*[\r\n: ]+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !/^N4P/i.test(m[1])) return m[1];
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) return m[1];
 
   m = t.match(/N4P\s?\d{5,}\s+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1])) return m[1];
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
+
+  m = t.match(/(N4P\s?\d{5,})/i);
+  if (m && m[1]) {
+    var cand = m[1].replace(/\s+/g, "").toUpperCase();
+    if (cand !== order) return cand;
+  }
 
   return "";
 }
@@ -547,7 +559,7 @@ function pzBuildRowFromPdf_(folder, message, attachment, sender, subject, msgDat
   var downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
 
   var order = pzExtractOrderNumber_(haystack);
-  var ref = pzExtractReference_(haystack);
+  var ref = pzExtractReference_(haystack, order);
   var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
 
   return [
@@ -577,7 +589,7 @@ function pzBuildRowFromEmail_(message, sender, subject, msgDate, dedupKey) {
   var haystack = plain + "\n" + subject;
 
   var order = pzExtractOrderNumber_(haystack);
-  var ref = pzExtractReference_(haystack);
+  var ref = pzExtractReference_(haystack, order);
   var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
 
   return [
@@ -607,7 +619,7 @@ function pzSenderLabel_(fromRaw) {
   return m ? m[1] : String(fromRaw || "").trim();
 }
 
-function pzCollectRows_(existingKeys, incrementalSince) {
+function pzCollectRows_(sheet, existingKeys, incrementalSince) {
   var cutoff = pzGetSyncCutoff_();
   var isIncremental = incrementalSince instanceof Date && !isNaN(incrementalSince.getTime());
   var searchAfter = cutoff;
@@ -782,7 +794,7 @@ function reprocessPackzettelMissing() {
 
     var haystack = text + "\n" + String(row[8] || "");
     var order = pzExtractOrderNumber_(haystack);
-    var ref = pzExtractReference_(haystack);
+    var ref = pzExtractReference_(haystack, order);
     var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
     var kennz = pzExtractKennzeichen_(haystack);
     var oDate = pzExtractOrderDate_(haystack);
@@ -913,7 +925,7 @@ function testPackzettelOcr() {
 
   out.finalTextLength = text.length;
   out.orderNumber = pzExtractOrderNumber_(text);
-  out.referenceNumber = pzExtractReference_(text);
+  out.referenceNumber = pzExtractReference_(text, out.orderNumber);
   out.stockId = pzDeriveStockFromRef_(pzExtractStockId_(text), out.referenceNumber);
   out.kennzeichen = pzExtractKennzeichen_(text);
   out.textPreview = text.substring(0, 400);
