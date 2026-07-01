@@ -333,3 +333,591 @@ function testSyncNow() {
 function testSyncFull() {
   Logger.log(JSON.stringify(syncGmailOrdersFull(), null, 2));
 }
+
+var PACKZETTEL_TAB = "Packzettel";
+var PACKZETTEL_DRIVE_FOLDER = "WMS Belege Archiv";
+var PACKZETTEL_SYNC_WEEKS = 1;
+var PACKZETTEL_SHARE_ANYONE = true;
+var PACKZETTEL_MAX_TEXT = 45000;
+var PACKZETTEL_MAX_DOCS_PER_RUN = 150;
+var PACKZETTEL_TIME_BUDGET_MS = 1200000;
+var PACKZETTEL_ENABLE_OCR = true;
+var PACKZETTEL_SYNC_PROPERTY_KEY = "PACKZETTEL_LAST_SYNC_MS";
+var PACKZETTEL_QUERY =
+  '(from:noreply@n4.parts OR from:noreply@wm.de OR subject:Packzettel OR subject:"Online Bestellung")';
+
+function pzGetSyncCutoff_() {
+  var cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - PACKZETTEL_SYNC_WEEKS * 7);
+  cutoff.setHours(0, 0, 0, 0);
+  return cutoff;
+}
+
+function pzGetOrCreateFolder_() {
+  var it = DriveApp.getFoldersByName(PACKZETTEL_DRIVE_FOLDER);
+  if (it.hasNext()) return it.next();
+  return DriveApp.createFolder(PACKZETTEL_DRIVE_FOLDER);
+}
+
+function pzGetOrCreateSheet_() {
+  var ss = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+  var sheet = ss.getSheetByName(PACKZETTEL_TAB);
+  if (!sheet) sheet = ss.insertSheet(PACKZETTEL_TAB);
+  var header = [
+    "MessageDate", "Source", "Kind", "OrderNumber", "ReferenceNumber",
+    "StockID", "Kennzeichen", "OrderDate", "Subject", "DriveFileId",
+    "PreviewUrl", "DownloadUrl", "BodyHtml", "RawText", "DedupKey"
+  ];
+  var firstCell = String(sheet.getRange(1, 1).getValue() || "");
+  if (sheet.getLastRow() < 1 || firstCell !== "MessageDate") {
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, header.length).setValues([header]);
+    sheet.getRange(1, header.length + 2).setValue("LastSync");
+  }
+  return sheet;
+}
+
+function pzReadExistingKeys_(sheet) {
+  var keys = {};
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return keys;
+  var col = sheet.getRange(2, 15, lastRow - 1, 1).getValues();
+  for (var i = 0; i < col.length; i++) {
+    var k = String(col[i][0] || "").trim();
+    if (k) keys[k] = true;
+  }
+  return keys;
+}
+
+function pzExtractField_(text, patterns) {
+  var t = String(text || "");
+  for (var i = 0; i < patterns.length; i++) {
+    var m = t.match(patterns[i]);
+    if (m && m[1]) return String(m[1]).replace(/\s+/g, " ").trim();
+  }
+  return "";
+}
+
+function pzIsLabelToken_(v) {
+  return /^(Referenznummer|Referenz|Kundenname|Kennzeichen|Bestellnummer|Bestelldatum|Datum|Name|NA)$/i.test(String(v || "").trim());
+}
+
+function pzExtractOrderNumber_(text) {
+  var t = String(text || "");
+  var v = pzExtractField_(t, [
+    /Online\s+Bestellung\s+([0-9]{5,})/i,
+    /Bestellung\s*Nr\.?\s*([0-9]{5,})/i,
+    /Bestellnummer[:\s]+([0-9]{5,})/i
+  ]);
+  if (v) return v.replace(/\s+/g, "");
+  var m = t.match(/(N4P\s?\d{5,})/i);
+  if (m && m[1]) return m[1].replace(/\s+/g, "");
+  return "";
+}
+
+function pzExtractReference_(text) {
+  var t = String(text || "");
+  var m = t.match(/Kunden-?Referenz[:\s]+([A-Z0-9]{4,})/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1])) return m[1];
+
+  m = t.match(/Referenznummer[:\s]*[\r\n: ]+([A-Z]{1,3}\d{3,})/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !/^N4P/i.test(m[1])) return m[1];
+
+  m = t.match(/N4P\s?\d{5,}\s+([A-Z]{1,3}\d{3,})/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1])) return m[1];
+
+  return "";
+}
+
+function pzExtractKennzeichen_(text) {
+  return pzExtractField_(text, [
+    /Kennzeichen[:\s]+([A-ZÄÖÜ]{1,3}[- ][A-Z]{1,2}[- ]?\d{1,4})\b/i
+  ]);
+}
+
+function pzExtractOrderDate_(text) {
+  return pzExtractField_(text, [
+    /Bestelldatum[:\s]+(\d{1,2}\.\d{1,2}\.\d{2,4})/i,
+    /vom\s+(\d{1,2}\.\d{1,2}\.\d{2,4})/i
+  ]);
+}
+
+function pzExtractStockId_(text) {
+  var m = String(text || "").match(/STOCK_?ID\s*[:\-]?\s*([A-Z]{2}\d{3,})/i);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  return "";
+}
+
+function pzDeriveStockFromRef_(stockId, reference) {
+  if (stockId) return stockId;
+  var ref = String(reference || "").trim();
+  if (/^[A-Z]{2,3}\d{3,}$/i.test(ref) && !/^N4P/i.test(ref)) return ref.toUpperCase();
+  return "";
+}
+
+function pzDriveConvertToDoc_(blob) {
+  var stamp = "pz_ocr_temp_" + Date.now();
+  if (Drive.Files && typeof Drive.Files.create === "function") {
+    var resourceV3 = { name: stamp, mimeType: "application/vnd.google-apps.document" };
+    return Drive.Files.create(resourceV3, blob, { ocrLanguage: "de" });
+  }
+  var resourceV2 = { title: stamp, mimeType: "application/vnd.google-apps.document" };
+  return Drive.Files.insert(resourceV2, blob, { ocr: true, ocrLanguage: "de", convert: true });
+}
+
+function pzDriveRemove_(fileId) {
+  try {
+    if (Drive.Files && typeof Drive.Files.remove === "function") {
+      Drive.Files.remove(fileId);
+    } else if (Drive.Files && typeof Drive.Files.trash === "function") {
+      Drive.Files.trash(fileId);
+    }
+  } catch (e) {}
+}
+
+function pzOcrPdfText_(blob) {
+  if (typeof Drive === "undefined" || !Drive.Files) return "";
+  var docId = null;
+  try {
+    var inserted = pzDriveConvertToDoc_(blob);
+    docId = inserted.id;
+  } catch (e) {
+    return "";
+  }
+
+  var text = "";
+  try {
+    text = DocumentApp.openById(docId).getBody().getText();
+  } catch (readErr) {
+    text = "";
+  }
+
+  if (!text) {
+    try {
+      var url = "https://www.googleapis.com/drive/v3/files/" + docId + "/export?mimeType=text%2Fplain";
+      var resp = UrlFetchApp.fetch(url, {
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+      if (resp.getResponseCode() === 200) text = resp.getContentText();
+    } catch (expErr) {
+      text = text || "";
+    }
+  }
+
+  pzDriveRemove_(docId);
+  return text || "";
+}
+
+function pzShareFile_(file) {
+  try {
+    if (PACKZETTEL_SHARE_ANYONE) {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } else {
+      file.setSharing(DriveApp.Access.DOMAIN_WITH_LINK, DriveApp.Permission.VIEW);
+    }
+  } catch (e) {}
+}
+
+function pzSafeFileName_(name, messageId) {
+  var base = String(name || "Beleg.pdf").replace(/[\\/:*?"<>|]+/g, "_").trim();
+  if (!base) base = "Beleg.pdf";
+  base = base.replace(/\.pdf$/i, "");
+  var idTag = String(messageId || "").slice(-10);
+  return base + "__" + idTag + ".pdf";
+}
+
+function pzBuildRowFromPdf_(folder, message, attachment, sender, subject, msgDate, dedupKey) {
+  var blob = attachment.copyBlob();
+  var fileName = pzSafeFileName_(attachment.getName(), message.getId());
+  var file;
+  var existing = folder.getFilesByName(fileName);
+  if (existing.hasNext()) {
+    file = existing.next();
+  } else {
+    file = folder.createFile(blob).setName(fileName);
+    pzShareFile_(file);
+  }
+  var fileId = file.getId();
+
+  var ocrText = PACKZETTEL_ENABLE_OCR ? pzOcrPdfText_(blob) : "";
+  var haystack = ocrText + "\n" + subject + "\n" + (message.getPlainBody ? message.getPlainBody() : "");
+
+  var previewUrl = "https://drive.google.com/file/d/" + fileId + "/preview";
+  var downloadUrl = "https://drive.google.com/uc?export=download&id=" + fileId;
+
+  var order = pzExtractOrderNumber_(haystack);
+  var ref = pzExtractReference_(haystack);
+  var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+
+  return [
+    msgDate,
+    sender,
+    "pdf",
+    order,
+    ref,
+    stock,
+    pzExtractKennzeichen_(haystack),
+    pzExtractOrderDate_(haystack),
+    subject,
+    fileId,
+    previewUrl,
+    downloadUrl,
+    "",
+    ocrText ? ocrText.substring(0, PACKZETTEL_MAX_TEXT) : "",
+    dedupKey
+  ];
+}
+
+function pzBuildRowFromEmail_(message, sender, subject, msgDate, dedupKey) {
+  var bodyHtml = "";
+  var plain = "";
+  try { bodyHtml = message.getBody() || ""; } catch (e) {}
+  try { plain = message.getPlainBody() || ""; } catch (e) {}
+  var haystack = plain + "\n" + subject;
+
+  var order = pzExtractOrderNumber_(haystack);
+  var ref = pzExtractReference_(haystack);
+  var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+
+  return [
+    msgDate,
+    sender,
+    "email",
+    order,
+    ref,
+    stock,
+    pzExtractKennzeichen_(haystack),
+    pzExtractOrderDate_(haystack),
+    subject,
+    "",
+    "",
+    "",
+    bodyHtml ? bodyHtml.substring(0, PACKZETTEL_MAX_TEXT) : "",
+    plain ? plain.substring(0, PACKZETTEL_MAX_TEXT) : "",
+    dedupKey
+  ];
+}
+
+function pzSenderLabel_(fromRaw) {
+  var f = String(fromRaw || "").toLowerCase();
+  if (f.indexOf("n4.parts") !== -1) return "n4.parts";
+  if (f.indexOf("wm.de") !== -1) return "wm.de";
+  var m = String(fromRaw || "").match(/@([^>\s]+)/);
+  return m ? m[1] : String(fromRaw || "").trim();
+}
+
+function pzCollectRows_(existingKeys, incrementalSince) {
+  var cutoff = pzGetSyncCutoff_();
+  var isIncremental = incrementalSince instanceof Date && !isNaN(incrementalSince.getTime());
+  var searchAfter = cutoff;
+  if (isIncremental) {
+    searchAfter = new Date(incrementalSince.getTime() - GMAIL_INCREMENTAL_OVERLAP_MS);
+    if (searchAfter.getTime() < cutoff.getTime()) searchAfter = cutoff;
+  }
+  var query = PACKZETTEL_QUERY + " after:" + getGmailSyncAfterQuery_(searchAfter);
+  var seenThreads = {};
+  var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, isIncremental ? 5 : 15);
+
+  var folder = pzGetOrCreateFolder_();
+  var buffer = [];
+  var processed = 0;
+  var added = 0;
+  var startMs = Date.now();
+  var reachedLimit = false;
+
+  function budgetLeft() {
+    if (processed >= PACKZETTEL_MAX_DOCS_PER_RUN) return false;
+    if (Date.now() - startMs > PACKZETTEL_TIME_BUDGET_MS) return false;
+    return true;
+  }
+  function flush() {
+    if (buffer.length) {
+      pzAppendRows_(sheet, buffer);
+      added += buffer.length;
+      buffer = [];
+    }
+  }
+
+  for (var t = 0; t < threads.length && budgetLeft(); t++) {
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      if (!budgetLeft()) { reachedLimit = true; break; }
+      var message = messages[m];
+      var msgDate = message.getDate();
+      if (msgDate.getTime() < cutoff.getTime()) continue;
+
+      var subject = String(message.getSubject() || "");
+      var sender = pzSenderLabel_(message.getFrom());
+      var messageId = message.getId();
+      var attachments = message.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
+      var pdfs = [];
+      for (var a = 0; a < attachments.length; a++) {
+        var ct = String(attachments[a].getContentType() || "").toLowerCase();
+        var an = String(attachments[a].getName() || "").toLowerCase();
+        if (ct.indexOf("pdf") !== -1 || an.indexOf(".pdf") !== -1) pdfs.push(attachments[a]);
+      }
+
+      if (pdfs.length) {
+        for (var p = 0; p < pdfs.length; p++) {
+          if (!budgetLeft()) { reachedLimit = true; break; }
+          var dk = messageId + "|" + (pdfs[p].getName() || ("pdf" + p));
+          if (existingKeys[dk]) continue;
+          existingKeys[dk] = true;
+          buffer.push(pzBuildRowFromPdf_(folder, message, pdfs[p], sender, subject, msgDate, dk));
+          processed++;
+          if (buffer.length >= 8) flush();
+        }
+      } else if (sender === "wm.de" || subject.toLowerCase().indexOf("online bestellung") !== -1) {
+        var dke = messageId + "|body";
+        if (existingKeys[dke]) continue;
+        existingKeys[dke] = true;
+        buffer.push(pzBuildRowFromEmail_(message, sender, subject, msgDate, dke));
+        processed++;
+        if (buffer.length >= 8) flush();
+      }
+    }
+  }
+
+  flush();
+  return { added: added, reachedLimit: reachedLimit };
+}
+
+function pzAppendRows_(sheet, rows) {
+  if (rows.length) {
+    var startRow = Math.max(2, sheet.getLastRow() + 1);
+    sheet.getRange(startRow, 1, rows.length, 15).setValues(rows);
+  }
+  SpreadsheetApp.flush();
+}
+
+function pzSetLastSync_(sheet, syncedAt) {
+  sheet.getRange(1, 17).setValue(syncedAt);
+  PropertiesService.getScriptProperties().setProperty(PACKZETTEL_SYNC_PROPERTY_KEY, String(syncedAt.getTime()));
+  SpreadsheetApp.flush();
+}
+
+function pzGetLastSync_(sheet) {
+  var cellVal = sheet.getRange(1, 17).getValue();
+  if (cellVal instanceof Date && !isNaN(cellVal.getTime())) return cellVal;
+  var props = PropertiesService.getScriptProperties().getProperty(PACKZETTEL_SYNC_PROPERTY_KEY);
+  if (props) {
+    var parsed = new Date(Number(props));
+    if (!isNaN(parsed.getTime())) return parsed;
+  }
+  return null;
+}
+
+function syncPackzettelToSheet() {
+  var sheet = pzGetOrCreateSheet_();
+  var lastSync = pzGetLastSync_(sheet);
+  var existingKeys = pzReadExistingKeys_(sheet);
+
+  try {
+    var result = pzCollectRows_(sheet, existingKeys, lastSync);
+  } catch (e) {
+    if (isGmailQuotaError_(e)) {
+      return { success: false, error: "Gmail-Tageslimit erreicht", message: String(e.message || e) };
+    }
+    throw e;
+  }
+
+  var partial = !!result.reachedLimit;
+  if (!partial) pzSetLastSync_(sheet, new Date());
+  return { success: true, added: result.added, partial: partial, incremental: !!lastSync };
+}
+
+function syncPackzettelFull() {
+  var sheet = pzGetOrCreateSheet_();
+  var existingKeys = pzReadExistingKeys_(sheet);
+  var result = pzCollectRows_(sheet, existingKeys, null);
+  var partial = !!result.reachedLimit;
+  if (!partial) pzSetLastSync_(sheet, new Date());
+  return { success: true, added: result.added, partial: partial, full: true };
+}
+
+function reprocessPackzettelMissing() {
+  var sheet = pzGetOrCreateSheet_();
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return { success: true, updated: 0, ocred: 0, remaining: 0 };
+
+  var n = lastRow - 1;
+  var values = sheet.getRange(2, 1, n, 15).getValues();
+  var extractBlock = sheet.getRange(2, 4, n, 5).getValues();
+  var rawBlock = sheet.getRange(2, 14, n, 1).getValues();
+
+  var startMs = Date.now();
+  var updated = 0;
+  var ocred = 0;
+  var remaining = 0;
+
+  for (var i = 0; i < values.length; i++) {
+    var row = values[i];
+    var kind = String(row[2] || "");
+    if (kind !== "pdf") continue;
+
+    var text = String(row[13] || "");
+    var fileId = String(row[9] || "").trim();
+
+    if (!text && fileId) {
+      if (ocred >= PACKZETTEL_MAX_DOCS_PER_RUN || (Date.now() - startMs > PACKZETTEL_TIME_BUDGET_MS)) {
+        remaining++;
+        continue;
+      }
+      try {
+        text = pzOcrPdfText_(DriveApp.getFileById(fileId).getBlob());
+      } catch (e) {
+        text = "";
+      }
+      if (text) {
+        ocred++;
+        rawBlock[i][0] = text.substring(0, PACKZETTEL_MAX_TEXT);
+      } else {
+        remaining++;
+        continue;
+      }
+    }
+
+    if (!text) continue;
+
+    var haystack = text + "\n" + String(row[8] || "");
+    var order = pzExtractOrderNumber_(haystack);
+    var ref = pzExtractReference_(haystack);
+    var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+    var kennz = pzExtractKennzeichen_(haystack);
+    var oDate = pzExtractOrderDate_(haystack);
+
+    extractBlock[i][0] = order;
+    extractBlock[i][1] = ref;
+    extractBlock[i][2] = stock;
+    extractBlock[i][3] = kennz;
+    extractBlock[i][4] = oDate;
+    updated++;
+  }
+
+  sheet.getRange(2, 4, n, 5).setValues(extractBlock);
+  sheet.getRange(2, 14, n, 1).setValues(rawBlock);
+  SpreadsheetApp.flush();
+  return { success: true, updated: updated, ocred: ocred, remaining: remaining };
+}
+
+function testReprocessPackzettel() {
+  Logger.log(JSON.stringify(reprocessPackzettelMissing(), null, 2));
+}
+
+function installPackzettelSyncTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === "syncPackzettelToSheet") {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger("syncPackzettelToSheet").timeBased().everyMinutes(30).create();
+  return { success: true, message: "Packzettel-Trigger alle 30 Minuten aktiv" };
+}
+
+function testPackzettelSyncNow() {
+  Logger.log(JSON.stringify(syncPackzettelToSheet(), null, 2));
+}
+
+function testPackzettelOcr() {
+  var out = {
+    driveAdvancedServiceAvailable: (typeof Drive !== "undefined" && !!Drive.Files),
+    foundPdf: false,
+    attachment: "",
+    insertOk: false,
+    docAppTextLength: 0,
+    exportTextLength: 0,
+    finalTextLength: 0,
+    orderNumber: "",
+    referenceNumber: "",
+    stockId: "",
+    kennzeichen: "",
+    error: "",
+    textPreview: ""
+  };
+
+  var query = 'from:noreply@n4.parts subject:Packzettel has:attachment newer_than:14d';
+  var threads = GmailApp.search(query, 0, 10);
+  if (!threads.length) {
+    query = PACKZETTEL_QUERY + " has:attachment newer_than:14d";
+    threads = GmailApp.search(query, 0, 10);
+  }
+
+  var blob = null;
+  for (var t = 0; t < threads.length && !blob; t++) {
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length && !blob; m++) {
+      var atts = messages[m].getAttachments() || [];
+      for (var a = 0; a < atts.length; a++) {
+        var ct = String(atts[a].getContentType() || "").toLowerCase();
+        var an = String(atts[a].getName() || "").toLowerCase();
+        if (ct.indexOf("pdf") === -1 && an.indexOf(".pdf") === -1) continue;
+        blob = atts[a].copyBlob();
+        out.foundPdf = true;
+        out.attachment = atts[a].getName();
+        break;
+      }
+    }
+  }
+
+  if (!blob) {
+    Logger.log(JSON.stringify(out, null, 2));
+    return out;
+  }
+
+  if (!out.driveAdvancedServiceAvailable) {
+    out.error = "Drive advanced service NOT enabled (Dienste/Services + -> Drive API).";
+    Logger.log(JSON.stringify(out, null, 2));
+    return out;
+  }
+
+  var docId = null;
+  try {
+    var inserted = pzDriveConvertToDoc_(blob);
+    docId = inserted.id;
+    out.insertOk = true;
+  } catch (e) {
+    out.error = "Drive convert failed: " + e.message;
+    Logger.log(JSON.stringify(out, null, 2));
+    return out;
+  }
+
+  var text = "";
+  try {
+    text = DocumentApp.openById(docId).getBody().getText();
+    out.docAppTextLength = text.length;
+  } catch (readErr) {
+    out.error = "DocumentApp read failed: " + readErr.message;
+  }
+
+  if (!text) {
+    try {
+      var url = "https://www.googleapis.com/drive/v3/files/" + docId + "/export?mimeType=text%2Fplain";
+      var resp = UrlFetchApp.fetch(url, {
+        headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+        muteHttpExceptions: true
+      });
+      if (resp.getResponseCode() === 200) {
+        text = resp.getContentText();
+        out.exportTextLength = text.length;
+      } else {
+        out.error = (out.error ? out.error + " | " : "") + "export HTTP " + resp.getResponseCode();
+      }
+    } catch (expErr) {
+      out.error = (out.error ? out.error + " | " : "") + "export failed: " + expErr.message;
+    }
+  }
+
+  pzDriveRemove_(docId);
+
+  out.finalTextLength = text.length;
+  out.orderNumber = pzExtractOrderNumber_(text);
+  out.referenceNumber = pzExtractReference_(text);
+  out.stockId = pzDeriveStockFromRef_(pzExtractStockId_(text), out.referenceNumber);
+  out.kennzeichen = pzExtractKennzeichen_(text);
+  out.textPreview = text.substring(0, 400);
+
+  Logger.log(JSON.stringify(out, null, 2));
+  return out;
+}

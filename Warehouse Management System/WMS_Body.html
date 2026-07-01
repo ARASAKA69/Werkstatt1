@@ -6,6 +6,7 @@
           <button type="button" class="topbar-action" onclick="openStockOverview()">📋 Übersicht</button>
           <button type="button" class="topbar-action" onclick="openReifenModal()">🛞 Reifen Annahme</button>
           <button type="button" class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
+          <button type="button" class="topbar-action" onclick="openPzModal()">📄 Packzettel</button>
           <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Reifen Ausgabe</button>
         </div>
         <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
@@ -53,6 +54,13 @@
                 <span class="wms-menuitem-body">
                   <span class="wms-menuitem-title">Nachbestellungen</span>
                   <span class="wms-menuitem-sub">Offene Positionen</span>
+                </span>
+              </button>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="pz" role="menuitem" onclick="openPzModal(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">📄</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Packzettel &amp; Belege</span>
+                  <span class="wms-menuitem-sub">Aus Gmail · PDF ansehen</span>
                 </span>
               </button>
             </div>
@@ -157,6 +165,9 @@
     
     <div class="sub-title">Ersatzteile Bestellung</div>
     <div class="info-box schaeden-list" id="infoBestellung">-</div>
+    <div class="pz-card-action" id="pzCardAction" style="display:none;">
+      <button type="button" class="btn-pz-open" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
+    </div>
     <div class="wss-card-action" id="wssCardAction">
       <button type="button" class="btn-wss-open" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
     </div>
@@ -424,6 +435,50 @@
         <span class="nb-choose-btn-ico">📦</span>
         <span class="nb-choose-btn-txt">Nachbestellung</span>
       </button>
+    </div>
+  </div>
+</div>
+
+<div class="nb-modal pz-modal" id="pzModal">
+  <div class="nb-dialog pz-dialog">
+    <div class="nb-header">
+      <div class="wms-window-dots" aria-hidden="true" data-window="pz">
+        <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closePzModal()"></span>
+        <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizePzModal()"></span>
+        <span class="wms-window-dot wms-window-dot--idle"></span>
+      </div>
+      <div class="nb-title">📄 Packzettel &amp; Belege</div>
+      <span id="pzTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
+      <button type="button" onclick="refreshPzModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <button class="nb-close" onclick="minimizePzModal()">Zurück</button>
+    </div>
+    <div class="nb-toolbar">
+      <div class="nb-search-wrap">
+        <input type="text" id="pzSearchInput" placeholder="Bestellnr / Referenz / Stock-ID / Kennzeichen suchen..." autocomplete="off" oninput="filterPzBySearch()">
+      </div>
+    </div>
+    <div class="pz-split">
+      <div class="pz-list-wrap">
+        <table class="pz-table">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Quelle</th>
+              <th>Bestellnr.</th>
+              <th>Referenz</th>
+              <th>Stock-ID</th>
+            </tr>
+          </thead>
+          <tbody id="pzTableBody">
+            <tr><td colspan="5" style="text-align:center;color:#9da7b3;padding:18px;">Lade Belege...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pz-preview-wrap" id="pzPreviewWrap">
+        <div class="pz-preview-empty" id="pzPreviewEmpty">Beleg links auswählen, um ihn hier anzusehen.</div>
+        <div class="pz-preview-meta" id="pzPreviewMeta" style="display:none;"></div>
+        <iframe class="pz-preview-frame" id="pzPreviewFrame" title="Beleg Vorschau" style="display:none;"></iframe>
+      </div>
     </div>
   </div>
 </div>

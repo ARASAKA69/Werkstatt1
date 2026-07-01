@@ -20,6 +20,7 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbyJPYasx9K-j-rNjdAcS3S46GwiEAvrP0sjiuoWf9L2p-u38vx51Bu4WdLxz5rY1sHI/exec";
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
+const PACKZETTEL_TAB = "Packzettel";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -1218,6 +1219,160 @@ function getRefurbishmentCachePayload() {
     return { success: false, message: err.message };
   }
 }
+
+  function packzettelDateStr_(v) {
+    if (v instanceof Date || Object.prototype.toString.call(v) === "[object Date]") {
+      return Utilities.formatDate(new Date(v), "Europe/Berlin", "dd.MM.yyyy HH:mm");
+    }
+    return String(v || "");
+  }
+
+  function packzettelRowLight_(row, rowNumber) {
+    return {
+      row: rowNumber,
+      messageDate: packzettelDateStr_(row[0]),
+      source: String(row[1] || ""),
+      kind: String(row[2] || ""),
+      orderNumber: String(row[3] || "").trim(),
+      referenceNumber: String(row[4] || "").trim(),
+      stockId: String(row[5] || "").trim(),
+      kennzeichen: String(row[6] || "").trim(),
+      orderDate: String(row[7] || "").trim(),
+      subject: String(row[8] || "").trim(),
+      previewUrl: String(row[10] || "").trim(),
+      downloadUrl: String(row[11] || "").trim()
+    };
+  }
+
+  function pzDedupByOrder_(entries) {
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < entries.length; i++) {
+      var on = String(entries[i].orderNumber || "").toUpperCase().replace(/\s+/g, "");
+      if (on) {
+        if (seen[on]) continue;
+        seen[on] = true;
+      }
+      out.push(entries[i]);
+    }
+    return out;
+  }
+
+  function readPackzettelSheet_() {
+    var ss = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+    var sheet = ss.getSheetByName(PACKZETTEL_TAB);
+    if (!sheet || sheet.getLastRow() < 2) return { sheet: null, values: [] };
+    var lastRow = sheet.getLastRow();
+    return { sheet: sheet, values: sheet.getRange(2, 1, lastRow - 1, 15).getValues() };
+  }
+
+  function packzettelRowMatchesQuery_(row, query) {
+    if (!query) return true;
+    var haystack = [
+      row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]
+    ].join(" ").toLowerCase().replace(/\s+/g, "");
+    return haystack.indexOf(query) !== -1;
+  }
+
+  function getPackzettelList(query) {
+    try {
+      var q = String(query || "").toLowerCase().replace(/\s+/g, "");
+      var data = readPackzettelSheet_();
+      var values = data.values;
+      var matched = [];
+      for (var i = 0; i < values.length; i++) {
+        var row = values[i];
+        if (!String(row[8] || "").trim() && !String(row[9] || "").trim() && !String(row[3] || "").trim()) continue;
+        if (!packzettelRowMatchesQuery_(row, q)) continue;
+        matched.push(packzettelRowLight_(row, i + 2));
+      }
+      matched.sort(function(a, b) {
+        return String(b.messageDate).localeCompare(String(a.messageDate));
+      });
+      matched = pzDedupByOrder_(matched);
+      return { success: true, entries: matched.slice(0, 200), total: matched.length };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [] };
+    }
+  }
+
+  function getPackzettelForStock(stockId) {
+    try {
+      var want = normalizeStockId(stockId);
+      if (!want) return { success: true, entries: [], count: 0 };
+      var data = readPackzettelSheet_();
+      var values = data.values;
+      var out = [];
+      for (var i = 0; i < values.length; i++) {
+        var row = values[i];
+        var idNorm = normalizeStockId(row[5]);
+        var rawHas = row[13] && normalizeStockId(row[13]).indexOf(want) !== -1;
+        var subjHas = row[8] && normalizeStockId(row[8]).indexOf(want) !== -1;
+        if (idNorm === want || rawHas || subjHas) out.push(packzettelRowLight_(row, i + 2));
+      }
+      out.sort(function(a, b) {
+        return String(b.messageDate).localeCompare(String(a.messageDate));
+      });
+      out = pzDedupByOrder_(out);
+      return { success: true, entries: out, count: out.length };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [] };
+    }
+  }
+
+  function getPackzettelForKeys(keys) {
+    try {
+      var normKeys = [];
+      var seen = {};
+      for (var k = 0; k < (keys || []).length; k++) {
+        var nk = String(keys[k] || "").toUpperCase().replace(/\s+/g, "");
+        if (nk.length >= 4 && !seen[nk]) { seen[nk] = true; normKeys.push(nk); }
+      }
+      if (!normKeys.length) return { success: true, entries: [], count: 0 };
+
+      var data = readPackzettelSheet_();
+      var values = data.values;
+      var out = [];
+      for (var i = 0; i < values.length; i++) {
+        var row = values[i];
+        var haystack = [row[3], row[4], row[5], row[8], row[13]]
+          .join(" ").toUpperCase().replace(/\s+/g, "");
+        var hit = false;
+        for (var j = 0; j < normKeys.length; j++) {
+          if (haystack.indexOf(normKeys[j]) !== -1) { hit = true; break; }
+        }
+        if (hit) out.push(packzettelRowLight_(row, i + 2));
+      }
+      out.sort(function(a, b) {
+        return String(b.messageDate).localeCompare(String(a.messageDate));
+      });
+      out = pzDedupByOrder_(out);
+      return { success: true, entries: out, count: out.length };
+    } catch (err) {
+      return { success: false, message: err.message, entries: [], count: 0 };
+    }
+  }
+
+  function getPackzettelDoc(rowNumber) {
+    try {
+      var n = parseInt(rowNumber, 10);
+      if (!n || n < 2) return { success: false, message: "Ungültige Zeile" };
+      var ss = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+      var sheet = ss.getSheetByName(PACKZETTEL_TAB);
+      if (!sheet || n > sheet.getLastRow()) return { success: false, message: "Beleg nicht gefunden" };
+      var row = sheet.getRange(n, 1, 1, 15).getValues()[0];
+      return {
+        success: true,
+        kind: String(row[2] || ""),
+        previewUrl: String(row[10] || "").trim(),
+        downloadUrl: String(row[11] || "").trim(),
+        bodyHtml: String(row[12] || ""),
+        rawText: String(row[13] || "")
+      };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  }
 
   function lagerKistenIsRegalHeader_(v) {
     return /^\s*regal\s+\d+\.\d+\s*$/i.test(String(v == null ? "" : v));

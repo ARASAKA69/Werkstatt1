@@ -654,6 +654,17 @@
     white-space: nowrap;
     letter-spacing: 0.8px;
   }
+  .badge-pz {
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 800;
+    white-space: nowrap;
+    letter-spacing: 0.8px;
+    background: rgba(61, 158, 220, 0.15);
+    color: #3FA0DB;
+    border: 1px solid rgba(61, 158, 220, 0.3);
+  }
   .card-header-badges {
     position: absolute;
     right: 0;
@@ -663,6 +674,28 @@
     flex-direction: column;
     align-items: flex-end;
     gap: 8px;
+  }
+  .pz-card-action {
+    margin-top: 12px;
+    display: none;
+    justify-content: center;
+  }
+  .pz-card-action .btn-pz-open {
+    background: linear-gradient(180deg, rgba(242, 116, 32, 0.22) 0%, rgba(107, 52, 0, 0.2) 100%);
+    color: #F5A05A;
+    border: 1.5px solid rgba(242, 116, 32, 0.4);
+    border-radius: 14px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 800;
+    cursor: pointer;
+    font-family: inherit;
+    letter-spacing: 0.6px;
+    width: 100%;
+  }
+  .pz-card-action .btn-pz-open:hover {
+    transform: translateY(-1px);
+    background: linear-gradient(180deg, rgba(242, 116, 32, 0.3) 0%, rgba(107, 52, 0, 0.28) 100%);
   }
   .wss-card-action {
     margin-top: 12px;
@@ -2024,6 +2057,94 @@
   .nb-choose-btn-ico { font-size: 26px; }
   .nb-choose-btn-txt { color: #fff; font-size: 16px; font-weight: 800; }
 
+  .pz-split {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .pz-list-wrap {
+    width: 46%;
+    min-width: 360px;
+    overflow: auto;
+    border-right: 1px solid #1d2530;
+  }
+  .pz-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .pz-table th, .pz-table td {
+    padding: 12px 14px;
+    text-align: left;
+    font-size: 14px;
+    border-bottom: 1px solid #1a222c;
+  }
+  .pz-table th {
+    position: sticky;
+    top: 0;
+    background: #131a22;
+    color: #9da7b3;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    z-index: 1;
+  }
+  .pz-row:hover {
+    background: rgba(61, 158, 220, 0.06);
+  }
+  .pz-row.is-active {
+    background: rgba(242, 116, 32, 0.12);
+    box-shadow: inset 3px 0 0 #F27420;
+  }
+  .pz-preview-wrap {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    background: #0d1117;
+  }
+  .pz-preview-empty {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #9da7b3;
+    font-size: 15px;
+    padding: 24px;
+    text-align: center;
+  }
+  .pz-preview-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #1d2530;
+    font-size: 13px;
+    color: #c9d1d9;
+  }
+  .pz-preview-meta b {
+    color: #9da7b3;
+    font-weight: 700;
+  }
+  .pz-dl-link {
+    margin-left: auto;
+    color: #3FA0DB;
+    font-weight: 800;
+    text-decoration: none;
+    border: 1px solid rgba(61, 158, 220, 0.3);
+    border-radius: 10px;
+    padding: 6px 12px;
+  }
+  .pz-dl-link:hover {
+    background: rgba(61, 158, 220, 0.12);
+  }
+  .pz-preview-frame {
+    flex: 1;
+    width: 100%;
+    border: 0;
+    background: #fff;
+  }
   .nb-modal {
     position: fixed;
     inset: 0;

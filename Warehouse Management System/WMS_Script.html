@@ -1767,6 +1767,255 @@
     }).getNachbestellungen();
   }
 
+  var pzAllEntries = [];
+  var pzDisplayEntries = [];
+  var pzSessionActive = false;
+  var pzDataReady = false;
+  var pzPendingFocusStock = '';
+  var pzSearchTimer = null;
+  var currentPzKeys = [];
+  var pzPendingKeys = null;
+  var pzPendingLabel = '';
+
+  function minimizePzModal() {
+    document.getElementById('pzModal').classList.remove('open');
+    var btn = document.querySelector('.topbar-action[onclick*="openPzModal"]');
+    if(btn && pzAllEntries.length > 0) {
+      btn.style.background = 'rgba(61,158,220,0.18)';
+      btn.style.borderColor = '#3FA0DB';
+      btn.style.color = '#3FA0DB';
+    }
+  }
+
+  function closePzModal() {
+    document.getElementById('pzModal').classList.remove('open');
+    pzAllEntries = [];
+    pzDisplayEntries = [];
+    pzSessionActive = false;
+    pzDataReady = false;
+    pzResetPreview();
+    var btn = document.querySelector('.topbar-action[onclick*="openPzModal"]');
+    if(btn) { btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }
+  }
+
+  function pzResetPreview() {
+    var frame = document.getElementById('pzPreviewFrame');
+    var empty = document.getElementById('pzPreviewEmpty');
+    var meta = document.getElementById('pzPreviewMeta');
+    if(frame) { frame.style.display = 'none'; frame.removeAttribute('src'); frame.removeAttribute('srcdoc'); }
+    if(meta) { meta.style.display = 'none'; meta.innerHTML = ''; }
+    if(empty) empty.style.display = 'flex';
+  }
+
+  function openPzModal() {
+    document.getElementById('pzModal').classList.add('open');
+    if(pzPendingKeys && pzPendingKeys.length) {
+      var keys = pzPendingKeys;
+      var label = pzPendingLabel;
+      pzPendingKeys = null;
+      pzPendingLabel = '';
+      pzSessionActive = true;
+      document.getElementById('pzSearchInput').value = label || '';
+      document.getElementById('pzTableBody').innerHTML = hudLoadingRowHtml(5, 'Lade Belege…');
+      document.getElementById('pzTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
+      pzResetPreview();
+      pzLoadKeys(keys);
+      return;
+    }
+    if(pzSessionActive && pzDataReady) {
+      pzApplyPendingFocus();
+      return;
+    }
+    pzSessionActive = true;
+    if(!pzPendingFocusStock) document.getElementById('pzSearchInput').value = '';
+    document.getElementById('pzTableBody').innerHTML = hudLoadingRowHtml(5, 'Lade Belege…');
+    document.getElementById('pzTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
+    pzLoad('');
+  }
+
+  function pzLoadKeys(keys) {
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) {
+        document.getElementById('pzTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res && res.message ? res.message : 'unbekannt') + '</td></tr>';
+        document.getElementById('pzTotalBadge').innerText = 'Fehler';
+        return;
+      }
+      pzAllEntries = res.entries || [];
+      pzDataReady = true;
+      document.getElementById('pzTotalBadge').innerText = (res.count != null ? res.count : pzAllEntries.length) + ' Belege';
+      renderPzTable(pzAllEntries);
+      if(pzAllEntries.length === 1) showPzPreview(0);
+    }).withFailureHandler(function(err) {
+      document.getElementById('pzTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+    }).getPackzettelForKeys(keys);
+  }
+
+  function openPzForCurrent() {
+    if(!currentPzKeys || !currentPzKeys.length) { openPzModal(); return; }
+    pzPendingKeys = currentPzKeys.slice();
+    pzPendingLabel = currentStock || (currentPzKeys[0] || '');
+    pzDataReady = false;
+    openPzModal();
+  }
+
+  function pzExtractKeysFromContext(stock, text) {
+    var keys = [];
+    var seen = {};
+    function add(v) {
+      var k = String(v || '').toUpperCase().replace(/\s+/g, '');
+      if(k.length >= 4 && !seen[k]) { seen[k] = true; keys.push(k); }
+    }
+    add(normalizeStockInput(stock));
+    var t = String(text || '');
+    var n4 = t.match(/N4P\s?\d{4,}/gi) || [];
+    for(var i = 0; i < n4.length; i++) add(n4[i]);
+    var nums = t.match(/\b\d{6,}\b/g) || [];
+    for(var j = 0; j < nums.length; j++) add(nums[j]);
+    return keys;
+  }
+
+  function updatePzContext(stockId, bestellungText) {
+    currentPzKeys = pzExtractKeysFromContext(stockId, bestellungText);
+    var action = document.getElementById('pzCardAction');
+    var btn = document.getElementById('btnPzOpen');
+    if(action) action.style.display = 'flex';
+    if(btn) btn.innerText = '📄 Packzettel öffnen';
+    google.script.run.withSuccessHandler(function(res) {
+      var n = (res && res.success) ? res.count : 0;
+      if(btn) btn.innerText = '📄 Packzettel öffnen (' + n + ')';
+    }).withFailureHandler(function() {
+      if(btn) btn.innerText = '📄 Packzettel öffnen';
+    }).getPackzettelForKeys(currentPzKeys);
+  }
+
+  function hidePzContext() {
+    currentPzKeys = [];
+    var action = document.getElementById('pzCardAction');
+    if(action) action.style.display = 'none';
+  }
+
+  function pzLoad(query) {
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) {
+        document.getElementById('pzTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res && res.message ? res.message : 'unbekannt') + '</td></tr>';
+        document.getElementById('pzTotalBadge').innerText = 'Fehler';
+        return;
+      }
+      pzAllEntries = res.entries || [];
+      pzDataReady = true;
+      document.getElementById('pzTotalBadge').innerText = (res.total != null ? res.total : pzAllEntries.length) + ' Belege';
+      renderPzTable(pzAllEntries);
+      pzApplyPendingFocus();
+    }).withFailureHandler(function(err) {
+      document.getElementById('pzTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+    }).getPackzettelList(query || '');
+  }
+
+  function refreshPzModal() {
+    pzDataReady = false;
+    document.getElementById('pzSearchInput').value = '';
+    document.getElementById('pzTableBody').innerHTML = hudLoadingRowHtml(5, 'Lade Belege…');
+    document.getElementById('pzTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
+    pzResetPreview();
+    pzLoad('');
+  }
+
+  function renderPzTable(entries) {
+    var body = document.getElementById('pzTableBody');
+    pzDisplayEntries = entries || [];
+    if(!entries || !entries.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9da7b3;padding:18px;">Keine Belege gefunden.</td></tr>';
+      return;
+    }
+    var html = '';
+    for(var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var srcColor = e.source && e.source.indexOf('n4') !== -1 ? '#3FA0DB' : '#F27420';
+      html += '<tr class="pz-row" style="cursor:pointer;" onclick="showPzPreview(' + i + ')">'
+        + '<td style="white-space:nowrap;">' + escapeHtml(e.messageDate) + '</td>'
+        + '<td style="color:' + srcColor + ';font-weight:800;">' + escapeHtml(e.source || '-') + '</td>'
+        + '<td style="font-weight:700;">' + escapeHtml(e.orderNumber || '-') + '</td>'
+        + '<td>' + escapeHtml(e.referenceNumber || '-') + '</td>'
+        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId || '-') + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = html;
+  }
+
+  function filterPzBySearch() {
+    var q = document.getElementById('pzSearchInput').value || '';
+    if(pzSearchTimer) clearTimeout(pzSearchTimer);
+    pzSearchTimer = setTimeout(function() {
+      document.getElementById('pzTableBody').innerHTML = hudLoadingRowHtml(5, 'Suche…');
+      pzLoad(q);
+    }, 350);
+  }
+
+  function showPzPreview(index) {
+    var e = pzDisplayEntries[index];
+    if(!e) return;
+    var frame = document.getElementById('pzPreviewFrame');
+    var empty = document.getElementById('pzPreviewEmpty');
+    var meta = document.getElementById('pzPreviewMeta');
+    var rows = document.querySelectorAll('#pzTableBody .pz-row');
+    for(var r = 0; r < rows.length; r++) rows[r].classList.remove('is-active');
+    if(rows[index]) rows[index].classList.add('is-active');
+
+    var metaHtml = '';
+    if(e.orderNumber) metaHtml += '<span><b>Bestellnr.:</b> ' + escapeHtml(e.orderNumber) + '</span>';
+    if(e.referenceNumber) metaHtml += '<span><b>Referenz:</b> ' + escapeHtml(e.referenceNumber) + '</span>';
+    if(e.stockId) metaHtml += '<span><b>Stock-ID:</b> ' + escapeHtml(e.stockId) + '</span>';
+    if(e.kennzeichen) metaHtml += '<span><b>Kennzeichen:</b> ' + escapeHtml(e.kennzeichen) + '</span>';
+    if(e.orderDate) metaHtml += '<span><b>Datum:</b> ' + escapeHtml(e.orderDate) + '</span>';
+    if(e.downloadUrl) metaHtml += '<a href="' + escapeHtml(e.downloadUrl) + '" target="_blank" rel="noopener" class="pz-dl-link">⬇ PDF öffnen</a>';
+    meta.innerHTML = metaHtml;
+    meta.style.display = metaHtml ? 'flex' : 'none';
+
+    if(empty) empty.style.display = 'none';
+    frame.style.display = 'block';
+    if(e.kind === 'pdf' && e.previewUrl) {
+      frame.removeAttribute('srcdoc');
+      frame.src = e.previewUrl;
+      return;
+    }
+    frame.removeAttribute('src');
+    frame.srcdoc = '<div style="font-family:sans-serif;padding:20px;color:#666;">Lade Beleg…</div>';
+    google.script.run.withSuccessHandler(function(res) {
+      if(!res || !res.success) {
+        frame.srcdoc = '<div style="font-family:sans-serif;padding:20px;color:#c0392b;">Fehler: ' + escapeHtml(res && res.message ? res.message : 'unbekannt') + '</div>';
+        return;
+      }
+      if(res.kind === 'pdf' && res.previewUrl) {
+        frame.removeAttribute('srcdoc');
+        frame.src = res.previewUrl;
+      } else if(res.bodyHtml) {
+        frame.srcdoc = res.bodyHtml;
+      } else {
+        frame.srcdoc = '<div style="font-family:sans-serif;padding:20px;color:#333;white-space:pre-wrap;">' + (res.rawText ? escapeHtml(res.rawText) : 'Keine Vorschau verfügbar.') + '</div>';
+      }
+    }).withFailureHandler(function(err) {
+      frame.srcdoc = '<div style="font-family:sans-serif;padding:20px;color:#c0392b;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</div>';
+    }).getPackzettelDoc(e.row);
+  }
+
+  function pzApplyPendingFocus() {
+    if(!pzPendingFocusStock) return;
+    var key = pzPendingFocusStock;
+    pzPendingFocusStock = '';
+    var inp = document.getElementById('pzSearchInput');
+    if(inp) inp.value = key;
+    document.getElementById('pzTableBody').innerHTML = hudLoadingRowHtml(5, 'Suche…');
+    pzLoad(key);
+  }
+
+  function openPzForStock(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if(!sid) { openPzModal(); return; }
+    pzPendingFocusStock = sid;
+    pzDataReady = false;
+    openPzModal();
+  }
+
   function copyNbValue(event, value) {
     if(event) { event.stopPropagation(); event.preventDefault(); }
     var el = event ? event.currentTarget : null;
@@ -3921,9 +4170,11 @@
       }
       toggleUI(true);
 
+      updatePzContext(id, res.kommBestellung);
       maybeShowNbChooser(id);
     } else {
       updateB2a1KandidatBadgeFromSchaeden('');
+      hidePzContext();
       toggleUI(true);
       handleNotFoundNbCheck(id, res.message);
     }
@@ -4381,6 +4632,9 @@
       { id: 'nb', modalId: 'nbModal', dialogCls: 'nb-dialog', headerCls: 'nb-header', title: 'Nachbestellungen', icon: '📦',
         defaultSize: { w: 1480, h: 900 }, openFn: 'openNbModal', minFn: 'minimizeNbModal', closeFn: 'closeNbModal',
         session: function() { try { return (typeof nbSessionActive !== 'undefined' && nbSessionActive) && (typeof nbAllEntries !== 'undefined' && nbAllEntries && nbAllEntries.length > 0); } catch(e) { return false; } } },
+      { id: 'pz', modalId: 'pzModal', dialogCls: 'nb-dialog', headerCls: 'nb-header', title: 'Packzettel', icon: '📄',
+        defaultSize: { w: 1480, h: 900 }, openFn: 'openPzModal', minFn: 'minimizePzModal', closeFn: 'closePzModal',
+        session: function() { try { return (typeof pzSessionActive !== 'undefined' && pzSessionActive) && (typeof pzAllEntries !== 'undefined' && pzAllEntries && pzAllEntries.length > 0); } catch(e) { return false; } } },
       { id: 'reifen', modalId: 'reifenModal', dialogCls: 'reifen-dialog', headerCls: 'reifen-header', title: 'Reifen Annahme', icon: '🔧',
         defaultSize: { w: 1180, h: 820 }, openFn: 'openReifenModal', minFn: 'minimizeReifenModal', closeFn: 'closeReifenModal',
         session: function() { try { return (typeof reifenSessionActive !== 'undefined' && reifenSessionActive); } catch(e) { return false; } } },
