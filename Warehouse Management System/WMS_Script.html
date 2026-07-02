@@ -1678,6 +1678,48 @@
     }).requestWerkstattauftragPrint(ent.stockId, ent.teil || '', ent.typ || '');
   }
 
+  function nbCarolAutoUrl(carolUrl) {
+    return carolUrl + (carolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1&arasaka_noprint=1';
+  }
+
+  function nbShouldStartCarol(value, typ) {
+    var valStr = String(value || '');
+    var valLc = valStr.trim().toLowerCase();
+    if(valStr.indexOf('Angeliefert/Bereit') === -1 && valLc.indexOf('komplett angeliefert') === -1) return false;
+    return !nbIsExitOrder(typ);
+  }
+
+  function startNbCarol(stockId, badge) {
+    var showErr = function(msg) {
+      if(badge) { badge.innerText = msg; badge.style.color = '#f85149'; }
+    };
+    var fromCache = computeWmsFromCache(stockId, refurbCache);
+    if(fromCache && fromCache.success && fromCache.carolUrl) {
+      var win = window.open(nbCarolAutoUrl(fromCache.carolUrl), '_blank');
+      if(!win) showErr('Carol-Popup wurde blockiert!');
+      return;
+    }
+    var loaderWin = window.open('', '_blank');
+    if(!loaderWin) {
+      showErr('Carol-Popup wurde blockiert!');
+      return;
+    }
+    try {
+      loaderWin.document.write('<title>Carol wird gestartet…</title><body style="background:#05080c;color:#00ffcc;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><div style="font-size:22px;letter-spacing:2px;">ARASAKA SYS //</div><div style="margin-top:12px;opacity:0.7;">Lade Carol für ' + escapeHtml(stockId) + '…</div></div></body>');
+    } catch(e) {}
+    google.script.run.withSuccessHandler(function(res) {
+      if(res && res.success && res.carolUrl) {
+        loaderWin.location.href = nbCarolAutoUrl(res.carolUrl);
+      } else {
+        try { loaderWin.close(); } catch(e) {}
+        showErr('Carol-Link für ' + stockId + ' nicht gefunden!');
+      }
+    }).withFailureHandler(function(err) {
+      try { loaderWin.close(); } catch(e) {}
+      showErr('Carol-Fehler: ' + (err.message || String(err)));
+    }).fetchWmsData(stockId);
+  }
+
   function saveNbStatus(event, sheetRow, value, index) {
     if(event) { event.stopPropagation(); event.preventDefault(); }
     var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
@@ -1685,6 +1727,9 @@
     if(sel) sel.disabled = true;
     var badge = document.getElementById('nbTotalBadge');
     if(badge) badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
+    if(nbShouldStartCarol(value, nbEnt.typ) && nbEnt.stockId) {
+      startNbCarol(nbEnt.stockId, badge);
+    }
     google.script.run.withSuccessHandler(function(res) {
       if(sel) sel.disabled = false;
       if(res.success) {
