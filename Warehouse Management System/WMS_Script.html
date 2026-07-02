@@ -1256,15 +1256,15 @@
     }
     if(nbChooserCacheReady) {
       if(nbEntriesForStock(stockId).length) { openIt(); return; }
-      setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+      searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
       return;
     }
     loadNbChooserCache(false);
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success && res.entries && res.entries.length) openIt();
-      else setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+      else searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
     }).withFailureHandler(function() {
-      setStatus('❌ FEHLER: ' + errMsg, '#f85149');
+      searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
     }).getNachbestellungenForStock(stockId);
   }
 
@@ -1930,13 +1930,18 @@
     var html = '';
     for(var i = 0; i < entries.length; i++) {
       var e = entries[i];
-      var srcColor = e.source && e.source.indexOf('n4') !== -1 ? '#3FA0DB' : '#F27420';
+      var srcColor = '#F27420';
+      if(e.source && e.source.indexOf('n4') !== -1) srcColor = '#3FA0DB';
+      else if(e.source && e.source.indexOf('alfah') !== -1) srcColor = '#B14BE3';
+      var stockCell = e.stockId
+        ? '<span onclick="openPzEntryInWms(event, \'' + escapeHtml(e.stockId) + '\')" title="Auftrag in WMS laden" style="cursor:pointer;text-decoration:underline;">' + escapeHtml(e.stockId) + '</span>'
+        : '-';
       html += '<tr class="pz-row" style="cursor:pointer;" onclick="showPzPreview(' + i + ')">'
         + '<td style="white-space:nowrap;">' + escapeHtml(e.messageDate) + '</td>'
         + '<td style="color:' + srcColor + ';font-weight:800;">' + escapeHtml(e.source || '-') + '</td>'
         + '<td style="font-weight:700;">' + escapeHtml(e.orderNumber || '-') + '</td>'
         + '<td>' + escapeHtml(e.referenceNumber || '-') + '</td>'
-        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId || '-') + '</td>'
+        + '<td style="color:#3FA0DB;font-weight:800;">' + stockCell + '</td>'
         + '</tr>';
     }
     body.innerHTML = html;
@@ -1968,6 +1973,7 @@
     if(e.kennzeichen) metaHtml += '<span><b>Kennzeichen:</b> ' + escapeHtml(e.kennzeichen) + '</span>';
     if(e.orderDate) metaHtml += '<span><b>Datum:</b> ' + escapeHtml(e.orderDate) + '</span>';
     if(e.downloadUrl) metaHtml += '<a href="' + escapeHtml(e.downloadUrl) + '" target="_blank" rel="noopener" class="pz-dl-link">⬇ PDF öffnen</a>';
+    if(e.stockId) metaHtml += '<a href="#" onclick="openPzEntryInWms(event, \'' + escapeHtml(e.stockId) + '\');return false;" class="pz-dl-link" style="color:#3FA0DB;border-color:#3FA0DB;">🔎 ' + escapeHtml(e.stockId) + ' in WMS laden</a>';
     meta.innerHTML = metaHtml;
     meta.style.display = metaHtml ? 'flex' : 'none';
 
@@ -4187,10 +4193,74 @@
       setHudBusy(true, 'Lade Auftrag…');
       setTimeout(function() { loadData(); }, 600);
     } else {
+      searchBelegeFallback(res);
+    }
+  }
+
+  function searchBelegeFallback(res) {
+    var q = document.getElementById('searchInput').value.trim();
+    if(q.replace(/\s+/g, '').length < 4) {
       setHudBusy(false);
       setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
       toggleUI(true);
+      return;
     }
+    setStatus("🔍 Suche in Belegen (Packzettel/PDFs)…", "#F27420");
+    setHudBusy(true, 'Suche in Belegen…');
+    google.script.run.withSuccessHandler(function(pz) {
+      setHudBusy(false);
+      var entries = (pz && pz.success && pz.entries) ? pz.entries : [];
+      if(!entries.length) {
+        setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
+        toggleUI(true);
+        return;
+      }
+      var stocks = {};
+      for(var i = 0; i < entries.length; i++) {
+        var s = String(entries[i].stockId || '').replace(/\s+/g, '').toUpperCase();
+        if(s) stocks[s] = true;
+      }
+      var stockList = Object.keys(stocks);
+      var qNorm = q.replace(/\s+/g, '').toUpperCase();
+      if(stockList.length === 1 && stockList[0] !== qNorm) {
+        setStatus("✅ Gefunden via Belege → " + stockList[0], "#56d364");
+        document.getElementById('searchInput').value = stockList[0];
+        setHudBusy(true, 'Lade Auftrag…');
+        setTimeout(function() { loadData(); }, 600);
+        return;
+      }
+      toggleUI(true);
+      setStatus("📄 " + entries.length + " Belege gefunden – bitte auswählen", "#3FA0DB");
+      pzOpenWithEntries(q, entries);
+    }).withFailureHandler(function() {
+      setHudBusy(false);
+      setStatus("❌ " + (res.message || "Nicht gefunden"), "#f85149");
+      toggleUI(true);
+    }).getPackzettelList(q);
+  }
+
+  function pzOpenWithEntries(query, entries) {
+    pzPendingKeys = null;
+    pzPendingLabel = '';
+    pzPendingFocusStock = '';
+    pzSessionActive = true;
+    pzDataReady = true;
+    pzAllEntries = entries || [];
+    document.getElementById('pzModal').classList.add('open');
+    document.getElementById('pzSearchInput').value = String(query || '').trim();
+    document.getElementById('pzTotalBadge').innerText = pzAllEntries.length + ' Belege';
+    pzResetPreview();
+    renderPzTable(pzAllEntries);
+    if(pzAllEntries.length === 1) showPzPreview(0);
+  }
+
+  function openPzEntryInWms(event, stockId) {
+    if(event) { event.stopPropagation(); event.preventDefault(); }
+    var sid = normalizeStockInput(stockId);
+    if(!sid) return;
+    minimizePzModal();
+    document.getElementById('searchInput').value = sid;
+    loadData();
   }
 
   function requestOrderNumberSearch(id) {
