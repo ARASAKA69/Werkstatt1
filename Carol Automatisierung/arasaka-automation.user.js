@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.5
-// @description ARASAKA v3.5 - Silent Print via Bridge & Fallback PDF Scanner
+// @version 3.6
+// @description ARASAKA v3.6 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -584,7 +584,7 @@
         }
     }
 
-    async function startMacro() {
+    async function startMacro(skipPrint = false) {
         try {
             hudLog = []; currentStep = 0;
             createHUD();
@@ -674,8 +674,18 @@
             await sleep(1500);
             const btnBack = await waitForElement('Back to refurbishment detail', 15000);
             if (btnBack) {
-                sessionStorage.setItem('hole_pdf_nach_reload', 'true');
+                if (!skipPrint) {
+                    sessionStorage.setItem('hole_pdf_nach_reload', 'true');
+                } else {
+                    sessionStorage.removeItem('hole_pdf_nach_reload');
+                }
                 forceClick(btnBack);
+            }
+
+            if (skipPrint) {
+                updateHUD('NACHBESTELLUNG ABGESCHLOSSEN ─ Kein Druck', '#00ff00', true);
+                playDing('success');
+                setTimeout(removeHUD, 5000);
             }
 
         } catch (e) {
@@ -708,11 +718,12 @@
     }
 
     if (window.location.href.includes('arasaka_auto=1')) {
+        const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
             isLocked = true;
             abortMission = false;
-            startMacro().finally(() => { isLocked = false; });
+            startMacro(noPrint).finally(() => { isLocked = false; });
         }, 1500);
     }
 
