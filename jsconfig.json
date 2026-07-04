@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "commonjs",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": [
+    "**/*.js",
+    "**/*.gs"
+  ],
+  "typeAcquisition": {
+    "enable": true,
+    "include": [
+      "google-apps-script"
+    ]
+  }
+}

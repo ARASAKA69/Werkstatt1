@@ -264,6 +264,30 @@ function ensureSheetRow_(data, row0, col0) {
     }
 }
 
+function getRegalFormatReference_(sheet, sheetData, regalMap, regalKey) {
+    var pos = regalMap[regalKey];
+    if (!pos) return null;
+    var col0 = pos.col - 1;
+    var headerRow0 = pos.row - 1;
+    var endRow0 = getRegalEndRow0_(sheetData.values, headerRow0, col0);
+    for (var rr = headerRow0 + 1; rr < endRow0; rr++) {
+        var v = sheetData.values[rr][col0];
+        if (v === "" || v === null) continue;
+        if (isRegalHeader_(v)) break;
+        return sheet.getRange(rr + 1, pos.col);
+    }
+    return null;
+}
+
+function applyRegalCellFormat_(cell, referenceCell) {
+    if (referenceCell) {
+        referenceCell.copyTo(cell, SpreadsheetApp.CopyPasteType.PASTE_FORMAT, false);
+        return;
+    }
+    cell.setHorizontalAlignment("center");
+    cell.setVerticalAlignment("middle");
+}
+
 function placeInGap_(sheet, sheetData, regalMap, regalKey, stockId, color) {
     var pos = regalMap[regalKey];
     if (!pos) return 0;
@@ -276,6 +300,8 @@ function placeInGap_(sheet, sheetData, regalMap, regalKey, stockId, color) {
     if (row0 >= endRow0 && endRow0 < sheetData.values.length) return 0;
     ensureSheetRow_(sheetData, row0, col0);
     var cell = sheet.getRange(row, pos.col);
+    var refCell = getRegalFormatReference_(sheet, sheetData, regalMap, regalKey);
+    applyRegalCellFormat_(cell, refCell);
     cell.setValue(stockId);
     cell.setBackground(color ? color : null);
     cell.clearNote();
