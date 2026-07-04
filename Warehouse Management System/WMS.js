@@ -68,7 +68,11 @@ function nachbestellungLagerortVerifyMatch(expected, cellValue) {
   if (cellValue === "" || cellValue == null) return e === "";
   if (typeof cellValue === "string" && e.toLowerCase() === cellValue.trim().toLowerCase()) return true;
   var lowE = e.toLowerCase();
-  if ((lowE === "tagesliste" || lowE === "lack" || lowE === "exit") && String(cellValue || "").trim().toLowerCase() === lowE) return true;
+  if ((lowE === "tagesliste" || lowE.indexOf("tagesliste") !== -1 || lowE === "lack" || lowE === "exit") && String(cellValue || "").trim().toLowerCase() === lowE) return true;
+  if (lowE.indexOf("tagesliste") !== -1 && lowE.indexOf("automatik") !== -1) {
+    var cvLow = String(cellValue || "").trim().toLowerCase();
+    if (cvLow.indexOf("tagesliste") !== -1 && cvLow.indexOf("automatik") !== -1) return true;
+  }
   var ne = normalizeRegalKeyForCount(e);
   var nv = normalizeRegalKeyForCount(cellValue);
   if (ne && nv && ne === nv) return true;
@@ -217,6 +221,24 @@ function nachbestellungIsClosedStatus(statusVal) {
   if (s === "fertiggestellt") return true;
   if (s === "konsi-lager" || s === "konsilager") return true;
   return false;
+}
+
+function nachbestellungTageslisteAutomatikSheetValue(allowedList) {
+  var candidates = ["Tagesliste automatik", "Tagesliste Automatik", "Tagesliste"];
+  var c;
+  for (c = 0; c < candidates.length; c++) {
+    var v = nachbestellungLagerortToSheetValue(candidates[c], allowedList);
+    if (v !== null) return v;
+  }
+  for (c = 0; c < allowedList.length; c++) {
+    var opt = String(allowedList[c] || "").trim().toLowerCase();
+    if (opt.indexOf("tagesliste") !== -1 && opt.indexOf("automatik") !== -1) return String(allowedList[c]);
+  }
+  for (c = 0; c < allowedList.length; c++) {
+    var opt2 = String(allowedList[c] || "").trim().toLowerCase();
+    if (opt2 === "tagesliste" || opt2.indexOf("tagesliste") === 0) return String(allowedList[c]);
+  }
+  return null;
 }
 
 function nachbestellungLagerortToSheetValue(raw, allowedList) {
@@ -1559,6 +1581,56 @@ function getRefurbishmentCachePayload() {
     }
   }
 
+  function getNachbestellungRegalOverviewEntries() {
+    var entries = [];
+    try {
+      var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+      var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+      if (!sheet) return entries;
+
+      var layout = findNachbestellungSheetLayout(sheet);
+      var lagerortCol = layout.lagerortCol;
+      var statusCol = layout.statusCol;
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+      if (lagerortCol > lastCol) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lastCol);
+      if (statusCol > lastCol) statusCol = Math.min(NACHBESTELL_STATUS_COL, lastCol);
+
+      var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+      var headerIdx = layout.headerRow - 1;
+      var header = data[headerIdx];
+
+      var stockCol = getColIndex(header, ["stockid", "stock"]);
+      if (stockCol === -1) stockCol = 2;
+      var typCol = getColIndex(header, ["art", "nachbestellung", "typ"]);
+      if (typCol === -1) typCol = 3;
+      var teilCol = getColIndex(header, ["ersatzteil", "teil", "benennung"]);
+      if (teilCol === -1) teilCol = 5;
+      var artikelCol = getColIndex(header, ["artikelnr", "artikelnummer", "teilenr"]);
+      if (artikelCol === -1) artikelCol = 7;
+
+      for (var i = layout.dataStartRow - 1; i < data.length; i++) {
+        var stockId = String(data[i][stockCol - 1] || "").trim();
+        if (!stockId) continue;
+
+        var regalNorm = normalizeRegalKeyForCount(data[i][lagerortCol - 1]);
+        if (!regalNorm || !/^Regal\s+\d+\.\d+$/i.test(regalNorm)) continue;
+
+        entries.push({
+          stockId: stockId,
+          regal: regalNorm,
+          status: String(data[i][statusCol - 1] || "").trim(),
+          schaeden: typCol > 0 ? String(data[i][typCol - 1] || "") : "",
+          kommBestellung: artikelCol > 0 ? String(data[i][artikelCol - 1] || "") : "",
+          kommAnlieferung: teilCol > 0 ? String(data[i][teilCol - 1] || "") : "",
+          regalReifen: "",
+          source: "nachbestellung"
+        });
+      }
+    } catch (err) {}
+    return entries;
+  }
+
   function getStockRegalOverview() {
     try {
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
@@ -1567,6 +1639,7 @@ function getRefurbishmentCachePayload() {
       var lastRow = Math.max(2, sheet.getLastRow());
       var data = sheet.getRange(1, 1, lastRow, 30).getValues();
       var entries = [];
+      var existingKeys = {};
 
       for (var i = 1; i < data.length; i++) {
         var stockId = String(data[i][1] || "").trim();
@@ -1580,8 +1653,19 @@ function getRefurbishmentCachePayload() {
           kommBestellung: String(data[i][23] || ""),
           kommAnlieferung: String(data[i][24] || ""),
           regalReifen: String(data[i][29] || ""),
-          status: String(data[i][25] || "")
+          status: String(data[i][25] || ""),
+          source: "refurbishment"
         });
+        existingKeys[normalizeStockId(stockId) + "|" + regal] = true;
+      }
+
+      var nbEntries = getNachbestellungRegalOverviewEntries();
+      for (var n = 0; n < nbEntries.length; n++) {
+        var nbKey = normalizeStockId(nbEntries[n].stockId) + "|" + nbEntries[n].regal;
+        if (!existingKeys[nbKey]) {
+          entries.push(nbEntries[n]);
+          existingKeys[nbKey] = true;
+        }
       }
 
       entries.sort(function(a, b) {
@@ -1923,6 +2007,7 @@ function resolveNachbestellungTargetRow(sheet, nbLayout, sheetRow, expectedStock
 
 function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expectedEntryId) {
     try {
+      var autoLagerortWrite = null;
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
       if (!sheet) return { success: false, message: "Tab nicht gefunden!" };
@@ -1963,6 +2048,7 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
           return { success: false, message: "Status nicht in der Sheet-Liste. Bitte passenden Eintrag wählen." };
         }
         var stCell = sheet.getRange(sheetRow, statusColW);
+        var oldStatusLc = String(stCell.getValue() || "").trim().toLowerCase();
         stCell.setValue(statusWrite);
         SpreadsheetApp.flush();
         var verifySt = String(stCell.getValue() || "").trim();
@@ -1970,6 +2056,23 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
           return { success: false, message: "Status konnte nicht verifiziert werden!" };
         }
         value = statusWrite;
+        var newStatusLc = String(statusWrite || "").trim().toLowerCase();
+        if (oldStatusLc.indexOf("teilweise angeliefert") !== -1 && newStatusLc.indexOf("komplett angeliefert") !== -1) {
+          var lagerortColAuto = nbLayout.lagerortCol;
+          var lcAuto = Math.max(1, sheet.getLastColumn());
+          if (lagerortColAuto > lcAuto) lagerortColAuto = Math.min(NACHBESTELL_REGAL_COL, lcAuto);
+          var currentLagerort = sheet.getRange(sheetRow, lagerortColAuto).getValue();
+          if (normalizeRegalKeyForCount(currentLagerort)) {
+            var allowedLvAuto = getNachbestellungLagerortAllowedList(sheet, lagerortColAuto);
+            autoLagerortWrite = nachbestellungTageslisteAutomatikSheetValue(allowedLvAuto);
+            if (autoLagerortWrite !== null) {
+              var lrAuto = sheet.getRange(sheetRow, lagerortColAuto);
+              lrAuto.setNumberFormat("@");
+              lrAuto.setValue(autoLagerortWrite);
+              SpreadsheetApp.flush();
+            }
+          }
+        }
       } else {
         var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
         var headerData = sheet.getRange(1, 1, Math.min(10, sheet.getLastRow()), lastCol).getValues();
@@ -2031,12 +2134,16 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
       }
 
       var msg = "Gespeichert!";
+      if (autoLagerortWrite) extraMsgs.push("Lagerort auf " + autoLagerortWrite + " gesetzt");
       for (var m = 0; m < extraMsgs.length; m++) {
         if (extraMsgs[m]) msg += " | " + extraMsgs[m];
       }
       var result = { success: true, message: msg };
       if (printB64) {
         result.printB64 = printB64;
+      }
+      if (autoLagerortWrite) {
+        result.newRegal = nachbestellungRegalUiFromCell(autoLagerortWrite) || autoLagerortWrite;
       }
       return result;
     } catch (err) {

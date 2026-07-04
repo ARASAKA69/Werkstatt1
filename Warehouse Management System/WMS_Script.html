@@ -633,10 +633,14 @@
       var schaedenHtml = formatSchaeden(e.schaeden);
       var bestellHtml = formatOverviewComment(e.kommBestellung, e.kommAnlieferung);
       var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
+      var isNb = e.source === 'nachbestellung';
+      var lblSchaeden = isNb ? 'Art der Nachbestellung' : 'Schäden (Manueller Input)';
+      var lblBestell = isNb ? 'Artikelnummer' : 'Ersatzteile Bestellung';
+      var lblAnliefer = isNb ? 'Ersatzteil / Bedarf' : 'Ersatzteile Anlieferung';
       html += '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + '" onclick="toggleOverviewEntry(' + i + ')">'  
         + '<td class="ov-check-cell" onclick="event.stopPropagation();"><input type="checkbox"' + (isDone ? ' checked' : '') + ' onchange="toggleOverviewDone(' + i + ',\'' + escapeJs(e.stockId) + '\',this)"></td>'
         + '<td style="color:#F27420;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
-        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
+        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + (isNb ? ' <span style="font-size:10px;color:#F27420;opacity:0.85;">NB</span>' : '') + '</td>'
         + '<td style="color:#E88435;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
         + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
         + '<td><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></td>'
@@ -645,9 +649,9 @@
       html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
         + '<td colspan="7">'
         + '<div class="ov-detail-inner">'
-        + '<div class="ov-detail-box wide"><div class="ov-detail-lbl">Schäden (Manueller Input)</div><div class="ov-detail-val schaeden-list">' + schaedenHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Bestellung</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">Ersatzteile Anlieferung</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
+        + '<div class="ov-detail-box wide"><div class="ov-detail-lbl">' + lblSchaeden + '</div><div class="ov-detail-val schaeden-list">' + schaedenHtml + '</div></div>'
+        + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblBestell + '</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
+        + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblAnliefer + '</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
         + '<div class="ov-detail-box"><div class="ov-detail-lbl">Reifen</div><div class="ov-detail-val"><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></div></div>'
         + '</div>'
         + '</td>'
@@ -734,6 +738,7 @@
         + '<td>' + (j + 1) + '</td>'
         + '<td style="font-weight:700;">' + escapeHtml(e.stockId) + '</td>'
         + '<td style="font-weight:700;">' + escapeHtml(e.regal) + '</td>'
+        + '<td>' + escapeHtml(e.status || '-') + '</td>'
         + '<td>' + escapeHtml(reifen) + '</td>'
         + '</tr>';
     }
@@ -751,7 +756,7 @@
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht \u2014 ' + dateHeader + '</h2>'
       + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
-      + '<table><thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th></tr></thead>'
+      + '<table><thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Status</th><th>Reifen</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</body></html>';
   }
@@ -764,12 +769,14 @@
       var reifen = getOverviewReifenLabel(e);
       var reifenStyle = getOverviewReifenStyle(e);
       var reifenColor = reifenStyle.indexOf('#56d364') !== -1 ? '#0a7a2f' : (reifenStyle.indexOf('#f85149') !== -1 ? '#b00020' : (reifenStyle.indexOf('#F27420') !== -1 ? '#b35c00' : '#111'));
+      var isNb = e.source === 'nachbestellung';
       rows += '<tr>'
         + '<td>' + (j + 1) + '</td>'
         + '<td class="sid">' + escapeHtml(e.stockId) + '</td>'
         + '<td class="reg">' + escapeHtml(e.regal) + '</td>'
+        + '<td>' + escapeHtml(e.status || '-') + '</td>'
         + '<td style="font-weight:700;color:' + reifenColor + ';">' + escapeHtml(reifen) + '</td>'
-        + '<td class="note">' + overviewPrintSchaedenHtml(e.schaeden) + '</td>'
+        + '<td class="note">' + (isNb ? overviewPrintCellText(e.schaeden) : overviewPrintSchaedenHtml(e.schaeden)) + '</td>'
         + '<td class="note">' + overviewPrintCellText(e.kommBestellung) + '</td>'
         + '<td class="note">' + overviewPrintCellText(e.kommAnlieferung) + '</td>'
         + '</tr>';
@@ -786,13 +793,13 @@
       + 'tr:nth-child(even){background:#f7f7f7;}'
       + 'td.sid,td.reg{font-weight:700;}'
       + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
-      + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-rf{width:52px;}col.c-sch{width:22%;}col.c-et{width:auto;}col.c-an{width:auto;}'
+      + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-st{width:72px;}col.c-rf{width:52px;}col.c-sch{width:20%;}col.c-et{width:auto;}col.c-an{width:auto;}'
       + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
       + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
-      + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-rf"><col class="c-sch"><col class="c-et"><col class="c-an"></colgroup>'
-      + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Reifen</th><th>Sch\u00e4den</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
+      + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-st"><col class="c-rf"><col class="c-sch"><col class="c-et"><col class="c-an"></colgroup>'
+      + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Status</th><th>Reifen</th><th>Sch\u00e4den</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</body></html>';
   }
@@ -1735,7 +1742,11 @@
       if(res.success) {
         if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 2500); }
         for(var k = 0; k < nbAllEntries.length; k++) {
-          if(nbAllEntries[k].row === sheetRow) { nbAllEntries[k].status = value; break; }
+          if(nbAllEntries[k].row === sheetRow) {
+            nbAllEntries[k].status = value;
+            if(res.newRegal) nbAllEntries[k].regal = res.newRegal;
+            break;
+          }
         }
         var box = sel ? sel.closest('.nb-detail-box') : null;
         if(box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
