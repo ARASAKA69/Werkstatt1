@@ -239,6 +239,14 @@
             <div class="field-label">Kürzel auf Label</div>
             <input type="text" id="dymoInitials" placeholder="FB" maxlength="3" autocomplete="off">
           </div>
+          <div class="dymo-field dymo-field--model">
+            <div class="field-label">DYMO Modell</div>
+            <select id="dymoModelSelect">
+              <option value="auto">Auto</option>
+              <option value="550">550</option>
+              <option value="450">450</option>
+            </select>
+          </div>
           <div class="dymo-field dymo-field--qty">
             <div class="field-label">Stückzahl</div>
             <div class="qty-stepper qty-stepper--dymo">
@@ -246,6 +254,14 @@
               <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
               <button type="button" class="qty-btn" onclick="stepQty('dymoCount',1)">+</button>
             </div>
+          </div>
+        </div>
+        <div class="dymo-printer-row">
+          <div class="dymo-field dymo-field--printer">
+            <div class="field-label">DYMO Drucker</div>
+            <select id="dymoPrinterSelect">
+              <option value="">DYMO Connect wird geladen…</option>
+            </select>
           </div>
         </div>
         <div class="dymo-print-wrap">

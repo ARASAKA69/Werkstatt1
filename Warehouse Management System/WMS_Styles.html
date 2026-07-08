@@ -1359,13 +1359,51 @@
   }
   .dymo-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    column-gap: 18px;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr) minmax(0, 1fr);
+    column-gap: 14px;
     row-gap: 0;
     align-items: end;
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
+  }
+  .dymo-row > .dymo-field.dymo-field--model {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    align-self: end;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    justify-self: stretch;
+  }
+  .dymo-field--model select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 8px;
+    font-size: 14px;
+    font-weight: 700;
+    background: #0d1117;
+    color: #fff;
+    border: 2.5px solid rgba(242,116,32,0.34);
+    border-radius: 14px;
+    outline: none;
+  }
+  .dymo-printer-row {
+    width: 100%;
+    margin-top: 10px;
+  }
+  .dymo-field--printer select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    background: #0d1117;
+    color: #fff;
+    border: 2.5px solid rgba(242,116,32,0.34);
+    border-radius: 14px;
+    outline: none;
   }
   .dymo-row > .dymo-field.dymo-field--initials {
     display: flex;

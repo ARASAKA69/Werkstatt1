@@ -69,6 +69,21 @@
 
   var savedInitials = localStorage.getItem('arasaka_dymo_initials');
   if(savedInitials) document.getElementById('dymoInitials').value = savedInitials;
+  var dymoModelSelectEl = document.getElementById('dymoModelSelect');
+  if (dymoModelSelectEl) {
+    dymoModelSelectEl.value = localStorage.getItem('arasaka_dymo_variant') || 'auto';
+    dymoModelSelectEl.addEventListener('change', function() {
+      localStorage.setItem('arasaka_dymo_variant', dymoModelSelectEl.value || 'auto');
+    });
+  }
+  var dymoPrinterSelectEl = document.getElementById('dymoPrinterSelect');
+  if (dymoPrinterSelectEl) {
+    dymoPrinterSelectEl.addEventListener('change', function() {
+      localStorage.setItem('arasaka_dymo_printer', dymoPrinterSelectEl.value || '');
+    });
+    setTimeout(function() { if (typeof refreshDymoPrinterSelect === 'function') refreshDymoPrinterSelect(); }, 800);
+    setTimeout(function() { if (typeof refreshDymoPrinterSelect === 'function') refreshDymoPrinterSelect(); }, 3000);
+  }
 
   var BRIDGE_URL = 'http://localhost:9150';
   var wmsWerkstattPrintEnabled = false;
@@ -2135,16 +2150,9 @@
     stockId = normalizeStockInput(stockId);
     try {
       if(typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) return;
-      var printers = dymo.label.framework.getPrinters();
-      if(printers.length === 0) return;
-      var printerName = printers[0].name;
-      var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
-      var today = new Date();
-      var dateString = today.toLocaleDateString('de-DE');
-      var finalXml = baseXml.replace('__STOCKID__', stockId).replace('__DATE__', dateString).replace('__USER__', initials);
-      var label = dymo.label.framework.openLabelXml(sanitizeDymoLabelXml(finalXml));
-      var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: qty });
-      label.print(printerName, printParams);
+      var dymoCtx = requireDymoLabelPrinter();
+      if (!dymoCtx.ok) return;
+      printDymoLabelToPrinter(stockId, initials, qty, dymoCtx.printerName, dymoCtx.variant);
     } catch(err) {}
   }
 
@@ -4553,28 +4561,15 @@
           return { success: false, skipped: false, message: "DYMO Framework fehlt!" };
       }
       
-      var printers = dymo.label.framework.getPrinters();
-      if (printers.length === 0) {
-          if(!opts.silent) setStatus("❌ FEHLER: Kein DYMO Drucker gefunden!", "#f85149");
-          return { success: false, skipped: false, message: "Kein DYMO Drucker gefunden!" };
+      var dymoCtx = requireDymoLabelPrinter();
+      if (!dymoCtx.ok) {
+          if(!opts.silent) setStatus("❌ FEHLER: " + dymoCtx.message, "#f85149");
+          return { success: false, skipped: false, message: dymoCtx.message };
       }
-      var printerName = printers[0].name;
 
-      var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
-
-      var today = new Date();
-      var dateString = today.toLocaleDateString('de-DE');
-
-      var finalXml = baseXml
-          .replace('__STOCKID__', stockForLabel)
-          .replace('__DATE__', dateString)
-          .replace('__USER__', initials);
-
-      var label = dymo.label.framework.openLabelXml(sanitizeDymoLabelXml(finalXml));
-      var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: menge });
-      label.print(printerName, printParams);
+      printDymoLabelToPrinter(stockForLabel, initials, menge, dymoCtx.printerName, dymoCtx.variant);
       if(!opts.silent) {
-        setStatus("✅ Erfolgreich an DYMO gesendet!", "#56d364");
+        setStatus("✅ Erfolgreich an DYMO gesendet! (" + dymoCtx.printerName + ")", "#56d364");
       }
       return { success: true, skipped: false };
 
@@ -4616,22 +4611,21 @@
     return '';
   }
 
-  function sanitizeDymoLabelXml(xml) {
-    return String(xml || '')
-      .replace(/<HasFixedLength>[^<]*<\/HasFixedLength>/gi, '')
-      .replace(/<FixedLengthValue>[^<]*<\/FixedLengthValue>/gi, '')
-      .replace(/<IsStatic>[^<]*<\/IsStatic>/gi, '')
-      .replace(/<StaticDateTime>[^<]*<\/StaticDateTime>/gi, '');
+  function sanitizeDymoLabelXml(xml, variant) {
+    return prepareDymoLabelXmlForOpen(xml, variant || '550');
   }
 
-  function escapeDymoLabelText(text) {
-    return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  function buildReifen450RegalLabelXml(regalText) {
+    var safe = escapeDymoLabelText(regalText);
+    var textObj = '<TextObject><Name>RegalText</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>' + safe + '</Text><FontInfo><FontName>Arial</FontName><FontSize>18</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.35</X><Y>0.35</Y></DYMOPoint><Size><Width>2.5</Width><Height>0.35</Height></Size></ObjectLayout></TextObject>';
+    return DYMO_LABEL_XML_450.replace(/<LabelObjects>[\s\S]*<\/LabelObjects>/, '<LabelObjects>' + textObj + '</LabelObjects>');
   }
 
-  function buildReifenExtraLabelXml(regalText) {
+  function buildReifenExtraLabelXml(regalText, variant) {
+    if (!regalText) return '';
+    if (variant === '450') return buildReifen450RegalLabelXml(regalText);
     if (typeof REIFEN_EXTRA_LABEL_XML === 'undefined' || !REIFEN_EXTRA_LABEL_XML) return '';
     var xml = REIFEN_EXTRA_LABEL_XML;
-    if (!regalText) return xml;
     var safe = escapeDymoLabelText(regalText);
     xml = xml.replace(
       '<ObjectLayout><DYMOPoint><X>1.147006</X><Y>0.065054774</Y></DYMOPoint><Size><Width>1.1859875</Width><Height>1.2756689</Height></Size></ObjectLayout></ImageObject>',
@@ -4639,6 +4633,10 @@
     );
     var textObj = '<TextObject><Name>RegalText</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>' + safe + '</Text><FontInfo><FontName>Arial</FontName><FontSize>20</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>0.42</X><Y>1.04</Y></DYMOPoint><Size><Width>2.4</Width><Height>0.28</Height></Size></ObjectLayout></TextObject>';
     return xml.replace('</LabelObjects>', textObj + '</LabelObjects>');
+  }
+
+  function escapeDymoLabelText(text) {
+    return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   function printReifenDymoLabels(stockId, tireInfo, mengeStr, regalHint) {
@@ -4652,34 +4650,20 @@
         return { success: false, message: "DYMO Framework fehlt!" };
       }
 
-      var printers = dymo.label.framework.getPrinters();
-      if (printers.length === 0) {
-        return { success: false, message: "Kein DYMO Drucker gefunden!" };
+      var dymoCtx = requireDymoLabelPrinter();
+      if (!dymoCtx.ok) {
+        return { success: false, message: dymoCtx.message };
       }
-      var printerName = printers[0].name;
+      var printerName = dymoCtx.printerName;
+      var variant = dymoCtx.variant;
       var menge = parseInt(mengeStr, 10);
       if (isNaN(menge) || menge < 1) menge = 1;
 
-      var baseXml = '<?xml version="1.0" encoding="utf-8"?><DesktopLabel Version="1"><DYMOLabel Version="4"><Description>DYMO Label</Description><Orientation>Landscape</Orientation><LabelName>LargeAddressS0722400</LabelName><InitialLength>0</InitialLength><BorderStyle>SolidLine</BorderStyle><DYMORect><DYMOPoint><X>0.22333334</X><Y>0.060000002</Y></DYMOPoint><Size><Width>3.2033331</Width><Height>1.3066665</Height></Size></DYMORect><BorderColor><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderColor><BorderThickness>1</BorderThickness><Show_Border>False</Show_Border><DynamicLayoutManager><RotationBehavior>ClearObjects</RotationBehavior><LabelObjects><BarcodeObject><Name>BarcodeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="1" R="1" G="1" B="1"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><BarcodeFormat>Code128Auto</BarcodeFormat><Data><DataString>__STOCKID__</DataString></Data><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><Size>AutoFit</Size><TextPosition>Bottom</TextPosition><FontInfo><FontName>Arial</FontName><FontSize>36</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>0.141231</Y></DYMOPoint><Size><Width>2.957271</Width><Height>1.0161185</Height></Size></ObjectLayout></BarcodeObject><DateTimeObject><Name>DateTimeObject0</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>None</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>None</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan><FixedTextSpan><Text>__DATE__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></FixedTextSpan><TextSpan><Text /><FontInfo><FontName>Segoe UI</FontName><FontSize>8</FontSize><IsBold>True</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><Prefix /><Postfix /><Format>LongSystemDate</Format><Use24HourTime>True</Use24HourTime><TimeFormat>DateAndTime</TimeFormat><ObjectLayout><DYMOPoint><X>0.22333334</X><Y>1.1573496</Y></DYMOPoint><Size><Width>2.2266803</Width><Height>0.16098966</Height></Size></ObjectLayout></DateTimeObject><TextObject><Name>TextObject1</Name><Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush><BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush><StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush><FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes><Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>True</IsOutlined><BorderStyle>SolidLine</BorderStyle><Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical><FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>Center</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical><LineTextSpan><TextSpan><Text>__USER__</Text><FontInfo><FontName>Segoe UI</FontName><FontSize>14.9</FontSize><IsBold>True</IsBold><IsItalic>True</IsItalic><IsUnderline>False</IsUnderline><FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo></TextSpan></LineTextSpan></FormattedText><ObjectLayout><DYMOPoint><X>2.75792</X><Y>1.0424321</Y></DYMOPoint><Size><Width>0.42268467</Width><Height>0.2808673</Height></Size></ObjectLayout></TextObject></LabelObjects></DynamicLayoutManager></DYMOLabel><LabelApplication>Blank</LabelApplication><DataTable><Columns></Columns><Rows></Rows></DataTable></DesktopLabel>';
-
-      var today = new Date();
-      var dateString = today.toLocaleDateString('de-DE');
-
-      function firePrint(mainData, copiesCount) {
-        var finalXml = baseXml
-          .replace('__STOCKID__', mainData)
-          .replace('__DATE__', dateString)
-          .replace('__USER__', initials);
-        var label = dymo.label.framework.openLabelXml(sanitizeDymoLabelXml(finalXml));
-        var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: copiesCount });
-        label.print(printerName, printParams);
-      }
-
-      firePrint(stockId, menge);
-      firePrint(tireInfo, 1);
-      var extraXml = buildReifenExtraLabelXml(resolveReifenRegalForLabel(stockId, regalHint));
+      printDymoLabelToPrinter(stockId, initials, menge, printerName, variant);
+      if (tireInfo) printDymoLabelToPrinter(tireInfo, initials, 1, printerName, variant);
+      var extraXml = buildReifenExtraLabelXml(resolveReifenRegalForLabel(stockId, regalHint), variant);
       if (extraXml) {
-        var extraLabel = dymo.label.framework.openLabelXml(sanitizeDymoLabelXml(extraXml));
+        var extraLabel = dymo.label.framework.openLabelXml(prepareDymoLabelXmlForOpen(extraXml, variant));
         var extraParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: 1 });
         extraLabel.print(printerName, extraParams);
       }
