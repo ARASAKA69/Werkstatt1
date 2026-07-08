@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.6
-// @description ARASAKA v4.6 - Skip back-navigation, close tab via prompt after workflow
+// @version 4.8
+// @description ARASAKA v4.8 - Precise Close-button click, stay on page, close tab prompt
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -623,7 +623,36 @@
         document.addEventListener('keydown', onKey, true);
     }
 
+    function findExactCloseButton() {
+        const candidates = [];
+        for (const el of document.querySelectorAll('button, [role="button"], a')) {
+            const txt = (el.textContent || '').trim();
+            if (txt === 'Close') candidates.push(el);
+        }
+        return candidates.length ? candidates[candidates.length - 1] : null;
+    }
+
+    async function clickSavedDialogClose(timeout = 10000) {
+        let passed = 0;
+        while (passed < timeout) {
+            if (abortMission) throw new Error('Abort');
+            const btn = findExactCloseButton();
+            if (btn) {
+                try {
+                    btn.style.outline = '2px solid #00ff00';
+                    btn.style.boxShadow = '0 0 15px #00ff00';
+                } catch (e) {}
+                btn.click();
+                return true;
+            }
+            await sleep(250);
+            passed += 250;
+        }
+        return false;
+    }
+
     function finishAndCloseTab() {
+        sessionStorage.removeItem('arasaka_close_after_done');
         notifyWmsDone();
         setTimeout(removeHUD, 1200);
         showCloseTabPrompt();
@@ -699,7 +728,10 @@
                 }
             }
 
+            const isAutoRun = window.location.href.includes('arasaka_auto=1');
+
             updateHUD('Übermittle Daten...', '#00ffcc', true);
+            if (isAutoRun) sessionStorage.setItem('arasaka_close_after_done', '1');
             const btnSubmit = await waitForElement('Submit');
             if (btnSubmit) forceClick(btnSubmit);
 
@@ -710,10 +742,12 @@
 
             updateHUD('Schließe Dialog...', '#00ffcc', true);
             await sleep(2000);
-            const btnClose = await waitForElement('Close', 10000, true);
-            if (btnClose) forceClick(btnClose);
-
-            const isAutoRun = window.location.href.includes('arasaka_auto=1');
+            const dialogClosed = await clickSavedDialogClose(10000);
+            if (!dialogClosed) {
+                const btnClose = await waitForElement('Close', 5000, true);
+                if (btnClose) btnClose.click();
+            }
+            await sleep(800);
 
             if (!isAutoRun) {
                 updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
@@ -735,6 +769,7 @@
             }
 
         } catch (e) {
+            sessionStorage.removeItem('arasaka_close_after_done');
             if (e.message === 'Abort') {
                 updateHUD('ABBRUCH DURCH USER', '#ff4444');
             } else {
@@ -745,9 +780,11 @@
         }
     }
 
-    sessionStorage.removeItem('arasaka_close_after_done');
-
-    if (window.location.href.includes('arasaka_auto=1')) {
+    if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
+        isLocked = true;
+        playDing('success');
+        finishAndCloseTab();
+    } else if (window.location.href.includes('arasaka_auto=1')) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
