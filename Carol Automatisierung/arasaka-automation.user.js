@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.3
-// @description ARASAKA v4.3 - Auto-close Carol tab via Tampermonkey, return to WMS
+// @version 4.4
+// @description ARASAKA v4.4 - Auto-close Carol tab (Ctrl+W emulation), return to WMS
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -11,9 +11,8 @@
 // @grant GM_getValue
 // @grant GM_registerMenuCommand
 // @grant GM_xmlhttpRequest
-// @grant GM_getTab
-// @grant GM_closeInTab
 // @grant window.close
+// @grant window.focus
 // @connect localhost
 // ==/UserScript==
 
@@ -553,27 +552,50 @@
         }
     }
 
+    function postDoneToWindowTree(win, depth) {
+        if (!win || depth > 3) return;
+        try { win.postMessage({ type: 'arasaka_carol_done' }, '*'); } catch (e) {}
+        try {
+            for (let i = 0; i < win.frames.length; i++) {
+                postDoneToWindowTree(win.frames[i], depth + 1);
+            }
+        } catch (e) {}
+    }
+
+    function notifyWmsDone() {
+        let sent = 0;
+        const timer = setInterval(() => {
+            sent++;
+            try {
+                if (window.opener && !window.opener.closed) {
+                    let root = window.opener;
+                    try { if (root.top) root = root.top; } catch (e) {}
+                    postDoneToWindowTree(root, 0);
+                }
+            } catch (e) {}
+            if (sent >= 8) clearInterval(timer);
+        }, 300);
+    }
+
     function closeCarolTabLikeCtrlW() {
-        window.close();
+        try { window.close(); } catch (e) {}
         setTimeout(() => {
-            if (typeof GM_getTab !== 'function' || typeof GM_closeInTab !== 'function') return;
-            GM_getTab((tab) => {
-                if (tab && typeof tab.id === 'number') GM_closeInTab(tab.id);
-            });
-        }, 250);
+            try {
+                const self = window.open('', '_self');
+                if (self) self.close();
+            } catch (e) {}
+        }, 200);
+        setTimeout(() => {
+            try { window.close(); } catch (e) {}
+        }, 500);
     }
 
     function returnToWmsAndCloseTab(delayMs = 2000) {
         if (!window.location.href.includes('arasaka_auto=1')) return;
-
+        notifyWmsDone();
         setTimeout(() => {
-            try {
-                if (window.opener && !window.opener.closed) {
-                    window.opener.postMessage({ type: 'arasaka_carol_done' }, '*');
-                }
-            } catch (e) {}
             removeHUD();
-            setTimeout(closeCarolTabLikeCtrlW, 350);
+            setTimeout(closeCarolTabLikeCtrlW, 300);
         }, delayMs);
     }
 
