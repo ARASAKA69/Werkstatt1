@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.1
-// @description ARASAKA v4.1 - Silent Print via Bridge, fast Carol auto-start
+// @version 4.2
+// @description ARASAKA v4.2 - Auto-close Carol tab, return to WMS
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -550,6 +550,25 @@
         }
     }
 
+    function returnToWmsAndCloseTab(delayMs = 2000) {
+        if (!window.location.href.includes('arasaka_auto=1')) return;
+        let openerRef = null;
+        try {
+            if (window.opener && !window.opener.closed) openerRef = window.opener;
+        } catch (e) {}
+        if (!openerRef) return;
+
+        setTimeout(() => {
+            try {
+                openerRef.postMessage({ type: 'arasaka_carol_done' }, '*');
+            } catch (e) {}
+            removeHUD();
+            setTimeout(() => {
+                try { window.close(); } catch (e) {}
+            }, 350);
+        }, delayMs);
+    }
+
     async function startMacro(skipPrint = false) {
         try {
             hudLog = []; currentStep = 0;
@@ -644,7 +663,16 @@
                 updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
             }
             playDing('success');
-            setTimeout(removeHUD, 5000);
+            if (window.location.href.includes('arasaka_auto=1')) {
+                try {
+                    if (window.opener && !window.opener.closed) returnToWmsAndCloseTab(2000);
+                    else setTimeout(removeHUD, 5000);
+                } catch (e) {
+                    setTimeout(removeHUD, 5000);
+                }
+            } else {
+                setTimeout(removeHUD, 5000);
+            }
 
         } catch (e) {
             if (e.message === 'Abort') {
