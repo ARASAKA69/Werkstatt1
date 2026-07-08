@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.6
-// @description ARASAKA v3.6 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
+// @version 3.7
+// @description ARASAKA v3.7 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -498,7 +498,17 @@
         });
     }
 
-    async function sucheUndOeffnePdf() {
+    async function waitForRegal(timeout = 5000) {
+        let passed = 0;
+        while (passed < timeout) {
+            if (abortMission) throw new Error('Abort');
+            if (sessionStorage.getItem('arasaka_old_regal')) return;
+            await sleep(200);
+            passed += 200;
+        }
+    }
+
+    async function sucheUndOeffnePdf({ removeHudOnComplete = true } = {}) {
         updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
         await sleep(4000);
 
@@ -576,11 +586,15 @@
                 sessionStorage.removeItem('arasaka_old_regal');
             }
 
-            setTimeout(removeHUD, 6000);
+            if (removeHudOnComplete) {
+                setTimeout(removeHUD, 6000);
+            }
         } else {
              updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
              playDing('error');
-             setTimeout(removeHUD, 5000);
+             if (removeHudOnComplete) {
+                 setTimeout(removeHUD, 5000);
+             }
         }
     }
 
@@ -595,7 +609,12 @@
                 const stockId = titleMatch[0].toUpperCase();
                 updateHUD(`Stock-ID ${stockId} erkannt`, '#ffff00', true);
                 sendGhostPing(stockId);
-                await sleep(1500);
+                await waitForRegal(5000);
+            }
+
+            if (!skipPrint) {
+                await sucheUndOeffnePdf({ removeHudOnComplete: false });
+                if (abortMission) return;
             }
 
             updateHUD('Öffne Edit damages...', '#00ffcc', true);
@@ -673,20 +692,15 @@
             updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
             await sleep(1500);
             const btnBack = await waitForElement('Back to refurbishment detail', 15000);
-            if (btnBack) {
-                if (!skipPrint) {
-                    sessionStorage.setItem('hole_pdf_nach_reload', 'true');
-                } else {
-                    sessionStorage.removeItem('hole_pdf_nach_reload');
-                }
-                forceClick(btnBack);
-            }
+            if (btnBack) forceClick(btnBack);
 
             if (skipPrint) {
                 updateHUD('NACHBESTELLUNG ABGESCHLOSSEN ─ Kein Druck', '#00ff00', true);
-                playDing('success');
-                setTimeout(removeHUD, 5000);
+            } else {
+                updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
             }
+            playDing('success');
+            setTimeout(removeHUD, 5000);
 
         } catch (e) {
             if (e.message === 'Abort') {
@@ -697,24 +711,6 @@
             playDing('error');
             setTimeout(removeHUD, 4000);
         }
-    }
-
-    if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
-        sessionStorage.removeItem('hole_pdf_nach_reload');
-        isLocked = true;
-        currentStep = 11;
-        (async () => {
-            try {
-                await sucheUndOeffnePdf();
-            } catch (e) {
-                const msg = e.message === 'Abort' ? 'ABBRUCH DURCH USER' : 'SYSTEMFEHLER';
-                updateHUD(msg, '#ff4444');
-                playDing('error');
-                setTimeout(removeHUD, 3000);
-            } finally {
-                isLocked = false;
-            }
-        })();
     }
 
     if (window.location.href.includes('arasaka_auto=1')) {
