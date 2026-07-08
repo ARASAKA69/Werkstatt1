@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.7
-// @description ARASAKA v3.7 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
+// @version 3.8
+// @description ARASAKA v3.8 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -478,6 +478,67 @@
         return null;
     }
 
+    let regalShown = false;
+
+    function tryShowPendingRegal() {
+        if (regalShown) return;
+        const oldRegal = sessionStorage.getItem('arasaka_old_regal');
+        if (!oldRegal) return;
+        regalShown = true;
+        showArasakaRegalHUD(oldRegal);
+        sessionStorage.removeItem('arasaka_old_regal');
+    }
+
+    function findWerkstattPdf() {
+        for (const el of getDeepestElementsByText('Werkstattauftrag')) {
+            const row = el.closest('tr') || el.closest('[role="row"]');
+            if (!row) continue;
+            const link = row.querySelector('a[href]');
+            if (link?.href) return { url: link.href, element: link };
+        }
+
+        for (const link of document.querySelectorAll('a[href]')) {
+            const row = link.closest('tr') || link.closest('[role="row"]');
+            if (row?.textContent?.includes('Werkstattauftrag') && link.href.toLowerCase().includes('.pdf')) {
+                return { url: link.href, element: link };
+            }
+        }
+
+        for (const link of document.querySelectorAll('a[href*=".pdf"], a[href*="pdf"]')) {
+            const row = link.closest('tr') || link.closest('[role="row"]');
+            if (row?.textContent?.toLowerCase().includes('werkstatt')) {
+                return { url: link.href, element: link };
+            }
+        }
+
+        return null;
+    }
+
+    async function waitForWerkstattPdf(timeout = 2000) {
+        let passed = 0;
+        while (passed < timeout) {
+            if (abortMission) throw new Error('Abort');
+            const found = findWerkstattPdf();
+            if (found) return found;
+            await sleep(100);
+            passed += 100;
+        }
+        return null;
+    }
+
+    function isBridgeUp() {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'http://localhost:9150/status',
+                timeout: 1500,
+                onload: () => resolve(true),
+                onerror: () => resolve(false),
+                ontimeout: () => resolve(false)
+            });
+        });
+    }
+
     function sendToBridge(url) {
         return new Promise((resolve) => {
             GM_xmlhttpRequest({
@@ -485,7 +546,7 @@
                 url: 'http://localhost:9150/print',
                 headers: { 'Content-Type': 'application/json' },
                 data: JSON.stringify({ url: url, copies: 1 }),
-                timeout: 30000,
+                timeout: 60000,
                 onload: r => {
                     try {
                         const res = JSON.parse(r.responseText);
@@ -498,109 +559,72 @@
         });
     }
 
-    async function waitForRegal(timeout = 5000) {
-        let passed = 0;
-        while (passed < timeout) {
-            if (abortMission) throw new Error('Abort');
-            if (sessionStorage.getItem('arasaka_old_regal')) return;
-            await sleep(200);
-            passed += 200;
-        }
+    function queuePrint(url) {
+        sendToBridge(url).then((result) => {
+            if (!result.ok && hudElement) {
+                const cur = document.querySelector('.a-current');
+                if (cur && !cur.textContent.includes('ABGESCHLOSSEN') && !cur.textContent.includes('ABBRUCH')) {
+                    updateHUD(`Druck-Hinweis: ${result.error}`, '#ffaa00');
+                }
+            }
+        });
     }
 
-    async function sucheUndOeffnePdf({ removeHudOnComplete = true } = {}) {
-        updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
-        await sleep(4000);
+    async function sucheUndOeffnePdf({ removeHudOnComplete = true, fireAndForget = false } = {}) {
+        updateHUD('Suche Werkstattauftrag...', '#ffff00', true);
 
-        updateHUD('Scanne nach PDF...', '#ffff00', true);
+        const pdf = await waitForWerkstattPdf(2000);
 
-        let textWerkstatt = await waitForElement('Werkstattauftrag', 5000);
-        let pdfElement = null;
-
-        if (textWerkstatt) {
-            let parent = textWerkstatt.parentElement;
-            for (let i = 0; i < 8; i++) {
-                if (!parent) break;
-                for (const el of parent.querySelectorAll('*')) {
-                    if (!el.textContent?.toLowerCase().includes('.pdf')) continue;
-                    const childHas = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
-                    if (childHas) continue;
-                    pdfElement = el;
-                    break;
-                }
-                if (pdfElement) break;
-                parent = parent.parentElement;
-            }
-        }
-
-        if (!pdfElement) {
-            updateHUD('Fallback: Suche direkt nach PDF-Datei...', '#ffaa00', true);
-            const allPdfEls = [];
-
-            for (const el of document.querySelectorAll('*')) {
-                if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY', 'svg', 'path'].includes(el.tagName)) continue;
-                if (el.textContent?.toLowerCase().includes('.pdf')) {
-                    const childHasPdf = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
-                    if (!childHasPdf) allPdfEls.push(el);
-                }
-            }
-
-            for (const el of allPdfEls) {
-                if (el.textContent.toLowerCase().includes('werkstatt')) {
-                    pdfElement = el;
-                    break;
-                }
-            }
-
-            if (!pdfElement && allPdfEls.length > 0) {
-                pdfElement = allPdfEls[0];
-            }
-        }
-
-        if (pdfElement) {
-            pdfElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await sleep(800);
-
-            const pdfUrl = extractPdfUrl(pdfElement);
+        if (pdf) {
+            const pdfUrl = pdf.url || extractPdfUrl(pdf.element);
             if (pdfUrl) {
-                updateHUD('Sende PDF an Drucker...', '#ffff00', true);
-                const result = await sendToBridge(pdfUrl);
-                if (result.ok) {
-                    updateHUD(`PDF GEDRUCKT ─ ${result.printer}`, '#00ff00', true);
+                if (fireAndForget) {
+                    updateHUD('Druck gestartet...', '#00ff00', true);
+                    queuePrint(pdfUrl);
                     playDing('success');
                 } else {
-                    updateHUD(`Druck fehlgeschlagen: ${result.error}`, '#ff4444', true);
-                    playDing('error');
-                    forceClick(pdfElement);
-                    updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (Fallback)', '#ffaa00', true);
+                    const bridgeOk = await isBridgeUp();
+                    if (bridgeOk) {
+                        const result = await sendToBridge(pdfUrl);
+                        if (result.ok) {
+                            updateHUD(`PDF GEDRUCKT ─ ${result.printer}`, '#00ff00', true);
+                            playDing('success');
+                        } else {
+                            updateHUD(`Druck fehlgeschlagen: ${result.error}`, '#ff4444', true);
+                            playDing('error');
+                            forceClick(pdf.element);
+                            updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (Fallback)', '#ffaa00', true);
+                        }
+                    } else {
+                        forceClick(pdf.element);
+                        updateHUD('PDF GEÖFFNET ─ Bridge offline (STRG+P)', '#ffaa00', true);
+                        playDing('error');
+                    }
                 }
             } else {
-                forceClick(pdfElement);
+                forceClick(pdf.element);
                 updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (kein Link)', '#ffaa00', true);
                 playDing('success');
             }
 
-            const oldRegal = sessionStorage.getItem('arasaka_old_regal');
-            if (oldRegal) {
-                showArasakaRegalHUD(oldRegal);
-                sessionStorage.removeItem('arasaka_old_regal');
-            }
+            tryShowPendingRegal();
 
             if (removeHudOnComplete) {
                 setTimeout(removeHUD, 6000);
             }
         } else {
-             updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
-             playDing('error');
-             if (removeHudOnComplete) {
-                 setTimeout(removeHUD, 5000);
-             }
+            updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
+            playDing('error');
+            if (removeHudOnComplete) {
+                setTimeout(removeHUD, 5000);
+            }
         }
     }
 
     async function startMacro(skipPrint = false) {
         try {
             hudLog = []; currentStep = 0;
+            regalShown = false;
             createHUD();
             updateHUD('Initialisiere...');
 
@@ -609,13 +633,14 @@
                 const stockId = titleMatch[0].toUpperCase();
                 updateHUD(`Stock-ID ${stockId} erkannt`, '#ffff00', true);
                 sendGhostPing(stockId);
-                await waitForRegal(5000);
             }
 
             if (!skipPrint) {
-                await sucheUndOeffnePdf({ removeHudOnComplete: false });
+                await sucheUndOeffnePdf({ removeHudOnComplete: false, fireAndForget: true });
                 if (abortMission) return;
             }
+
+            tryShowPendingRegal();
 
             updateHUD('Öffne Edit damages...', '#00ffcc', true);
             const btnEdit = await waitForElement('Edit damages and services');
@@ -624,6 +649,7 @@
 
             updateHUD('Navigiere zu Spare Parts...', '#00ffcc', true);
             await sleep(2000);
+            tryShowPendingRegal();
             const btnSpareParts = await waitForElement('Spare parts');
             if (!btnSpareParts) { updateHUD('Spare Parts nicht gefunden!', '#ff4444'); return; }
             forceClick(btnSpareParts);
@@ -691,6 +717,7 @@
 
             updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
             await sleep(1500);
+            tryShowPendingRegal();
             const btnBack = await waitForElement('Back to refurbishment detail', 15000);
             if (btnBack) forceClick(btnBack);
 
