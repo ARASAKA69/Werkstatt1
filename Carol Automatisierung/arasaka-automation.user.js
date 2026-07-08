@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.6
-// @description ARASAKA v3.6 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
+// @version 4.9
+// @description ARASAKA v4.9 - Auto-run flag captured at load (SPA drops URL param)
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -11,14 +11,15 @@
 // @grant GM_getValue
 // @grant GM_registerMenuCommand
 // @grant GM_xmlhttpRequest
+// @grant window.close
+// @grant window.focus
 // @connect localhost
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    const googleWebAppUrl = 'https://script.google.com/a/macros/auto1.com/s/AKfycbzFCxeD2nL8-km1izhQr1mLU8mhd1hCymE5jwt3B_eYP7Iqe17DllFAUuRgNseWH7Ya/exec';
-
+    const launchedAsAuto = window.location.href.includes('arasaka_auto=1');
     let abortMission = false;
     let hudElement = null;
     let isLocked = false;
@@ -412,62 +413,6 @@
         if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
     }
 
-    function showArasakaRegalHUD(regalText) {
-        let existing = document.getElementById('arasaka-regal-hud');
-        if (existing) existing.remove();
-
-        const hud = document.createElement('div');
-        hud.id = 'arasaka-regal-hud';
-        hud.style.position = 'fixed';
-        hud.style.top = '50%';
-        hud.style.left = '50%';
-        hud.style.transform = 'translate(-50%, -50%)';
-        hud.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
-        hud.style.border = '4px solid #00FF00';
-        hud.style.boxShadow = '0 0 40px #00FF00, inset 0 0 20px #00FF00';
-        hud.style.padding = '60px 100px';
-        hud.style.borderRadius = '20px';
-        hud.style.zIndex = '9999999';
-        hud.style.color = '#00FF00';
-        hud.style.fontFamily = 'monospace';
-        hud.style.textAlign = 'center';
-        hud.style.cursor = 'pointer';
-
-        hud.innerHTML = `
-            <div style="font-size: 30px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF00;">TEILE STANDEN IN:</div>
-            <div style="font-size: 80px; font-weight: bold; color: #FFF; text-shadow: 0 0 20px #FFF, 0 0 40px #00FF00;">${regalText}</div>
-            <div style="font-size: 16px; margin-top: 30px; opacity: 0.7;">(Klick oder ESC zum Schließen)</div>
-        `;
-
-        document.body.appendChild(hud);
-
-        const closeHUD = (e) => {
-            if (e.type === 'keydown' && e.key !== 'Escape') return;
-            hud.remove();
-            document.removeEventListener('keydown', closeHUD);
-            document.removeEventListener('click', closeHUD);
-        };
-
-        setTimeout(() => {
-            document.addEventListener('click', closeHUD);
-            document.addEventListener('keydown', closeHUD);
-        }, 200);
-    }
-
-    function sendGhostPing(stockId) {
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: `${googleWebAppUrl}?stock=${stockId}`,
-            onload:  r => {
-                let match = r.responseText.match(/OLD_REGAL:(.*?)(?: \||$)/);
-                if (match && match[1]) {
-                    sessionStorage.setItem('arasaka_old_regal', match[1].trim());
-                }
-            },
-            onerror: e => {}
-        });
-    }
-
     function extractPdfUrl(el) {
         if (el.tagName === 'A' && el.href) return el.href;
         const link = el.closest('a');
@@ -478,6 +423,56 @@
         return null;
     }
 
+    function findWerkstattPdf() {
+        for (const el of getDeepestElementsByText('Werkstattauftrag')) {
+            const row = el.closest('tr') || el.closest('[role="row"]');
+            if (!row) continue;
+            const link = row.querySelector('a[href]');
+            if (link?.href) return { url: link.href, element: link };
+        }
+
+        for (const link of document.querySelectorAll('a[href]')) {
+            const row = link.closest('tr') || link.closest('[role="row"]');
+            if (row?.textContent?.includes('Werkstattauftrag') && link.href.toLowerCase().includes('.pdf')) {
+                return { url: link.href, element: link };
+            }
+        }
+
+        for (const link of document.querySelectorAll('a[href*=".pdf"], a[href*="pdf"]')) {
+            const row = link.closest('tr') || link.closest('[role="row"]');
+            if (row?.textContent?.toLowerCase().includes('werkstatt')) {
+                return { url: link.href, element: link };
+            }
+        }
+
+        return null;
+    }
+
+    async function waitForWerkstattPdf(timeout = 2000) {
+        let passed = 0;
+        while (passed < timeout) {
+            if (abortMission) throw new Error('Abort');
+            const found = findWerkstattPdf();
+            if (found) return found;
+            await sleep(100);
+            passed += 100;
+        }
+        return null;
+    }
+
+    function isBridgeUp() {
+        return new Promise((resolve) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: 'http://localhost:9150/status',
+                timeout: 1500,
+                onload: () => resolve(true),
+                onerror: () => resolve(false),
+                ontimeout: () => resolve(false)
+            });
+        });
+    }
+
     function sendToBridge(url) {
         return new Promise((resolve) => {
             GM_xmlhttpRequest({
@@ -485,7 +480,7 @@
                 url: 'http://localhost:9150/print',
                 headers: { 'Content-Type': 'application/json' },
                 data: JSON.stringify({ url: url, copies: 1 }),
-                timeout: 30000,
+                timeout: 60000,
                 onload: r => {
                     try {
                         const res = JSON.parse(r.responseText);
@@ -498,90 +493,171 @@
         });
     }
 
-    async function sucheUndOeffnePdf() {
-        updateHUD('Warte auf Tabellen-Aufbau...', '#00ffcc', true);
-        await sleep(4000);
-
-        updateHUD('Scanne nach PDF...', '#ffff00', true);
-
-        let textWerkstatt = await waitForElement('Werkstattauftrag', 5000);
-        let pdfElement = null;
-
-        if (textWerkstatt) {
-            let parent = textWerkstatt.parentElement;
-            for (let i = 0; i < 8; i++) {
-                if (!parent) break;
-                for (const el of parent.querySelectorAll('*')) {
-                    if (!el.textContent?.toLowerCase().includes('.pdf')) continue;
-                    const childHas = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
-                    if (childHas) continue;
-                    pdfElement = el;
-                    break;
-                }
-                if (pdfElement) break;
-                parent = parent.parentElement;
-            }
-        }
-
-        if (!pdfElement) {
-            updateHUD('Fallback: Suche direkt nach PDF-Datei...', '#ffaa00', true);
-            const allPdfEls = [];
-
-            for (const el of document.querySelectorAll('*')) {
-                if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY', 'svg', 'path'].includes(el.tagName)) continue;
-                if (el.textContent?.toLowerCase().includes('.pdf')) {
-                    const childHasPdf = Array.from(el.children).some(c => c.textContent?.toLowerCase().includes('.pdf'));
-                    if (!childHasPdf) allPdfEls.push(el);
+    function queuePrint(url) {
+        sendToBridge(url).then((result) => {
+            if (!result.ok && hudElement) {
+                const cur = document.querySelector('.a-current');
+                if (cur && !cur.textContent.includes('ABGESCHLOSSEN') && !cur.textContent.includes('ABBRUCH')) {
+                    updateHUD(`Druck-Hinweis: ${result.error}`, '#ffaa00');
                 }
             }
+        });
+    }
 
-            for (const el of allPdfEls) {
-                if (el.textContent.toLowerCase().includes('werkstatt')) {
-                    pdfElement = el;
-                    break;
-                }
-            }
+    async function sucheUndOeffnePdf({ removeHudOnComplete = true, fireAndForget = false } = {}) {
+        updateHUD('Suche Werkstattauftrag...', '#ffff00', true);
 
-            if (!pdfElement && allPdfEls.length > 0) {
-                pdfElement = allPdfEls[0];
-            }
-        }
+        const pdf = await waitForWerkstattPdf(2000);
 
-        if (pdfElement) {
-            pdfElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            await sleep(800);
-
-            const pdfUrl = extractPdfUrl(pdfElement);
+        if (pdf) {
+            const pdfUrl = pdf.url || extractPdfUrl(pdf.element);
             if (pdfUrl) {
-                updateHUD('Sende PDF an Drucker...', '#ffff00', true);
-                const result = await sendToBridge(pdfUrl);
-                if (result.ok) {
-                    updateHUD(`PDF GEDRUCKT ─ ${result.printer}`, '#00ff00', true);
+                if (fireAndForget) {
+                    updateHUD('Druck gestartet...', '#00ff00', true);
+                    queuePrint(pdfUrl);
                     playDing('success');
                 } else {
-                    updateHUD(`Druck fehlgeschlagen: ${result.error}`, '#ff4444', true);
-                    playDing('error');
-                    forceClick(pdfElement);
-                    updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (Fallback)', '#ffaa00', true);
+                    const bridgeOk = await isBridgeUp();
+                    if (bridgeOk) {
+                        const result = await sendToBridge(pdfUrl);
+                        if (result.ok) {
+                            updateHUD(`PDF GEDRUCKT ─ ${result.printer}`, '#00ff00', true);
+                            playDing('success');
+                        } else {
+                            updateHUD(`Druck fehlgeschlagen: ${result.error}`, '#ff4444', true);
+                            playDing('error');
+                            forceClick(pdf.element);
+                            updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (Fallback)', '#ffaa00', true);
+                        }
+                    } else {
+                        forceClick(pdf.element);
+                        updateHUD('PDF GEÖFFNET ─ Bridge offline (STRG+P)', '#ffaa00', true);
+                        playDing('error');
+                    }
                 }
             } else {
-                forceClick(pdfElement);
+                forceClick(pdf.element);
                 updateHUD('PDF GEÖFFNET ─ Bereit für STRG+P (kein Link)', '#ffaa00', true);
                 playDing('success');
             }
 
-            const oldRegal = sessionStorage.getItem('arasaka_old_regal');
-            if (oldRegal) {
-                showArasakaRegalHUD(oldRegal);
-                sessionStorage.removeItem('arasaka_old_regal');
+            if (removeHudOnComplete) {
+                setTimeout(removeHUD, 6000);
             }
-
-            setTimeout(removeHUD, 6000);
         } else {
-             updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
-             playDing('error');
-             setTimeout(removeHUD, 5000);
+            updateHUD('Kein PDF/Auftrag gefunden!', '#ff4444', true);
+            playDing('error');
+            if (removeHudOnComplete) {
+                setTimeout(removeHUD, 5000);
+            }
         }
+    }
+
+    function postDoneToWindowTree(win, depth) {
+        if (!win || depth > 3) return;
+        try { win.postMessage({ type: 'arasaka_carol_done' }, '*'); } catch (e) {}
+        try {
+            for (let i = 0; i < win.frames.length; i++) {
+                postDoneToWindowTree(win.frames[i], depth + 1);
+            }
+        } catch (e) {}
+    }
+
+    function notifyWmsDone() {
+        let sent = 0;
+        const timer = setInterval(() => {
+            sent++;
+            try {
+                if (window.opener && !window.opener.closed) {
+                    let root = window.opener;
+                    try { if (root.top) root = root.top; } catch (e) {}
+                    postDoneToWindowTree(root, 0);
+                }
+            } catch (e) {}
+            if (sent >= 8) clearInterval(timer);
+        }, 300);
+    }
+
+    function closeCarolTabLikeCtrlW() {
+        try { window.close(); } catch (e) {}
+        setTimeout(() => {
+            try {
+                const self = window.open('', '_self');
+                if (self) self.close();
+            } catch (e) {}
+        }, 200);
+        setTimeout(() => {
+            try { window.close(); } catch (e) {}
+        }, 500);
+    }
+
+    function showCloseTabPrompt() {
+        const old = document.getElementById('arasaka-close-prompt');
+        if (old) old.remove();
+
+        const box = document.createElement('div');
+        box.id = 'arasaka-close-prompt';
+        box.style.cssText = [
+            'position:fixed', 'top:50%', 'left:50%', 'transform:translate(-50%,-50%)',
+            'background:rgba(10,10,10,0.96)', 'border:4px solid #00ff00',
+            'box-shadow:0 0 40px rgba(0,255,0,0.7), inset 0 0 20px rgba(0,255,0,0.2)',
+            'padding:50px 90px', 'border-radius:18px', 'z-index:9999999',
+            'color:#00ff00', 'font-family:monospace', 'text-align:center', 'cursor:pointer'
+        ].join(';');
+        box.innerHTML = `
+            <div style="font-size:32px;font-weight:bold;text-shadow:0 0 12px #00ff00;">AUFTRAG ABGESCHLOSSEN</div>
+            <div style="font-size:18px;margin-top:24px;opacity:0.9;">ENTER drücken oder klicken</div>
+            <div style="font-size:15px;margin-top:6px;opacity:0.6;">─ Tab wird geschlossen ─</div>
+        `;
+        document.body.appendChild(box);
+
+        const doClose = (e) => {
+            if (e) e.preventDefault();
+            document.removeEventListener('keydown', onKey, true);
+            box.remove();
+            closeCarolTabLikeCtrlW();
+        };
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') doClose(e);
+        };
+        box.addEventListener('click', doClose);
+        document.addEventListener('keydown', onKey, true);
+    }
+
+    function findExactCloseButton() {
+        const candidates = [];
+        for (const el of document.querySelectorAll('button, [role="button"], a')) {
+            const txt = (el.textContent || '').trim();
+            if (txt === 'Close') candidates.push(el);
+        }
+        return candidates.length ? candidates[candidates.length - 1] : null;
+    }
+
+    async function clickSavedDialogClose(timeout = 10000) {
+        let passed = 0;
+        while (passed < timeout) {
+            if (abortMission) throw new Error('Abort');
+            const btn = findExactCloseButton();
+            if (btn) {
+                try {
+                    btn.style.outline = '2px solid #00ff00';
+                    btn.style.boxShadow = '0 0 15px #00ff00';
+                } catch (e) {}
+                btn.click();
+                return true;
+            }
+            await sleep(250);
+            passed += 250;
+        }
+        return false;
+    }
+
+    function finishAndCloseTab() {
+        sessionStorage.removeItem('arasaka_close_after_done');
+        notifyWmsDone();
+        setTimeout(removeHUD, 1200);
+        showCloseTabPrompt();
+        setTimeout(closeCarolTabLikeCtrlW, 800);
     }
 
     async function startMacro(skipPrint = false) {
@@ -590,12 +666,9 @@
             createHUD();
             updateHUD('Initialisiere...');
 
-            const titleMatch = document.title.match(/[A-Z]{2}\d{5}/i);
-            if (titleMatch) {
-                const stockId = titleMatch[0].toUpperCase();
-                updateHUD(`Stock-ID ${stockId} erkannt`, '#ffff00', true);
-                sendGhostPing(stockId);
-                await sleep(1500);
+            if (!skipPrint) {
+                await sucheUndOeffnePdf({ removeHudOnComplete: false, fireAndForget: true });
+                if (abortMission) return;
             }
 
             updateHUD('Öffne Edit damages...', '#00ffcc', true);
@@ -656,7 +729,10 @@
                 }
             }
 
+            const isAutoRun = launchedAsAuto;
+
             updateHUD('Übermittle Daten...', '#00ffcc', true);
+            if (isAutoRun) sessionStorage.setItem('arasaka_close_after_done', '1');
             const btnSubmit = await waitForElement('Submit');
             if (btnSubmit) forceClick(btnSubmit);
 
@@ -667,28 +743,34 @@
 
             updateHUD('Schließe Dialog...', '#00ffcc', true);
             await sleep(2000);
-            const btnClose = await waitForElement('Close', 10000, true);
-            if (btnClose) forceClick(btnClose);
+            const dialogClosed = await clickSavedDialogClose(10000);
+            if (!dialogClosed) {
+                const btnClose = await waitForElement('Close', 5000, true);
+                if (btnClose) btnClose.click();
+            }
+            await sleep(800);
 
-            updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
-            await sleep(1500);
-            const btnBack = await waitForElement('Back to refurbishment detail', 15000);
-            if (btnBack) {
-                if (!skipPrint) {
-                    sessionStorage.setItem('hole_pdf_nach_reload', 'true');
-                } else {
-                    sessionStorage.removeItem('hole_pdf_nach_reload');
-                }
-                forceClick(btnBack);
+            if (!isAutoRun) {
+                updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
+                await sleep(1500);
+                const btnBack = await waitForElement('Back to refurbishment detail', 15000);
+                if (btnBack) forceClick(btnBack);
             }
 
             if (skipPrint) {
                 updateHUD('NACHBESTELLUNG ABGESCHLOSSEN ─ Kein Druck', '#00ff00', true);
-                playDing('success');
+            } else {
+                updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
+            }
+            playDing('success');
+            if (isAutoRun) {
+                finishAndCloseTab();
+            } else {
                 setTimeout(removeHUD, 5000);
             }
 
         } catch (e) {
+            sessionStorage.removeItem('arasaka_close_after_done');
             if (e.message === 'Abort') {
                 updateHUD('ABBRUCH DURCH USER', '#ff4444');
             } else {
@@ -699,25 +781,11 @@
         }
     }
 
-    if (sessionStorage.getItem('hole_pdf_nach_reload') === 'true') {
-        sessionStorage.removeItem('hole_pdf_nach_reload');
+    if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
         isLocked = true;
-        currentStep = 11;
-        (async () => {
-            try {
-                await sucheUndOeffnePdf();
-            } catch (e) {
-                const msg = e.message === 'Abort' ? 'ABBRUCH DURCH USER' : 'SYSTEMFEHLER';
-                updateHUD(msg, '#ff4444');
-                playDing('error');
-                setTimeout(removeHUD, 3000);
-            } finally {
-                isLocked = false;
-            }
-        })();
-    }
-
-    if (window.location.href.includes('arasaka_auto=1')) {
+        playDing('success');
+        finishAndCloseTab();
+    } else if (launchedAsAuto) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;

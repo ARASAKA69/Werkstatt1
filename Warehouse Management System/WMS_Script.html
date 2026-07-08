@@ -1720,6 +1720,7 @@
     if(fromCache && fromCache.success && fromCache.carolUrl) {
       var win = window.open(nbCarolAutoUrl(fromCache.carolUrl), '_blank');
       if(!win) showErr('Carol-Popup wurde blockiert!');
+      else registerCarolWindow(win);
       return;
     }
     var loaderWin = window.open('', '_blank');
@@ -1733,6 +1734,7 @@
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success && res.carolUrl) {
         loaderWin.location.href = nbCarolAutoUrl(res.carolUrl);
+        registerCarolWindow(loaderWin);
       } else {
         try { loaderWin.close(); } catch(e) {}
         showErr('Carol-Link für ' + stockId + ' nicht gefunden!');
@@ -4677,6 +4679,75 @@
     sendDymoPrint({ silent: false, requireInitials: false });
   }
 
+  function formatOldRegalDisplay(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return 'LEER';
+    if (isRegalTagesliste(s)) return 'Tagesliste';
+    if (/^leer$/i.test(s)) return 'LEER';
+    return s;
+  }
+
+  function showOldRegalModal(oldRegal, stockId) {
+    var modal = document.getElementById('oldRegalModal');
+    var valueEl = document.getElementById('oldRegalModalValue');
+    var stockEl = document.getElementById('oldRegalModalStock');
+    if (!modal || !valueEl) return;
+    valueEl.textContent = formatOldRegalDisplay(oldRegal);
+    if (stockEl) stockEl.textContent = stockId ? stockId : '';
+    modal.classList.add('open');
+  }
+
+  function closeOldRegalModal() {
+    var modal = document.getElementById('oldRegalModal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  var activeCarolWindow = null;
+  var carolReturnListenerReady = false;
+  var carolWindowPollTimer = null;
+
+  function ensureCarolReturnListener() {
+    if (carolReturnListenerReady) return;
+    carolReturnListenerReady = true;
+    window.addEventListener('message', function(event) {
+      if (!event.data || event.data.type !== 'arasaka_carol_done') return;
+      focusWmsAfterCarol(true);
+    });
+  }
+
+  function registerCarolWindow(carolWindow) {
+    if (!carolWindow) return;
+    ensureCarolReturnListener();
+    activeCarolWindow = carolWindow;
+    if (carolWindowPollTimer) clearInterval(carolWindowPollTimer);
+    carolWindowPollTimer = setInterval(function() {
+      if (!activeCarolWindow) return;
+      if (activeCarolWindow.closed) {
+        clearInterval(carolWindowPollTimer);
+        carolWindowPollTimer = null;
+        focusWmsAfterCarol(false);
+      }
+    }, 400);
+  }
+
+  function focusWmsAfterCarol(tryClose) {
+    if (tryClose !== false && activeCarolWindow && !activeCarolWindow.closed) {
+      try { activeCarolWindow.close(); } catch (e) {}
+    }
+    activeCarolWindow = null;
+    if (carolWindowPollTimer) {
+      clearInterval(carolWindowPollTimer);
+      carolWindowPollTimer = null;
+    }
+    setTimeout(function() {
+      try { window.focus(); } catch (e) {}
+      var search = document.getElementById('searchInput');
+      if (search) {
+        try { search.focus(); } catch (e) {}
+      }
+    }, 80);
+  }
+
   function fireCarol() {
     if(!currentCarolUrl || !currentStock) return;
     var text = getCommentText().trim();
@@ -4688,6 +4759,7 @@
       setStatus("❌ Carol-Popup wurde blockiert!", "#f85149");
       return;
     }
+    registerCarolWindow(carolWindow);
     document.getElementById('btnCarol').disabled = true;
     toggleUI(false);
     setHudBusy(true, 'Speichere & Carol…');
@@ -4698,6 +4770,7 @@
           setStatus("❌ FEHLER: " + res.message, "#f85149");
           document.getElementById('btnCarol').disabled = false;
           toggleUI(true);
+          setHudBusy(false);
           return;
         }
 
@@ -4707,6 +4780,7 @@
         google.script.run
           .withSuccessHandler(function(res) {
             if(res.success) {
+              showOldRegalModal(res.oldRegal, currentStock);
               var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
               if(dymoResult.skipped) finalStatus += " DYMO übersprungen.";
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
@@ -4721,12 +4795,14 @@
               setStatus("❌ FEHLER: " + res.message, "#f85149");
               document.getElementById('btnCarol').disabled = false;
               toggleUI(true);
+              setHudBusy(false);
             }
           })
           .withFailureHandler(function(err) {
             setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
             document.getElementById('btnCarol').disabled = false;
             toggleUI(true);
+            setHudBusy(false);
           })
           .triggerCarolMission(currentStock);
       })
@@ -4734,6 +4810,7 @@
         setStatus("❌ Kommentarfehler: " + (err.message || String(err)), "#f85149");
         document.getElementById('btnCarol').disabled = false;
         toggleUI(true);
+        setHudBusy(false);
       })
       .saveKommentar(currentStock, text);
 
