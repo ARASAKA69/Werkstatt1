@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.5
-// @description ARASAKA v4.5 - Auto-close Carol tab after reload, return to WMS
+// @version 4.6
+// @description ARASAKA v4.6 - Skip back-navigation, close tab via prompt after workflow
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -590,13 +590,44 @@
         }, 500);
     }
 
-    function returnToWmsAndCloseTab(delayMs = 2000) {
-        sessionStorage.removeItem('arasaka_close_after_done');
+    function showCloseTabPrompt() {
+        const old = document.getElementById('arasaka-close-prompt');
+        if (old) old.remove();
+
+        const box = document.createElement('div');
+        box.id = 'arasaka-close-prompt';
+        box.style.cssText = [
+            'position:fixed', 'top:50%', 'left:50%', 'transform:translate(-50%,-50%)',
+            'background:rgba(10,10,10,0.96)', 'border:4px solid #00ff00',
+            'box-shadow:0 0 40px rgba(0,255,0,0.7), inset 0 0 20px rgba(0,255,0,0.2)',
+            'padding:50px 90px', 'border-radius:18px', 'z-index:9999999',
+            'color:#00ff00', 'font-family:monospace', 'text-align:center', 'cursor:pointer'
+        ].join(';');
+        box.innerHTML = `
+            <div style="font-size:32px;font-weight:bold;text-shadow:0 0 12px #00ff00;">AUFTRAG ABGESCHLOSSEN</div>
+            <div style="font-size:18px;margin-top:24px;opacity:0.9;">ENTER drücken oder klicken</div>
+            <div style="font-size:15px;margin-top:6px;opacity:0.6;">─ Tab wird geschlossen ─</div>
+        `;
+        document.body.appendChild(box);
+
+        const doClose = (e) => {
+            if (e) e.preventDefault();
+            document.removeEventListener('keydown', onKey, true);
+            box.remove();
+            closeCarolTabLikeCtrlW();
+        };
+        const onKey = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') doClose(e);
+        };
+        box.addEventListener('click', doClose);
+        document.addEventListener('keydown', onKey, true);
+    }
+
+    function finishAndCloseTab() {
         notifyWmsDone();
-        setTimeout(() => {
-            removeHUD();
-            setTimeout(closeCarolTabLikeCtrlW, 300);
-        }, delayMs);
+        setTimeout(removeHUD, 1200);
+        showCloseTabPrompt();
+        setTimeout(closeCarolTabLikeCtrlW, 800);
     }
 
     async function startMacro(skipPrint = false) {
@@ -682,14 +713,13 @@
             const btnClose = await waitForElement('Close', 10000, true);
             if (btnClose) forceClick(btnClose);
 
-            updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
-            await sleep(1500);
-            const btnBack = await waitForElement('Back to refurbishment detail', 15000);
-            if (btnBack) {
-                if (window.location.href.includes('arasaka_auto=1')) {
-                    sessionStorage.setItem('arasaka_close_after_done', '1');
-                }
-                forceClick(btnBack);
+            const isAutoRun = window.location.href.includes('arasaka_auto=1');
+
+            if (!isAutoRun) {
+                updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
+                await sleep(1500);
+                const btnBack = await waitForElement('Back to refurbishment detail', 15000);
+                if (btnBack) forceClick(btnBack);
             }
 
             if (skipPrint) {
@@ -698,8 +728,8 @@
                 updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
             }
             playDing('success');
-            if (window.location.href.includes('arasaka_auto=1')) {
-                returnToWmsAndCloseTab(2000);
+            if (isAutoRun) {
+                finishAndCloseTab();
             } else {
                 setTimeout(removeHUD, 5000);
             }
@@ -715,14 +745,9 @@
         }
     }
 
-    if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
-        sessionStorage.removeItem('arasaka_close_after_done');
-        isLocked = true;
-        createHUD();
-        updateHUD('AUFTRAG ABGESCHLOSSEN ─ Schließe Tab...', '#00ff00', true);
-        playDing('success');
-        returnToWmsAndCloseTab(1500);
-    } else if (window.location.href.includes('arasaka_auto=1')) {
+    sessionStorage.removeItem('arasaka_close_after_done');
+
+    if (window.location.href.includes('arasaka_auto=1')) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
