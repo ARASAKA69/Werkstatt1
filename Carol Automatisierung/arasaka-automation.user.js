@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 3.8
+// @version 3.9
 // @description ARASAKA v3.8 - Silent Print via Bridge & Fallback PDF Scanner + Nachbestellung NoPrint Mode
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
@@ -480,8 +480,14 @@
 
     let regalShown = false;
 
-    function tryShowPendingRegal() {
+    async function tryShowPendingRegal(timeout = 3000) {
         if (regalShown) return;
+        let passed = 0;
+        while (passed < timeout && !sessionStorage.getItem('arasaka_old_regal')) {
+            if (abortMission) throw new Error('Abort');
+            await sleep(100);
+            passed += 100;
+        }
         const oldRegal = sessionStorage.getItem('arasaka_old_regal');
         if (!oldRegal) return;
         regalShown = true;
@@ -607,8 +613,6 @@
                 playDing('success');
             }
 
-            tryShowPendingRegal();
-
             if (removeHudOnComplete) {
                 setTimeout(removeHUD, 6000);
             }
@@ -640,8 +644,6 @@
                 if (abortMission) return;
             }
 
-            tryShowPendingRegal();
-
             updateHUD('Öffne Edit damages...', '#00ffcc', true);
             const btnEdit = await waitForElement('Edit damages and services');
             if (!btnEdit) { updateHUD('Edit-Button nicht gefunden!', '#ff4444'); return; }
@@ -649,7 +651,6 @@
 
             updateHUD('Navigiere zu Spare Parts...', '#00ffcc', true);
             await sleep(2000);
-            tryShowPendingRegal();
             const btnSpareParts = await waitForElement('Spare parts');
             if (!btnSpareParts) { updateHUD('Spare Parts nicht gefunden!', '#ff4444'); return; }
             forceClick(btnSpareParts);
@@ -717,7 +718,6 @@
 
             updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
             await sleep(1500);
-            tryShowPendingRegal();
             const btnBack = await waitForElement('Back to refurbishment detail', 15000);
             if (btnBack) forceClick(btnBack);
 
@@ -728,6 +728,7 @@
             }
             playDing('success');
             setTimeout(removeHUD, 5000);
+            await tryShowPendingRegal();
 
         } catch (e) {
             if (e.message === 'Abort') {
