@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.8
-// @description ARASAKA v4.8 - Precise Close-button click, stay on page, close tab prompt
+// @version 4.9
+// @description ARASAKA v4.9 - Auto-run flag captured at load (SPA drops URL param)
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -19,6 +19,7 @@
 (function () {
     'use strict';
 
+    const launchedAsAuto = window.location.href.includes('arasaka_auto=1');
     let abortMission = false;
     let hudElement = null;
     let isLocked = false;
@@ -728,7 +729,7 @@
                 }
             }
 
-            const isAutoRun = window.location.href.includes('arasaka_auto=1');
+            const isAutoRun = launchedAsAuto;
 
             updateHUD('Übermittle Daten...', '#00ffcc', true);
             if (isAutoRun) sessionStorage.setItem('arasaka_close_after_done', '1');
@@ -784,7 +785,7 @@
         isLocked = true;
         playDing('success');
         finishAndCloseTab();
-    } else if (window.location.href.includes('arasaka_auto=1')) {
+    } else if (launchedAsAuto) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
