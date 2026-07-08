@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.0
-// @description ARASAKA v4.0 - Regal HUD, End-Ding, WMS old-regal sync, Silent Print via Bridge
+// @version 4.1
+// @description ARASAKA v4.1 - Silent Print via Bridge, fast Carol auto-start
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -16,8 +16,6 @@
 
 (function () {
     'use strict';
-
-    const googleWebAppUrl = 'https://script.google.com/a/macros/auto1.com/s/AKfycbzFCxeD2nL8-km1izhQr1mLU8mhd1hCymE5jwt3B_eYP7Iqe17DllFAUuRgNseWH7Ya/exec';
 
     let abortMission = false;
     let hudElement = null;
@@ -316,30 +314,9 @@
         });
     }
 
-    let arasakaAudioCtx = null;
-    let arasakaAudioReady = false;
-
-    function initArasakaAudio() {
-        try {
-            if (!arasakaAudioCtx) {
-                arasakaAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            if (arasakaAudioCtx.state === 'suspended') {
-                return arasakaAudioCtx.resume().then(() => {
-                    arasakaAudioReady = true;
-                    return arasakaAudioCtx;
-                }).catch(() => arasakaAudioCtx);
-            }
-            arasakaAudioReady = true;
-            return Promise.resolve(arasakaAudioCtx);
-        } catch (e) {
-            return Promise.resolve(null);
-        }
-    }
-
     function playDing(type = 'success') {
-        const run = (ctx) => {
-            if (!ctx) return;
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const osc  = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
@@ -358,63 +335,8 @@
                 gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
                 osc.start(); osc.stop(ctx.currentTime + 0.4);
             }
-        };
-        try {
-            if (arasakaAudioCtx && arasakaAudioReady) {
-                run(arasakaAudioCtx);
-                return;
-            }
-            initArasakaAudio().then((ctx) => {
-                if (ctx && ctx.state === 'suspended') return ctx.resume().then(() => run(ctx));
-                run(ctx);
-            }).catch(() => {
-                try {
-                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                    run(ctx);
-                } catch (e) {}
-            });
         } catch (e) {}
     }
-
-    function normalizeRegalDisplay(raw) {
-        const s = String(raw || '').trim();
-        if (!s) return 'LEER';
-        if (/^tagesliste$/i.test(s)) return 'Tagesliste';
-        if (/^leer$/i.test(s)) return 'LEER';
-        return s;
-    }
-
-    function setOldRegalValue(raw, source) {
-        const regal = normalizeRegalDisplay(raw);
-        const locked = sessionStorage.getItem('arasaka_old_regal_source') === 'url';
-        if (locked && source !== 'url') return;
-        sessionStorage.setItem('arasaka_old_regal', regal);
-        if (source === 'url') sessionStorage.setItem('arasaka_old_regal_source', 'url');
-    }
-
-    function getPendingOldRegal() {
-        try {
-            const u = new URL(window.location.href);
-            const fromUrl = u.searchParams.get('arasaka_old_regal');
-            if (fromUrl) return normalizeRegalDisplay(fromUrl);
-        } catch (e) {}
-        const stored = sessionStorage.getItem('arasaka_old_regal');
-        return stored ? normalizeRegalDisplay(stored) : '';
-    }
-
-    function storeOldRegalFromUrl() {
-        try {
-            const u = new URL(window.location.href);
-            const regal = u.searchParams.get('arasaka_old_regal');
-            if (regal) setOldRegalValue(regal, 'url');
-        } catch (e) {}
-    }
-
-    window.addEventListener('message', (event) => {
-        if (!event.data || event.data.type !== 'arasaka_old_regal') return;
-        const regal = String(event.data.regal || '').trim();
-        if (regal) setOldRegalValue(regal, 'url');
-    });
 
     async function sleep(ms) {
         let t = 0;
@@ -488,67 +410,6 @@
         if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
     }
 
-    function showArasakaRegalHUD(regalText) {
-        let existing = document.getElementById('arasaka-regal-hud');
-        if (existing) existing.remove();
-
-        const hud = document.createElement('div');
-        hud.id = 'arasaka-regal-hud';
-        hud.style.position = 'fixed';
-        hud.style.top = '50%';
-        hud.style.left = '50%';
-        hud.style.transform = 'translate(-50%, -50%)';
-        hud.style.backgroundColor = 'rgba(10, 10, 10, 0.95)';
-        hud.style.border = '4px solid #00FF00';
-        hud.style.boxShadow = '0 0 40px #00FF00, inset 0 0 20px #00FF00';
-        hud.style.padding = '60px 100px';
-        hud.style.borderRadius = '20px';
-        hud.style.zIndex = '9999999';
-        hud.style.color = '#00FF00';
-        hud.style.fontFamily = 'monospace';
-        hud.style.textAlign = 'center';
-        hud.style.cursor = 'pointer';
-
-        hud.innerHTML = `
-            <div style="font-size: 30px; margin-bottom: 20px; text-shadow: 0 0 10px #00FF00;">TEILE STANDEN IN:</div>
-            <div style="font-size: 80px; font-weight: bold; color: #FFF; text-shadow: 0 0 20px #FFF, 0 0 40px #00FF00;">${regalText}</div>
-            <div style="font-size: 16px; margin-top: 30px; opacity: 0.7;">(Klick oder ESC zum Schließen)</div>
-        `;
-
-        document.body.appendChild(hud);
-
-        const closeHUD = (e) => {
-            if (e.type === 'keydown' && e.key !== 'Escape') return;
-            hud.remove();
-            document.removeEventListener('keydown', closeHUD);
-            document.removeEventListener('click', closeHUD);
-        };
-
-        setTimeout(() => {
-            document.addEventListener('click', closeHUD);
-            document.addEventListener('keydown', closeHUD);
-        }, 200);
-    }
-
-    function sendGhostPing(stockId) {
-        if (sessionStorage.getItem('arasaka_old_regal_source') === 'url') return;
-        if (sessionStorage.getItem('arasaka_old_regal')) return;
-        GM_xmlhttpRequest({
-            method: 'GET',
-            url: `${googleWebAppUrl}?stock=${stockId}`,
-            onload:  r => {
-                if (sessionStorage.getItem('arasaka_old_regal_source') === 'url') return;
-                if (sessionStorage.getItem('arasaka_old_regal')) return;
-                let match = r.responseText.match(/OLD_REGAL:(.*?)(?: \||$)/);
-                if (match && match[1]) {
-                    const regal = normalizeRegalDisplay(match[1].trim());
-                    if (regal !== 'Tagesliste') setOldRegalValue(regal, 'ghost');
-                }
-            },
-            onerror: e => {}
-        });
-    }
-
     function extractPdfUrl(el) {
         if (el.tagName === 'A' && el.href) return el.href;
         const link = el.closest('a');
@@ -557,25 +418,6 @@
         const child = el.querySelector('a[href]');
         if (child) return child.href;
         return null;
-    }
-
-    let regalShown = false;
-
-    async function tryShowPendingRegal(timeout = 5000) {
-        if (regalShown) return;
-        let passed = 0;
-        let regalText = getPendingOldRegal();
-        while (passed < timeout && !regalText) {
-            if (abortMission) throw new Error('Abort');
-            await sleep(100);
-            passed += 100;
-            regalText = getPendingOldRegal();
-        }
-        if (!regalText) regalText = 'LEER';
-        regalShown = true;
-        showArasakaRegalHUD(regalText);
-        sessionStorage.removeItem('arasaka_old_regal');
-        sessionStorage.removeItem('arasaka_old_regal_source');
     }
 
     function findWerkstattPdf() {
@@ -711,17 +553,8 @@
     async function startMacro(skipPrint = false) {
         try {
             hudLog = []; currentStep = 0;
-            regalShown = false;
-            await initArasakaAudio();
             createHUD();
             updateHUD('Initialisiere...');
-
-            const titleMatch = document.title.match(/[A-Z]{2}\d{5}/i);
-            if (titleMatch) {
-                const stockId = titleMatch[0].toUpperCase();
-                updateHUD(`Stock-ID ${stockId} erkannt`, '#ffff00', true);
-                sendGhostPing(stockId);
-            }
 
             if (!skipPrint) {
                 await sucheUndOeffnePdf({ removeHudOnComplete: false, fireAndForget: true });
@@ -811,7 +644,6 @@
                 updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
             }
             playDing('success');
-            await tryShowPendingRegal();
             setTimeout(removeHUD, 5000);
 
         } catch (e) {
@@ -826,8 +658,6 @@
     }
 
     if (window.location.href.includes('arasaka_auto=1')) {
-        storeOldRegalFromUrl();
-        initArasakaAudio();
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
