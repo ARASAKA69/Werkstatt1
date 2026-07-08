@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.4
-// @description ARASAKA v4.4 - Auto-close Carol tab (Ctrl+W emulation), return to WMS
+// @version 4.5
+// @description ARASAKA v4.5 - Auto-close Carol tab after reload, return to WMS
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -591,7 +591,7 @@
     }
 
     function returnToWmsAndCloseTab(delayMs = 2000) {
-        if (!window.location.href.includes('arasaka_auto=1')) return;
+        sessionStorage.removeItem('arasaka_close_after_done');
         notifyWmsDone();
         setTimeout(() => {
             removeHUD();
@@ -685,7 +685,12 @@
             updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
             await sleep(1500);
             const btnBack = await waitForElement('Back to refurbishment detail', 15000);
-            if (btnBack) forceClick(btnBack);
+            if (btnBack) {
+                if (window.location.href.includes('arasaka_auto=1')) {
+                    sessionStorage.setItem('arasaka_close_after_done', '1');
+                }
+                forceClick(btnBack);
+            }
 
             if (skipPrint) {
                 updateHUD('NACHBESTELLUNG ABGESCHLOSSEN ─ Kein Druck', '#00ff00', true);
@@ -710,7 +715,14 @@
         }
     }
 
-    if (window.location.href.includes('arasaka_auto=1')) {
+    if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
+        sessionStorage.removeItem('arasaka_close_after_done');
+        isLocked = true;
+        createHUD();
+        updateHUD('AUFTRAG ABGESCHLOSSEN ─ Schließe Tab...', '#00ff00', true);
+        playDing('success');
+        returnToWmsAndCloseTab(1500);
+    } else if (window.location.href.includes('arasaka_auto=1')) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
