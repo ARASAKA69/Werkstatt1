@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.2
-// @description ARASAKA v4.2 - Auto-close Carol tab, return to WMS
+// @version 4.3
+// @description ARASAKA v4.3 - Auto-close Carol tab via Tampermonkey, return to WMS
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -11,6 +11,9 @@
 // @grant GM_getValue
 // @grant GM_registerMenuCommand
 // @grant GM_xmlhttpRequest
+// @grant GM_getTab
+// @grant GM_closeInTab
+// @grant window.close
 // @connect localhost
 // ==/UserScript==
 
@@ -550,22 +553,27 @@
         }
     }
 
+    function closeCarolTabLikeCtrlW() {
+        window.close();
+        setTimeout(() => {
+            if (typeof GM_getTab !== 'function' || typeof GM_closeInTab !== 'function') return;
+            GM_getTab((tab) => {
+                if (tab && typeof tab.id === 'number') GM_closeInTab(tab.id);
+            });
+        }, 250);
+    }
+
     function returnToWmsAndCloseTab(delayMs = 2000) {
         if (!window.location.href.includes('arasaka_auto=1')) return;
-        let openerRef = null;
-        try {
-            if (window.opener && !window.opener.closed) openerRef = window.opener;
-        } catch (e) {}
-        if (!openerRef) return;
 
         setTimeout(() => {
             try {
-                openerRef.postMessage({ type: 'arasaka_carol_done' }, '*');
+                if (window.opener && !window.opener.closed) {
+                    window.opener.postMessage({ type: 'arasaka_carol_done' }, '*');
+                }
             } catch (e) {}
             removeHUD();
-            setTimeout(() => {
-                try { window.close(); } catch (e) {}
-            }, 350);
+            setTimeout(closeCarolTabLikeCtrlW, 350);
         }, delayMs);
     }
 
@@ -664,12 +672,7 @@
             }
             playDing('success');
             if (window.location.href.includes('arasaka_auto=1')) {
-                try {
-                    if (window.opener && !window.opener.closed) returnToWmsAndCloseTab(2000);
-                    else setTimeout(removeHUD, 5000);
-                } catch (e) {
-                    setTimeout(removeHUD, 5000);
-                }
+                returnToWmsAndCloseTab(2000);
             } else {
                 setTimeout(removeHUD, 5000);
             }
