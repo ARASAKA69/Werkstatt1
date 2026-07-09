@@ -1714,8 +1714,10 @@
 
   function startNbCarol(stockId, badge) {
     var showErr = function(msg) {
+      carolReturnRestoreNb = null;
       if(badge) { badge.innerText = msg; badge.style.color = '#f85149'; }
     };
+    carolReturnRestoreNb = stockId || true;
     var fromCache = computeWmsFromCache(stockId, refurbCache);
     if(fromCache && fromCache.success && fromCache.carolUrl) {
       var win = window.open(nbCarolAutoUrl(fromCache.carolUrl), '_blank');
@@ -4705,6 +4707,8 @@
   var activeCarolWindow = null;
   var carolReturnListenerReady = false;
   var carolWindowPollTimer = null;
+  var carolReturnRestoreNb = null;
+  var carolReturnHandled = false;
 
   function ensureCarolReturnListener() {
     if (carolReturnListenerReady) return;
@@ -4717,6 +4721,7 @@
 
   function registerCarolWindow(carolWindow) {
     if (!carolWindow) return;
+    carolReturnHandled = false;
     ensureCarolReturnListener();
     activeCarolWindow = carolWindow;
     if (carolWindowPollTimer) clearInterval(carolWindowPollTimer);
@@ -4731,6 +4736,8 @@
   }
 
   function focusWmsAfterCarol(tryClose) {
+    if (carolReturnHandled) return;
+    carolReturnHandled = true;
     if (tryClose !== false && activeCarolWindow && !activeCarolWindow.closed) {
       try { activeCarolWindow.close(); } catch (e) {}
     }
@@ -4739,8 +4746,15 @@
       clearInterval(carolWindowPollTimer);
       carolWindowPollTimer = null;
     }
+    var restoreNb = carolReturnRestoreNb;
+    carolReturnRestoreNb = null;
     setTimeout(function() {
       try { window.focus(); } catch (e) {}
+      if (restoreNb && typeof nbSessionActive !== 'undefined' && nbSessionActive) {
+        if (restoreNb !== true) nbPendingFocusStock = normalizeStockInput(restoreNb);
+        openNbModal();
+        return;
+      }
       var search = document.getElementById('searchInput');
       if (search) {
         try { search.focus(); } catch (e) {}
