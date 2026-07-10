@@ -124,7 +124,7 @@
           <img class="topbar-client-logo" src="https://raw.githubusercontent.com/ARASAKA69/Temp/main/autohero-logo.png" alt="AUTOHERO">
           <span class="eyebrow">Warehouse Management System</span>
         </div>
-        <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v1.9</span>
+        <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v2.0</span>
       </div>
       <div class="topbar-cache-cluster">
         <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
@@ -182,6 +182,10 @@
       <div class="workspace-panel">
         <div class="sub-title">Kommentar Anlieferung</div>
         <div id="editAnlieferung" class="comment-editor notranslate" translate="no" contenteditable="true" spellcheck="false" data-placeholder="Notizen..." title="Strg+S: Nur Kommentar speichern (ohne Status oder Regal)"></div>
+      </div>
+
+      <div class="workspace-verlauf-action">
+        <button type="button" class="btn btn-verlauf" id="btnVerlauf" onclick="openKommentarVerlauf()" disabled>📜 Verlauf</button>
       </div>
 
       <div class="workspace-panel">
@@ -619,6 +623,17 @@
     <div class="reifen-actions" style="margin-top:4px;">
       <button type="button" class="reifen-action-btn active-ja" onclick="closeWssFetchWarn()">Verstanden</button>
     </div>
+  </div>
+</div>
+
+<div class="reifen-confirm" id="kommentarVerlaufModal">
+  <div class="reifen-confirm-dialog verlauf-dialog">
+    <div class="verlauf-header">
+      <div class="verlauf-title">Kommentar Verlauf</div>
+      <button type="button" class="reifen-close" onclick="closeKommentarVerlauf()">Schließen</button>
+    </div>
+    <div class="verlauf-stock" id="kommentarVerlaufStock"></div>
+    <div class="verlauf-list" id="kommentarVerlaufList"></div>
   </div>
 </div>
 

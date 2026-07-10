@@ -21,6 +21,8 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbyJ
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
+const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM";
+const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -865,7 +867,9 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
 
     var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
     if (!/wss\s+da\b/i.test(curCom)) {
-      sheetRef.getRange(refurbRow, 25).setValue(curCom ? "WSS da // " + curCom : "WSS da // ");
+      var wssCom = curCom ? "WSS da // " + curCom : "WSS da // ";
+      sheetRef.getRange(refurbRow, 25).setValue(wssCom);
+      logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
     }
 
     SpreadsheetApp.flush();
@@ -1001,7 +1005,9 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     if (wroteEJa) {
       var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
       if (!/wss\s+da\b/i.test(curCom)) {
-        sheetRef.getRange(refurbRow, 25).setValue(curCom ? "WSS da // " + curCom : "WSS da // ");
+        var wssCom2 = curCom ? "WSS da // " + curCom : "WSS da // ";
+        sheetRef.getRange(refurbRow, 25).setValue(wssCom2);
+        logKommentarVerlauf_(stockId, curCom, wssCom2, "wss");
       }
     }
 
@@ -1199,6 +1205,143 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       return { success: false, message: err.message };
     }
   }
+
+function getActiveUserEmail_() {
+  try {
+    var email = Session.getActiveUser().getEmail();
+    if (email) return email;
+    return Session.getEffectiveUser().getEmail() || "unbekannt";
+  } catch (e) {
+    return "unbekannt";
+  }
+}
+
+function formatVerlaufTimestamp_(date) {
+  return Utilities.formatDate(date || new Date(), "Europe/Berlin", "dd.MM.yyyy HH:mm");
+}
+
+function verlaufTimestampStr_(v) {
+  if (v instanceof Date || Object.prototype.toString.call(v) === "[object Date]") {
+    return formatVerlaufTimestamp_(v);
+  }
+  var s = String(v || "").trim();
+  if (!s) return "";
+  if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(s)) return s;
+  try {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) return formatVerlaufTimestamp_(d);
+  } catch (e) {}
+  return s.replace(/\s*GMT[^\)]*(\([^)]*\))?/gi, "").trim();
+}
+
+function computeKommentarVerlaufDelta_(oldText, newText) {
+  var oldT = String(oldText == null ? "" : oldText);
+  var newT = String(newText == null ? "" : newText);
+  if (oldT === newT) return null;
+
+  if (newT.length > oldT.length && newT.indexOf(oldT) === 0) {
+    return newT.substring(oldT.length);
+  }
+  if (oldT.length > newT.length && oldT.indexOf(newT) === 0) {
+    return "-" + oldT.substring(newT.length);
+  }
+  if (oldT.length > 0 && newT.length > oldT.length && newT.slice(-oldT.length) === oldT) {
+    return "+" + newT.substring(0, newT.length - oldT.length);
+  }
+  if (oldT.length > 0 && newT.length < oldT.length && oldT.slice(-newT.length) === newT) {
+    return "-" + oldT.substring(0, oldT.length - newT.length);
+  }
+
+  var pi = 0;
+  var maxP = Math.min(oldT.length, newT.length);
+  while (pi < maxP && oldT.charAt(pi) === newT.charAt(pi)) pi++;
+
+  var oRem = oldT.length - pi;
+  var nRem = newT.length - pi;
+  var si = 0;
+  while (si < oRem && si < nRem && oldT.charAt(oldT.length - 1 - si) === newT.charAt(newT.length - 1 - si)) si++;
+
+  var removed = oldT.substring(pi, oldT.length - si);
+  var added = newT.substring(pi, newT.length - si);
+  var parts = [];
+  if (removed) parts.push("-" + removed);
+  if (added) parts.push("+" + added);
+  if (parts.length) return parts.join(" ");
+  return newT;
+}
+
+function getKommentarVerlaufSpreadsheet_() {
+  if (!KOMMENTAR_VERLAUF_SHEET_ID) return null;
+  return SpreadsheetApp.openById(KOMMENTAR_VERLAUF_SHEET_ID);
+}
+
+function getKommentarVerlaufSheet_() {
+  var ss = getKommentarVerlaufSpreadsheet_();
+  if (!ss) return null;
+  var sheet = ss.getSheetByName(KOMMENTAR_VERLAUF_TAB);
+  if (!sheet) sheet = ss.getSheets()[0];
+  return sheet || null;
+}
+
+function ensureKommentarVerlaufSheet_() {
+  var sheet = getKommentarVerlaufSheet_();
+  if (!sheet) return null;
+  var header = String(sheet.getRange(1, 1).getValue() || "").trim();
+  if (sheet.getLastRow() < 1 || header === "") {
+    sheet.getRange(1, 1, 1, 5).setValues([["Zeitstempel", "Stock-ID", "Email", "Änderung", "Aktion"]]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function logKommentarVerlauf_(stockId, oldText, newText, action) {
+  try {
+    stockId = normalizeStockId(stockId);
+    action = String(action || "speichern");
+    if (!stockId) return null;
+    var delta = computeKommentarVerlaufDelta_(oldText, newText);
+    if (delta === null || delta === "") return null;
+    var sheet = ensureKommentarVerlaufSheet_();
+    if (!sheet) return null;
+    var tsStr = formatVerlaufTimestamp_(new Date());
+    var email = getActiveUserEmail_();
+    sheet.appendRow([tsStr, stockId, email, delta, action]);
+    return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action };
+  } catch (e) {
+    return null;
+  }
+}
+
+function getKommentarVerlaufCachePayload() {
+  try {
+    if (!KOMMENTAR_VERLAUF_SHEET_ID) {
+      return { success: true, version: Date.now(), rows: [], configured: false };
+    }
+    var sheet = getKommentarVerlaufSheet_();
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, version: Date.now(), rows: [], configured: true };
+    }
+    var lastRow = sheet.getLastRow();
+    var data = sheet.getRange(2, 1, lastRow, 5).getValues();
+    var rows = [];
+    var i;
+    for (i = data.length - 1; i >= 0; i--) {
+      var r = data[i];
+      var sid = normalizeStockId(r[1]);
+      if (!sid) continue;
+      rows.push([
+        sid,
+        verlaufTimestampStr_(r[0]),
+        String(r[2] || ""),
+        String(r[3] || ""),
+        String(r[4] || "speichern")
+      ]);
+    }
+    return { success: true, version: Date.now(), rows: rows, configured: true };
+  } catch (err) {
+    return { success: false, message: err.message, rows: [], configured: !!KOMMENTAR_VERLAUF_SHEET_ID };
+  }
+}
 
 function getRefurbishmentCachePayload() {
   try {
@@ -1485,9 +1628,10 @@ function getRefurbishmentCachePayload() {
     }
   }
 
-  function saveKommentar(stockId, text) {
+  function saveKommentar(stockId, text, action) {
     try {
       stockId = normalizeStockId(stockId);
+      action = String(action || "speichern");
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
       var lastRow = Math.max(2, sheet.getLastRow());
       var data = sheet.getRange(1, 2, lastRow, 1).getValues();
@@ -1495,16 +1639,18 @@ function getRefurbishmentCachePayload() {
       for (var i = 1; i < data.length; i++) {
         if (cellMatchesStockId(data[i][0], stockId)) {
           var row = i + 1;
+          var oldText = String(sheet.getRange(row, 25).getValue() || "");
           sheet.getRange(row, 25).setValue(text);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 25).getValue();
           if (check != text) return { success: false, message: "Fehler beim Verifizieren!" };
 
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action);
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = "Kommentar gespeichert!";
           if (dateResult.updated) msg += " Datum gesetzt!";
           if (!dateResult.success) msg += " " + dateResult.message;
-          return { success: true, message: msg };
+          return { success: true, message: msg, verlaufEntry: verlaufEntry };
         }
       }
       return { success: false, message: "Stock-ID nicht gefunden!" };
@@ -1547,6 +1693,7 @@ function getRefurbishmentCachePayload() {
       for (var i = 1; i < data.length; i++) {
         if (cellMatchesStockId(data[i][0], stockId)) {
           var row = i + 1;
+          var oldText = String(sheet.getRange(row, 25).getValue() || "");
           sheet.getRange(row, 25).setValue(text);
           sheet.getRange(row, 25).setBackground("#ff0000");
           sheet.getRange(row, 26).setValue("Teilweise angeliefert");
@@ -1565,13 +1712,15 @@ function getRefurbishmentCachePayload() {
             if (regalCheck !== regal) return { success: false, message: "Fehler beim Verifizieren!" };
           }
 
+          var verlaufAction = regal ? "speichern+regal" : "speichern+status";
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, verlaufAction);
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = regal
             ? "Kommentar und Regal gespeichert! Status auf Teilweise angeliefert gesetzt."
             : "Kommentar gespeichert! Status auf Teilweise angeliefert gesetzt.";
           if (dateResult.updated) msg += " Datum gesetzt!";
           if (!dateResult.success) msg += " " + dateResult.message;
-          return { success: true, message: msg };
+          return { success: true, message: msg, verlaufEntry: verlaufEntry };
         }
       }
 

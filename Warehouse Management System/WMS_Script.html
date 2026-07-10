@@ -26,6 +26,8 @@
   var refurbCacheLoading = false;
   var refurbCacheProgressTimer = null;
   var refurbBackgroundTimer = null;
+  var kommentarVerlaufCache = null;
+  var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
 
   var GEMINI_API_KEY = '';
@@ -2857,6 +2859,7 @@
           document.getElementById('searchInput').value = currentStock;
           loadData();
         });
+        loadKommentarVerlaufCache(true);
       })
       .withFailureHandler(function(err) {
         sb.disabled = false;
@@ -4196,7 +4199,109 @@
     if (refurbBackgroundTimer) clearInterval(refurbBackgroundTimer);
     refurbBackgroundTimer = setInterval(function() {
       loadRefurbishmentCache(true);
+      loadKommentarVerlaufCache(true);
     }, REFURB_CACHE_POLL_MS);
+  }
+
+  function loadKommentarVerlaufCache(force, onDone) {
+    if (kommentarVerlaufLoading && !force) {
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    kommentarVerlaufLoading = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        kommentarVerlaufLoading = false;
+        if (res && res.success) kommentarVerlaufCache = res;
+        if (typeof onDone === 'function') onDone();
+      })
+      .withFailureHandler(function() {
+        kommentarVerlaufLoading = false;
+        if (typeof onDone === 'function') onDone();
+      })
+      .getKommentarVerlaufCachePayload();
+  }
+
+  function appendVerlaufToLocalCache(entry) {
+    if (!entry || !entry.stockId) return;
+    if (!kommentarVerlaufCache) kommentarVerlaufCache = { success: true, version: Date.now(), rows: [] };
+    if (!kommentarVerlaufCache.rows) kommentarVerlaufCache.rows = [];
+    kommentarVerlaufCache.rows.unshift([
+      entry.stockId,
+      entry.ts,
+      entry.email,
+      entry.text,
+      entry.action || 'speichern'
+    ]);
+  }
+
+  function handleVerlaufSaveSuccess(res) {
+    if (res && res.success && res.verlaufEntry) appendVerlaufToLocalCache(res.verlaufEntry);
+  }
+
+  function getVerlaufRowsForStock(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid || !kommentarVerlaufCache || !kommentarVerlaufCache.rows) return [];
+    var out = [];
+    var rows = kommentarVerlaufCache.rows;
+    for (var i = 0; i < rows.length; i++) {
+      if (cellMatchesStockIdJs(rows[i][0], sid)) out.push(rows[i]);
+    }
+    return out;
+  }
+
+  function formatVerlaufTsDisplay(ts) {
+    if (!ts) return '';
+    var s = String(ts).trim();
+    if (/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}$/.test(s)) return s;
+    try {
+      var d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('de-DE', {
+          day: '2-digit', month: '2-digit', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Europe/Berlin'
+        }).replace(',', '');
+      }
+    } catch (e) {}
+    return s.replace(/\s*GMT[^\)]*(\([^)]*\))?/gi, '').trim();
+  }
+
+  function openKommentarVerlauf() {
+    if (!currentStock) {
+      setStatus('Bitte zuerst eine Stock-ID laden.', '#f85149');
+      return;
+    }
+    var modal = document.getElementById('kommentarVerlaufModal');
+    var list = document.getElementById('kommentarVerlaufList');
+    var stockEl = document.getElementById('kommentarVerlaufStock');
+    stockEl.textContent = 'Stock-ID: ' + currentStock;
+    if (kommentarVerlaufCache && kommentarVerlaufCache.configured === false) {
+      list.innerHTML = '<div class="verlauf-empty">Verlauf-Sheet noch nicht konfiguriert (KOMMENTAR_VERLAUF_SHEET_ID in WMS.js).</div>';
+      modal.classList.add('open');
+      return;
+    }
+    var rows = getVerlaufRowsForStock(currentStock);
+    if (!rows.length) {
+      list.innerHTML = '<div class="verlauf-empty">Noch kein Verlauf für diesen Auftrag.</div>';
+    } else {
+      var html = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        html += '<div class="verlauf-entry">' +
+          '<div class="verlauf-meta"><span class="verlauf-email">' + escapeHtml(r[2]) + '</span>' +
+          '<span class="verlauf-ts">' + escapeHtml(formatVerlaufTsDisplay(r[1])) + '</span></div>' +
+          '<div class="verlauf-text">' + escapeHtml(r[3]).replace(/\n/g, '<br>') + '</div>' +
+          (r[4] ? '<div class="verlauf-action">' + escapeHtml(r[4]) + '</div>' : '') +
+          '</div>';
+      }
+      list.innerHTML = html;
+    }
+    modal.classList.add('open');
+  }
+
+  function closeKommentarVerlauf() {
+    var modal = document.getElementById('kommentarVerlaufModal');
+    if (modal) modal.classList.remove('open');
   }
 
   function updateB2a1KandidatBadgeFromSchaeden(schaedenText) {
@@ -4288,6 +4393,8 @@
       applyTageslisteShelfUi(currentRegal);
 
       document.getElementById('btnCarol').disabled = !res.carolUrl;
+      var btnVerlauf = document.getElementById('btnVerlauf');
+      if (btnVerlauf) btnVerlauf.disabled = false;
 
       if (pendingWarning) {
         setStatus(pendingWarning.msg, pendingWarning.color);
@@ -4303,6 +4410,8 @@
       updateB2a1KandidatBadgeFromSchaeden('');
       hidePzContext();
       toggleUI(true);
+      var btnVerlaufFail = document.getElementById('btnVerlauf');
+      if (btnVerlaufFail) btnVerlaufFail.disabled = true;
       handleNotFoundNbCheck(id, res.message);
     }
   }
@@ -4441,7 +4550,11 @@
       setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
       setHudBusy(false);
       toggleUI(true);
-      if (res.success) loadRefurbishmentCache(true);
+      if (res.success) {
+        handleVerlaufSaveSuccess(res);
+        loadRefurbishmentCache(true);
+        loadKommentarVerlaufCache(true);
+      }
     }).withFailureHandler(function(err) {
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       setHudBusy(false);
@@ -4471,10 +4584,12 @@
       setHudBusy(true, 'Speichere Kommentar… (kein Regal)');
       google.script.run.withSuccessHandler(function(res) {
         if(res.success) {
+          handleVerlaufSaveSuccess(res);
           pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#F27420" };
           document.getElementById('searchInput').value = currentStock;
           setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
           loadRefurbishmentCache(true, function() { loadData(); });
+          loadKommentarVerlaufCache(true);
         } else {
           setStatus("❌ " + res.message, "#f85149");
           setHudBusy(false);
@@ -4492,10 +4607,12 @@
     setHudBusy(true, 'Speichere Kommentar + Regal…');
     google.script.run.withSuccessHandler(function(res) {
       if(res.success) {
+        handleVerlaufSaveSuccess(res);
         setStatus("✅ " + res.message, "#56d364");
         document.getElementById('searchInput').value = currentStock;
         setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
         loadRefurbishmentCache(true, function() { loadData(); });
+        loadKommentarVerlaufCache(true);
       } else {
         setStatus("❌ " + res.message, "#f85149");
         setHudBusy(false);
@@ -4787,6 +4904,7 @@
           setHudBusy(false);
           return;
         }
+        handleVerlaufSaveSuccess(res);
 
         setStatus("🚀 Setze Tagesliste & triggere Carol...", "#9B59B6");
         setHudBusy(true, 'Tagesliste & Carol…');
@@ -4826,7 +4944,7 @@
         toggleUI(true);
         setHudBusy(false);
       })
-      .saveKommentar(currentStock, text);
+      .saveKommentar(currentStock, text, "carol");
 
   }
 
@@ -4858,16 +4976,21 @@
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closeWmsMainMenu);
     document.addEventListener('keydown', function(e) {
-      if(e.key === 'Escape') { closeWmsMainMenu(); closeNbChooser(); }
+      if(e.key === 'Escape') { closeWmsMainMenu(); closeNbChooser(); closeKommentarVerlauf(); }
     });
   })();
 
   loadRefurbishmentCache(true);
+  loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();
   loadNbChooserCache(true);
   setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
-    if (!document.hidden) { loadRefurbishmentCache(true); loadNbChooserCache(true); }
+    if (!document.hidden) {
+      loadRefurbishmentCache(true);
+      loadKommentarVerlaufCache(true);
+      loadNbChooserCache(true);
+    }
   });
 
   (function initWmsStandaloneExtras() {

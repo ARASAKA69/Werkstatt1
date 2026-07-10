@@ -622,6 +622,103 @@
     box-shadow: none;
     transform: none;
   }
+  .btn-verlauf {
+    background: linear-gradient(180deg, #30363d 0%, #21262d 100%);
+    color: #e6edf3;
+    padding: 14px 18px;
+    font-size: 14px;
+    font-weight: 800;
+    border-radius: 14px;
+    border: 1px solid #3d444d;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.25);
+    min-width: 250px;
+  }
+  .btn-verlauf:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn-verlauf:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .verlauf-dialog {
+    width: min(720px, 100%);
+    max-height: min(82vh, 760px);
+    padding: 20px 22px;
+    gap: 14px;
+  }
+  .verlauf-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .verlauf-title {
+    color: #e6edf3;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .verlauf-stock {
+    color: #8b949e;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+  }
+  .verlauf-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    max-height: min(58vh, 520px);
+    padding-right: 4px;
+  }
+  .verlauf-entry {
+    background: rgba(13, 17, 23, 0.72);
+    border: 1px solid #2d3642;
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .verlauf-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: baseline;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .verlauf-email {
+    color: #3FA0DB;
+    font-size: 13px;
+    font-weight: 800;
+    word-break: break-all;
+  }
+  .verlauf-ts {
+    color: #8b949e;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .verlauf-text {
+    color: #e6edf3;
+    font-size: 14px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .verlauf-action {
+    margin-top: 8px;
+    color: #9da7b3;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .verlauf-empty {
+    color: #8b949e;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    padding: 28px 12px;
+  }
   .highlight-red {
     color: #ff6666;
     font-weight: 700;
@@ -1228,6 +1325,15 @@
     display: flex;
     flex-direction: column;
     align-items: center;
+  }
+  .workspace-verlauf-action {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2px 0 4px;
+  }
+  .workspace-verlauf-action .btn-verlauf {
+    min-width: 220px;
   }
   .workspace-panel:has(.comment-editor) .sub-title {
     text-align: center;
