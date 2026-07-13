@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KNOLL Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      3.5
+// @version      3.6
 // @description  Automatisiert KNOLL Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://shop.knoll.de/*
@@ -17,7 +17,7 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '3.5';
+    const BOT_VERSION = '3.6';
     const PENDING_RELOAD_KEY = 'knoll_retoure_pending_reload';
     const RELOAD_RETRY_KEY = 'knoll_retoure_reload_retry';
     const MAX_RELOAD_RETRIES = 12;
@@ -82,6 +82,7 @@
     }
 
     function hasStaleOrderListAfterAdd() {
+        if (isReturnListPage() || loadFlowState().step === 'returnList') return false;
         if (!isFlowActive() || !isOrdersPage()) return false;
         var state = loadFlowState();
         if (state.step === 'orders' || state.step === 'articlePick' || state.searchSubmitted) return false;
@@ -91,6 +92,7 @@
     }
 
     function expectsCleanSearchPage() {
+        if (isReturnListPage() || loadFlowState().step === 'returnList') return false;
         if (isPendingReload()) return true;
         return hasStaleOrderListAfterAdd();
     }
@@ -378,6 +380,7 @@
     }
 
     function isOrdersPage() {
+        if (isReturnListPage()) return false;
         return hasOrdersListContent();
     }
 
@@ -419,7 +422,7 @@
     function isReturnListPage() {
         if (!findClickableByText('Absenden', true)) return false;
         if (findGrundFields().length) return true;
-        if (findReturnListTable() || isReturnListPage()) return true;
+        if (findReturnListTable()) return true;
         if (pageHasText('Grund') && document.querySelector('.return-table, [class*="return-table"]')) return true;
         return false;
     }
@@ -1333,6 +1336,8 @@
     }
 
     async function clickZurRueckgabeliste() {
+        confirmCleanSearchPage();
+        saveFlowState({ active: true, step: 'returnList', searchSubmitted: false, orderHandled: false });
         showHud('KNOLL RETOURE LÄUFT', 'Öffne Rückgabeliste...', false, true);
         var btn = findClickableByText('Zur Rückgabeliste', false);
         if (!btn) btn = await waitForClickableByText('Zur Rückgabeliste', false, 8000);
@@ -1618,7 +1623,8 @@
     }
 
     async function handleReturnListPage() {
-        saveFlowState({ active: true, step: 'returnList', searchSubmitted: false });
+        confirmCleanSearchPage();
+        saveFlowState({ active: true, step: 'returnList', searchSubmitted: false, orderHandled: false });
         fillGrundFields();
         grundFilled = allGrundFieldsFilled();
         saveFlowState({ grundFilled: grundFilled });
@@ -1968,14 +1974,15 @@
         restoreFlowState();
         pendingReload = sessionStorage.getItem(PENDING_RELOAD_KEY) === '1';
         if (!isRetoureUrl() && !isRetoureContext()) return false;
-        if (expectsCleanSearchPage() && isOrdersPage()) {
+        var page = detectPage();
+        if (page === 'returnList') {
+            confirmCleanSearchPage();
+        } else if (expectsCleanSearchPage() && isOrdersPage()) {
             forceCleanSearchReload('Seite wird neu geladen...');
             return true;
-        }
-        if (!isOrdersPage() && isFlowActive() && loadFlowState().step === 'search') {
+        } else if (!isOrdersPage() && isFlowActive() && loadFlowState().step === 'search') {
             confirmCleanSearchPage();
         }
-        var page = detectPage();
         if (page === 'search' && isOrdersPage()) page = 'orders';
         if (page === 'articlePick' && isOrdersPage()) page = 'orders';
         if (orderHandledForSearch && isOrdersPage()) {
