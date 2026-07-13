@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KNOLL Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      3.2
+// @version      3.5
 // @description  Automatisiert KNOLL Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://shop.knoll.de/*
@@ -17,7 +17,10 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '3.2';
+    const BOT_VERSION = '3.5';
+    const PENDING_RELOAD_KEY = 'knoll_retoure_pending_reload';
+    const RELOAD_RETRY_KEY = 'knoll_retoure_reload_retry';
+    const MAX_RELOAD_RETRIES = 12;
     const HUD_POS_KEY = 'knoll_retoure_hud_position';
     const ACTIVE_FLOW_KEY = 'knoll_retoure_active_flow';
     const FLOW_STATE_KEY = 'knoll_retoure_flow_state';
@@ -51,6 +54,57 @@
     let orderHandledForSearch = false;
     let orderProcessing = false;
     let ordersFlowActive = false;
+    let pendingReload = false;
+
+    function isPendingReload() {
+        return pendingReload || sessionStorage.getItem(PENDING_RELOAD_KEY) === '1';
+    }
+
+    function getReloadRetryCount() {
+        return parseInt(sessionStorage.getItem(RELOAD_RETRY_KEY) || '0', 10) || 0;
+    }
+
+    function incrementReloadRetry() {
+        var next = getReloadRetryCount() + 1;
+        sessionStorage.setItem(RELOAD_RETRY_KEY, String(next));
+        return next;
+    }
+
+    function clearReloadRetry() {
+        sessionStorage.removeItem(RELOAD_RETRY_KEY);
+    }
+
+    function confirmCleanSearchPage() {
+        sessionStorage.removeItem(PENDING_RELOAD_KEY);
+        clearReloadRetry();
+        pendingReload = false;
+        orderHandledForSearch = false;
+    }
+
+    function hasStaleOrderListAfterAdd() {
+        if (!isFlowActive() || !isOrdersPage()) return false;
+        var state = loadFlowState();
+        if (state.step === 'orders' || state.step === 'articlePick' || state.searchSubmitted) return false;
+        if (state.step && state.step !== 'search') return false;
+        var input = findKnollSearchInput();
+        return !input || !normalizeText(input.value);
+    }
+
+    function expectsCleanSearchPage() {
+        if (isPendingReload()) return true;
+        return hasStaleOrderListAfterAdd();
+    }
+
+    function buildCleanRetoureReloadUrl() {
+        try {
+            var u = new URL(window.location.href);
+            u.hash = '';
+            u.searchParams.set('_knr', Date.now().toString(36));
+            return u.toString();
+        } catch (e) {
+            return window.location.href.split('#')[0];
+        }
+    }
 
     function canAutoFocusSearch() {
         if (abortMission || userEditingSearch || searchSubmitted) return false;
@@ -144,6 +198,9 @@
         sessionStorage.removeItem(ACTIVE_FLOW_KEY);
         sessionStorage.removeItem(LAST_EAN_KEY);
         sessionStorage.removeItem(EXCLUSION_OK_KEY);
+        sessionStorage.removeItem(PENDING_RELOAD_KEY);
+        sessionStorage.removeItem(RELOAD_RETRY_KEY);
+        pendingReload = false;
     }
 
     function restoreFlowState() {
@@ -179,6 +236,7 @@
             orderHandledForSearch = false;
             orderProcessing = false;
             ordersFlowActive = false;
+            pendingReload = false;
             hideQuantityPicker();
             hideExclusionDialog();
             showHud('KNOLL RETOURE STOP', 'Prozess gestoppt. ESC erneut zum Schließen.', true);
@@ -436,7 +494,16 @@
     }
 
     async function goToOrdersFromArticlePick() {
-        if (orderHandledForSearch || orderProcessing || ordersFlowActive) {
+        if (isPendingReload()) return;
+        if (expectsCleanSearchPage()) {
+            await forceCleanSearchReload('Seite wird neu geladen...');
+            return;
+        }
+        if (orderHandledForSearch) {
+            await reloadForNextProduct();
+            return;
+        }
+        if (orderProcessing || ordersFlowActive) {
             ensureSearchListeners(true);
             return;
         }
@@ -484,8 +551,8 @@
 
     async function handleArticlePickPage() {
         if (isOrdersPage()) {
-            if (orderHandledForSearch) {
-                ensureSearchListeners(true);
+            if (orderHandledForSearch || isPendingReload()) {
+                reloadForNextProduct();
                 return;
             }
             await goToOrdersFromArticlePick();
@@ -500,8 +567,8 @@
         var target = await waitForSearchResult(10000);
         if (abortMission) return;
         if (isOrdersPage()) {
-            if (orderHandledForSearch) {
-                ensureSearchListeners(true);
+            if (orderHandledForSearch || isPendingReload()) {
+                reloadForNextProduct();
                 return;
             }
             await goToOrdersFromArticlePick();
@@ -528,8 +595,8 @@
         }
         lastHandledStep = '';
         if (isOrdersPage()) {
-            if (orderHandledForSearch) {
-                ensureSearchListeners(true);
+            if (orderHandledForSearch || isPendingReload()) {
+                reloadForNextProduct();
                 return;
             }
             await goToOrdersFromArticlePick();
@@ -902,6 +969,7 @@
     }
 
     function shouldPauseWatcher() {
+        if (isPendingReload()) return true;
         if (searchSubmitted) return false;
         if (Date.now() < pausePageWatcherUntil) return true;
         if (!userEditingSearch || !searchInput) return false;
@@ -1051,11 +1119,7 @@
             lastInputChangeAt = 0;
         }
         if (!searchListenersReady || clearField) {
-            if (orderHandledForSearch) {
-                showHud('KNOLL RETOURE BEREIT', 'Artikel hinzugefügt — nächsten Artikel scannen oder eingeben.', false, true);
-            } else {
-                showHud('KNOLL RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false, true);
-            }
+            showHud('KNOLL RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false, true);
         }
         searchListenersReady = true;
         if (clearField) searchFocusDone = false;
@@ -1105,11 +1169,60 @@
     function bindPrintButton(btn) {
         if (!btn || btn.__knollPrintBound) return;
         btn.__knollPrintBound = true;
+        styleKnollPrintButton(btn);
         btn.addEventListener('click', function(e) {
             e.preventDefault();
             e.stopPropagation();
             printPageClean();
         }, true);
+    }
+
+    function styleKnollPrintButton(btn) {
+        if (!btn) return;
+        hudEnsureStyles();
+        btn.classList.add('knoll-retoure-print-knoll');
+        var ref = findClickableByText('Zurück', true) || findClickableByText('Absenden', true);
+        if (ref) {
+            var skip = { 'btn-primary': 1, 'btn-danger': 1, 'btn-success': 1 };
+            (ref.className || '').split(/\s+/).forEach(function(cls) {
+                if (cls && !skip[cls]) btn.classList.add(cls);
+            });
+            if (!btn.classList.contains('btn')) btn.classList.add('btn');
+            try {
+                var cs = window.getComputedStyle(ref);
+                btn.style.boxSizing = cs.boxSizing || 'border-box';
+                btn.style.display = cs.display === 'inline' ? 'inline-block' : cs.display;
+                btn.style.minHeight = cs.minHeight !== '0px' ? cs.minHeight : cs.height;
+                btn.style.height = cs.height;
+                btn.style.width = cs.width;
+                btn.style.flex = cs.flex;
+                btn.style.flexGrow = cs.flexGrow;
+                btn.style.flexShrink = cs.flexShrink;
+                btn.style.flexBasis = cs.flexBasis;
+                btn.style.padding = cs.padding;
+                btn.style.margin = cs.margin;
+                btn.style.fontSize = cs.fontSize;
+                btn.style.fontWeight = cs.fontWeight;
+                btn.style.fontFamily = cs.fontFamily;
+                btn.style.lineHeight = cs.lineHeight;
+                btn.style.textTransform = cs.textTransform;
+                btn.style.letterSpacing = cs.letterSpacing;
+                btn.style.borderRadius = cs.borderRadius;
+                btn.style.textAlign = 'center';
+                btn.style.verticalAlign = cs.verticalAlign;
+                btn.style.appearance = 'none';
+                btn.style.webkitAppearance = 'none';
+            } catch (e) {}
+        }
+    }
+
+    function findReturnListActionBar() {
+        var absenden = findClickableByText('Absenden', true);
+        var zurueck = findClickableByText('Zurück', true);
+        if (absenden && zurueck && absenden.parentElement === zurueck.parentElement) return absenden.parentElement;
+        if (absenden && absenden.parentElement) return absenden.parentElement;
+        if (zurueck && zurueck.parentElement) return zurueck.parentElement;
+        return null;
     }
     function hideQuantityPicker() {
         var existing = document.getElementById('knoll-retoure-qty-popup');
@@ -1237,6 +1350,8 @@
 
     async function reloadForNextProduct() {
         if (abortMission) return;
+        pendingReload = true;
+        sessionStorage.setItem(PENDING_RELOAD_KEY, '1');
         orderHandledForSearch = false;
         orderProcessing = false;
         ordersFlowActive = false;
@@ -1254,26 +1369,37 @@
             lastEan: ''
         });
         sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
-        await sleep(400);
-        location.reload();
+        pauseWatcher(15000);
+        await sleep(200);
+        location.replace(buildCleanRetoureReloadUrl());
+    }
+
+    async function forceCleanSearchReload(message) {
+        if (abortMission) return false;
+        if (!expectsCleanSearchPage() && !isOrdersPage()) {
+            confirmCleanSearchPage();
+            return false;
+        }
+        var retries = incrementReloadRetry();
+        if (retries > MAX_RELOAD_RETRIES) {
+            confirmCleanSearchPage();
+            showHud('KNOLL RETOURE FEHLER', 'Seite bitte manuell mit F5 neu laden, dann erneut scannen.', true, true);
+            return false;
+        }
+        showHud('KNOLL RETOURE BEREIT', message || 'Seite wird neu geladen...', false, true);
+        await sleep(350);
+        await reloadForNextProduct();
+        return true;
     }
 
     async function finishOrderAndReturnToSearch() {
-        var waitStart = Date.now();
-        while (Date.now() - waitStart < 8000) {
-            if (abortMission) return;
-            if (pageHasText('Der Artikel wurde in die Rückgabeliste hinzugefügt')) {
-                break;
-            }
-            await sleep(200);
-        }
         showHud('KNOLL RETOURE BEREIT', 'Artikel hinzugefügt — Seite wird neu geladen...', false, true);
         await sleep(500);
         await reloadForNextProduct();
     }
 
     async function submitOrderRow(row, quantity) {
-        if (orderHandledForSearch || orderProcessing) return false;
+        if (isPendingReload() || orderHandledForSearch || orderProcessing) return false;
         var table = findOrdersTable();
         if (!table || !row) return false;
         orderProcessing = true;
@@ -1294,16 +1420,14 @@
                 showHud('KNOLL RETOURE FEHLER', 'Hinzufügen-Button in der Zeile nicht gefunden.', true, true);
                 return false;
             }
-            orderHandledForSearch = true;
-            saveFlowState({ active: true, step: 'search', searchSubmitted: false, orderHandled: true });
-            pauseWatcher(8000);
+            saveFlowState({ active: true, step: 'search', searchSubmitted: false, orderHandled: false });
             lastHandledStep = 'order-done';
             forceClick(addBtn);
-            await sleep(1200);
+            await sleep(400);
             await finishOrderAndReturnToSearch();
             return true;
         } catch (e) {
-            if (!orderHandledForSearch) {
+            if (!isPendingReload()) {
                 orderProcessing = false;
                 ordersFlowActive = false;
             }
@@ -1329,10 +1453,16 @@
     }
 
     async function handleOrdersPage() {
-        if (orderHandledForSearch || orderProcessing) {
-            ensureSearchListeners(true);
+        if (isPendingReload()) return;
+        if (expectsCleanSearchPage()) {
+            await forceCleanSearchReload('Alte Liste erkannt — Seite wird neu geladen...');
             return;
         }
+        if (orderHandledForSearch) {
+            await reloadForNextProduct();
+            return;
+        }
+        if (orderProcessing) return;
         if (ordersFlowActive) return;
         ordersFlowActive = true;
         saveFlowState({ active: true, step: 'orders', searchSubmitted: false });
@@ -1351,6 +1481,10 @@
                 if (!orderHandledForSearch) {
                     ordersFlowActive = false;
                     lastHandledStep = '';
+                    if (hasStaleOrderListAfterAdd() || expectsCleanSearchPage()) {
+                        await forceCleanSearchReload('Keine Zeile mehr verfügbar — Seite wird neu geladen...');
+                        return;
+                    }
                     showHud('KNOLL RETOURE FEHLER', 'Keine passende Bestellzeile gefunden.', true, true);
                 }
                 return;
@@ -1433,20 +1567,30 @@
     function ensurePrintButton() {
         var existing = document.getElementById('knoll-retoure-print-btn');
         if (existing) {
+            styleKnollPrintButton(existing);
             bindPrintButton(existing);
             return;
         }
         var native = findClickableByText('Seite drucken', false);
         if (native) {
             if (!native.id) native.id = 'knoll-retoure-print-btn';
+            var absendenNative = findClickableByText('Absenden', true);
+            var actionBar = findReturnListActionBar();
+            if (actionBar && native.parentElement !== actionBar) {
+                if (absendenNative && absendenNative.parentElement === actionBar) {
+                    actionBar.insertBefore(native, absendenNative);
+                } else {
+                    actionBar.appendChild(native);
+                }
+            }
+            styleKnollPrintButton(native);
             bindPrintButton(native);
             printButtonAdded = true;
             return;
         }
         var absenden = findClickableByText('Absenden', true);
         var zurueck = findClickableByText('Zurück', true);
-        var host = absenden ? absenden.parentElement : null;
-        if (!host && zurueck) host = zurueck.parentElement;
+        var host = findReturnListActionBar();
         if (!host) {
             var table = findReturnListTable();
             host = table ? table.parentElement : null;
@@ -1461,6 +1605,7 @@
         btn.id = 'knoll-retoure-print-btn';
         btn.type = 'button';
         btn.textContent = 'Seite drucken';
+        styleKnollPrintButton(btn);
         bindPrintButton(btn);
         if (absenden && absenden.parentElement === host) {
             host.insertBefore(btn, absenden);
@@ -1490,6 +1635,15 @@
 
     async function runPageFlow(force) {
         if (abortMission) return;
+        if (isPendingReload()) {
+            isRunning = false;
+            return;
+        }
+        if (expectsCleanSearchPage() && isOrdersPage()) {
+            isRunning = false;
+            await forceCleanSearchReload('Seite wird neu geladen...');
+            return;
+        }
         if (isRunning && !force) return;
         if (orderProcessing && !force) return;
         if (ordersFlowActive && !force) return;
@@ -1502,9 +1656,7 @@
         var stepKey = page + '|' + (sessionStorage.getItem(ACTIVE_FLOW_KEY) || '') + '|' + (sessionStorage.getItem(EXCLUSION_OK_KEY) || '') + '|' + (searchSubmitted ? '1' : '') + '|' + (orderHandledForSearch ? 'done' : '');
         if (!force && lastHandledStep === stepKey) return;
         if (orderHandledForSearch && (page === 'orders' || (page === 'search' && isOrdersPage()))) {
-            ensureSearchListeners(true);
-            lastHandledStep = stepKey;
-            isRunning = false;
+            reloadForNextProduct();
             return;
         }
         isRunning = true;
@@ -1521,9 +1673,8 @@
                 if (currentInput) bindSearchInput(currentInput);
                 if (currentInput && !normalizeText(currentInput.value) && !isFlowActive()) searchSubmitted = false;
                 if (isOrdersPage()) {
-                    if (orderHandledForSearch) {
-                        ensureSearchListeners(true);
-                        lastHandledStep = stepKey;
+                    if (orderHandledForSearch || isPendingReload()) {
+                        reloadForNextProduct();
                         return;
                     }
                     lastHandledStep = '';
@@ -1553,9 +1704,8 @@
                 return;
             }
             if (page === 'orders') {
-                if (orderHandledForSearch) {
-                    ensureSearchListeners(true);
-                    lastHandledStep = stepKey;
+                if (orderHandledForSearch || isPendingReload()) {
+                    reloadForNextProduct();
                     return;
                 }
                 lastHandledStep = stepKey;
@@ -1740,9 +1890,14 @@
             + '.knoll-retoure-action-primary { border-color: rgba(220, 61, 61, 0.55); color: #f07070; }'
             + '.knoll-retoure-hud-action { margin-top: 14px; width: 100%; min-height: 48px; border-radius: 14px; border: 2px solid rgba(220, 61, 61, 0.55);'
             + '  background: rgba(220, 61, 61, 0.12); color: #f07070; font-size: 14px; font-weight: 900; cursor: pointer; }'
-            + '#knoll-retoure-print-btn { min-height: 44px; margin-right: 12px; padding: 10px 22px; border-radius: 6px; border: none;'
-            + '  background: #333; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; display: inline-block; }'
-            + '#knoll-retoure-print-btn:hover { background: #444; }'
+            + '#knoll-retoure-print-btn, button.knoll-retoure-print-knoll {'
+            + '  background: #1565a8 !important; background-color: #1565a8 !important; color: #fff !important;'
+            + '  border: none !important; box-shadow: none !important; cursor: pointer; text-decoration: none !important;'
+            + '  font-weight: 700 !important; }'
+            + '#knoll-retoure-print-btn:hover, button.knoll-retoure-print-knoll:hover {'
+            + '  background: #125589 !important; background-color: #125589 !important; color: #fff !important; }'
+            + '#knoll-retoure-print-btn:focus, button.knoll-retoure-print-knoll:focus {'
+            + '  outline: 2px solid rgba(21, 101, 168, 0.45) !important; outline-offset: 1px; }'
             + '.knoll-retoure-hud-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }'
             + '@media print {'
             + '  #knoll-retoure-popup, #knoll-retoure-qty-popup, #knoll-retoure-exclusion-popup, #knoll-retoure-print-btn'
@@ -1811,10 +1966,23 @@
 
     function bootAttempt() {
         restoreFlowState();
+        pendingReload = sessionStorage.getItem(PENDING_RELOAD_KEY) === '1';
         if (!isRetoureUrl() && !isRetoureContext()) return false;
+        if (expectsCleanSearchPage() && isOrdersPage()) {
+            forceCleanSearchReload('Seite wird neu geladen...');
+            return true;
+        }
+        if (!isOrdersPage() && isFlowActive() && loadFlowState().step === 'search') {
+            confirmCleanSearchPage();
+        }
         var page = detectPage();
         if (page === 'search' && isOrdersPage()) page = 'orders';
         if (page === 'articlePick' && isOrdersPage()) page = 'orders';
+        if (orderHandledForSearch && isOrdersPage()) {
+            orderHandledForSearch = false;
+            reloadForNextProduct();
+            return true;
+        }
         if (page === 'orders' || page === 'returnList' || page === 'articlePick' || isFlowActive()) {
             var bootState = loadFlowState();
             if (!(page === 'orders' && bootState.orderHandled)) {
@@ -1823,10 +1991,8 @@
         }
         startPageWatcher();
         if (page === 'orders') {
-            if (orderHandledForSearch) {
-                scheduleSearchAutoFocus(true);
-            } else {
-                showHud('KNOLL RETOURE LÄUFT', 'Seite neu geladen — wähle neuesten Auftrag...', false, true);
+            if (!expectsCleanSearchPage()) {
+                showHud('KNOLL RETOURE LÄUFT', 'Wähle neuesten Auftrag...', false, true);
             }
         } else if (page === 'returnList') {
             hideHud();
