@@ -4,8 +4,8 @@
 // @version      1.8
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
-// @match        *://*.wm.de/*
-// @match        *://wm.de/*
+// @match        *://*.customer-de.wm.de/*
+// @match        *://customer-de.wm.de/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Warenr%C3%BCckgabe/wm-retoure-automation.user.js
 // @downloadURL  https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Warenr%C3%BCckgabe/wm-retoure-automation.user.js
 // @grant        none
@@ -16,7 +16,7 @@
 
     const BOT_VERSION = '1.8';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
-    const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';image.png
+    const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
     const ACTIVE_FLOW_KEY = 'wm_retoure_active_flow';
     const LAST_EAN_KEY = 'wm_retoure_last_ean';
     const MIN_SEARCH_LEN = 3;
