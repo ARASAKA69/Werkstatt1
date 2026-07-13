@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.8
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.wm.de/*
@@ -14,18 +14,27 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '1.5';
+    const BOT_VERSION = '1.8';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
-    const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
+    const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';image.png
     const ACTIVE_FLOW_KEY = 'wm_retoure_active_flow';
     const LAST_EAN_KEY = 'wm_retoure_last_ean';
-    const MIN_EAN_LEN = 8;
-    const SCAN_IDLE_MS = 1800;
+    const MIN_SEARCH_LEN = 3;
+    const MIN_SCAN_LEN = 8;
+    const SCAN_IDLE_MS = 2800;
     const PAGE_WAIT_MS = 400;
+    const SUBMIT_DELAY_MS = 350;
 
     let abortMission = false;
     let isRunning = false;
     let searchSubmitted = false;
+    let searchListenersReady = false;
+    let userEditingSearch = false;
+    let pausePageWatcherUntil = 0;
+    let lastHudSignature = '';
+    let lastInputChangeAt = 0;
+    let searchFocusDone = false;
+    let searchFocusTimer = null;
     let scanTimer = null;
     let searchInput = null;
     let pageWatcherStarted = false;
@@ -38,6 +47,10 @@
             if (scanTimer) clearTimeout(scanTimer);
             sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
             sessionStorage.removeItem(ACTIVE_FLOW_KEY);
+            searchSubmitted = false;
+            searchListenersReady = false;
+            userEditingSearch = false;
+            searchFocusDone = false;
             hideQuantityPicker();
             showHud('WM RETOURE STOP', 'Prozess gestoppt. ESC erneut zum Schließen.', true);
         }
@@ -155,7 +168,7 @@
         return -1;
     }
 
-    function findOldestRueckgabeRow() {
+    function findNewestRueckgabeRow() {
         var table = findOrdersTable();
         if (!table) return null;
         var dateIdx = getTableColumnIndex(table, 'Bestellt am');
@@ -177,7 +190,7 @@
             var dateCell = dateIdx >= 0 && cells[dateIdx] ? cells[dateIdx] : cells[1];
             var date = parseGermanDate(dateCell ? dateCell.textContent : '');
             if (!date) continue;
-            if (!bestDate || date.getTime() < bestDate.getTime()) {
+            if (!bestDate || date.getTime() > bestDate.getTime()) {
                 bestDate = date;
                 bestRow = btn;
             }
@@ -185,11 +198,11 @@
         return bestRow;
     }
 
-    async function waitForOldestRueckgabeRow(timeout) {
+    async function waitForNewestRueckgabeRow(timeout) {
         var start = Date.now();
         while (Date.now() - start < (timeout || 10000)) {
             if (abortMission) return null;
-            var btn = findOldestRueckgabeRow();
+            var btn = findNewestRueckgabeRow();
             if (btn) return btn;
             await sleep(180);
         }
@@ -384,9 +397,57 @@
 
     let lastBoundSearchInput = null;
 
+    function pauseWatcher(ms) {
+        pausePageWatcherUntil = Date.now() + (ms || 3000);
+    }
+
+    function shouldPauseWatcher() {
+        if (searchSubmitted) return false;
+        if (Date.now() < pausePageWatcherUntil) return true;
+        if (!userEditingSearch || !searchInput) return false;
+        if (document.activeElement === searchInput) return true;
+        if (normalizeText(searchInput.value) && !searchSubmitted) return true;
+        return false;
+    }
+
+    function canAutoFocusSearch() {
+        if (abortMission || userEditingSearch || searchSubmitted) return false;
+        var input = findSearchInput();
+        if (!input || !isVisible(input)) return false;
+        if (normalizeText(input.value)) return false;
+        if (detectPage() !== 'search') return false;
+        return true;
+    }
+
+    function scheduleSearchAutoFocus(force) {
+        if (!force && searchFocusDone) return;
+        if (searchFocusTimer) clearTimeout(searchFocusTimer);
+        searchFocusTimer = setTimeout(function() {
+            searchFocusTimer = null;
+            if (!canAutoFocusSearch()) return;
+            var input = findSearchInput();
+            if (!input) return;
+            searchInput = input;
+            bindSearchInput(searchInput);
+            if (document.activeElement === input) {
+                searchFocusDone = true;
+                return;
+            }
+            try {
+                input.focus({ preventScroll: true });
+            } catch (e) {
+                try { input.focus(); } catch (e2) {}
+            }
+            searchFocusDone = true;
+        }, force ? 120 : 320);
+    }
+
     function handleSearchInput(e) {
         if (abortMission) return;
         searchInput = e.target;
+        userEditingSearch = true;
+        pauseWatcher(6000);
+        lastInputChangeAt = Date.now();
         var value = normalizeText(searchInput.value);
         if (!value) searchSubmitted = false;
         if (searchSubmitted) return;
@@ -394,6 +455,8 @@
     }
 
     function handleSearchKeydown(e) {
+        userEditingSearch = true;
+        pauseWatcher(6000);
         if (e.key !== 'Enter') return;
         e.preventDefault();
         e.stopPropagation();
@@ -402,37 +465,65 @@
             clearTimeout(scanTimer);
             scanTimer = null;
         }
-        triggerSearch();
+        triggerSearch(true);
+    }
+
+    function handleSearchPointerDown() {
+        userEditingSearch = true;
+        pauseWatcher(6000);
     }
 
     function bindSearchInput(el) {
-        if (!el || el === lastBoundSearchInput) return;
-        lastBoundSearchInput = el;
-        el.addEventListener('input', handleSearchInput);
-        el.addEventListener('keydown', handleSearchKeydown);
+        if (!el) return;
+        if (el !== lastBoundSearchInput) {
+            lastBoundSearchInput = el;
+            el.addEventListener('input', handleSearchInput);
+            el.addEventListener('keydown', handleSearchKeydown);
+            el.addEventListener('pointerdown', handleSearchPointerDown);
+        }
+    }
+
+    function isInputStable() {
+        return Date.now() - lastInputChangeAt >= SCAN_IDLE_MS - 100;
     }
 
     function scheduleScanSearch() {
         if (scanTimer) clearTimeout(scanTimer);
         scanTimer = setTimeout(function() {
             scanTimer = null;
-            if (normalizeText(searchInput.value).length >= MIN_EAN_LEN) triggerSearch();
+            if (!searchInput || searchSubmitted || abortMission) return;
+            if (!isInputStable()) {
+                scheduleScanSearch();
+                return;
+            }
+            var len = normalizeText(searchInput.value).length;
+            if (len >= MIN_SCAN_LEN) triggerSearch(false);
         }, SCAN_IDLE_MS);
     }
 
-    function triggerSearch() {
+    async function triggerSearch(manual) {
         if (abortMission || !searchInput || searchSubmitted) return;
+        if (!manual && !isInputStable()) return;
         var value = normalizeText(searchInput.value);
-        if (value.length < MIN_EAN_LEN) return;
+        if (!value) return;
+        var minLen = manual ? MIN_SEARCH_LEN : MIN_SCAN_LEN;
+        if (value.length < minLen) return;
         if (scanTimer) {
             clearTimeout(scanTimer);
             scanTimer = null;
         }
+        await sleep(manual ? SUBMIT_DELAY_MS : SUBMIT_DELAY_MS + 150);
+        if (abortMission || !searchInput || searchSubmitted) return;
+        value = normalizeText(searchInput.value);
+        if (!value || value.length < minLen) return;
+        if (!manual && !isInputStable()) return;
         searchSubmitted = true;
+        userEditingSearch = false;
+        pauseWatcher(1500);
         sessionStorage.setItem(LAST_EAN_KEY, value);
         sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
         lastHandledStep = '';
-        showHud('WM RETOURE LÄUFT', 'Suche Artikel für EAN/Katalog-Nr.: ' + value, false);
+        showHud('WM RETOURE LÄUFT', 'Suche Artikel für Nr.: ' + value, false);
         var btn = findClickableByText('Anzeigen', true);
         if (!btn) {
             searchSubmitted = false;
@@ -441,40 +532,56 @@
         }
         forceClick(btn);
         setTimeout(function() {
-            tickFlow(true);
-        }, 500);
+            if (!shouldPauseWatcher()) tickFlow(true);
+        }, 700);
     }
 
-    function setupSearchListeners(clearField) {
-        searchInput = findSearchInput();
-        if (!searchInput) return false;
-        searchSubmitted = false;
-        if (scanTimer) {
-            clearTimeout(scanTimer);
-            scanTimer = null;
-        }
+    function ensureSearchListeners(clearField) {
+        var input = findSearchInput();
+        if (!input) return false;
+        searchInput = input;
         bindSearchInput(searchInput);
-        if (clearField) searchInput.value = '';
-        searchInput.focus();
-        searchInput.select();
-        showHud('WM RETOURE BEREIT', 'Suchfeld aktiv. EAN scannen — Suche startet nach Scan-Ende oder Enter.', false);
+        if (clearField) {
+            searchSubmitted = false;
+            userEditingSearch = false;
+            searchFocusDone = false;
+            if (scanTimer) {
+                clearTimeout(scanTimer);
+                scanTimer = null;
+            }
+            searchInput.value = '';
+            lastInputChangeAt = 0;
+        }
+        if (!searchListenersReady || clearField) {
+            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false);
+        }
+        searchListenersReady = true;
+        if (clearField) searchFocusDone = false;
+        scheduleSearchAutoFocus(!!clearField);
         return true;
     }
 
+    function setupSearchListeners(clearField) {
+        return ensureSearchListeners(clearField);
+    }
+
+    async function reloadForNextProduct() {
+        if (abortMission) return;
+        sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
+        sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
+        searchSubmitted = false;
+        searchListenersReady = false;
+        searchFocusDone = false;
+        userEditingSearch = false;
+        lastHandledStep = '';
+        await sleep(400);
+        location.reload();
+    }
+
     async function handleReturnToSearch() {
-        showHud('WM RETOURE LÄUFT', 'Retoure gespeichert — zurück zur Suche...', false);
-        var btn = await waitForClickableByText('Neue Suche', true, 10000);
-        if (!btn || abortMission) {
-            lastHandledStep = '';
-            showHud('WM RETOURE FEHLER', 'Neue Suche nicht gefunden.', true);
-            return;
-        }
-        await sleep(300);
-        forceClick(btn);
-        setTimeout(function() {
-            lastHandledStep = '';
-            tickFlow(true);
-        }, 700);
+        showHud('WM RETOURE BEREIT', 'Artikel hinzugefügt — Seite wird neu geladen...', false);
+        await sleep(500);
+        await reloadForNextProduct();
     }
 
     async function finishReturnToSearch() {
@@ -482,9 +589,12 @@
         sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
         lastHandledStep = '';
         searchSubmitted = false;
-        if (setupSearchListeners(true)) return;
+        searchListenersReady = false;
+        searchFocusDone = false;
+        userEditingSearch = false;
+        if (ensureSearchListeners(true)) return;
         await sleep(400);
-        setupSearchListeners(true);
+        ensureSearchListeners(true);
     }
 
     async function handleArticlePage() {
@@ -508,8 +618,8 @@
             await handleReturnToSearch();
             return;
         }
-        showHud('WM RETOURE LÄUFT', 'Suche ältesten Auftrag mit Rückgabe-Button...', false);
-        var btn = await waitForOldestRueckgabeRow(10000);
+        showHud('WM RETOURE LÄUFT', 'Suche neuesten Auftrag mit Rückgabe-Button...', false);
+        var btn = await waitForNewestRueckgabeRow(10000);
         if (!btn || abortMission) {
             lastHandledStep = '';
             showHud('WM RETOURE FEHLER', 'Kein Rückgabe-Button für aktuellen Auftrag gefunden.', true);
@@ -586,15 +696,15 @@
         }
         showHud('WM RETOURE LÄUFT', 'Menge ' + option.numeric + ' — klicke Übernehmen...', false);
         await sleep(250);
-        sessionStorage.setItem(PENDING_NEUE_SUCHE_KEY, '1');
         var submit = findClickableByText('Übernehmen', true);
         if (!submit) submit = await waitForClickableByText('Übernehmen', true, 8000);
         if (!submit || abortMission) {
-            sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
             showHud('WM RETOURE FEHLER', 'Übernehmen-Button nicht gefunden.', true);
             return;
         }
         forceClick(submit);
+        await sleep(1200);
+        await handleReturnToSearch();
     }
 
     async function handleQuantityPage() {
@@ -634,8 +744,8 @@
         if (page === 'unknown') return;
         var pendingReturn = sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1';
         if (!shouldAutoRun(page) && page !== 'search' && !pendingReturn) return;
-        var stepKey = page + '|' + (pendingReturn ? 'return' : '') + '|' + (sessionStorage.getItem(ACTIVE_FLOW_KEY) || '');
-        if (!force && lastHandledStep === stepKey && page !== 'search' && !pendingReturn) return;
+        var stepKey = page + '|' + (pendingReturn ? 'return' : '') + '|' + (sessionStorage.getItem(ACTIVE_FLOW_KEY) || '') + '|' + (searchSubmitted ? '1' : '');
+        if (!force && lastHandledStep === stepKey) return;
         isRunning = true;
         try {
             await sleep(PAGE_WAIT_MS);
@@ -646,10 +756,20 @@
                 return;
             }
             if (page === 'search') {
+                var currentInput = findSearchInput();
+                if (currentInput) bindSearchInput(currentInput);
+                if (shouldPauseWatcher()) {
+                    isRunning = false;
+                    return;
+                }
+                if (searchListenersReady && !force && !pendingReturn) {
+                    isRunning = false;
+                    return;
+                }
                 lastHandledStep = stepKey;
                 isRunning = false;
                 sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
-                setupSearchListeners(false);
+                ensureSearchListeners(false);
                 return;
             }
             if (page === 'article') {
@@ -682,14 +802,17 @@
         pageWatcherStarted = true;
         var debounceTimer = null;
         function scheduleTick() {
+            if (shouldPauseWatcher()) return;
             if (debounceTimer) clearTimeout(debounceTimer);
             debounceTimer = setTimeout(function() {
+                if (shouldPauseWatcher()) return;
                 tickFlow(false);
             }, 250);
         }
         var observer = new MutationObserver(scheduleTick);
         observer.observe(document.documentElement, { childList: true, subtree: true });
         setInterval(function() {
+            if (shouldPauseWatcher()) return;
             if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1' || sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') {
                 tickFlow(false);
             }
@@ -838,13 +961,12 @@
 
     function showHud(title, message, isEnd) {
         hudEnsureStyles();
+        var signature = title + '|' + message + '|' + !!isEnd;
         var existing = document.getElementById('arasaka-batch-popup');
-        if (existing) existing.remove();
+        if (existing && signature === lastHudSignature) return;
+        lastHudSignature = signature;
         var tone = hudTone(title, message, isEnd);
-        var popup = document.createElement('div');
-        popup.id = 'arasaka-batch-popup';
-        popup.setAttribute('data-tone', tone);
-        popup.innerHTML = ''
+        var html = ''
             + '<div class="arasaka-hud-head" id="wm-retoure-hud-drag">'
             + '  <div>'
             + '    <div class="arasaka-hud-eyebrow">WM Retoure · ' + hudEscape(hudToneLabel(tone)) + '</div>'
@@ -861,11 +983,26 @@
             + '  </div>'
             + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
             + '</div>';
+        if (existing) {
+            existing.setAttribute('data-tone', tone);
+            existing.innerHTML = html;
+            existing.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
+                existing.remove();
+                lastHudSignature = '';
+            });
+            hudEnableDrag(existing, existing.querySelector('#wm-retoure-hud-drag'));
+            return;
+        }
+        var popup = document.createElement('div');
+        popup.id = 'arasaka-batch-popup';
+        popup.setAttribute('data-tone', tone);
+        popup.innerHTML = html;
         document.body.appendChild(popup);
         hudApplyPosition(popup);
         hudEnableDrag(popup, popup.querySelector('#wm-retoure-hud-drag'));
         popup.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
             popup.remove();
+            lastHudSignature = '';
         });
     }
 
@@ -879,6 +1016,10 @@
             sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
         }
         startPageWatcher();
+        scheduleSearchAutoFocus(true);
+        if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1' && page === 'search') {
+            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false);
+        }
         tickFlow(true);
     }
 
