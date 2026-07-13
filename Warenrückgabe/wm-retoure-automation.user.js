@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.5
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.wm.de/*
@@ -14,13 +14,13 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '1.3';
+    const BOT_VERSION = '1.5';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
     const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
     const ACTIVE_FLOW_KEY = 'wm_retoure_active_flow';
     const LAST_EAN_KEY = 'wm_retoure_last_ean';
     const MIN_EAN_LEN = 8;
-    const SCAN_DEBOUNCE_MS = 350;
+    const SCAN_IDLE_MS = 1800;
     const PAGE_WAIT_MS = 400;
 
     let abortMission = false;
@@ -382,10 +382,52 @@
         return null;
     }
 
+    let lastBoundSearchInput = null;
+
+    function handleSearchInput(e) {
+        if (abortMission) return;
+        searchInput = e.target;
+        var value = normalizeText(searchInput.value);
+        if (!value) searchSubmitted = false;
+        if (searchSubmitted) return;
+        scheduleScanSearch();
+    }
+
+    function handleSearchKeydown(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        e.stopPropagation();
+        searchInput = e.target;
+        if (scanTimer) {
+            clearTimeout(scanTimer);
+            scanTimer = null;
+        }
+        triggerSearch();
+    }
+
+    function bindSearchInput(el) {
+        if (!el || el === lastBoundSearchInput) return;
+        lastBoundSearchInput = el;
+        el.addEventListener('input', handleSearchInput);
+        el.addEventListener('keydown', handleSearchKeydown);
+    }
+
+    function scheduleScanSearch() {
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(function() {
+            scanTimer = null;
+            if (normalizeText(searchInput.value).length >= MIN_EAN_LEN) triggerSearch();
+        }, SCAN_IDLE_MS);
+    }
+
     function triggerSearch() {
         if (abortMission || !searchInput || searchSubmitted) return;
         var value = normalizeText(searchInput.value);
         if (value.length < MIN_EAN_LEN) return;
+        if (scanTimer) {
+            clearTimeout(scanTimer);
+            scanTimer = null;
+        }
         searchSubmitted = true;
         sessionStorage.setItem(LAST_EAN_KEY, value);
         sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
@@ -399,37 +441,57 @@
         }
         forceClick(btn);
         setTimeout(function() {
-            searchSubmitted = false;
             tickFlow(true);
         }, 500);
     }
 
-    function setupSearchListeners() {
+    function setupSearchListeners(clearField) {
         searchInput = findSearchInput();
-        if (!searchInput) return;
+        if (!searchInput) return false;
+        searchSubmitted = false;
+        if (scanTimer) {
+            clearTimeout(scanTimer);
+            scanTimer = null;
+        }
+        bindSearchInput(searchInput);
+        if (clearField) searchInput.value = '';
         searchInput.focus();
         searchInput.select();
-        showHud('WM RETOURE BEREIT', 'Suchfeld aktiv. EAN scannen — Suche startet automatisch.', false);
-        if (searchInput.dataset.wmRetoureBound === '1') return;
-        searchInput.dataset.wmRetoureBound = '1';
-        searchInput.addEventListener('input', function() {
-            if (abortMission) return;
-            if (scanTimer) clearTimeout(scanTimer);
-            scanTimer = setTimeout(function() {
-                if (normalizeText(searchInput.value).length >= MIN_EAN_LEN) triggerSearch();
-            }, SCAN_DEBOUNCE_MS);
-        });
-        searchInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-                if (scanTimer) clearTimeout(scanTimer);
-                triggerSearch();
-            }
-        });
+        showHud('WM RETOURE BEREIT', 'Suchfeld aktiv. EAN scannen — Suche startet nach Scan-Ende oder Enter.', false);
+        return true;
+    }
+
+    async function handleReturnToSearch() {
+        showHud('WM RETOURE LÄUFT', 'Retoure gespeichert — zurück zur Suche...', false);
+        var btn = await waitForClickableByText('Neue Suche', true, 10000);
+        if (!btn || abortMission) {
+            lastHandledStep = '';
+            showHud('WM RETOURE FEHLER', 'Neue Suche nicht gefunden.', true);
+            return;
+        }
+        await sleep(300);
+        forceClick(btn);
+        setTimeout(function() {
+            lastHandledStep = '';
+            tickFlow(true);
+        }, 700);
+    }
+
+    async function finishReturnToSearch() {
+        sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
+        sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
+        lastHandledStep = '';
+        searchSubmitted = false;
+        if (setupSearchListeners(true)) return;
+        await sleep(400);
+        setupSearchListeners(true);
     }
 
     async function handleArticlePage() {
+        if (sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') {
+            await handleReturnToSearch();
+            return;
+        }
         showHud('WM RETOURE LÄUFT', 'Artikel gefunden — wähle Auswählen...', false);
         var btn = await waitForClickableByText('Auswählen', true, 10000);
         if (!btn || abortMission) {
@@ -443,18 +505,7 @@
 
     async function handleOrdersPage() {
         if (sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') {
-            sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
-            sessionStorage.removeItem(ACTIVE_FLOW_KEY);
-            lastHandledStep = '';
-            showHud('WM RETOURE LÄUFT', 'Retoure gespeichert — starte Neue Suche...', false);
-            var neueSuche = await waitForClickableByText('Neue Suche', true, 10000);
-            if (!neueSuche || abortMission) {
-                lastHandledStep = '';
-                showHud('WM RETOURE FEHLER', 'Neue Suche nicht gefunden.', true);
-                return;
-            }
-            await sleep(300);
-            forceClick(neueSuche);
+            await handleReturnToSearch();
             return;
         }
         showHud('WM RETOURE LÄUFT', 'Suche ältesten Auftrag mit Rückgabe-Button...', false);
@@ -581,17 +632,24 @@
         if (isRunning && !force) return;
         var page = detectPage();
         if (page === 'unknown') return;
-        if (!shouldAutoRun(page) && page !== 'search') return;
-        var stepKey = page + '|' + (sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) || '');
-        if (!force && lastHandledStep === stepKey && page !== 'search') return;
+        var pendingReturn = sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1';
+        if (!shouldAutoRun(page) && page !== 'search' && !pendingReturn) return;
+        var stepKey = page + '|' + (pendingReturn ? 'return' : '') + '|' + (sessionStorage.getItem(ACTIVE_FLOW_KEY) || '');
+        if (!force && lastHandledStep === stepKey && page !== 'search' && !pendingReturn) return;
         isRunning = true;
         try {
             await sleep(PAGE_WAIT_MS);
             if (abortMission) return;
+            if (pendingReturn && page === 'search') {
+                isRunning = false;
+                await finishReturnToSearch();
+                return;
+            }
             if (page === 'search') {
                 lastHandledStep = stepKey;
                 isRunning = false;
-                setupSearchListeners();
+                sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
+                setupSearchListeners(false);
                 return;
             }
             if (page === 'article') {
@@ -632,7 +690,9 @@
         var observer = new MutationObserver(scheduleTick);
         observer.observe(document.documentElement, { childList: true, subtree: true });
         setInterval(function() {
-            if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1') tickFlow(false);
+            if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1' || sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') {
+                tickFlow(false);
+            }
         }, 900);
     }
 
