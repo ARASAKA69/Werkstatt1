@@ -328,6 +328,7 @@ function findReifenStockRowsDetailed(sheet, stockId) {
     var groesseCol = getColIndex(header, ["größe", "groesse"]);
     var lastIndexCol = getColIndex(header, ["lastindex", "last"]);
     var gwIndexCol = getColIndex(header, ["gwindex", "gw"]);
+    var mengeCol = getColIndex(header, ["menge", "anzahl"]);
     var startRow = headerIdx + 2;
     var numRows = lastRow - startRow + 1;
     var matches = [];
@@ -335,12 +336,15 @@ function findReifenStockRowsDetailed(sheet, stockId) {
       var data = sheet.getRange(startRow, 1, numRows, lastCol).getValues();
       for (var i = 0; i < data.length; i++) {
         if (!cellMatchesStockId(data[i][stockCol - 1], stockId)) continue;
+        var mengeVal = mengeCol !== -1 ? (parseInt(data[i][mengeCol - 1], 10) || 0) : 0;
+        if (mengeVal < 1) mengeVal = 2;
         matches.push({
           row: startRow + i,
           status: angeliefertCol !== -1 ? String(data[i][angeliefertCol - 1] || "").trim().toLowerCase() : "",
           groesse: groesseCol !== -1 ? String(data[i][groesseCol - 1] || "").trim() : "",
           lastindex: lastIndexCol !== -1 ? String(data[i][lastIndexCol - 1] || "").trim() : "",
-          gwindex: gwIndexCol !== -1 ? String(data[i][gwIndexCol - 1] || "").trim() : ""
+          gwindex: gwIndexCol !== -1 ? String(data[i][gwIndexCol - 1] || "").trim() : "",
+          menge: mengeVal
         });
       }
     }
@@ -621,21 +625,26 @@ function getAvailableReifenStockIds(tabName) {
       var groesseCol = getColIndex(headerRow, ["größe", "groesse"]);
       var lastIndexCol = getColIndex(headerRow, ["lastindex", "last"]);
       var gwIndexCol = getColIndex(headerRow, ["gwindex", "gw"]);
+      var mengeCol = getColIndex(headerRow, ["menge", "anzahl"]);
       var stockData = sheet.getRange(startRow, search.stockCol, numRows, 1).getValues();
       var statusData = angeliefertCol !== -1 ? sheet.getRange(startRow, angeliefertCol, numRows, 1).getValues() : [];
       var groesseData = groesseCol !== -1 ? sheet.getRange(startRow, groesseCol, numRows, 1).getValues() : [];
       var lastIndexData = lastIndexCol !== -1 ? sheet.getRange(startRow, lastIndexCol, numRows, 1).getValues() : [];
       var gwIndexData = gwIndexCol !== -1 ? sheet.getRange(startRow, gwIndexCol, numRows, 1).getValues() : [];
+      var mengeData = mengeCol !== -1 ? sheet.getRange(startRow, mengeCol, numRows, 1).getValues() : [];
       var ids = [];
       for (var i = 0; i < stockData.length; i++) {
         var val = normalizeStockId(stockData[i][0]);
         if (val) {
+          var mengeVal = mengeCol !== -1 ? (parseInt(mengeData[i][0], 10) || 0) : 0;
+          if (mengeVal < 1) mengeVal = 2;
           ids.push({
             id: val,
             status: angeliefertCol !== -1 ? String(statusData[i][0] || "").trim().toLowerCase() : "",
             groesse: groesseCol !== -1 ? String(groesseData[i][0] || "").trim() : "",
             lastindex: lastIndexCol !== -1 ? String(lastIndexData[i][0] || "").trim() : "",
-            gwindex: gwIndexCol !== -1 ? String(gwIndexData[i][0] || "").trim() : ""
+            gwindex: gwIndexCol !== -1 ? String(gwIndexData[i][0] || "").trim() : "",
+            menge: mengeVal
           });
         }
       }
@@ -769,7 +778,8 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
         remainingUnbooked: remaining.length,
         remainingSize: remainingNext ? remainingNext.groesse : "",
         remainingLast: remainingNext ? remainingNext.lastindex : "",
-        remainingGw: remainingNext ? remainingNext.gwindex : ""
+        remainingGw: remainingNext ? remainingNext.gwindex : "",
+        remainingMenge: remainingNext ? (parseInt(remainingNext.menge, 10) || 2) : 0
       };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message };
