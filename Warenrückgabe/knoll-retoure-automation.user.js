@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KNOLL Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      3.6
+// @version      4.0
 // @description  Automatisiert KNOLL Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://shop.knoll.de/*
@@ -17,7 +17,8 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '3.6';
+    const BOT_VERSION = '4.0';
+    const RETURN_ARTICLE_URL = 'https://shop.knoll.de/shop/my-account/return-article';
     const PENDING_RELOAD_KEY = 'knoll_retoure_pending_reload';
     const RELOAD_RETRY_KEY = 'knoll_retoure_reload_retry';
     const MAX_RELOAD_RETRIES = 12;
@@ -105,6 +106,16 @@
             return u.toString();
         } catch (e) {
             return window.location.href.split('#')[0];
+        }
+    }
+
+    function buildReturnArticleUrl() {
+        try {
+            var u = new URL(RETURN_ARTICLE_URL);
+            u.searchParams.set('_knr', Date.now().toString(36));
+            return u.toString();
+        } catch (e) {
+            return RETURN_ARTICLE_URL;
         }
     }
 
@@ -212,10 +223,10 @@
             searchSubmitted = !!state.searchSubmitted;
             grundFilled = !!state.grundFilled;
             orderHandledForSearch = !!state.orderHandled;
-            if (state.step === 'orders' || state.step === 'returnList' || state.step === 'excluded') {
+            if (state.step === 'orders' || state.step === 'returnList' || state.step === 'excluded' || state.step === 'submitPending') {
                 searchSubmitted = false;
             }
-            if (searchSubmitted || state.step === 'orders' || state.step === 'articlePick' || state.step === 'returnList') {
+            if (searchSubmitted || state.step === 'orders' || state.step === 'articlePick' || state.step === 'returnList' || state.step === 'submitPending') {
                 searchListenersReady = true;
             }
         }
@@ -317,8 +328,24 @@
         return path.indexOf('return-article') !== -1 || path.indexOf('return') !== -1 && path.indexOf('account') !== -1;
     }
 
+    function isSubmitConfirmationPage() {
+        var text = pageBodyText().toLowerCase();
+        if (text.indexOf('vielen dank') !== -1 && text.indexOf('anfrage') !== -1) return true;
+        if (text.indexOf('ihre anfrage erhalten') !== -1) return true;
+        if (text.indexOf('wir haben ihre anfrage') !== -1) return true;
+        return false;
+    }
+
+    function shouldReturnToSearchAfterSubmit() {
+        if (!isSubmitConfirmationPage()) return false;
+        if (!isFlowActive()) return false;
+        var state = loadFlowState();
+        return state.step === 'returnList' || state.step === 'submitPending' || state.step === 'submitDone';
+    }
+
     function isRetoureContext() {
         if (isRetoureUrl()) return true;
+        if (shouldReturnToSearchAfterSubmit()) return true;
         if (pageHasText('ARTIKELNUMMER SUCHEN')) return true;
         if (pageHasText('Zur Rückgabeliste')) return true;
         if (pageHasText('Warenrückgabe') || pageHasText('WARENRÜCKGABE')) return true;
@@ -444,6 +471,7 @@
     }
 
     function detectPage() {
+        if (shouldReturnToSearchAfterSubmit()) return 'submitDone';
         if (isReturnListPage()) return 'returnList';
         if (isOrdersPage()) return 'orders';
         if (hasExclusionWarning()) return 'excluded';
@@ -1264,7 +1292,7 @@
             + '    <button type="button" class="knoll-retoure-action-btn knoll-retoure-action-primary" id="knoll-retoure-exclusion-continue">Zur Rückgabeliste</button>'
             + '    <button type="button" class="knoll-retoure-action-btn" id="knoll-retoure-exclusion-skip">Nächster Scan</button>'
             + '  </div>'
-            + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '  ' + hudFooterHtml()
             + '</div>';
         document.body.appendChild(popup);
         hudApplyPosition(popup);
@@ -1309,7 +1337,7 @@
             + '    <div class="arasaka-hud-message">Wie viele Stück zurückgeben?</div>'
             + '  </div>'
             + '  <div class="knoll-retoure-qty-grid">' + buttonsHtml + '</div>'
-            + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '  ' + hudFooterHtml()
             + '</div>';
         document.body.appendChild(popup);
         hudApplyPosition(popup);
@@ -1342,6 +1370,10 @@
         var btn = findClickableByText('Zur Rückgabeliste', false);
         if (!btn) btn = await waitForClickableByText('Zur Rückgabeliste', false, 8000);
         if (!btn || abortMission) {
+            if (isSubmitConfirmationPage() || isFlowActive()) {
+                await returnToWarenrueckgabeSearch('Zurück zur Artikelsuche...');
+                return true;
+            }
             showHud('KNOLL RETOURE FEHLER', 'Zur Rückgabeliste nicht gefunden.', true, true);
             return false;
         }
@@ -1377,6 +1409,34 @@
         pauseWatcher(15000);
         await sleep(200);
         location.replace(buildCleanRetoureReloadUrl());
+    }
+
+    async function returnToWarenrueckgabeSearch(message) {
+        if (abortMission) return;
+        pendingReload = true;
+        sessionStorage.setItem(PENDING_RELOAD_KEY, '1');
+        orderHandledForSearch = false;
+        orderProcessing = false;
+        ordersFlowActive = false;
+        searchSubmitted = false;
+        searchListenersReady = false;
+        searchFocusDone = false;
+        userEditingSearch = false;
+        lastHandledStep = '';
+        grundFilled = false;
+        saveFlowState({
+            active: true,
+            step: 'search',
+            searchSubmitted: false,
+            orderHandled: false,
+            grundFilled: false,
+            lastEan: ''
+        });
+        sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
+        pauseWatcher(15000);
+        showHud('KNOLL RETOURE BEREIT', message || 'Zurück zur Artikelsuche...', false, false);
+        await sleep(450);
+        location.replace(buildReturnArticleUrl());
     }
 
     async function forceCleanSearchReload(message) {
@@ -1622,6 +1682,23 @@
         printButtonAdded = true;
     }
 
+    function bindAbsendenButton() {
+        var absenden = findClickableByText('Absenden', true);
+        if (!absenden || absenden.__knollAbsendenBound) return;
+        absenden.__knollAbsendenBound = true;
+        absenden.addEventListener('click', function() {
+            saveFlowState({ active: true, step: 'submitPending', searchSubmitted: false, orderHandled: false, grundFilled: grundFilled });
+            sessionStorage.setItem(ACTIVE_FLOW_KEY, '1');
+        }, true);
+    }
+
+    async function handleSubmitDonePage() {
+        if (abortMission || isPendingReload()) return;
+        showHud('KNOLL RETOURE BEREIT', 'Absenden bestätigt — zurück zur Artikelsuche...', false, false);
+        await sleep(600);
+        await returnToWarenrueckgabeSearch();
+    }
+
     async function handleReturnListPage() {
         confirmCleanSearchPage();
         saveFlowState({ active: true, step: 'returnList', searchSubmitted: false, orderHandled: false });
@@ -1629,10 +1706,12 @@
         grundFilled = allGrundFieldsFilled();
         saveFlowState({ grundFilled: grundFilled });
         ensurePrintButton();
+        bindAbsendenButton();
         hideHud();
     }
 
     function shouldAutoRun(page) {
+        if (page === 'submitDone') return true;
         if (page === 'returnList') return true;
         if (page === 'search' || page === 'articlePick' || page === 'orders') return true;
         if (isFlowActive()) return true;
@@ -1658,7 +1737,7 @@
         if (page === 'search' && isOrdersPage()) page = 'orders';
         if (page === 'articlePick' && isOrdersPage()) page = 'orders';
         if (page === 'unknown') return;
-        if (!shouldAutoRun(page) && page !== 'search' && page !== 'articlePick' && page !== 'returnList') return;
+        if (!shouldAutoRun(page) && page !== 'search' && page !== 'articlePick' && page !== 'returnList' && page !== 'submitDone') return;
         var stepKey = page + '|' + (sessionStorage.getItem(ACTIVE_FLOW_KEY) || '') + '|' + (sessionStorage.getItem(EXCLUSION_OK_KEY) || '') + '|' + (searchSubmitted ? '1' : '') + '|' + (orderHandledForSearch ? 'done' : '');
         if (!force && lastHandledStep === stepKey) return;
         if (orderHandledForSearch && (page === 'orders' || (page === 'search' && isOrdersPage()))) {
@@ -1718,6 +1797,11 @@
                 await handleOrdersPage();
                 return;
             }
+            if (page === 'submitDone') {
+                lastHandledStep = stepKey;
+                await handleSubmitDonePage();
+                return;
+            }
             if (page === 'returnList') {
                 lastHandledStep = stepKey + '|' + findGrundFields().length + '|' + (allGrundFieldsFilled() ? '1' : '0');
                 await handleReturnListPage();
@@ -1760,6 +1844,12 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function hudFooterHtml() {
+        return ''
+            + '<div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '<div class="arasaka-hud-credit">by Arasaka</div>';
     }
 
     function hudMessageHtml(message) {
@@ -1886,6 +1976,7 @@
             + '.arasaka-hud-message { color: #d7dee8; font-size: 16px; font-weight: 700; line-height: 1.52; white-space: normal; word-break: break-word; user-select: text; }'
             + '.arasaka-hud-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 12px;'
             + '  border-top: 1px solid rgba(255,255,255,0.07); color: #8b949e; font-size: 12px; font-weight: 800; }'
+            + '.arasaka-hud-credit { text-align: right; margin-top: 4px; color: #6e7681; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }'
             + '.knoll-retoure-qty-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }'
             + '.knoll-retoure-qty-btn { min-width: 72px; min-height: 56px; padding: 10px 18px; border-radius: 16px; border: 2px solid rgba(220, 61, 61, 0.42);'
             + '  background: rgba(13, 17, 23, 0.82); color: #f07070; font-size: 24px; font-weight: 900; cursor: pointer; transition: transform 0.14s, background 0.14s; }'
@@ -1951,7 +2042,7 @@
             + '    <div class="arasaka-hud-message">' + hudMessageHtml(message) + '</div>'
             + '  </div>'
             + actionHtml
-            + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '  ' + hudFooterHtml()
             + '</div>';
         if (existing) {
             existing.setAttribute('data-tone', tone);
@@ -1990,9 +2081,9 @@
             reloadForNextProduct();
             return true;
         }
-        if (page === 'orders' || page === 'returnList' || page === 'articlePick' || isFlowActive()) {
+        if (page === 'orders' || page === 'returnList' || page === 'submitDone' || page === 'articlePick' || isFlowActive()) {
             var bootState = loadFlowState();
-            if (!(page === 'orders' && bootState.orderHandled)) {
+            if (!(page === 'orders' && bootState.orderHandled) && page !== 'submitDone') {
                 saveFlowState({ active: true, step: page === 'unknown' ? bootState.step || 'search' : page });
             }
         }
@@ -2003,6 +2094,8 @@
             }
         } else if (page === 'returnList') {
             hideHud();
+        } else if (page === 'submitDone') {
+            showHud('KNOLL RETOURE BEREIT', 'Absenden bestätigt — zurück zur Artikelsuche...', false, false);
         } else if ((page === 'articlePick' || searchSubmitted) && !isOrdersPage()) {
             showHud('KNOLL RETOURE LÄUFT', 'Seite neu geladen — Artikel wird ausgewählt...', false, true);
         } else if (page === 'search') {
@@ -2017,7 +2110,7 @@
 
     function boot() {
         if (bootAttempt()) return;
-        if (!isRetoureUrl()) return;
+        if (!isRetoureUrl() && !isFlowActive()) return;
         var attempts = 0;
         var retry = setInterval(function() {
             attempts++;

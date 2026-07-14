@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      4.0
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.customer-de.wm.de/*
@@ -14,7 +14,7 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '2.3';
+    const BOT_VERSION = '4.0';
     const MITTEILUNG_TEXT = 'Passt Nicht.';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
     const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
@@ -738,7 +738,7 @@
             + '    <div class="arasaka-hud-message">Wie viele Stück zurückgeben?</div>'
             + '  </div>'
             + '  <div class="wm-retoure-qty-grid">' + buttonsHtml + '</div>'
-            + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '  ' + hudFooterHtml()
             + '</div>';
         document.body.appendChild(popup);
         hudApplyPosition(popup);
@@ -1217,6 +1217,12 @@
             .replace(/'/g, '&#39;');
     }
 
+    function hudFooterHtml() {
+        return ''
+            + '<div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '<div class="arasaka-hud-credit">by Arasaka</div>';
+    }
+
     function hudMessageHtml(message) {
         return hudEscape(message).replace(/\n/g, '<br>');
     }
@@ -1344,6 +1350,7 @@
             + '.arasaka-hud-message { color: #d7dee8; font-size: 16px; font-weight: 700; line-height: 1.52; white-space: normal; word-break: break-word; user-select: text; }'
             + '.arasaka-hud-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 12px;'
             + '  border-top: 1px solid rgba(255,255,255,0.07); color: #8b949e; font-size: 12px; font-weight: 800; }'
+            + '.arasaka-hud-credit { text-align: right; margin-top: 4px; color: #6e7681; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }'
             + '.wm-retoure-qty-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }'
             + '.wm-retoure-qty-btn { min-width: 72px; min-height: 56px; padding: 10px 18px; border-radius: 16px; border: 2px solid rgba(86, 211, 100, 0.42);'
             + '  background: rgba(13, 17, 23, 0.82); color: #56d364; font-size: 24px; font-weight: 900; cursor: pointer; transition: transform 0.14s, background 0.14s; }'
@@ -1420,7 +1427,7 @@
             + '    <div class="arasaka-hud-message">' + hudMessageHtml(message) + '</div>'
             + '  </div>'
             + actionHtml
-            + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
+            + '  ' + hudFooterHtml()
             + '</div>';
         if (existing) {
             existing.setAttribute('data-tone', tone);
