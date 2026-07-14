@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.3
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.customer-de.wm.de/*
@@ -14,7 +14,7 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '2.1';
+    const BOT_VERSION = '2.3';
     const MITTEILUNG_TEXT = 'Passt Nicht.';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
     const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
@@ -604,15 +604,79 @@
         ensureSearchListeners(true);
     }
 
+    function isNoArticleFoundPage() {
+        if (!pageHasText('Artikel auswählen')) return false;
+        var text = pageBodyText().toLowerCase();
+        if (text.indexOf('es wurden keine artikel gefunden') !== -1) return true;
+        if (text.indexOf('keine artikel gefunden') !== -1) return true;
+        if (findClickableByText('Auswählen', true)) return false;
+        var tables = document.querySelectorAll('table');
+        for (var i = 0; i < tables.length; i++) {
+            var t = normalizeText(tables[i].innerText).toLowerCase();
+            if (t.indexOf('katalog-nr') === -1) continue;
+            if (t.indexOf('es wurden keine artikel gefunden') !== -1) return true;
+        }
+        return false;
+    }
+
+    function isNoOrdersFoundPage() {
+        if (!pageHasText('Artikel zurückgeben')) return false;
+        var text = pageBodyText().toLowerCase();
+        if (text.indexOf('es wurden keine lieferscheine/rechnungen gefunden') !== -1) return true;
+        if (text.indexOf('keine lieferscheine/rechnungen gefunden') !== -1) return true;
+        if (text.indexOf('keine lieferscheine') !== -1 && text.indexOf('rechnungen gefunden') !== -1) return true;
+        if (findNewestRueckgabeRow()) return false;
+        var tables = document.querySelectorAll('table');
+        for (var i = 0; i < tables.length; i++) {
+            var t = normalizeText(tables[i].innerText).toLowerCase();
+            if (t.indexOf('bestellt am') === -1) continue;
+            if (t.indexOf('es wurden keine lieferscheine/rechnungen gefunden') !== -1) return true;
+        }
+        return false;
+    }
+
+    function showNoResultsWarning(message) {
+        showHud('WM RETOURE WARNUNG', message, false, false, 'backToSearch');
+    }
+
+    async function clickZurueckZurSuche() {
+        showHud('WM RETOURE LÄUFT', 'Zurück zur Suche...', false);
+        var btn = findClickableByText('Neue Suche', true);
+        if (!btn) btn = await waitForClickableByText('Neue Suche', true, 5000);
+        if (!btn || abortMission) {
+            showHud('WM RETOURE FEHLER', 'Neue Suche-Button nicht gefunden.', true);
+            return false;
+        }
+        searchSubmitted = false;
+        searchListenersReady = false;
+        searchFocusDone = false;
+        userEditingSearch = false;
+        lastHandledStep = '';
+        await sleep(250);
+        forceClick(btn);
+        setTimeout(function() {
+            ensureSearchListeners(true);
+        }, 700);
+        return true;
+    }
+
     async function handleArticlePage() {
         if (sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') {
             await handleReturnToSearch();
+            return;
+        }
+        if (isNoArticleFoundPage()) {
+            showNoResultsWarning('Es wurden keine Artikel gefunden.');
             return;
         }
         showHud('WM RETOURE LÄUFT', 'Artikel gefunden — wähle Auswählen...', false);
         var btn = await waitForClickableByText('Auswählen', true, 10000);
         if (!btn || abortMission) {
             lastHandledStep = '';
+            if (isNoArticleFoundPage()) {
+                showNoResultsWarning('Es wurden keine Artikel gefunden.');
+                return;
+            }
             showHud('WM RETOURE FEHLER', 'Auswählen-Button nicht gefunden.', true);
             return;
         }
@@ -625,10 +689,18 @@
             await handleReturnToSearch();
             return;
         }
+        if (isNoOrdersFoundPage()) {
+            showNoResultsWarning('Es wurden keine Lieferscheine/Rechnungen gefunden.');
+            return;
+        }
         showHud('WM RETOURE LÄUFT', 'Suche neuesten Auftrag mit Rückgabe-Button...', false);
         var btn = await waitForNewestRueckgabeRow(10000);
         if (!btn || abortMission) {
             lastHandledStep = '';
+            if (isNoOrdersFoundPage()) {
+                showNoResultsWarning('Es wurden keine Lieferscheine/Rechnungen gefunden.');
+                return;
+            }
             showHud('WM RETOURE FEHLER', 'Kein Rückgabe-Button für aktuellen Auftrag gefunden.', true);
             return;
         }
@@ -1152,8 +1224,9 @@
     function hudTone(title, message, isEnd) {
         var text = String(title || '') + ' ' + String(message || '');
         var lower = text.toLowerCase();
-        if (/fehler|error|nicht gefunden/.test(lower)) return 'error';
-        if (/warnung|wartet/.test(lower)) return 'warn';
+        if (/warnung/.test(lower)) return 'warn';
+        if (/fehler|error/.test(lower)) return 'error';
+        if (/nicht gefunden/.test(lower)) return 'error';
         if (/stop|gestoppt/.test(lower) || isEnd) return 'done';
         if (/läuft|suche|wähle|menge|bereit/.test(lower)) return 'active';
         return 'neutral';
@@ -1253,6 +1326,8 @@
             + '#arasaka-batch-popup[data-tone="active"], #wm-retoure-qty-popup[data-tone="active"] { border-color: rgba(61, 158, 220, 0.52); }'
             + '#arasaka-batch-popup[data-tone="done"] { border-color: rgba(86, 211, 100, 0.55); }'
             + '#arasaka-batch-popup[data-tone="error"] { border-color: rgba(248, 81, 73, 0.68); }'
+            + '#arasaka-batch-popup[data-tone="warn"] { border-color: rgba(255, 171, 64, 0.68); }'
+            + '#arasaka-batch-popup[data-tone="warn"] .arasaka-hud-badge { border-color: rgba(255, 171, 64, 0.55); color: #ffab40; }'
             + '.arasaka-hud-head { display: flex; align-items: center; justify-content: space-between; gap: 18px;'
             + '  padding: 18px 20px 16px; background: linear-gradient(180deg, rgba(22, 27, 34, 0.99) 0%, rgba(18, 23, 30, 0.99) 100%);'
             + '  border-bottom: 1px solid #242d39; cursor: move; }'
@@ -1276,6 +1351,7 @@
             + '.wm-retoure-hud-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }'
             + '.wm-retoure-hud-action { margin-top: 0; width: 100%; min-height: 48px; border-radius: 14px; border: 2px solid rgba(61, 158, 220, 0.55);'
             + '  background: rgba(61, 158, 220, 0.12); color: #3FA0DB; font-size: 14px; font-weight: 900; cursor: pointer; }'
+            + '.wm-retoure-hud-action-warn { border-color: rgba(255, 171, 64, 0.55); color: #ffab40; background: rgba(255, 171, 64, 0.12); }'
             + '#wm-retoure-print-btn, button.wm-retoure-print-wm {'
             + '  background: #1565a8 !important; background-color: #1565a8 !important; color: #fff !important;'
             + '  border: none !important; box-shadow: none !important; cursor: pointer; text-decoration: none !important;'
@@ -1285,11 +1361,17 @@
         document.head.appendChild(style);
     }
 
-    function bindHudActions(popup, showCartButton) {
+    function bindHudActions(popup, showCartButton, hudAction) {
         var cartBtn = popup.querySelector('#wm-retoure-go-cart');
         if (cartBtn) {
             cartBtn.addEventListener('click', function() {
                 clickWarenkorb();
+            });
+        }
+        var backBtn = popup.querySelector('#wm-retoure-back-search');
+        if (backBtn) {
+            backBtn.addEventListener('click', function() {
+                clickZurueckZurSuche();
             });
         }
         popup.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
@@ -1303,17 +1385,25 @@
         return detectPage() === 'search' && sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1';
     }
 
-    function showHud(title, message, isEnd, showCartButton) {
+    function buildHudActionHtml(showCart, hudAction) {
+        if (hudAction === 'backToSearch') {
+            return '<div class="wm-retoure-hud-actions"><button type="button" class="wm-retoure-hud-action wm-retoure-hud-action-warn" id="wm-retoure-back-search">Zurück zur Suche</button></div>';
+        }
+        if (showCart) {
+            return '<div class="wm-retoure-hud-actions"><button type="button" class="wm-retoure-hud-action" id="wm-retoure-go-cart">Zum Warenkorb</button></div>';
+        }
+        return '';
+    }
+
+    function showHud(title, message, isEnd, showCartButton, hudAction) {
         hudEnsureStyles();
         var showCart = shouldShowCartButton(showCartButton);
-        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showCart;
+        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showCart + '|' + (hudAction || '');
         var existing = document.getElementById('arasaka-batch-popup');
         if (existing && signature === lastHudSignature) return;
         lastHudSignature = signature;
         var tone = hudTone(title, message, isEnd);
-        var actionHtml = showCart
-            ? '<div class="wm-retoure-hud-actions"><button type="button" class="wm-retoure-hud-action" id="wm-retoure-go-cart">Zum Warenkorb</button></div>'
-            : '';
+        var actionHtml = buildHudActionHtml(showCart, hudAction);
         var html = ''
             + '<div class="arasaka-hud-head" id="wm-retoure-hud-drag">'
             + '  <div>'
@@ -1335,7 +1425,7 @@
         if (existing) {
             existing.setAttribute('data-tone', tone);
             existing.innerHTML = html;
-            bindHudActions(existing, showCart);
+            bindHudActions(existing, showCart, hudAction);
             hudEnableDrag(existing, existing.querySelector('#wm-retoure-hud-drag'));
             return;
         }
@@ -1346,7 +1436,7 @@
         document.body.appendChild(popup);
         hudApplyPosition(popup);
         hudEnableDrag(popup, popup.querySelector('#wm-retoure-hud-drag'));
-        bindHudActions(popup, showCart);
+        bindHudActions(popup, showCart, hudAction);
     }
 
     function boot() {
