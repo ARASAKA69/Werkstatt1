@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      2.1
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.customer-de.wm.de/*
@@ -14,7 +14,8 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '1.8';
+    const BOT_VERSION = '2.1';
+    const MITTEILUNG_TEXT = 'Passt Nicht.';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
     const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
     const ACTIVE_FLOW_KEY = 'wm_retoure_active_flow';
@@ -39,6 +40,7 @@
     let searchInput = null;
     let pageWatcherStarted = false;
     let lastHandledStep = '';
+    let printButtonAdded = false;
 
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
@@ -111,7 +113,7 @@
     function pageBodyText() {
         if (!document.body) return '';
         var clone = document.body.cloneNode(true);
-        var overlays = clone.querySelectorAll('#arasaka-batch-popup, #wm-retoure-qty-popup');
+        var overlays = clone.querySelectorAll('#arasaka-batch-popup, #wm-retoure-qty-popup, #wm-retoure-print-btn');
         for (var i = 0; i < overlays.length; i++) overlays[i].remove();
         return clone.innerText;
     }
@@ -120,7 +122,12 @@
         return pageBodyText().indexOf(text) !== -1;
     }
 
+    function isCartPage() {
+        return pageHasText('Warenkorb - Rückgabeartikel');
+    }
+
     function detectPage() {
+        if (isCartPage()) return 'cart';
         if (pageHasText('Rückgabemenge') && (findClickableByText('Übernehmen', true) || document.querySelector('[id*="ddlQuantity"].RadDropDownList'))) return 'quantity';
         if (pageHasText('Artikel zurückgeben')) return 'orders';
         if (pageHasText('Artikel auswählen')) return 'article';
@@ -553,7 +560,7 @@
             lastInputChangeAt = 0;
         }
         if (!searchListenersReady || clearField) {
-            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false);
+            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false, true);
         }
         searchListenersReady = true;
         if (clearField) searchFocusDone = false;
@@ -707,6 +714,311 @@
         await handleReturnToSearch();
     }
 
+    function findWarenkorbButton() {
+        var nodes = document.querySelectorAll('input[type="button"], input[type="submit"], button, a');
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!isVisible(el)) continue;
+            var label = normalizeText(el.value || el.alt || el.textContent);
+            if (label.indexOf('Warenkorb') === 0) return el;
+        }
+        return null;
+    }
+
+    async function clickWarenkorb() {
+        showHud('WM RETOURE LÄUFT', 'Öffne Warenkorb...', false);
+        var btn = findWarenkorbButton();
+        if (!btn) btn = await waitForClickableByText('Warenkorb', false, 8000);
+        if (!btn || abortMission) {
+            showHud('WM RETOURE FEHLER', 'Warenkorb-Button nicht gefunden.', true, true);
+            return false;
+        }
+        await sleep(250);
+        forceClick(btn);
+        setTimeout(function() {
+            tickFlow(true);
+        }, 700);
+        return true;
+    }
+
+    function findElementByTextMatch(matchFn) {
+        var nodes = document.querySelectorAll('h1, h2, h3, h4, h5, label, legend, span, div, td, th, p, b, strong, font');
+        var best = null;
+        var bestLen = Infinity;
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!isVisible(el)) continue;
+            if (el.closest('#arasaka-batch-popup, #wm-retoure-qty-popup, #wm-retoure-print-btn')) continue;
+            var t = normalizeText(el.textContent);
+            if (!matchFn(t)) continue;
+            var len = t.length;
+            if (len < bestLen) {
+                bestLen = len;
+                best = el;
+            }
+        }
+        return best;
+    }
+
+    function findWarenkorbTitleElement() {
+        return findElementByTextMatch(function(t) {
+            return t.indexOf('Warenkorb - Rückgabeartikel') !== -1;
+        });
+    }
+
+    function findKundenLsNrElement() {
+        return findElementByTextMatch(function(t) {
+            return t.indexOf('Kunden LS-Nr') !== -1;
+        });
+    }
+
+    function findCartTable() {
+        var tables = document.querySelectorAll('table');
+        for (var i = 0; i < tables.length; i++) {
+            var t = normalizeText(tables[i].innerText);
+            if (t.indexOf('Katalog-Nr') !== -1 && t.indexOf('Bezeichnung') !== -1) return tables[i];
+        }
+        return null;
+    }
+
+    function findMailkopieField() {
+        var labels = document.querySelectorAll('label, td, th, span, div, legend');
+        for (var i = 0; i < labels.length; i++) {
+            var txt = normalizeText(labels[i].textContent);
+            if (txt.indexOf('Mailkopie senden an') === -1) continue;
+            var scope = labels[i].closest('tr, .fmRowSrd, fieldset, form, table') || labels[i].parentElement;
+            for (var p = 0; p < 6 && scope; p++) {
+                var input = scope.querySelector('input[type="text"], input:not([type])');
+                if (input && isVisible(input)) return input;
+                scope = scope.parentElement;
+            }
+        }
+        return null;
+    }
+
+    function findKundenLsNrField() {
+        var label = findKundenLsNrElement();
+        if (!label) return null;
+        var scope = label.closest('tr, .fmRowSrd, fieldset, form, table, div') || label.parentElement;
+        for (var p = 0; p < 6 && scope; p++) {
+            var input = scope.querySelector('input[type="text"], input:not([type])');
+            if (input && isVisible(input)) return input;
+            scope = scope.parentElement;
+        }
+        return null;
+    }
+
+    function cloneTableForPrint(table) {
+        var clone = table.cloneNode(true);
+        clone.querySelectorAll('a').forEach(function(a) {
+            var t = normalizeText(a.textContent);
+            if (t === 'Bearbeiten' || t === 'Entfernen') {
+                var cell = a.closest('td, th');
+                if (cell) cell.remove();
+            }
+        });
+        clone.querySelectorAll('input, button, select, script, style').forEach(function(el) {
+            el.remove();
+        });
+        return clone.outerHTML;
+    }
+
+    function buildWarenkorbPrintHtml() {
+        var titleEl = findWarenkorbTitleElement();
+        if (!titleEl) return '';
+        var html = '<h2 style="color:#2d7a2d;margin:0 0 12px;font-size:18px;">' + hudEscape(normalizeText(titleEl.textContent)) + '</h2>';
+        var table = findCartTable();
+        if (table) html += cloneTableForPrint(table);
+        var mitteilung = findMitteilungField();
+        if (mitteilung) {
+            html += '<div style="margin:14px 0;">'
+                + '<div style="font-weight:bold;margin-bottom:6px;">Ihre Mitteilung an den Großhändler</div>'
+                + '<div style="border:1px solid #666;padding:8px;min-height:56px;white-space:pre-wrap;">'
+                + hudEscape(mitteilung.value) + '</div></div>';
+        }
+        var mailField = findMailkopieField();
+        if (mailField) {
+            html += '<div style="margin:14px 0;">'
+                + '<div style="font-weight:bold;margin-bottom:6px;">Mailkopie senden an</div>'
+                + '<div style="border:1px solid #666;padding:4px 8px;display:inline-block;min-width:280px;">'
+                + hudEscape(mailField.value) + '</div></div>';
+        }
+        html += '<hr style="border:none;border-top:1px solid #666;margin:18px 0;">';
+        var lsLabel = findKundenLsNrElement();
+        var lsInput = findKundenLsNrField();
+        html += '<div style="margin:10px 0;">'
+            + '<span style="font-weight:bold;">' + hudEscape(lsLabel ? normalizeText(lsLabel.textContent) : '*Kunden LS-Nr.') + '</span>';
+        if (lsInput && normalizeText(lsInput.value)) {
+            html += ' <span style="border:1px solid #666;padding:2px 8px;margin-left:8px;">' + hudEscape(lsInput.value) + '</span>';
+        }
+        html += '</div>';
+        return html;
+    }
+
+    function getPrintFrame() {
+        var frame = document.getElementById('wm-retoure-print-frame');
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.id = 'wm-retoure-print-frame';
+            frame.setAttribute('title', 'WM Retoure Druck');
+            frame.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;border:0;visibility:hidden;pointer-events:none;';
+            document.body.appendChild(frame);
+        }
+        return frame;
+    }
+
+    function printWarenkorbSection() {
+        var html = buildWarenkorbPrintHtml();
+        if (!html) {
+            showHud('WM RETOURE FEHLER', 'Druckbereich nicht gefunden.', true);
+            return;
+        }
+        hideHud();
+        var frame = getPrintFrame();
+        var doc = frame.contentWindow || frame.contentDocument;
+        if (!doc) {
+            showHud('WM RETOURE FEHLER', 'Druckvorschau konnte nicht erstellt werden.', true);
+            return;
+        }
+        if (doc.document) doc = doc.document;
+        doc.open();
+        doc.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>Warenkorb Rückgabeartikel</title><style>');
+        doc.write('body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#000;margin:20px;padding:0;}');
+        doc.write('table{border-collapse:collapse;width:100%;margin:10px 0;} th,td{border:1px solid #666;padding:5px 8px;text-align:left;vertical-align:top;} th{background:#eee;font-weight:bold;}');
+        doc.write('@media print{body{margin:12mm;} @page{margin:12mm;}}</style></head><body>');
+        doc.write(html);
+        doc.write('</body></html>');
+        doc.close();
+        setTimeout(function() {
+            try {
+                var win = frame.contentWindow;
+                win.focus();
+                win.print();
+            } catch (e) {
+                showHud('WM RETOURE FEHLER', 'Drucken fehlgeschlagen.', true);
+            }
+        }, 350);
+    }
+
+    function setupPrintListeners() {}
+
+    function hideHud() {
+        hideQuantityPicker();
+        var popup = document.getElementById('arasaka-batch-popup');
+        if (popup) popup.remove();
+        lastHudSignature = '';
+    }
+
+    function bindPrintButton(btn) {
+        if (!btn || btn.__wmPrintBound) return;
+        btn.__wmPrintBound = true;
+        styleWmPrintButton(btn);
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            printWarenkorbSection();
+        }, true);
+    }
+
+    function styleWmPrintButton(btn) {
+        if (!btn) return;
+        hudEnsureStyles();
+        btn.classList.add('wm-retoure-print-wm');
+        var ref = findClickableByText('Absenden', true) || findClickableByText('Anzeigen', true) || findWarenkorbButton();
+        if (ref) {
+            try {
+                var cs = window.getComputedStyle(ref);
+                btn.style.boxSizing = cs.boxSizing || 'border-box';
+                btn.style.display = cs.display === 'inline' ? 'inline-block' : cs.display;
+                btn.style.minHeight = cs.minHeight !== '0px' ? cs.minHeight : cs.height;
+                btn.style.height = cs.height;
+                btn.style.padding = cs.padding;
+                btn.style.margin = cs.margin;
+                btn.style.fontSize = cs.fontSize;
+                btn.style.fontWeight = cs.fontWeight;
+                btn.style.fontFamily = cs.fontFamily;
+                btn.style.lineHeight = cs.lineHeight;
+                btn.style.borderRadius = cs.borderRadius;
+                btn.style.textAlign = 'center';
+                btn.style.border = cs.border;
+                btn.style.appearance = 'none';
+                btn.style.webkitAppearance = 'none';
+                btn.style.cursor = 'pointer';
+            } catch (e) {}
+        }
+    }
+
+    function findCartActionBar() {
+        var absenden = findClickableByText('Absenden', true);
+        if (absenden && absenden.parentElement) return absenden.parentElement;
+        return null;
+    }
+
+    function ensurePrintButton() {
+        setupPrintListeners();
+        var existing = document.getElementById('wm-retoure-print-btn');
+        if (existing) {
+            styleWmPrintButton(existing);
+            bindPrintButton(existing);
+            return;
+        }
+        var host = findCartActionBar();
+        if (!host) host = document.body;
+        var btn = document.createElement('button');
+        btn.id = 'wm-retoure-print-btn';
+        btn.type = 'button';
+        btn.textContent = 'Drucken';
+        styleWmPrintButton(btn);
+        bindPrintButton(btn);
+        var absenden = findClickableByText('Absenden', true);
+        if (absenden && absenden.parentElement === host) {
+            host.insertBefore(btn, absenden);
+        } else {
+            host.appendChild(btn);
+        }
+        printButtonAdded = true;
+    }
+
+    function findMitteilungField() {
+        var labels = document.querySelectorAll('label, td, th, span, div, legend');
+        for (var i = 0; i < labels.length; i++) {
+            var txt = normalizeText(labels[i].textContent);
+            if (txt.indexOf('Ihre Mitteilung an den Großhändler') === -1) continue;
+            var scope = labels[i].closest('tr, .fmRowSrd, fieldset, form, table') || labels[i].parentElement;
+            for (var p = 0; p < 6 && scope; p++) {
+                var ta = scope.querySelector('textarea');
+                if (ta && isVisible(ta)) return ta;
+                scope = scope.parentElement;
+            }
+        }
+        var textareas = document.querySelectorAll('textarea');
+        for (var j = 0; j < textareas.length; j++) {
+            if (!isVisible(textareas[j])) continue;
+            var box = textareas[j].closest('tr, div, td');
+            if (box && normalizeText(box.textContent).indexOf('Mitteilung') !== -1) return textareas[j];
+        }
+        for (var k = 0; k < textareas.length; k++) {
+            if (isVisible(textareas[k])) return textareas[k];
+        }
+        return null;
+    }
+
+    function fillMitteilungField() {
+        var field = findMitteilungField();
+        if (!field) return false;
+        if (normalizeText(field.value) === MITTEILUNG_TEXT) return true;
+        field.value = MITTEILUNG_TEXT;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        field.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+    }
+
+    async function handleCartPage() {
+        fillMitteilungField();
+        ensurePrintButton();
+        hideHud();
+    }
+
     async function handleQuantityPage() {
         showHud('WM RETOURE LÄUFT', 'Rückgabemenge — warte auf Dropdown...', false);
         var control = await waitForRueckgabeMengeControl(10000);
@@ -731,7 +1043,7 @@
     }
 
     function shouldAutoRun(page) {
-        if (page === 'search') return true;
+        if (page === 'search' || page === 'cart') return true;
         if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1') return true;
         if (sessionStorage.getItem(PENDING_NEUE_SUCHE_KEY) === '1') return true;
         return false;
@@ -785,6 +1097,11 @@
             if (page === 'quantity') {
                 lastHandledStep = stepKey;
                 await handleQuantityPage();
+                return;
+            }
+            if (page === 'cart') {
+                lastHandledStep = stepKey;
+                await handleCartPage();
                 return;
             }
         } finally {
@@ -955,17 +1272,48 @@
             + '.wm-retoure-qty-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }'
             + '.wm-retoure-qty-btn { min-width: 72px; min-height: 56px; padding: 10px 18px; border-radius: 16px; border: 2px solid rgba(86, 211, 100, 0.42);'
             + '  background: rgba(13, 17, 23, 0.82); color: #56d364; font-size: 24px; font-weight: 900; cursor: pointer; transition: transform 0.14s, background 0.14s; }'
-            + '.wm-retoure-qty-btn:hover { transform: translateY(-2px); background: rgba(86, 211, 100, 0.14); }';
+            + '.wm-retoure-qty-btn:hover { transform: translateY(-2px); background: rgba(86, 211, 100, 0.14); }'
+            + '.wm-retoure-hud-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }'
+            + '.wm-retoure-hud-action { margin-top: 0; width: 100%; min-height: 48px; border-radius: 14px; border: 2px solid rgba(61, 158, 220, 0.55);'
+            + '  background: rgba(61, 158, 220, 0.12); color: #3FA0DB; font-size: 14px; font-weight: 900; cursor: pointer; }'
+            + '#wm-retoure-print-btn, button.wm-retoure-print-wm {'
+            + '  background: #1565a8 !important; background-color: #1565a8 !important; color: #fff !important;'
+            + '  border: none !important; box-shadow: none !important; cursor: pointer; text-decoration: none !important;'
+            + '  font-weight: 700 !important; margin-right: 12px; }'
+            + '#wm-retoure-print-btn:hover, button.wm-retoure-print-wm:hover {'
+            + '  background: #125589 !important; background-color: #125589 !important; color: #fff !important; }';
         document.head.appendChild(style);
     }
 
-    function showHud(title, message, isEnd) {
+    function bindHudActions(popup, showCartButton) {
+        var cartBtn = popup.querySelector('#wm-retoure-go-cart');
+        if (cartBtn) {
+            cartBtn.addEventListener('click', function() {
+                clickWarenkorb();
+            });
+        }
+        popup.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
+            popup.remove();
+            lastHudSignature = '';
+        });
+    }
+
+    function shouldShowCartButton(explicit) {
+        if (explicit != null) return !!explicit;
+        return detectPage() === 'search' && sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1';
+    }
+
+    function showHud(title, message, isEnd, showCartButton) {
         hudEnsureStyles();
-        var signature = title + '|' + message + '|' + !!isEnd;
+        var showCart = shouldShowCartButton(showCartButton);
+        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showCart;
         var existing = document.getElementById('arasaka-batch-popup');
         if (existing && signature === lastHudSignature) return;
         lastHudSignature = signature;
         var tone = hudTone(title, message, isEnd);
+        var actionHtml = showCart
+            ? '<div class="wm-retoure-hud-actions"><button type="button" class="wm-retoure-hud-action" id="wm-retoure-go-cart">Zum Warenkorb</button></div>'
+            : '';
         var html = ''
             + '<div class="arasaka-hud-head" id="wm-retoure-hud-drag">'
             + '  <div>'
@@ -981,15 +1329,13 @@
             + '    <div class="arasaka-hud-badge">' + hudEscape(hudToneLabel(tone)) + '</div>'
             + '    <div class="arasaka-hud-message">' + hudMessageHtml(message) + '</div>'
             + '  </div>'
+            + actionHtml
             + '  <div class="arasaka-hud-footer"><span>Bot v' + hudEscape(BOT_VERSION) + '</span><span>ESC Stop</span></div>'
             + '</div>';
         if (existing) {
             existing.setAttribute('data-tone', tone);
             existing.innerHTML = html;
-            existing.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
-                existing.remove();
-                lastHudSignature = '';
-            });
+            bindHudActions(existing, showCart);
             hudEnableDrag(existing, existing.querySelector('#wm-retoure-hud-drag'));
             return;
         }
@@ -1000,10 +1346,7 @@
         document.body.appendChild(popup);
         hudApplyPosition(popup);
         hudEnableDrag(popup, popup.querySelector('#wm-retoure-hud-drag'));
-        popup.querySelector('#wm-retoure-hud-close').addEventListener('click', function() {
-            popup.remove();
-            lastHudSignature = '';
-        });
+        bindHudActions(popup, showCart);
     }
 
     function boot() {
@@ -1018,7 +1361,7 @@
         startPageWatcher();
         scheduleSearchAutoFocus(true);
         if (sessionStorage.getItem(ACTIVE_FLOW_KEY) === '1' && page === 'search') {
-            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false);
+            showHud('WM RETOURE BEREIT', 'EAN scannen oder Artikelnummer tippen — Enter bestätigt, Scanner startet automatisch nach Pause.', false, true);
         }
         tickFlow(true);
     }
