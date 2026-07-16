@@ -41,6 +41,7 @@
   var lagerKistenCache = null;
   var commentEditor = document.getElementById('editAnlieferung');
   var reifenStockInput = document.getElementById('reifenStockInput');
+  var anliefSuggest = null;
   var ignoredHighlightWords = {
     "da": true,
     "der": true,
@@ -465,6 +466,14 @@
   });
   commentEditor.addEventListener('input', function() {
     refreshCrossHighlights(true);
+  });
+  commentEditor.addEventListener('blur', function() {
+    clearAnlieferungGhost();
+  });
+  commentEditor.addEventListener('keyup', function(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+      updateAnlieferungSuggest();
+    }
   });
 
   function stepQty(inputId, delta) {
@@ -3897,11 +3906,295 @@
     }).join('');
   }
 
+  var anliefSupplierWords = {
+    wm: true,
+    knoll: true,
+    alfah: true,
+    sta: true,
+    seng: true,
+    stahlgruber: true
+  };
+
+  var anliefPartJunkWords = {
+    bestellt: true,
+    bestellung: true,
+    extern: true,
+    intern: true,
+    plus: true,
+    inkl: true,
+    ggf: true,
+    nachbestellen: true,
+    reparieren: true,
+    erneuern: true,
+    ersetzen: true,
+    hinten: true,
+    vorne: true,
+    links: true,
+    rechts: true,
+    und: true,
+    mit: true,
+    der: true,
+    die: true,
+    das: true,
+    fuer: true,
+    für: true,
+    da: true
+  };
+
+  function isAnliefSupplierWord(word) {
+    return !!anliefSupplierWords[normalizeMatchWord(word)];
+  }
+
+  function isAnliefOrderToken(word) {
+    var w = String(word || '');
+    if (/^n4p/i.test(w)) return true;
+    if (/^\d{5,}$/.test(w)) return true;
+    return false;
+  }
+
+  function isAnliefDateToken(word) {
+    return /^\d{1,2}\.\d{1,2}/.test(String(word || ''));
+  }
+
+  function cleanAnliefPartSegment(seg) {
+    seg = String(seg || '').trim();
+    seg = seg.replace(/^(?:N4P[A-Za-z0-9]+|\d{5,})\s*/i, '').trim();
+    if (!seg) return '';
+    var words = seg.split(/\s+/).filter(function(w) {
+      var n = normalizeMatchWord(w);
+      if (!n) return false;
+      if (isAnliefOrderToken(w)) return false;
+      if (isAnliefDateToken(w)) return false;
+      if (isAnliefSupplierWord(w)) return false;
+      if (anliefPartJunkWords[n]) return false;
+      if (ignoredHighlightWords[n] && n !== 'öl' && n !== 'oel') return false;
+      return true;
+    });
+    if (!words.length) return '';
+    return words.join(' ');
+  }
+
+  function extractBestellungParts(text) {
+    var raw = String(text || '');
+    if (!raw.trim()) return [];
+    var chunks = raw.split(/\n+|\/\//);
+    var parts = [];
+    var seen = {};
+    var supplierRe = /\b(wm|knoll|alfah|sta|seng|stahlgruber)\b/ig;
+
+    chunks.forEach(function(chunk) {
+      chunk = String(chunk || '').replace(/^\s*[-–—]\s*/, '').trim();
+      if (!chunk) return;
+      chunk = chunk.replace(/\s*[-–—]\s+[^-–—]*$/, '').trim();
+      if (!chunk) return;
+
+      var partRegion = '';
+      var bestelltMatch = /\bbestellt\b/i.exec(chunk);
+      if (bestelltMatch) {
+        partRegion = chunk.slice(0, bestelltMatch.index).trim();
+      } else {
+        var lastSup = null;
+        var m;
+        supplierRe.lastIndex = 0;
+        while ((m = supplierRe.exec(chunk)) !== null) lastSup = m;
+        if (lastSup && lastSup.index > 0) {
+          partRegion = chunk.slice(0, lastSup.index).trim();
+        }
+      }
+      if (!partRegion) return;
+
+      partRegion.split(/\s*[,+&]\s*/).forEach(function(seg) {
+        var partName = cleanAnliefPartSegment(seg);
+        if (!partName) return;
+        if (partName.length < 2) return;
+        var key = normalizeMatchWord(partName);
+        if (seen[key]) return;
+        seen[key] = true;
+        parts.push(partName);
+      });
+    });
+
+    return parts;
+  }
+
+  function getBestellungSuggestParts() {
+    return extractBestellungParts(currentBestellungText);
+  }
+
+  function anliefPartInComment(partName, commentText) {
+    var commentWords = {};
+    extractWords(commentText).forEach(function(w) {
+      commentWords[normalizeMatchWord(w)] = true;
+    });
+    var main = null;
+    extractWords(partName).forEach(function(w) {
+      var n = normalizeMatchWord(w);
+      if (n === 'va' || n === 'ha') return;
+      if (!main) main = n;
+    });
+    return !!(main && commentWords[main]);
+  }
+
+  function getTokenBeforeCaret(text, caret) {
+    var before = String(text || '').slice(0, caret);
+    var m = before.match(/[A-Za-z0-9ÄÖÜäöüß]+$/);
+    return m ? m[0] : '';
+  }
+
+  var anliefFixedParts = [
+    'Service',
+    'Bremse',
+    'Bremsen',
+    'Innenraumfilter',
+    'Luftfilter',
+    'Zündkerzen',
+    'Keilrippenriemen',
+    'Zahnriemen',
+    'Wasserpumpe',
+    'Ölfilter',
+    'Ölablassschraube'
+  ];
+
+  function getAnlieferungSuggest(token, commentText) {
+    if (!token) return null;
+    var parts = getBestellungSuggestParts();
+    var norm = normalizeMatchWord(token);
+
+    if (norm === 'alles') {
+      if (!parts.length) return null;
+      var list = [];
+      parts.forEach(function(p) {
+        if (!anliefPartInComment(p, commentText)) list.push(p + ' da //');
+      });
+      if (!list.length) return null;
+      var allText = list.join(' ');
+      return { replaceLen: token.length, insertText: allText, ghostText: ' ' + allText };
+    }
+
+    if (norm.length < 2) return null;
+
+    var candidates = parts.slice();
+    var seen = {};
+    candidates.forEach(function(p) {
+      seen[normalizeMatchWord(p)] = true;
+    });
+    anliefFixedParts.forEach(function(fixed) {
+      var key = normalizeMatchWord(fixed);
+      if (seen[key]) return;
+      if (key.indexOf(norm) !== 0) return;
+      seen[key] = true;
+      candidates.push(fixed);
+    });
+
+    if (!candidates.length) return null;
+
+    var best = null;
+    var bestLen = Infinity;
+    candidates.forEach(function(p) {
+      var pn = normalizeMatchWord(p);
+      var first = normalizeMatchWord((p.split(/\s+/)[0]) || '');
+      if (pn.indexOf(norm) !== 0 && first.indexOf(norm) !== 0) return;
+      if (pn.length < bestLen) {
+        bestLen = pn.length;
+        best = p;
+      }
+    });
+    if (!best) return null;
+    return {
+      replaceLen: token.length,
+      insertText: best + ' da //',
+      ghostText: buildAnliefGhost(token, best)
+    };
+  }
+
+  function buildAnliefGhost(token, partName) {
+    var t = String(token || '');
+    var p = String(partName || '');
+    var tl = t.length;
+    if (normalizeMatchWord(p).indexOf(normalizeMatchWord(t)) === 0) {
+      return p.substring(tl) + ' da //';
+    }
+    var first = p.split(/\s+/)[0] || p;
+    if (normalizeMatchWord(first).indexOf(normalizeMatchWord(t)) === 0) {
+      return first.substring(tl) + p.slice(first.length) + ' da //';
+    }
+    return p.substring(tl) + ' da //';
+  }
+
+  function clearAnlieferungGhost() {
+    anliefSuggest = null;
+    if (!commentEditor) return;
+    var ghosts = commentEditor.querySelectorAll('.anlief-ghost');
+    for (var i = 0; i < ghosts.length; i++) {
+      if (ghosts[i].parentNode) ghosts[i].parentNode.removeChild(ghosts[i]);
+    }
+  }
+
+  function injectAnlieferungGhost(ghostText) {
+    if (!ghostText || !commentEditor) return;
+    var selection = window.getSelection();
+    if (!selection.rangeCount) return;
+    var range = selection.getRangeAt(0);
+    if (!commentEditor.contains(range.commonAncestorContainer)) return;
+    var span = document.createElement('span');
+    span.className = 'anlief-ghost';
+    span.setAttribute('contenteditable', 'false');
+    span.setAttribute('aria-hidden', 'true');
+    span.textContent = ghostText;
+    range.insertNode(span);
+    range.setStartBefore(span);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  function updateAnlieferungSuggest() {
+    clearAnlieferungGhost();
+    if (!commentEditor || document.activeElement !== commentEditor) return;
+    if (!currentBestellungText || !String(currentBestellungText).trim()) return;
+    var text = getCommentText();
+    var caret = getCaretOffset(commentEditor);
+    var after = text.slice(caret);
+    if (/^[A-Za-z0-9ÄÖÜäöüß]/.test(after)) return;
+    var token = getTokenBeforeCaret(text, caret);
+    var suggest = getAnlieferungSuggest(token, text);
+    if (!suggest || !suggest.ghostText) return;
+    anliefSuggest = suggest;
+    injectAnlieferungGhost(suggest.ghostText);
+  }
+
+  function acceptAnlieferungSuggest() {
+    if (!anliefSuggest) return false;
+    var s = anliefSuggest;
+    clearAnlieferungGhost();
+    var text = getCommentText();
+    var caret = getCaretOffset(commentEditor);
+    var start = caret - s.replaceLen;
+    if (start < 0) return false;
+    var newText = text.slice(0, start) + s.insertText + text.slice(caret);
+    var newCaret = start + s.insertText.length;
+    var matchedWords = getMatchedWords(currentBestellungText, newText);
+    document.getElementById('infoSchaeden').innerHTML = formatSchaeden(currentSchaedenText);
+    document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText, matchedWords);
+    renderCommentEditor(newText, matchedWords, false);
+    setCaretOffset(commentEditor, newCaret);
+    return true;
+  }
+
   function getCommentText() {
-    return commentEditor.innerText.replace(/\r/g, '');
+    if (!commentEditor.querySelector('.anlief-ghost')) {
+      return commentEditor.innerText.replace(/\r/g, '');
+    }
+    var clone = commentEditor.cloneNode(true);
+    var ghosts = clone.querySelectorAll('.anlief-ghost');
+    for (var i = 0; i < ghosts.length; i++) {
+      if (ghosts[i].parentNode) ghosts[i].parentNode.removeChild(ghosts[i]);
+    }
+    return String(clone.innerText || '').replace(/\r/g, '');
   }
 
   function setCommentText(text) {
+    clearAnlieferungGhost();
     commentEditor.textContent = text || "";
     refreshCrossHighlights(false);
   }
@@ -3910,10 +4203,16 @@
     var selection = window.getSelection();
     if (!selection.rangeCount) return 0;
     var range = selection.getRangeAt(0);
-    var preRange = range.cloneRange();
-    preRange.selectNodeContents(element);
-    preRange.setEnd(range.endContainer, range.endOffset);
-    return preRange.toString().length;
+    if (!element.contains(range.endContainer)) return 0;
+    var count = 0;
+    var walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null);
+    var n;
+    while ((n = walker.nextNode())) {
+      if (n.parentNode && n.parentNode.classList && n.parentNode.classList.contains('anlief-ghost')) continue;
+      if (n === range.endContainer) return count + range.endOffset;
+      count += n.textContent.length;
+    }
+    return count;
   }
 
   function setCaretOffset(element, offset) {
@@ -3926,6 +4225,7 @@
     while (stack.length) {
       node = stack.pop();
       if (node.nodeType === 3) {
+        if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('anlief-ghost')) continue;
         var textLength = node.textContent.length;
         if (remaining <= textLength) {
           range.setStart(node, remaining);
@@ -3936,6 +4236,7 @@
         }
         remaining -= textLength;
       } else {
+        if (node.classList && node.classList.contains('anlief-ghost')) continue;
         for (var i = node.childNodes.length - 1; i >= 0; i--) {
           stack.push(node.childNodes[i]);
         }
@@ -3957,11 +4258,13 @@
   }
 
   function refreshCrossHighlights(preserveCaret) {
+    clearAnlieferungGhost();
     var commentText = getCommentText();
     var matchedWords = getMatchedWords(currentBestellungText, commentText);
     document.getElementById('infoSchaeden').innerHTML = formatSchaeden(currentSchaedenText);
     document.getElementById('infoBestellung').innerHTML = formatBestellung(currentBestellungText, matchedWords);
     renderCommentEditor(commentText, matchedWords, preserveCaret);
+    if (preserveCaret && document.activeElement === commentEditor) updateAnlieferungSuggest();
   }
 
   function schaedenNeedsReifen(text) {
@@ -4659,6 +4962,18 @@
   }
 
   commentEditor.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab' && anliefSuggest) {
+      e.preventDefault();
+      e.stopPropagation();
+      acceptAnlieferungSuggest();
+      return;
+    }
+    if (e.key === 'Escape' && anliefSuggest) {
+      e.preventDefault();
+      e.stopPropagation();
+      clearAnlieferungGhost();
+      return;
+    }
     if(e.key !== 's' && e.key !== 'S') return;
     if(!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
