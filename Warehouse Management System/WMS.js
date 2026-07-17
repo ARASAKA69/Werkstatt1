@@ -23,6 +23,7 @@ const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
 const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM";
 const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
+const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -2256,9 +2257,27 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
         var rowTyp = getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol);
         var rowStockId = normalizeStockId(sheet.getRange(sheetRow, getNachbestellungStockIdCol(sheet, nbLayout)).getValue());
         var valLcStatus = String(value || "").toLowerCase();
+        var isExitTyp = rowTyp.toLowerCase().indexOf("exit") !== -1;
+        var isKomplettAngeliefert = valLcStatus.indexOf("komplett angeliefert") !== -1;
+        var wasAlreadyKomplett = oldStatusLc.indexOf("komplett angeliefert") !== -1;
 
-        if (rowTyp.toLowerCase().indexOf("exit") !== -1) {
+        if (isExitTyp) {
           extraMsgs.push(syncNachbestellungStatusToInputExit(ss, sheet, sheetRow, value, nbLayout));
+        }
+
+        if (isExitTyp && isKomplettAngeliefert && !wasAlreadyKomplett) {
+          var exitBeschreibung = "";
+          var exitHdr = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
+          var exitTeilCol = getColIndex(exitHdr, ["ersatzteil", "teil", "benennung"]);
+          if (exitTeilCol !== -1) exitBeschreibung = String(sheet.getRange(sheetRow, exitTeilCol).getValue() || "").trim();
+          if (!rowStockId) {
+            var exitRowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
+            for (var er = 0; er < exitRowData.length; er++) {
+              var exitCell = String(exitRowData[er] || "").trim();
+              if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(exitCell)) rowStockId = normalizeStockId(exitCell);
+            }
+          }
+          extraMsgs.push(sendInfoLagerExitChat_(rowStockId, exitBeschreibung));
         }
 
         if (valLcStatus.indexOf("angeliefert") !== -1) {
@@ -2278,15 +2297,13 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
           var valLc = valStr.toLowerCase();
           var shouldWerkstattAuftrag = nachbestellungTypShouldPrintWerkstattauftrag(rowTyp);
           if (shouldWerkstattAuftrag && rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
-            var fillMsg = autoFillWerkstattauftrag(rowStockId, rowBeschreibung);
-            extraMsgs.push(fillMsg);
-            if (fillMsg.indexOf("befüllt") !== -1) {
-              var printPrep = prepareWerkstattauftragPrint(rowStockId, rowBeschreibung);
-              if (printPrep.success) {
-                printB64 = printPrep.printB64;
-              } else if (printPrep.message) {
-                extraMsgs.push("Druck: " + printPrep.message);
-              }
+            var waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, true);
+            if (!waPrep.success) {
+              waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, false);
+            }
+            if (waPrep.message) extraMsgs.push(waPrep.message);
+            if (waPrep.success && waPrep.printB64) {
+              printB64 = waPrep.printB64;
             }
           }
         }
@@ -2370,6 +2387,26 @@ function findInputExitRowByKeys(exitSheet, stockId, entryId) {
   return { row: -1, message: "Input Exit: Zeile nicht gefunden" };
 }
 
+function sendInfoLagerExitChat_(stockId, beschreibung) {
+  try {
+    stockId = String(stockId || "").trim();
+    if (!stockId) return "Info Lager: keine Stock-ID";
+    if (!INFO_LAGER_EXIT_WEBHOOK_URL) return "Info Lager: Webhook fehlt";
+    var text = stockId + "\n-> " + String(beschreibung || "").trim() + "\nEXIT";
+    var res = UrlFetchApp.fetch(INFO_LAGER_EXIT_WEBHOOK_URL, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ text: text }),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code >= 200 && code < 300) return "EXIT an Info Lager gesendet";
+    return "Info Lager Fehler (" + code + ")";
+  } catch (err) {
+    return "Info Lager Fehler: " + err.message;
+  }
+}
+
 function syncNachbestellungStatusToInputExit(ss, nbSheet, sheetRow, statusValue, nbLayout) {
   try {
     var exitSheet = ss.getSheetByName(INPUT_EXIT_TAB);
@@ -2428,23 +2465,176 @@ function getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol) {
 }
 
 function getWmsUserCapabilities() {
-    var email = Session.getActiveUser().getEmail();
     return {
-      werkstattAuftragPrint: email === AUFTRAG_EMAIL
+      werkstattAuftragPrint: true
     };
   }
+
+function formatWerkstattauftragDate_() {
+  return Utilities.formatDate(new Date(), "Europe/Berlin", "dd.MM.yyyy");
+}
+
+function fillWerkstattauftragSheet_(zielSheet, stockId, beschreibung) {
+  var dateStr = formatWerkstattauftragDate_();
+  var desc = String(beschreibung || "").trim();
+  zielSheet.getRange("B10").setValue(dateStr);
+  zielSheet.getRange("D10").setValue(stockId);
+  zielSheet.getRange("D18").setValue(desc);
+  var markeModell = lookupHemauMarkeModell(stockId);
+  if (markeModell) {
+    zielSheet.getRange("B13:D13").setValue(markeModell);
+  } else {
+    zielSheet.getRange("B13:D13").clearContent();
+  }
+  return { dateStr: dateStr, markeModell: markeModell, desc: desc };
+}
+
+function verifyWerkstattauftragSheet_(zielSheet, stockId, beschreibung, strictDesc) {
+  if (!zielSheet) return { ok: false, message: "Kein Werkstattauftrag-Blatt" };
+  var filledStock = String(zielSheet.getRange("D10").getValue() || "").trim();
+  var filledDesc = String(zielSheet.getRange("D18").getValue() || "").trim();
+  if (!cellMatchesStockId(filledStock, stockId)) return { ok: false, message: "Stock-ID nicht verifiziert" };
+  if (!filledDesc) return { ok: false, message: "Beschreibung leer" };
+  if (strictDesc !== false && beschreibung && filledDesc !== String(beschreibung).trim()) {
+    return { ok: false, message: "Beschreibung nicht verifiziert" };
+  }
+  return { ok: true };
+}
+
+function exportWerkstattauftragPdf_(spreadsheetId, zielSheet) {
+  var gid = zielSheet ? zielSheet.getSheetId() : "";
+  var exportUrl = "https://docs.google.com/spreadsheets/d/" + spreadsheetId + "/export?exportFormat=pdf&format=pdf"
+    + (gid !== "" && gid != null ? "&gid=" + gid : "")
+    + "&portrait=true&size=A4&fitw=true&gridlines=false"
+    + "&top_margin=0.3&bottom_margin=0.3&left_margin=0.3&right_margin=0.3"
+    + "&sheetnames=false&printtitle=false&pagenumbers=false"
+    + "&r1=0&c1=0&r2=46&c2=15";
+  var token = ScriptApp.getOAuthToken();
+  var response = UrlFetchApp.fetch(exportUrl, {
+    headers: { Authorization: "Bearer " + token },
+    muteHttpExceptions: true,
+    followRedirects: true
+  });
+  var code = response.getResponseCode();
+  var blob = response.getBlob();
+  var bytes = blob.getBytes();
+  var isPdf = bytes && bytes.length >= 4
+    && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46;
+  if (code !== 200 || !isPdf) {
+    var hint = "HTTP " + code;
+    try {
+      var body = String(response.getContentText() || "").replace(/\s+/g, " ").slice(0, 120);
+      if (body) hint += " · " + body;
+    } catch (e) {}
+    return { success: false, message: "PDF-Export fehlgeschlagen (" + hint + ")", printB64: "" };
+  }
+  if (!bytes || bytes.length < 100) {
+    return { success: false, message: "PDF leer oder ungültig", printB64: "" };
+  }
+  return {
+    success: true,
+    message: "",
+    printB64: Utilities.base64Encode(bytes)
+  };
+}
+
+function trashWerkstattauftragTempFile_(fileId) {
+  if (!fileId) return;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+  } catch (err) {
+    try {
+      SpreadsheetApp.openById(fileId).getSheets();
+    } catch (e2) {}
+  }
+}
+
+function buildWerkstattauftragPrint_(stockId, beschreibung, strictDesc) {
+  var lock = LockService.getScriptLock();
+  var gotLock = false;
+  var tempId = "";
+  try {
+    gotLock = lock.tryLock(45000);
+    if (!gotLock) {
+      return { success: false, message: "Werkstattauftrag beschäftigt – bitte kurz erneut versuchen", printB64: "" };
+    }
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID", printB64: "" };
+
+    var sourceSs = SpreadsheetApp.openById(AUFTRAG_SHEET_ID);
+    var template = sourceSs.getSheetByName(AUFTRAG_TAB);
+    if (!template) return { success: false, message: "Tab '" + AUFTRAG_TAB + "' nicht gefunden", printB64: "" };
+
+    var filled = null;
+    var pdf = { success: false, message: "", printB64: "" };
+
+    try {
+      var tempSs = SpreadsheetApp.create("WMS_WA_" + stockId + "_" + Date.now());
+      tempId = tempSs.getId();
+      var copied = template.copyTo(tempSs);
+      copied.setName(AUFTRAG_TAB);
+      var sheets = tempSs.getSheets();
+      for (var si = 0; si < sheets.length; si++) {
+        if (sheets[si].getSheetId() !== copied.getSheetId()) {
+          tempSs.deleteSheet(sheets[si]);
+        }
+      }
+      filled = fillWerkstattauftragSheet_(copied, stockId, beschreibung);
+      SpreadsheetApp.flush();
+      Utilities.sleep(800);
+      var verifyTemp = verifyWerkstattauftragSheet_(copied, stockId, beschreibung, strictDesc);
+      if (!verifyTemp.ok) {
+        return { success: false, message: "Auftrag: " + verifyTemp.message, printB64: "" };
+      }
+      pdf = exportWerkstattauftragPdf_(tempId, copied);
+      if (!pdf.success) pdf = exportWerkstattauftragPdf_(tempId, null);
+    } catch (tempErr) {
+      pdf = { success: false, message: "Temp: " + tempErr.message, printB64: "" };
+    }
+
+    if (!pdf.success) {
+      filled = fillWerkstattauftragSheet_(template, stockId, beschreibung);
+      SpreadsheetApp.flush();
+      Utilities.sleep(500);
+      var verifyMain = verifyWerkstattauftragSheet_(template, stockId, beschreibung, strictDesc);
+      if (!verifyMain.ok) {
+        return { success: false, message: "Auftrag: " + verifyMain.message, printB64: "" };
+      }
+      pdf = exportWerkstattauftragPdf_(AUFTRAG_SHEET_ID, template);
+      if (!pdf.success) {
+        return { success: false, message: pdf.message || "PDF-Export fehlgeschlagen", printB64: "" };
+      }
+    }
+
+    var msg = "Werkstattauftrag befüllt (" + stockId + ")";
+    if (filled && filled.dateStr) msg += " · " + filled.dateStr;
+    if (filled && filled.markeModell) msg += " + " + filled.markeModell;
+    return { success: true, message: msg, printB64: pdf.printB64 };
+  } catch (err) {
+    return { success: false, message: "Auftrag Fehler: " + err.message, printB64: "" };
+  } finally {
+    trashWerkstattauftragTempFile_(tempId);
+    if (gotLock) {
+      try { lock.releaseLock(); } catch (e3) {}
+    }
+  }
+}
+
+function deleteWerkstattauftragTempSheet_(ss, tempSheet) {
+  if (!ss || !tempSheet) return;
+  try {
+    ss.deleteSheet(tempSheet);
+  } catch (err) {
+    try { tempSheet.setName("TMP_WA_DEL_" + Date.now()); tempSheet.hideSheet(); } catch (e2) {}
+  }
+}
 
 function verifyWerkstattauftragFill(stockId, beschreibung, strictDesc) {
     var zielSs = SpreadsheetApp.openById(AUFTRAG_SHEET_ID);
     var zielSheet = zielSs.getSheetByName(AUFTRAG_TAB);
     if (!zielSheet) return { ok: false, message: "Tab '" + AUFTRAG_TAB + "' nicht gefunden" };
-    var filledStock = String(zielSheet.getRange("D10").getValue() || "").trim();
-    var filledDesc = String(zielSheet.getRange("D18").getValue() || "").trim();
-    if (!cellMatchesStockId(filledStock, stockId)) return { ok: false, message: "Stock-ID nicht verifiziert" };
-    if (!filledDesc) return { ok: false, message: "Beschreibung leer" };
-    if (strictDesc !== false && beschreibung && filledDesc !== String(beschreibung).trim()) {
-      return { ok: false, message: "Beschreibung nicht verifiziert" };
-    }
+    var check = verifyWerkstattauftragSheet_(zielSheet, stockId, beschreibung, strictDesc);
+    if (!check.ok) return check;
     return { ok: true, sheet: zielSheet };
   }
 
@@ -2468,79 +2658,25 @@ function lookupHemauMarkeModell(stockId) {
   }
 
 function autoFillWerkstattauftrag(stockId, beschreibung) {
-    try {
-      var bearbeiter = Session.getActiveUser().getEmail();
-      if (bearbeiter !== AUFTRAG_EMAIL) return "";
-      if (!stockId) return "";
-      var zielSs = SpreadsheetApp.openById(AUFTRAG_SHEET_ID);
-      var zielSheet = zielSs.getSheetByName(AUFTRAG_TAB);
-      if (!zielSheet) return "Auftrag: Tab '" + AUFTRAG_TAB + "' nicht gefunden";
-      zielSheet.getRange("D10").setValue(stockId);
-      zielSheet.getRange("D18").setValue(beschreibung || "");
-      var markeModell = lookupHemauMarkeModell(stockId);
-      if (markeModell) {
-        zielSheet.getRange("B13:D13").setValue(markeModell);
-      } else {
-        zielSheet.getRange("B13:D13").clearContent();
-      }
-      SpreadsheetApp.flush();
-      var verify = verifyWerkstattauftragFill(stockId, beschreibung);
-      if (!verify.ok) return "Auftrag: " + verify.message;
-      var msg = "Werkstattauftrag befüllt (" + stockId + ")";
-      if (markeModell) msg += " + " + markeModell;
-      return msg;
-    } catch (err) {
-      return "Auftrag Fehler: " + err.message;
-    }
+    var res = buildWerkstattauftragPrint_(stockId, beschreibung, true);
+    if (res.success) return res.message;
+    return res.message || "";
   }
 
 function prepareWerkstattauftragPrint(stockId, beschreibung, strictDesc) {
-    try {
-      var bearbeiter = Session.getActiveUser().getEmail();
-      if (bearbeiter !== AUFTRAG_EMAIL) return { success: false, message: "" };
-      if (!stockId) return { success: false, message: "Keine Stock-ID" };
-      var verify = verifyWerkstattauftragFill(stockId, beschreibung, strictDesc);
-      if (!verify.ok) return { success: false, message: verify.message };
-      var zielSheet = verify.sheet;
-      var exportUrl = "https://docs.google.com/spreadsheets/d/" + AUFTRAG_SHEET_ID + "/export?format=pdf"
-        + "&gid=" + zielSheet.getSheetId()
-        + "&portrait=true&size=A4&fitw=true&gridlines=false"
-        + "&top_margin=0.3&bottom_margin=0.3&left_margin=0.3&right_margin=0.3"
-        + "&sheetnames=false&printtitle=false&pagenumbers=false"
-        + "&r1=0&c1=0&r2=46&c2=15";
-      var token = ScriptApp.getOAuthToken();
-      var response = UrlFetchApp.fetch(exportUrl, {
-        headers: { Authorization: "Bearer " + token },
-        muteHttpExceptions: true
-      });
-      if (response.getResponseCode() !== 200) {
-        return { success: false, message: "PDF-Export fehlgeschlagen" };
-      }
-      var pdfBytes = response.getBlob().getBytes();
-      if (!pdfBytes || pdfBytes.length < 100) {
-        return { success: false, message: "PDF leer oder ungültig" };
-      }
-      return {
-        success: true,
-        printB64: Utilities.base64Encode(pdfBytes)
-      };
-    } catch (err) {
-      return { success: false, message: err.message };
-    }
+    return buildWerkstattauftragPrint_(stockId, beschreibung, strictDesc);
   }
 
 function requestWerkstattauftragPrint(stockId, beschreibung, typ) {
     try {
-      var bearbeiter = Session.getActiveUser().getEmail();
-      if (bearbeiter !== AUFTRAG_EMAIL) return { success: false, message: "Nicht berechtigt" };
-      var fillMsg = autoFillWerkstattauftrag(stockId, beschreibung);
-      var prep = prepareWerkstattauftragPrint(stockId, beschreibung, true);
-      if (prep.success) return prep;
-      if (fillMsg.indexOf("befüllt") === -1) {
-        var relaxed = prepareWerkstattauftragPrint(stockId, beschreibung, false);
-        if (relaxed.success) return relaxed;
+      if (!nachbestellungTypShouldPrintWerkstattauftrag(typ)) {
+        return { success: false, message: "Für diesen Typ kein Werkstattauftrag" };
       }
-      return { success: false, message: prep.message || fillMsg || "Druck nicht möglich" };
+      var prep = buildWerkstattauftragPrint_(stockId, beschreibung, true);
+      if (prep.success) return prep;
+      var relaxed = buildWerkstattauftragPrint_(stockId, beschreibung, false);
+      if (relaxed.success) return relaxed;
+      return { success: false, message: prep.message || relaxed.message || "Druck nicht möglich" };
     } catch (err) {
       return { success: false, message: err.message };
     }

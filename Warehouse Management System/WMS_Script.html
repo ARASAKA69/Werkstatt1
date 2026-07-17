@@ -30,7 +30,10 @@
   var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
   var SAVE_BG_TIMEOUT_MS = 90000;
+  var CAROL_BG_TIMEOUT_MS = 120000;
   var saveKommentarRegalInflight = {};
+  var carolMissionInflight = {};
+  var shelfSelectIgnoreChange = false;
 
   var GEMINI_API_KEY = '';
   var GEMINI_MODEL = 'gemini-3.5-flash';
@@ -268,6 +271,11 @@
   shelfSelectEl.addEventListener('change', function() {
     syncShelfTriggerFromNative();
     applyTageslisteShelfUi((this.dataset.serverRegal || '').trim());
+    if (shelfSelectIgnoreChange) return;
+    var regal = String(this.value || '').trim();
+    if (!isRegalShelfValue(regal)) return;
+    if (regal === String(this.dataset.serverRegal || '').trim()) return;
+    saveKommentarUndRegalFlow();
   });
   new MutationObserver(function() {
     syncShelfTriggerFromNative();
@@ -437,7 +445,6 @@
     }
     setRegalScanStatus("✅ " + regal + " erkannt – speichere…", '#56d364');
     closeRegalScan();
-    saveKommentarUndRegalFlow();
   }
 
   var regalScanInputEl = document.getElementById('regalScanInput');
@@ -543,6 +550,18 @@
     if (job.timerId) clearTimeout(job.timerId);
     delete saveKommentarRegalInflight[stockId];
     return true;
+  }
+
+  function finishCarolMissionJob(stockId, token) {
+    var job = carolMissionInflight[stockId];
+    if (!job || job.token !== token) return false;
+    if (job.timerId) clearTimeout(job.timerId);
+    delete carolMissionInflight[stockId];
+    return true;
+  }
+
+  function isRegalShelfValue(regal) {
+    return /^Regal\s+\d+\.\d+$/i.test(String(regal || '').trim());
   }
 
   function setHudBusy(active, message) {
@@ -4762,6 +4781,54 @@
     wrap.style.display = show ? 'flex' : 'none';
   }
 
+  function resetWmsHudForNextOrder(statusMsg) {
+    currentStock = "";
+    currentCarolUrl = "";
+    currentSchaedenText = "";
+    currentBestellungText = "";
+    currentMarkeModel = "";
+    currentShelves = [];
+    setCommentText("");
+    var infoSchaeden = document.getElementById('infoSchaeden');
+    var infoBestellung = document.getElementById('infoBestellung');
+    if (infoSchaeden) infoSchaeden.innerHTML = '-';
+    if (infoBestellung) infoBestellung.innerHTML = '-';
+    var shelfPill = document.getElementById('currentShelfLabel');
+    if (shelfPill) {
+      shelfPill.innerText = 'Aktuell: -';
+      shelfPill.style.display = '';
+    }
+    var badge = document.getElementById('badgeReifen');
+    if (badge) badge.style.display = 'none';
+    var badgeWss = document.getElementById('badgeWss');
+    if (badgeWss) badgeWss.style.display = 'none';
+    var wssAct = document.getElementById('wssCardAction');
+    if (wssAct) wssAct.style.display = 'none';
+    updateB2a1KandidatBadgeFromSchaeden('');
+    hidePzContext();
+    var btnCarol = document.getElementById('btnCarol');
+    if (btnCarol) btnCarol.disabled = true;
+    var btnVerlauf = document.getElementById('btnVerlauf');
+    if (btnVerlauf) btnVerlauf.disabled = true;
+    shelfSelectIgnoreChange = true;
+    var sel = document.getElementById('shelfSelect');
+    if (sel) {
+      sel.dataset.serverRegal = '';
+      sel.innerHTML = '<option value="" selected>-- REGAL WÄHLEN --</option>';
+      applyTageslisteShelfUi('');
+      syncShelfTriggerFromNative();
+    }
+    shelfSelectIgnoreChange = false;
+    var search = document.getElementById('searchInput');
+    if (search) {
+      search.value = '';
+      try { search.focus(); } catch (e) {}
+    }
+    toggleUI(false);
+    if (statusMsg) setStatus(statusMsg, '#56d364');
+    else setStatus('Bereit für nächsten Auftrag.', '#3FA0DB');
+  }
+
   function applyFetchWmsResult(res, id) {
     if (res.success) {
       currentStock = normalizeStockInput(id);
@@ -4825,6 +4892,7 @@
 
       var sel = document.getElementById('shelfSelect');
       var currentRegal = (res.regal || '').trim();
+      shelfSelectIgnoreChange = true;
       sel.dataset.serverRegal = currentRegal;
       sel.innerHTML = '';
       var allShelves = allRegalShelfList();
@@ -4841,6 +4909,7 @@
         sel.innerHTML += '<option value="' + name + '"' + selAttr + '>' + name + '</option>';
       });
       applyTageslisteShelfUi(currentRegal);
+      shelfSelectIgnoreChange = false;
 
       document.getElementById('btnCarol').disabled = !res.carolUrl;
       var btnVerlauf = document.getElementById('btnVerlauf');
@@ -5076,6 +5145,10 @@
         handleVerlaufSaveSuccess(res);
         patchRefurbCacheKommentarRegal(stockId, text, regal);
         applyLocalSaveUiIfCurrent(stockId, regal);
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          var selOk = document.getElementById('shelfSelect');
+          if (selOk && regal) selOk.dataset.serverRegal = regal;
+        }
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
         if (noRegal) {
@@ -5307,6 +5380,7 @@
   var carolWindowPollTimer = null;
   var carolReturnRestoreNb = null;
   var carolReturnHandled = false;
+  var carolReturnClearStock = "";
 
   function ensureCarolReturnListener() {
     if (carolReturnListenerReady) return;
@@ -5346,6 +5420,8 @@
     }
     var restoreNb = carolReturnRestoreNb;
     carolReturnRestoreNb = null;
+    var clearStock = carolReturnClearStock;
+    carolReturnClearStock = "";
     setTimeout(function() {
       try { window.focus(); } catch (e) {}
       if (restoreNb && typeof nbSessionActive !== 'undefined' && nbSessionActive) {
@@ -5353,9 +5429,15 @@
         openNbModal();
         return;
       }
-      var search = document.getElementById('searchInput');
-      if (search) {
-        try { search.focus(); } catch (e) {}
+      var cur = normalizeStockIdJs(currentStock);
+      var target = normalizeStockIdJs(clearStock);
+      if (!cur || (target && cur === target)) {
+        resetWmsHudForNextOrder('✅ Carol fertig — bereit für nächsten Auftrag.');
+      } else {
+        var search = document.getElementById('searchInput');
+        if (search) {
+          try { search.focus(); } catch (e) {}
+        }
       }
     }, 80);
   }
@@ -5364,6 +5446,13 @@
     if(!currentCarolUrl || !currentStock) return;
     var text = getCommentText().trim();
     if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+    var stockId = normalizeStockIdJs(currentStock);
+    if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+    if (carolMissionInflight[stockId]) {
+      setStatus("⏳ Carol für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
+      return;
+    }
+
     var dymoResult = sendDymoPrint({ silent: true, requireInitials: true });
     var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
     var carolWindow = window.open(autoUrl, '_blank');
@@ -5373,60 +5462,89 @@
     }
     registerCarolWindow(carolWindow);
     document.getElementById('btnCarol').disabled = true;
-    toggleUI(false);
-    setHudBusy(true, 'Speichere & Carol…');
-    setStatus("🚀 Carol gestartet. Sheet wird im Hintergrund aktualisiert...", "#3FA0DB");
+    carolReturnClearStock = stockId;
+
+    var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+    setStatus("🚀 Carol gestartet. Tagesliste läuft im Hintergrund…", "#3FA0DB");
+
+    var timerId = setTimeout(function() {
+      if (!finishCarolMissionJob(stockId, token)) return;
+      if (normalizeStockIdJs(currentStock) === stockId) {
+        document.getElementById('btnCarol').disabled = false;
+      }
+      setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
+      showStickyToast(
+        'err',
+        'Speichern unklar / Timeout',
+        stockId + ' — Tagesliste/Carol: Bitte neu öffnen und erneut speichern.'
+      );
+    }, CAROL_BG_TIMEOUT_MS);
+
+    carolMissionInflight[stockId] = { token: token, timerId: timerId };
+
     google.script.run
       .withSuccessHandler(function(res) {
-        if(!res.success) {
-          setStatus("❌ FEHLER: " + res.message, "#f85149");
-          document.getElementById('btnCarol').disabled = false;
-          toggleUI(true);
-          setHudBusy(false);
+        var job = carolMissionInflight[stockId];
+        if (!job || job.token !== token) return;
+        if(!res || !res.success) {
+          finishCarolMissionJob(stockId, token);
+          if (normalizeStockIdJs(currentStock) === stockId) {
+            document.getElementById('btnCarol').disabled = false;
+          }
+          var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
+          setStatus("❌ FEHLER: " + errMsg, "#f85149");
+          showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg);
           return;
         }
         handleVerlaufSaveSuccess(res);
-
-        setStatus("🚀 Setze Tagesliste & triggere Carol...", "#9B59B6");
-        setHudBusy(true, 'Tagesliste & Carol…');
+        setStatus("🚀 Setze Tagesliste im Hintergrund…", "#9B59B6");
 
         google.script.run
-          .withSuccessHandler(function(res) {
-            if(res.success) {
-              showOldRegalModal(res.oldRegal, currentStock);
+          .withSuccessHandler(function(res2) {
+            if (!finishCarolMissionJob(stockId, token)) return;
+            if(res2 && res2.success) {
+              showOldRegalModal(res2.oldRegal, stockId);
               var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
               if(dymoResult.skipped) finalStatus += " DYMO übersprungen.";
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
               if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
               setStatus(finalStatus, "#56d364");
-              setHudBusy(false);
-              toggleUI(false);
+              showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus);
               loadRefurbishmentCache(true);
-              document.getElementById('searchInput').value = "";
-              document.getElementById('searchInput').focus();
+              loadKommentarVerlaufCache(true);
+              if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
+                resetWmsHudForNextOrder(finalStatus);
+              }
             } else {
-              setStatus("❌ FEHLER: " + res.message, "#f85149");
-              document.getElementById('btnCarol').disabled = false;
-              toggleUI(true);
-              setHudBusy(false);
+              if (normalizeStockIdJs(currentStock) === stockId) {
+                document.getElementById('btnCarol').disabled = false;
+              }
+              var failMsg = (res2 && res2.message) ? res2.message : 'Unbekannter Fehler';
+              setStatus("❌ FEHLER: " + failMsg, "#f85149");
+              showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
             }
           })
           .withFailureHandler(function(err) {
-            setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
-            document.getElementById('btnCarol').disabled = false;
-            toggleUI(true);
-            setHudBusy(false);
+            if (!finishCarolMissionJob(stockId, token)) return;
+            if (normalizeStockIdJs(currentStock) === stockId) {
+              document.getElementById('btnCarol').disabled = false;
+            }
+            var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
+            setStatus("❌ Serverfehler: " + failMsg, "#f85149");
+            showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
           })
-          .triggerCarolMission(currentStock);
+          .triggerCarolMission(stockId);
       })
       .withFailureHandler(function(err) {
-        setStatus("❌ Kommentarfehler: " + (err.message || String(err)), "#f85149");
-        document.getElementById('btnCarol').disabled = false;
-        toggleUI(true);
-        setHudBusy(false);
+        if (!finishCarolMissionJob(stockId, token)) return;
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          document.getElementById('btnCarol').disabled = false;
+        }
+        var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
+        setStatus("❌ Kommentarfehler: " + failMsg, "#f85149");
+        showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
       })
-      .saveKommentar(currentStock, text, "carol");
-
+      .saveKommentar(stockId, text, "carol");
   }
 
   function closeWmsMainMenu() {
