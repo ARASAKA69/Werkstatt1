@@ -29,6 +29,8 @@
   var kommentarVerlaufCache = null;
   var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
+  var SAVE_BG_TIMEOUT_MS = 90000;
+  var saveKommentarRegalInflight = {};
 
   var GEMINI_API_KEY = '';
   var GEMINI_MODEL = 'gemini-3.5-flash';
@@ -492,6 +494,55 @@
     var isError = color === '#f85149' || /FEHLER|nicht gefunden|Nicht gefunden/i.test(String(msg || ''));
     el.className = isError ? 'global-status--error' : '';
     el.style.color = isError ? '' : (color || '#3FA0DB');
+  }
+
+  function showStickyToast(type, title, message) {
+    var stack = document.getElementById('wmsToastStack');
+    if (!stack) return;
+    var toast = document.createElement('div');
+    toast.className = 'wms-toast wms-toast--' + (type === 'ok' ? 'ok' : 'err');
+    toast.setAttribute('role', type === 'ok' ? 'status' : 'alert');
+    toast.innerHTML =
+      '<div class="wms-toast-body">' +
+        '<div class="wms-toast-title">' + escapeHtml(title || '') + '</div>' +
+        '<div class="wms-toast-msg">' + escapeHtml(message || '') + '</div>' +
+      '</div>' +
+      '<button type="button" class="wms-toast-x" onclick="dismissWmsToast(this)" aria-label="Schließen">&times;</button>';
+    stack.appendChild(toast);
+  }
+
+  function dismissWmsToast(btn) {
+    var toast = btn && btn.closest ? btn.closest('.wms-toast') : null;
+    if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+  }
+
+  function patchRefurbCacheKommentarRegal(stockId, text, regal) {
+    if (!refurbCache || !refurbCache.rows) return;
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid) return;
+    for (var i = 0; i < refurbCache.rows.length; i++) {
+      if (!cellMatchesStockIdJs(refurbCache.rows[i][0], sid)) continue;
+      refurbCache.rows[i][4] = text;
+      refurbCache.rows[i][5] = 'Teilweise angeliefert';
+      if (regal) refurbCache.rows[i][6] = regal;
+      break;
+    }
+  }
+
+  function applyLocalSaveUiIfCurrent(stockId, regal) {
+    if (normalizeStockIdJs(currentStock) !== normalizeStockIdJs(stockId)) return;
+    if (!regal) return;
+    var pill = document.getElementById('currentShelfLabel');
+    if (pill) pill.innerText = 'Aktuell: ' + regal;
+    applyTageslisteShelfUi(regal);
+  }
+
+  function finishSaveKommentarRegalJob(stockId, token) {
+    var job = saveKommentarRegalInflight[stockId];
+    if (!job || job.token !== token) return false;
+    if (job.timerId) clearTimeout(job.timerId);
+    delete saveKommentarRegalInflight[stockId];
+    return true;
   }
 
   function setHudBusy(active, message) {
@@ -4987,53 +5038,72 @@
 
   function saveKommentarUndRegalFlow() {
     var text = getCommentText().trim();
-    var regal = document.getElementById('shelfSelect').value;
-    if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
-    if(!regal) {
-      setStatus("💾 Speichere nur Kommentar (kein Regal gewählt)...", "#F27420");
-      toggleUI(false);
-      setHudBusy(true, 'Speichere Kommentar… (kein Regal)');
-      google.script.run.withSuccessHandler(function(res) {
-        if(res.success) {
-          handleVerlaufSaveSuccess(res);
-          pendingWarning = { msg: "✅ " + res.message + " ⚠️ Kein Regal vergeben!", color: "#F27420" };
-          document.getElementById('searchInput').value = currentStock;
-          setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
-          loadRefurbishmentCache(true, function() { loadData(); });
-          loadKommentarVerlaufCache(true);
-        } else {
-          setStatus("❌ " + res.message, "#f85149");
-          setHudBusy(false);
-          toggleUI(true);
-        }
-      }).withFailureHandler(function(err) {
-        setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
-        setHudBusy(false);
-        toggleUI(true);
-      }).saveKommentarUndRegal(currentStock, text, "");
+    var regal = String(document.getElementById('shelfSelect').value || '').trim();
+    var stockId = normalizeStockIdJs(currentStock);
+    if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+    if (!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+    if (saveKommentarRegalInflight[stockId]) {
+      setStatus("⏳ Speichern für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
       return;
     }
-    setStatus("💾 Speichere Kommentar + Regal...", "#F27420");
-    toggleUI(false);
-    setHudBusy(true, 'Speichere Kommentar + Regal…');
+
+    var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+    var noRegal = !regal;
+    setStatus(
+      noRegal
+        ? "💾 Speichere Kommentar im Hintergrund (kein Regal)…"
+        : "💾 Speichere Kommentar + Regal im Hintergrund…",
+      "#F27420"
+    );
+    patchRefurbCacheKommentarRegal(stockId, text, regal);
+    applyLocalSaveUiIfCurrent(stockId, regal);
+
+    var timerId = setTimeout(function() {
+      if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
+      showStickyToast(
+        'err',
+        'Speichern unklar / Timeout',
+        stockId + ' — Bitte neu öffnen und erneut speichern.'
+      );
+    }, SAVE_BG_TIMEOUT_MS);
+
+    saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId };
+
     google.script.run.withSuccessHandler(function(res) {
-      if(res.success) {
+      if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      if (res && res.success) {
         handleVerlaufSaveSuccess(res);
-        setStatus("✅ " + res.message, "#56d364");
-        document.getElementById('searchInput').value = currentStock;
-        setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
-        loadRefurbishmentCache(true, function() { loadData(); });
+        patchRefurbCacheKommentarRegal(stockId, text, regal);
+        applyLocalSaveUiIfCurrent(stockId, regal);
+        loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
+        if (noRegal) {
+          setStatus("✅ " + res.message + " ⚠️ Kein Regal vergeben!", "#F27420");
+          showStickyToast(
+            'ok',
+            '✅ Kommentar gespeichert — ' + stockId,
+            (res.message || 'Gespeichert.') + ' ⚠️ Kein Regal vergeben!'
+          );
+        } else {
+          setStatus("✅ " + res.message, "#56d364");
+          showStickyToast(
+            'ok',
+            '✅ Kommentar + Regal gespeichert — ' + stockId,
+            res.message || 'Gespeichert.'
+          );
+        }
       } else {
-        setStatus("❌ " + res.message, "#f85149");
-        setHudBusy(false);
-        toggleUI(true);
+        var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
+        setStatus("❌ " + errMsg, "#f85149");
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg);
       }
     }).withFailureHandler(function(err) {
-      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
-      setHudBusy(false);
-      toggleUI(true);
-    }).saveKommentarUndRegal(currentStock, text, regal);
+      if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
+      setStatus("❌ Fehler: " + failMsg, "#f85149");
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg);
+    }).saveKommentarUndRegal(stockId, text, regal);
   }
 
   function saveRegal() {
