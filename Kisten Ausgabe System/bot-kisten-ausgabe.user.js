@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.52
+// @version      1.53
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,11 +17,11 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.52";
-    const ARASAKA_BRIDGE_VERSION = "17";
+    const ARASAKA_BOT_VERSION = "1.53";
+    const ARASAKA_BRIDGE_VERSION = "18";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
-    const ARASAKA_MARK_SHEET_CHUNK = 10;
+    const ARASAKA_MARK_SHEET_CHUNK = 5;
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -365,6 +365,55 @@
         sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(pend));
     }
 
+    function chunkStockIds(entries) {
+        var ids = [];
+        for (var i = 0; i < entries.length; i++) {
+            var sid = String((entries[i] && entries[i].stockId) || "").toUpperCase().replace(/\s+/g, "");
+            if (sid) ids.push(sid);
+        }
+        return ids;
+    }
+
+    async function verifySheetMarks(stockIds) {
+        if (!stockIds.length) return { allOk: true, ok: [], missing: [] };
+        var checkRes = await bridgePostJson({
+            action: "checkSheetMarkBatch",
+            stockIdsJson: JSON.stringify(stockIds)
+        }, 45000);
+        if (checkRes && checkRes.status >= 200 && checkRes.status < 300) {
+            var crt = String(checkRes.responseText || "").trim();
+            dbg("checkSheetMarkBatch", "http", checkRes.status, "body", crt.slice(0, 400));
+            if (crt.charAt(0) === "{") {
+                try {
+                    var parsedCheck = JSON.parse(crt);
+                    if (parsedCheck && !parsedCheck.error) {
+                        return {
+                            allOk: parsedCheck.allOk === true,
+                            ok: parsedCheck.ok || [],
+                            missing: parsedCheck.missing || []
+                        };
+                    }
+                } catch (eC) {}
+            }
+            if (crt === "Invalid Action") {
+                dbg("checkSheetMarkBatch", "fallbackSingle");
+            }
+        } else {
+            dbg("checkSheetMarkBatch", "noResponse");
+        }
+        var ok = [];
+        var missing = [];
+        for (var vi = 0; vi < stockIds.length; vi++) {
+            if (abortMission) break;
+            var sid = stockIds[vi];
+            showCustomPopup("ARASAKA SYNC", "Prüfe Haken " + (vi + 1) + "/" + stockIds.length + ": " + sid, false);
+            var one = await bridgePostJson({ action: "checkSheetMark", stockId: sid }, 20000);
+            if (one && String(one.responseText || "").trim() === "OK") ok.push(sid);
+            else missing.push(sid);
+        }
+        return { allOk: missing.length === 0, ok: ok, missing: missing };
+    }
+
     async function markSheetSequential(entries) {
         var notFoundBatch = [];
         var markedCountB = 0;
@@ -373,17 +422,11 @@
             var ent = entries[si] || {};
             var stockToMarkB = String(ent.stockId || "").toUpperCase().replace(/\s+/g, "");
             if (!stockToMarkB) continue;
+            showCustomPopup("ARASAKA SYNC", "Einzel-Haken " + (si + 1) + "/" + entries.length + ": " + stockToMarkB, false);
             var res = await bridgePostJson({
                 action: "markSheet",
-                stockId: ent.stockId,
-                skippedDup: ent.skippedDup,
-                skippedComment: ent.skippedComment,
-                skippedFilenamePage: ent.skippedFilenamePage,
-                batchFiles: ent.batchFiles,
-                uniqueFiles: ent.uniqueFiles,
-                skipDupDetail: ent.skipDupDetail,
-                skipCommentDetail: ent.skipCommentDetail
-            }, 30000);
+                stockId: ent.stockId
+            }, 25000);
             var body = res && res.status >= 200 && res.status < 300 ? String(res.responseText || "").trim() : "";
             if (body === "OK") markedCountB++;
             else notFoundBatch.push(stockToMarkB);
@@ -416,14 +459,48 @@
         return { syncStatus: syncStatus, parsed: parsed };
     }
 
-    async function markSheetBatchOnce(chunk) {
+    async function recoverChunkAfterTimeout(chunk, chunkNo) {
+        var stockIds = chunkStockIds(chunk);
+        showCustomPopup("ARASAKA SYNC", "Paket " + chunkNo + " Timeout — prüfe ob Haken schon gesetzt...", false);
+        var verified = await verifySheetMarks(stockIds);
+        dbg("markSheetBatch", "timeoutVerify", "chunkNo", chunkNo, "ok", (verified.ok || []).length, "missing", (verified.missing || []).length);
+        if (verified.allOk) {
+            return { syncStatus: "OK", parsed: { allOk: true, notFound: [], marked: stockIds.length, total: chunk.length } };
+        }
+        var needMark = [];
+        for (var i = 0; i < chunk.length; i++) {
+            var sid = String((chunk[i] && chunk[i].stockId) || "").toUpperCase().replace(/\s+/g, "");
+            if (sid && verified.missing.indexOf(sid) !== -1) needMark.push(chunk[i]);
+        }
+        if (!needMark.length) {
+            return { syncStatus: "OK", parsed: { allOk: true, notFound: [], marked: stockIds.length, total: chunk.length } };
+        }
+        showCustomPopup("ARASAKA SYNC", "Setze fehlende Haken einzeln (" + needMark.length + ")...", false);
+        var seq = await markSheetSequential(needMark);
+        var stillMissing = seq.notFound || [];
+        if (stillMissing.length) {
+            var recheck = await verifySheetMarks(stillMissing);
+            stillMissing = recheck.missing || stillMissing;
+        }
+        return {
+            syncStatus: stillMissing.length ? "PARTIAL" : "OK",
+            parsed: {
+                allOk: stillMissing.length === 0,
+                notFound: stillMissing,
+                marked: stockIds.length - stillMissing.length,
+                total: chunk.length
+            }
+        };
+    }
+
+    async function markSheetBatchOnce(chunk, chunkNo) {
         var markRes = await bridgePostJson({
             action: "markSheetBatch",
             entriesJson: JSON.stringify(chunk)
-        }, 60000);
+        }, 45000);
         if (!markRes) {
             dbg("markSheetBatch", "noResponse", "chunkSize", chunk.length);
-            return { syncStatus: "HTTP_ERROR", parsed: null };
+            return await recoverChunkAfterTimeout(chunk, chunkNo);
         }
         var mrt = String(markRes.responseText || "").trim();
         dbg("markSheetBatch", "http", markRes.status, "chunkSize", chunk.length, "body", mrt.slice(0, 400));
@@ -450,48 +527,49 @@
         var syncDone = false;
         var warningTimer = setTimeout(function() {
             if (!syncDone && !abortMission) {
-                showCustomPopup("ARASAKA WARTET", "Warte noch kurz...\nGoogle braucht gerade etwas länger für die Haken. Gleich fertig!", false);
+                showCustomPopup("ARASAKA WARTET", "Noch am Setzen der Haken...\nBitte warten, UI aktualisiert sich gleich wieder.", false);
             }
-        }, 5000);
+        }, 12000);
         var allNotFound = [];
         var totalMarked = 0;
         var remaining = entries.slice();
         var hardFail = false;
         var lastSyncStatus = "OK";
-        for (var ci = 0; ci < remaining.length; ) {
-            if (abortMission) break;
-            var chunk = remaining.slice(ci, ci + chunkSize);
-            var chunkNo = Math.floor(ci / chunkSize) + 1;
-            showCustomPopup("ARASAKA SYNC", "Tagesliste Haken: Paket " + chunkNo + "/" + totalChunks + " (" + chunk.length + " von " + entries.length + ")...", false);
-            var result = await markSheetBatchOnce(chunk);
-            if (result.syncStatus === "HTTP_ERROR" || result.syncStatus === "HTML_FEHLER" || result.syncStatus === "JSON_PARSE" || String(result.syncStatus).indexOf("ERROR_") === 0) {
-                dbg("markSheetBatch", "chunkRetrySequential", "chunkNo", chunkNo, "status", result.syncStatus);
-                result = { syncStatus: "OK", parsed: await markSheetSequential(chunk) };
-                if (result.parsed && result.parsed.allOk === true) result.syncStatus = "OK";
-                else if (result.parsed && result.parsed.notFound && result.parsed.notFound.length) result.syncStatus = "PARTIAL";
-                else result.syncStatus = "HTTP_ERROR";
+        var ci = 0;
+        try {
+            for (; ci < remaining.length; ) {
+                if (abortMission) break;
+                var chunk = remaining.slice(ci, ci + chunkSize);
+                var chunkNo = Math.floor(ci / chunkSize) + 1;
+                showCustomPopup("ARASAKA SYNC", "Tagesliste Haken: Paket " + chunkNo + "/" + totalChunks + " (" + Math.min(ci + chunk.length, entries.length) + "/" + entries.length + ")...", false);
+                var result = await markSheetBatchOnce(chunk, chunkNo);
+                if (result.syncStatus === "HTML_FEHLER" || result.syncStatus === "JSON_PARSE" || String(result.syncStatus).indexOf("ERROR_") === 0) {
+                    dbg("markSheetBatch", "chunkRecover", "chunkNo", chunkNo, "status", result.syncStatus);
+                    result = await recoverChunkAfterTimeout(chunk, chunkNo);
+                }
+                lastSyncStatus = result.syncStatus;
+                if (result.syncStatus === "SHEET_NOT_FOUND") {
+                    hardFail = true;
+                    break;
+                }
+                if (!result.parsed) {
+                    hardFail = true;
+                    break;
+                }
+                totalMarked += Number(result.parsed.marked) || 0;
+                if (result.parsed.notFound && result.parsed.notFound.length) {
+                    for (var nf = 0; nf < result.parsed.notFound.length; nf++) allNotFound.push(result.parsed.notFound[nf]);
+                }
+                ci += chunkSize;
+                var left = remaining.slice(ci);
+                if (left.length) sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(left));
+                else sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
+                if (ci < remaining.length) await sleep(250);
             }
-            lastSyncStatus = result.syncStatus;
-            if (result.syncStatus === "SHEET_NOT_FOUND") {
-                hardFail = true;
-                break;
-            }
-            if (!result.parsed) {
-                hardFail = true;
-                break;
-            }
-            totalMarked += Number(result.parsed.marked) || 0;
-            if (result.parsed.notFound && result.parsed.notFound.length) {
-                for (var nf = 0; nf < result.parsed.notFound.length; nf++) allNotFound.push(result.parsed.notFound[nf]);
-            }
-            ci += chunkSize;
-            var left = remaining.slice(ci);
-            if (left.length) sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(left));
-            else sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
-            if (ci < remaining.length) await sleep(400);
+        } finally {
+            syncDone = true;
+            clearTimeout(warningTimer);
         }
-        syncDone = true;
-        clearTimeout(warningTimer);
         var parsed = { allOk: !hardFail && allNotFound.length === 0 && !abortMission, notFound: allNotFound, marked: totalMarked, total: entries.length };
         var syncStatus = hardFail ? lastSyncStatus : (parsed.allOk ? "OK" : "PARTIAL");
         if (abortMission && readTageslistePending().length === 0 && ci < remaining.length) {
@@ -504,21 +582,16 @@
             await sleep(1200);
             return;
         }
-        if (syncStatus === "PARTIAL" && allNotFound.length) {
-            var stillMissing = [];
-            for (var ni = 0; ni < allNotFound.length; ni++) {
-                if (abortMission) break;
-                var sid = allNotFound[ni];
-                var checkRes = await bridgePostJson({ action: "checkSheetMark", stockId: sid }, 30000);
-                if (checkRes && String(checkRes.responseText || "").trim() === "OK") continue;
-                stillMissing.push(sid);
-            }
-            if (stillMissing.length === 0) {
+        if (allNotFound.length) {
+            showCustomPopup("ARASAKA SYNC", "Schlussprüfung für " + allNotFound.length + " offene Haken...", false);
+            var finalCheck = await verifySheetMarks(allNotFound);
+            if (finalCheck.allOk) {
                 sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
-                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach kurzer Prüfung).", false);
+                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach Prüfung).", false);
                 await sleep(1200);
                 return;
             }
+            var stillMissing = finalCheck.missing || allNotFound;
             var retryEntries = [];
             for (var ri = 0; ri < entries.length; ri++) {
                 var eSid = String((entries[ri] && entries[ri].stockId) || "").toUpperCase().replace(/\s+/g, "");
@@ -532,6 +605,17 @@
         }
         if (ci < remaining.length) {
             sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(remaining.slice(ci)));
+        }
+        if (!hardFail && !abortMission) {
+            showCustomPopup("ARASAKA SYNC", "Schlussprüfung aller Haken...", false);
+            var allIds = chunkStockIds(entries);
+            var allCheck = await verifySheetMarks(allIds);
+            if (allCheck.allOk) {
+                sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
+                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach Prüfung).", false);
+                await sleep(1200);
+                return;
+            }
         }
         dbg("markSheetBatchHudWarn", "syncStatus", syncStatus);
         showCustomPopup("ARASAKA WARNUNG", "Stapel fertig, aber die Tagesliste konnte nicht vollständig bestätigt werden. Konsole (F12) für Details.", false);
