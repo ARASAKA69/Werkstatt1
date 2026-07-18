@@ -1227,6 +1227,126 @@ function getActiveUserEmail_() {
   }
 }
 
+var WMS_STOCK_LOCK_TTL_SEC = 60;
+var WMS_STOCK_LOCK_STALE_MS = 45000;
+var WMS_STOCK_LOCK_PREFIX = "wmsLock:";
+
+function stockEditLockKey_(stockId) {
+  return WMS_STOCK_LOCK_PREFIX + normalizeStockId(stockId);
+}
+
+function parseStockEditLock_(raw) {
+  var s = String(raw || "");
+  if (!s) return null;
+  var pipe = s.indexOf("|");
+  if (pipe < 0) return { email: s, ts: 0 };
+  return {
+    email: s.substring(0, pipe),
+    ts: parseInt(s.substring(pipe + 1), 10) || 0
+  };
+}
+
+function encodeStockEditLock_(email) {
+  return String(email || "unbekannt") + "|" + Date.now();
+}
+
+function isStockEditLockStale_(existing) {
+  if (!existing) return true;
+  if (!existing.ts) return true;
+  return (Date.now() - existing.ts) > WMS_STOCK_LOCK_STALE_MS;
+}
+
+function claimStockEditLock(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var email = getActiveUserEmail_();
+    var cache = CacheService.getScriptCache();
+    var key = stockEditLockKey_(stockId);
+    var existing = parseStockEditLock_(cache.get(key));
+    if (existing && existing.email && existing.email !== email && !isStockEditLockStale_(existing)) {
+      return { success: true, occupied: true, email: existing.email, stockId: stockId };
+    }
+    cache.put(key, encodeStockEditLock_(email), WMS_STOCK_LOCK_TTL_SEC);
+    return { success: true, occupied: false, email: email, stockId: stockId };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function heartbeatStockEditLock(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var email = getActiveUserEmail_();
+    var cache = CacheService.getScriptCache();
+    var key = stockEditLockKey_(stockId);
+    var existing = parseStockEditLock_(cache.get(key));
+    if (existing && existing.email && existing.email !== email && !isStockEditLockStale_(existing)) {
+      return { success: true, occupied: true, email: existing.email, stockId: stockId };
+    }
+    cache.put(key, encodeStockEditLock_(email), WMS_STOCK_LOCK_TTL_SEC);
+    return { success: true, occupied: false, email: email, stockId: stockId };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function releaseStockEditLock(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var email = getActiveUserEmail_();
+    var cache = CacheService.getScriptCache();
+    var key = stockEditLockKey_(stockId);
+    var existing = parseStockEditLock_(cache.get(key));
+    if (existing && existing.email && existing.email !== email && !isStockEditLockStale_(existing)) {
+      return { success: true, released: false, email: existing.email, stockId: stockId };
+    }
+    cache.remove(key);
+    return { success: true, released: true, stockId: stockId };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function buildConcurrencyConflict_(currentKommentar, currentRegal) {
+  return {
+    success: false,
+    conflict: true,
+    currentKommentar: String(currentKommentar == null ? "" : currentKommentar),
+    currentRegal: String(currentRegal == null ? "" : currentRegal).trim(),
+    message: "Konflikt: Ein Kollege hat Kommentar/Regal bereits geändert. Daten neu geladen – bitte prüfen und erneut speichern."
+  };
+}
+
+function baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal) {
+  if (expectedKommentar === undefined && expectedRegal === undefined) return true;
+  var expC = String(expectedKommentar == null ? "" : expectedKommentar);
+  var expR = String(expectedRegal == null ? "" : expectedRegal).trim();
+  var curC = String(sheetKommentar == null ? "" : sheetKommentar);
+  var curR = String(sheetRegal == null ? "" : sheetRegal).trim();
+  return expC === curC && expR === curR;
+}
+
+function withRefurbDocumentLock_(fn) {
+  var lock = LockService.getDocumentLock();
+  var got = false;
+  try {
+    got = lock.tryLock(15000);
+    if (!got) {
+      return { success: false, message: "Speichern beschäftigt – bitte kurz erneut versuchen" };
+    }
+    return fn();
+  } catch (err) {
+    return { success: false, message: "Fehler: " + (err.message || String(err)) };
+  } finally {
+    if (got) {
+      try { lock.releaseLock(); } catch (e) {}
+    }
+  }
+}
+
 function formatVerlaufTimestamp_(date) {
   return Utilities.formatDate(date || new Date(), "Europe/Berlin", "dd.MM.yyyy HH:mm");
 }
@@ -1639,11 +1759,13 @@ function getRefurbishmentCachePayload() {
     }
   }
 
-  function saveKommentar(stockId, text, action) {
-    try {
+  function saveKommentar(stockId, text, action, expectedKommentar, expectedRegal) {
+    return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       action = String(action || "speichern");
+      text = String(text == null ? "" : text);
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
       var lastRow = Math.max(2, sheet.getLastRow());
       var data = sheet.getRange(1, 2, lastRow, 1).getValues();
 
@@ -1651,6 +1773,10 @@ function getRefurbishmentCachePayload() {
         if (cellMatchesStockId(data[i][0], stockId)) {
           var row = i + 1;
           var oldText = String(sheet.getRange(row, 25).getValue() || "");
+          var sheetRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
+            return buildConcurrencyConflict_(oldText, sheetRegal);
+          }
           sheet.getRange(row, 25).setValue(text);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 25).getValue();
@@ -1661,34 +1787,56 @@ function getRefurbishmentCachePayload() {
           var msg = "Kommentar gespeichert!";
           if (dateResult.updated) msg += " Datum gesetzt!";
           if (!dateResult.success) msg += " " + dateResult.message;
-          return { success: true, message: msg, verlaufEntry: verlaufEntry };
+          return {
+            success: true,
+            message: msg,
+            verlaufEntry: verlaufEntry,
+            savedKommentar: text,
+            savedRegal: sheetRegal
+          };
         }
       }
       return { success: false, message: "Stock-ID nicht gefunden!" };
-    } catch (err) {
-      return { success: false, message: "Fehler: " + err.message };
-    }
+    });
   }
   
-  function einlagern(stockId, regal) {
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
-    var lastRow = Math.max(2, sheet.getLastRow());
-    var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+  function einlagern(stockId, regal, expectedKommentar, expectedRegal) {
+    return withRefurbDocumentLock_(function() {
+      stockId = normalizeStockId(stockId);
+      regal = String(regal || "").trim();
+      if (!stockId) return { success: false, message: "Keine Stock-ID" };
+      if (!regal) return { success: false, message: "Bitte Regal auswählen!" };
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var data = sheet.getRange(1, 2, lastRow, 1).getValues();
 
-    for (var i = 1; i < data.length; i++) {
-      if (cellMatchesStockId(data[i][0], stockId)) {
-        var row = i + 1;
-        sheet.getRange(row, 28).setValue(regal);
-        SpreadsheetApp.flush();
-        var check = sheet.getRange(row, 28).getValue();
-        return (check == regal) ? { success: true, message: "In " + regal + " eingelagert!" } : { success: false, message: "Fehler beim Verifizieren!" };
+      for (var i = 1; i < data.length; i++) {
+        if (cellMatchesStockId(data[i][0], stockId)) {
+          var row = i + 1;
+          var sheetKommentar = String(sheet.getRange(row, 25).getValue() || "");
+          var sheetRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (!baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal)) {
+            return buildConcurrencyConflict_(sheetKommentar, sheetRegal);
+          }
+          sheet.getRange(row, 28).setValue(regal);
+          SpreadsheetApp.flush();
+          var check = sheet.getRange(row, 28).getValue();
+          if (check != regal) return { success: false, message: "Fehler beim Verifizieren!" };
+          return {
+            success: true,
+            message: "In " + regal + " eingelagert!",
+            savedKommentar: sheetKommentar,
+            savedRegal: regal
+          };
+        }
       }
-    }
-    return { success: false, message: "Stock-ID nicht gefunden!" };
+      return { success: false, message: "Stock-ID nicht gefunden!" };
+    });
   }
 
-  function saveKommentarUndRegal(stockId, text, regal) {
-    try {
+  function saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal) {
+    return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       regal = String(regal || "").trim();
       text = String(text || "");
@@ -1705,6 +1853,10 @@ function getRefurbishmentCachePayload() {
         if (cellMatchesStockId(data[i][0], stockId)) {
           var row = i + 1;
           var oldText = String(sheet.getRange(row, 25).getValue() || "");
+          var sheetRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
+            return buildConcurrencyConflict_(oldText, sheetRegal);
+          }
           sheet.getRange(row, 25).setValue(text);
           sheet.getRange(row, 25).setBackground("#ff0000");
           sheet.getRange(row, 26).setValue("Teilweise angeliefert");
@@ -1718,9 +1870,11 @@ function getRefurbishmentCachePayload() {
           if (commentCheck != text || statusCheck !== "Teilweise angeliefert") {
             return { success: false, message: "Fehler beim Verifizieren!" };
           }
+          var finalRegal = regal || sheetRegal;
           if (regal) {
             var regalCheck = String(sheet.getRange(row, 28).getValue() || "").trim();
             if (regalCheck !== regal) return { success: false, message: "Fehler beim Verifizieren!" };
+            finalRegal = regalCheck;
           }
 
           var verlaufAction = regal ? "speichern+regal" : "speichern+status";
@@ -1731,14 +1885,18 @@ function getRefurbishmentCachePayload() {
             : "Kommentar gespeichert! Status auf Teilweise angeliefert gesetzt.";
           if (dateResult.updated) msg += " Datum gesetzt!";
           if (!dateResult.success) msg += " " + dateResult.message;
-          return { success: true, message: msg, verlaufEntry: verlaufEntry };
+          return {
+            success: true,
+            message: msg,
+            verlaufEntry: verlaufEntry,
+            savedKommentar: text,
+            savedRegal: finalRegal
+          };
         }
       }
 
       return { success: false, message: "Stock-ID nicht gefunden!" };
-    } catch (err) {
-      return { success: false, message: "Fehler: " + err.message };
-    }
+    });
   }
 
   function getNachbestellungRegalOverviewEntries() {

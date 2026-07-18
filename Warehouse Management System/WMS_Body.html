@@ -708,6 +708,20 @@
   </div>
 </div>
 
+<div id="stockLockOverlay" class="stock-lock-overlay" aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="stockLockTitle">
+  <div class="stock-lock-card">
+    <button type="button" class="stock-lock-x" id="stockLockDismissBtn" onclick="dismissStockLockBlock()" aria-label="Schließen">&times;</button>
+    <div class="stock-lock-kicker">Auftrag gesperrt</div>
+    <div class="stock-lock-title" id="stockLockTitle">Kollege arbeitet an dieser Stock-ID</div>
+    <div class="stock-lock-stock" id="stockLockStock"></div>
+    <div class="stock-lock-email" id="stockLockEmail"></div>
+    <div class="stock-lock-msg" id="stockLockMsg">Bitte im Lager nachfragen und Infos zusammenlegen. Schließen öffnet die frische Oberfläche für den nächsten Auftrag.</div>
+    <div class="stock-lock-actions">
+      <button type="button" class="stock-lock-btn stock-lock-btn--primary" onclick="dismissStockLockBlock()">Schließen</button>
+    </div>
+  </div>
+</div>
+
 <div id="wmsToastStack" class="wms-toast-stack" aria-live="polite" aria-relevant="additions"></div>
 
 <div class="ai-modal" id="aiChatModal">

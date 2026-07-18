@@ -34,6 +34,14 @@
   var saveKommentarRegalInflight = {};
   var carolMissionInflight = {};
   var shelfSelectIgnoreChange = false;
+  var baselineKommentar = "";
+  var baselineRegal = "";
+  var stockLockHeldId = "";
+  var stockLockBlocked = false;
+  var stockLockBlockedId = "";
+  var stockLockHeartbeatTimer = null;
+  var STOCK_LOCK_HEARTBEAT_MS = 20000;
+  var LS_STOCK_LOCK_HELD = 'wms_stock_lock_held_v1';
 
   var GEMINI_API_KEY = '';
   var GEMINI_MODEL = 'gemini-3.5-flash';
@@ -370,6 +378,10 @@
       setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
       return;
     }
+    if (isStockEditBlocked(currentStock)) {
+      setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+      return;
+    }
     regalScanNbTarget = null;
     openRegalScanOverlay();
   }
@@ -521,6 +533,247 @@
   function dismissWmsToast(btn) {
     var toast = btn && btn.closest ? btn.closest('.wms-toast') : null;
     if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+  }
+
+  function setBaselines(kommentar, regal) {
+    baselineKommentar = String(kommentar == null ? "" : kommentar);
+    baselineRegal = String(regal == null ? "" : regal).trim();
+  }
+
+  function readPersistedStockLock_() {
+    try {
+      return normalizeStockIdJs(localStorage.getItem(LS_STOCK_LOCK_HELD) || '');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function persistStockLockHeld_(stockId) {
+    try {
+      var sid = normalizeStockIdJs(stockId);
+      if (sid) localStorage.setItem(LS_STOCK_LOCK_HELD, sid);
+      else localStorage.removeItem(LS_STOCK_LOCK_HELD);
+    } catch (e) {}
+  }
+
+  function clearPersistedStockLock_(stockId) {
+    try {
+      var sid = normalizeStockIdJs(stockId);
+      var stored = readPersistedStockLock_();
+      if (!sid || !stored || stored === sid) localStorage.removeItem(LS_STOCK_LOCK_HELD);
+    } catch (e) {}
+  }
+
+  function releasePersistedStockLockOnBoot() {
+    var sid = readPersistedStockLock_();
+    if (!sid) return;
+    localStorage.removeItem(LS_STOCK_LOCK_HELD);
+    google.script.run
+      .withSuccessHandler(function() {})
+      .withFailureHandler(function() {})
+      .releaseStockEditLock(sid);
+  }
+
+  function stopStockLockHeartbeat() {
+    if (stockLockHeartbeatTimer) {
+      clearInterval(stockLockHeartbeatTimer);
+      stockLockHeartbeatTimer = null;
+    }
+  }
+
+  function startStockLockHeartbeat(stockId) {
+    stopStockLockHeartbeat();
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid) return;
+    stockLockHeartbeatTimer = setInterval(function() {
+      if (normalizeStockIdJs(currentStock) !== sid || stockLockHeldId !== sid) {
+        stopStockLockHeartbeat();
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function() {})
+        .withFailureHandler(function() {})
+        .heartbeatStockEditLock(sid);
+    }, STOCK_LOCK_HEARTBEAT_MS);
+  }
+
+  function releaseStockEditLockClient(stockId) {
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid) return;
+    if (stockLockHeldId === sid) {
+      stockLockHeldId = "";
+      stopStockLockHeartbeat();
+    }
+    clearPersistedStockLock_(sid);
+    google.script.run
+      .withSuccessHandler(function() {})
+      .withFailureHandler(function() {})
+      .releaseStockEditLock(sid);
+  }
+
+  function releaseStockEditLockOnUnload() {
+    var sid = normalizeStockIdJs(stockLockHeldId || readPersistedStockLock_());
+    if (!sid) return;
+    stockLockHeldId = "";
+    stopStockLockHeartbeat();
+    google.script.run
+      .withSuccessHandler(function() {
+        clearPersistedStockLock_(sid);
+      })
+      .withFailureHandler(function() {})
+      .releaseStockEditLock(sid);
+  }
+
+  function setStockEditInputsBlocked(blocked) {
+    var editor = document.getElementById('editAnlieferung');
+    if (editor) {
+      editor.contentEditable = blocked ? 'false' : 'true';
+      editor.setAttribute('aria-disabled', blocked ? 'true' : 'false');
+    }
+    var sel = document.getElementById('shelfSelect');
+    if (sel) sel.disabled = !!blocked;
+    var shelfTrig = document.getElementById('shelfDdTrigger');
+    if (shelfTrig) {
+      if (blocked) shelfTrig.setAttribute('aria-disabled', 'true');
+      else shelfTrig.removeAttribute('aria-disabled');
+    }
+    var btnCarol = document.getElementById('btnCarol');
+    if (btnCarol && blocked) btnCarol.disabled = true;
+  }
+
+  function hideStockLockBlock() {
+    var el = document.getElementById('stockLockOverlay');
+    if (el) {
+      el.classList.remove('open');
+      el.setAttribute('aria-hidden', 'true');
+    }
+    stockLockBlocked = false;
+    stockLockBlockedId = "";
+    setStockEditInputsBlocked(false);
+  }
+
+  function showStockLockBlock(stockId, email) {
+    var sid = normalizeStockIdJs(stockId);
+    var mail = String(email || 'unbekannt');
+    var el = document.getElementById('stockLockOverlay');
+    var stockEl = document.getElementById('stockLockStock');
+    var emailEl = document.getElementById('stockLockEmail');
+    var msgEl = document.getElementById('stockLockMsg');
+    if (stockEl) stockEl.textContent = sid;
+    if (emailEl) emailEl.textContent = mail;
+    if (msgEl) {
+      msgEl.textContent =
+        'Bitte im Lager nachfragen und Infos zusammenlegen. Mit Schließen öffnest du die frische Oberfläche für den nächsten Auftrag.';
+    }
+    if (el) {
+      el.classList.add('open');
+      el.setAttribute('aria-hidden', 'false');
+    }
+    stockLockBlocked = true;
+    stockLockBlockedId = sid;
+    stockLockHeldId = "";
+    stopStockLockHeartbeat();
+    setHudBusy(false);
+    toggleUI(false);
+    setStockEditInputsBlocked(true);
+    try {
+      var ae = document.activeElement;
+      if (ae && typeof ae.blur === 'function' && ae !== document.body) ae.blur();
+    } catch (e) {}
+    setStatus(
+      '⚠️ Kollege ' + mail + ' arbeitet gerade an ' + sid + ' – Dialog schließen für nächsten Auftrag.',
+      '#F27420'
+    );
+  }
+
+  function dismissStockLockBlock() {
+    hideStockLockBlock();
+    resetWmsHudForNextOrder('Bereit für nächsten Auftrag.');
+    var search = document.getElementById('searchInput');
+    if (search) {
+      try { search.focus(); } catch (e) {}
+    }
+  }
+
+  function isStockEditBlocked(stockId) {
+    var sid = normalizeStockIdJs(stockId || currentStock);
+    return !!(stockLockBlocked && sid && stockLockBlockedId === sid);
+  }
+
+  function claimStockEditLockForCurrent(stockId) {
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid) return;
+    var prev = stockLockHeldId;
+    if (prev && prev !== sid) {
+      releaseStockEditLockClient(prev);
+    }
+    google.script.run.withSuccessHandler(function(res) {
+      if (normalizeStockIdJs(currentStock) !== sid) return;
+      if (!res || !res.success) return;
+      if (res.occupied) {
+        showStockLockBlock(sid, res.email);
+        return;
+      }
+      hideStockLockBlock();
+      stockLockHeldId = sid;
+      persistStockLockHeld_(sid);
+      startStockLockHeartbeat(sid);
+      toggleUI(true);
+      setStockEditInputsBlocked(false);
+    }).withFailureHandler(function() {
+    }).claimStockEditLock(sid);
+  }
+
+  function applyShelfUiFromRegal(regalVal) {
+    var currentRegal = String(regalVal || "").trim();
+    var sel = document.getElementById("shelfSelect");
+    if (!sel) return;
+    shelfSelectIgnoreChange = true;
+    sel.dataset.serverRegal = currentRegal;
+    sel.innerHTML = "";
+    var allShelves = allRegalShelfList();
+    currentShelves = allShelves.map(function(name) { return { name: name }; });
+    if (isRegalTagesliste(currentRegal)) {
+      sel.innerHTML += '<option value="Tagesliste" selected>Tagesliste</option>';
+    } else if (!currentRegal) {
+      sel.innerHTML += '<option value="" selected>-- REGAL WÄHLEN --</option>';
+    } else if (allShelves.indexOf(currentRegal) === -1) {
+      sel.innerHTML += '<option value="' + currentRegal + '" selected>' + currentRegal + "</option>";
+    }
+    allShelves.forEach(function(name) {
+      var selAttr = name === currentRegal ? " selected" : "";
+      sel.innerHTML += '<option value="' + name + '"' + selAttr + ">" + name + "</option>";
+    });
+    applyTageslisteShelfUi(currentRegal);
+    shelfSelectIgnoreChange = false;
+    var pill = document.getElementById("currentShelfLabel");
+    if (pill) {
+      if (isRegalTagesliste(currentRegal)) {
+        pill.innerText = "";
+      } else {
+        pill.innerText = "Aktuell: " + (currentRegal || "LEER");
+      }
+    }
+  }
+
+  function handleSaveConcurrencyConflict(res, stockId) {
+    var kommentar = String(res && res.currentKommentar != null ? res.currentKommentar : "");
+    var regal = String(res && res.currentRegal != null ? res.currentRegal : "").trim();
+    var sid = normalizeStockIdJs(stockId || currentStock);
+    setBaselines(kommentar, regal);
+    if (normalizeStockIdJs(currentStock) === sid) {
+      setCommentText(kommentar);
+      applyShelfUiFromRegal(regal);
+    }
+    patchRefurbCacheKommentarRegal(sid, kommentar, regal);
+    var msg = (res && res.message) ||
+      "Konflikt: Daten von Kollegen neu geladen – bitte prüfen, eigenen Kommentar ergänzen, erneut speichern.";
+    setStatus("⚠️ " + msg, "#F27420");
+    showStickyToast(
+      "err",
+      "⚠️ Konflikt — " + sid,
+      msg
+    );
   }
 
   function patchRefurbCacheKommentarRegal(stockId, text, regal) {
@@ -4782,12 +5035,19 @@
   }
 
   function resetWmsHudForNextOrder(statusMsg) {
+    if (stockLockHeldId) {
+      releaseStockEditLockClient(stockLockHeldId);
+    } else {
+      stopStockLockHeartbeat();
+    }
+    hideStockLockBlock();
     currentStock = "";
     currentCarolUrl = "";
     currentSchaedenText = "";
     currentBestellungText = "";
     currentMarkeModel = "";
     currentShelves = [];
+    setBaselines("", "");
     setCommentText("");
     var infoSchaeden = document.getElementById('infoSchaeden');
     var infoBestellung = document.getElementById('infoBestellung');
@@ -4831,7 +5091,15 @@
 
   function applyFetchWmsResult(res, id) {
     if (res.success) {
+      var prevStock = normalizeStockIdJs(currentStock);
       currentStock = normalizeStockInput(id);
+      var loadedStock = normalizeStockIdJs(currentStock);
+      if (prevStock && prevStock !== loadedStock) {
+        releaseStockEditLockClient(prevStock);
+      }
+      if (stockLockBlocked && stockLockBlockedId !== loadedStock) {
+        hideStockLockBlock();
+      }
       currentCarolUrl = res.carolUrl;
       currentSchaedenText = res.schaeden || '';
       currentBestellungText = res.kommBestellung || '';
@@ -4839,6 +5107,7 @@
 
       setCommentText(res.kommAnlieferung || '');
       var regalVal = (res.regal || '').trim();
+      setBaselines(res.kommAnlieferung || '', regalVal);
       if (isRegalTagesliste(regalVal)) {
         document.getElementById('currentShelfLabel').innerText = '';
       } else {
@@ -4925,6 +5194,7 @@
 
       updatePzContext(id, res.kommBestellung);
       maybeShowNbChooser(id);
+      claimStockEditLockForCurrent(loadedStock);
     } else {
       updateB2a1KandidatBadgeFromSchaeden('');
       hidePzContext();
@@ -5062,14 +5332,25 @@
 
   function saveKomm() {
     var text = getCommentText();
+    var stockId = normalizeStockIdJs(currentStock);
+    if (isStockEditBlocked(stockId)) {
+      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    }
+    var expectedKommentar = baselineKommentar;
+    var expectedRegal = baselineRegal;
     setStatus("Speichere Kommentar...", "#F27420");
     toggleUI(false);
     setHudBusy(true, 'Speichere Kommentar…');
     google.script.run.withSuccessHandler(function(res) {
-      setStatus(res.success ? "✅ " + res.message : "❌ " + res.message, res.success ? "#56d364" : "#f85149");
       setHudBusy(false);
       toggleUI(true);
-      if (res.success) {
+      if (res && res.conflict) {
+        handleSaveConcurrencyConflict(res, stockId);
+        return;
+      }
+      setStatus(res && res.success ? "✅ " + res.message : "❌ " + ((res && res.message) || "Unbekannter Fehler"), res && res.success ? "#56d364" : "#f85149");
+      if (res && res.success) {
+        setBaselines(text, expectedRegal);
         handleVerlaufSaveSuccess(res);
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
@@ -5078,7 +5359,7 @@
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       setHudBusy(false);
       toggleUI(true);
-    }).saveKommentar(currentStock, text);
+    }).saveKommentar(stockId, text, "speichern", expectedKommentar, expectedRegal);
   }
 
   commentEditor.addEventListener('keydown', function(e) {
@@ -5109,7 +5390,12 @@
     var text = getCommentText().trim();
     var regal = String(document.getElementById('shelfSelect').value || '').trim();
     var stockId = normalizeStockIdJs(currentStock);
+    var expectedKommentar = baselineKommentar;
+    var expectedRegal = baselineRegal;
     if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+    if (isStockEditBlocked(stockId)) {
+      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    }
     if (!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
     if (saveKommentarRegalInflight[stockId]) {
       setStatus("⏳ Speichern für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
@@ -5141,13 +5427,24 @@
 
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      if (res && res.conflict) {
+        handleSaveConcurrencyConflict(res, stockId);
+        return;
+      }
       if (res && res.success) {
+        var savedRegal = regal || expectedRegal;
+        if (res.savedRegal != null && String(res.savedRegal).trim() !== "") {
+          savedRegal = String(res.savedRegal).trim();
+        } else if (!regal) {
+          savedRegal = expectedRegal;
+        }
+        setBaselines(text, savedRegal);
         handleVerlaufSaveSuccess(res);
-        patchRefurbCacheKommentarRegal(stockId, text, regal);
-        applyLocalSaveUiIfCurrent(stockId, regal);
+        patchRefurbCacheKommentarRegal(stockId, text, savedRegal);
+        applyLocalSaveUiIfCurrent(stockId, savedRegal);
         if (normalizeStockIdJs(currentStock) === stockId) {
           var selOk = document.getElementById('shelfSelect');
-          if (selOk && regal) selOk.dataset.serverRegal = regal;
+          if (selOk && savedRegal) selOk.dataset.serverRegal = savedRegal;
         }
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
@@ -5167,33 +5464,48 @@
           );
         }
       } else {
+        patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
         var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
         setStatus("❌ " + errMsg, "#f85149");
         showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg);
       }
     }).withFailureHandler(function(err) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
       setStatus("❌ Fehler: " + failMsg, "#f85149");
       showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg);
-    }).saveKommentarUndRegal(stockId, text, regal);
+    }).saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal);
   }
 
   function saveRegal() {
     var regal = document.getElementById('shelfSelect').value;
+    var stockId = normalizeStockIdJs(currentStock);
+    var expectedKommentar = baselineKommentar;
+    var expectedRegal = baselineRegal;
+    if (isStockEditBlocked(stockId)) {
+      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    }
     if(!regal) return setStatus("❌ Bitte Regal auswählen!", "#f85149");
     setStatus("Buche Regal...", "#F27420");
     toggleUI(false);
     setHudBusy(true, 'Buche Regal…');
     google.script.run.withSuccessHandler(function(res) {
-      if(res.success) {
+      if (res && res.conflict) {
+        setHudBusy(false);
+        toggleUI(true);
+        handleSaveConcurrencyConflict(res, stockId);
+        return;
+      }
+      if(res && res.success) {
+        setBaselines(expectedKommentar, regal);
         setStatus("✅ " + res.message, "#56d364");
         document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
         document.getElementById('searchInput').value = currentStock;
         setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
         loadRefurbishmentCache(true, function() { loadData(); });
       } else {
-        setStatus("❌ " + res.message, "#f85149");
+        setStatus("❌ " + ((res && res.message) || "Unbekannter Fehler"), "#f85149");
         setHudBusy(false);
         toggleUI(true);
       }
@@ -5201,7 +5513,7 @@
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       setHudBusy(false);
       toggleUI(true);
-    }).einlagern(currentStock, regal);
+    }).einlagern(stockId, regal, expectedKommentar, expectedRegal);
   }
 
   function sendDymoPrint(options) {
@@ -5448,6 +5760,9 @@
     if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
     var stockId = normalizeStockIdJs(currentStock);
     if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+    if (isStockEditBlocked(stockId)) {
+      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    }
     if (carolMissionInflight[stockId]) {
       setStatus("⏳ Carol für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
       return;
@@ -5482,10 +5797,21 @@
 
     carolMissionInflight[stockId] = { token: token, timerId: timerId };
 
+    var carolExpectedKommentar = baselineKommentar;
+    var carolExpectedRegal = baselineRegal;
+
     google.script.run
       .withSuccessHandler(function(res) {
         var job = carolMissionInflight[stockId];
         if (!job || job.token !== token) return;
+        if (res && res.conflict) {
+          finishCarolMissionJob(stockId, token);
+          if (normalizeStockIdJs(currentStock) === stockId) {
+            document.getElementById('btnCarol').disabled = false;
+          }
+          handleSaveConcurrencyConflict(res, stockId);
+          return;
+        }
         if(!res || !res.success) {
           finishCarolMissionJob(stockId, token);
           if (normalizeStockIdJs(currentStock) === stockId) {
@@ -5496,6 +5822,7 @@
           showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg);
           return;
         }
+        setBaselines(text, carolExpectedRegal);
         handleVerlaufSaveSuccess(res);
         setStatus("🚀 Setze Tagesliste im Hintergrund…", "#9B59B6");
 
@@ -5544,7 +5871,7 @@
         setStatus("❌ Kommentarfehler: " + failMsg, "#f85149");
         showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
       })
-      .saveKommentar(stockId, text, "carol");
+      .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal);
   }
 
   function closeWmsMainMenu() {
@@ -5589,8 +5916,22 @@
       loadRefurbishmentCache(true);
       loadKommentarVerlaufCache(true);
       loadNbChooserCache(true);
+      if (stockLockHeldId && normalizeStockIdJs(currentStock) === stockLockHeldId) {
+        google.script.run
+          .withSuccessHandler(function() {})
+          .withFailureHandler(function() {})
+          .heartbeatStockEditLock(stockLockHeldId);
+      }
     }
   });
+
+  releasePersistedStockLockOnBoot();
+
+  function onStockLockPageUnload_() {
+    releaseStockEditLockOnUnload();
+  }
+  window.addEventListener('pagehide', onStockLockPageUnload_);
+  window.addEventListener('beforeunload', onStockLockPageUnload_);
 
   (function initWmsStandaloneExtras() {
     if (!document.body || !document.body.classList.contains('wms-standalone')) return;
