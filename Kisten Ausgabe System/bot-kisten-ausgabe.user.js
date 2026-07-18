@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.51
+// @version      1.52
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,8 +17,8 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.51";
-    const ARASAKA_BRIDGE_VERSION = "16";
+    const ARASAKA_BOT_VERSION = "1.52";
+    const ARASAKA_BRIDGE_VERSION = "17";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
     const ARASAKA_MARK_SHEET_CHUNK = 10;
@@ -241,6 +241,51 @@
         if (/(?:^|[\s_-])na(?:\s*\(\d+\))?\.[a-z0-9]{2,5}$/i.test(base)) return 'nachbestellung';
         if (/ na\b/.test(base)) return 'nachbestellung';
         return 'ausgabe';
+    }
+
+    function fileAlreadyInDoneFolder(fileInfo) {
+        return !!(fileInfo && (fileInfo.alreadyInDoneFolder === true || fileInfo.alreadyInDoneFolder === 'true'));
+    }
+
+    function fileSkipUploadAlreadyDone(fileInfo) {
+        if (fileAlreadyInDoneFolder(fileInfo)) return true;
+        const mt = fileInfo && fileInfo.modifiedTime != null ? Number(fileInfo.modifiedTime) : 0;
+        const stored = fileInfo && fileInfo.lastUploadedStored != null ? Number(fileInfo.lastUploadedStored) : null;
+        if (stored != null && (mt === stored || mt < stored)) return true;
+        return false;
+    }
+
+    async function clearOffenFilesAsAlreadyDone(stockId, fileList) {
+        for (let i = 0; i < fileList.length; i++) {
+            if (abortMission) return false;
+            let fileInfo = fileList[i];
+            let isRetoure = classifyUploadFile(fileInfo.name) === 'retoure';
+            showCustomPopup("ARASAKA SKIP", "Schon hochgeladen: " + fileInfo.name + " — kein Upload, nur Haken.", false);
+            if (!await moveFileOrStop(fileInfo, isRetoure, {
+                toDuplicate: true,
+                logKind: 'skip_already_in_erledigt',
+                logStockId: stockId,
+                logFileName: fileInfo.name,
+                logDetail: fileAlreadyInDoneFolder(fileInfo) ? 'already_in_done_folder' : 'stored_upload_mtime'
+            })) return false;
+        }
+        return true;
+    }
+
+    async function finishStockCheckmarkOnly(stockId, rawFiles, files, dupByName, skipAlreadyDoneCount) {
+        let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
+        pushTageslistePending({
+            stockId: stockId,
+            skippedDup: String(dupByName.length),
+            skippedComment: "0",
+            skippedFilenamePage: String(skipAlreadyDoneCount),
+            batchFiles: String(rawFiles.length),
+            uniqueFiles: String(files.length)
+        });
+        dbg('tageslistePending', 'queuedCheckmarkOnly', stockId, 'count', readTageslistePending().length, 'skipAlreadyDone', skipAlreadyDoneCount);
+        showCustomPopup("ARASAKA", "Stock " + stockId + " schon hochgeladen — nur Haken am Stapelende.", false);
+        await sleep(500);
+        continueWithNextStock(idx + 1);
     }
 
     function dedupeFilesByName(files) {
@@ -669,6 +714,35 @@
         }
 
         let stockId = keys[idx].toUpperCase();
+        let allDataEarly = {};
+        try { allDataEarly = JSON.parse(sessionStorage.getItem('arasaka_batch_data') || '{}'); } catch (eEarly) { allDataEarly = {}; }
+        let rawFilesEarly = allDataEarly[stockId] || allDataEarly[keys[idx]] || [];
+        if (Array.isArray(rawFilesEarly) && rawFilesEarly.length > 0) {
+            let dedupedEarly = dedupeFilesByName(rawFilesEarly);
+            let uniqueEarly = dedupedEarly.unique;
+            let allAlreadyDone = uniqueEarly.length > 0 && uniqueEarly.every(function(f) { return fileSkipUploadAlreadyDone(f); });
+            if (allAlreadyDone) {
+                dbg('processNextStock', 'checkmarkOnly', stockId, 'files', uniqueEarly.length);
+                showCustomPopup("ARASAKA SKIP", "Stock " + stockId + ": Bilder schon hochgeladen — überspringe Upload, nur Haken.", false);
+                for (let d = 0; d < dedupedEarly.duplicates.length; d++) {
+                    if (abortMission) return;
+                    let dup = dedupedEarly.duplicates[d];
+                    let isRetoureDup = classifyUploadFile(dup.file.name) === 'retoure';
+                    if (!await moveFileOrStop(dup.file, isRetoureDup, {
+                        toDuplicate: true,
+                        logKind: 'skip_duplicate_filename',
+                        logStockId: stockId,
+                        logFileName: dup.file.name,
+                        logDetail: (dup.reason || 'same_name') + '_vs_' + dup.firstName
+                    })) return;
+                }
+                if (!await clearOffenFilesAsAlreadyDone(stockId, uniqueEarly)) return;
+                if (abortMission) return;
+                await finishStockCheckmarkOnly(stockId, rawFilesEarly, uniqueEarly, dedupedEarly.duplicates, uniqueEarly.length);
+                return;
+            }
+        }
+
         showCustomPopup("ARASAKA LÄUFT", `Suche nach Stock ID: ${stockId}...`, false);
 
         let searchInput = await findSearchBar();
@@ -828,6 +902,20 @@
 
             const mt = fileInfo.modifiedTime != null ? Number(fileInfo.modifiedTime) : 0;
             const stored = fileInfo.lastUploadedStored != null ? Number(fileInfo.lastUploadedStored) : null;
+
+            if (fileAlreadyInDoneFolder(fileInfo)) {
+                skipFilenameOnPageCount++;
+                dbg('skipAlreadyInDoneFolder', fileInfo.name, 'stockId', stockId);
+                showCustomPopup("ARASAKA SKIP", "Schon in Erledigt/Retoure: " + fileInfo.name + " — kein Upload.", false);
+                if (!await moveFileOrStop(fileInfo, isRetoure, {
+                    toDuplicate: true,
+                    logKind: 'skip_already_in_erledigt',
+                    logStockId: stockId,
+                    logFileName: fileInfo.name,
+                    logDetail: currentComment
+                })) return;
+                continue;
+            }
 
             if (stored != null && mt === stored) {
                 skipFilenameOnPageCount++;
