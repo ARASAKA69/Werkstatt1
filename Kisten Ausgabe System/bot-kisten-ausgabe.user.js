@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.53
+// @version      1.5
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,11 +17,10 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.53";
-    const ARASAKA_BRIDGE_VERSION = "18";
+    const ARASAKA_BOT_VERSION = "1.5";
+    const ARASAKA_BRIDGE_VERSION = "16";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
-    const ARASAKA_MARK_SHEET_CHUNK = 5;
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -243,51 +242,6 @@
         return 'ausgabe';
     }
 
-    function fileAlreadyInDoneFolder(fileInfo) {
-        return !!(fileInfo && (fileInfo.alreadyInDoneFolder === true || fileInfo.alreadyInDoneFolder === 'true'));
-    }
-
-    function fileSkipUploadAlreadyDone(fileInfo) {
-        if (fileAlreadyInDoneFolder(fileInfo)) return true;
-        const mt = fileInfo && fileInfo.modifiedTime != null ? Number(fileInfo.modifiedTime) : 0;
-        const stored = fileInfo && fileInfo.lastUploadedStored != null ? Number(fileInfo.lastUploadedStored) : null;
-        if (stored != null && (mt === stored || mt < stored)) return true;
-        return false;
-    }
-
-    async function clearOffenFilesAsAlreadyDone(stockId, fileList) {
-        for (let i = 0; i < fileList.length; i++) {
-            if (abortMission) return false;
-            let fileInfo = fileList[i];
-            let isRetoure = classifyUploadFile(fileInfo.name) === 'retoure';
-            showCustomPopup("ARASAKA SKIP", "Schon hochgeladen: " + fileInfo.name + " — kein Upload, nur Haken.", false);
-            if (!await moveFileOrStop(fileInfo, isRetoure, {
-                toDuplicate: true,
-                logKind: 'skip_already_in_erledigt',
-                logStockId: stockId,
-                logFileName: fileInfo.name,
-                logDetail: fileAlreadyInDoneFolder(fileInfo) ? 'already_in_done_folder' : 'stored_upload_mtime'
-            })) return false;
-        }
-        return true;
-    }
-
-    async function finishStockCheckmarkOnly(stockId, rawFiles, files, dupByName, skipAlreadyDoneCount) {
-        let idx = parseInt(sessionStorage.getItem('arasaka_batch_current_idx') || "0");
-        pushTageslistePending({
-            stockId: stockId,
-            skippedDup: String(dupByName.length),
-            skippedComment: "0",
-            skippedFilenamePage: String(skipAlreadyDoneCount),
-            batchFiles: String(rawFiles.length),
-            uniqueFiles: String(files.length)
-        });
-        dbg('tageslistePending', 'queuedCheckmarkOnly', stockId, 'count', readTageslistePending().length, 'skipAlreadyDone', skipAlreadyDoneCount);
-        showCustomPopup("ARASAKA", "Stock " + stockId + " schon hochgeladen — nur Haken am Stapelende.", false);
-        await sleep(500);
-        continueWithNextStock(idx + 1);
-    }
-
     function dedupeFilesByName(files) {
         const byKey = new Map();
         const duplicates = [];
@@ -365,55 +319,6 @@
         sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(pend));
     }
 
-    function chunkStockIds(entries) {
-        var ids = [];
-        for (var i = 0; i < entries.length; i++) {
-            var sid = String((entries[i] && entries[i].stockId) || "").toUpperCase().replace(/\s+/g, "");
-            if (sid) ids.push(sid);
-        }
-        return ids;
-    }
-
-    async function verifySheetMarks(stockIds) {
-        if (!stockIds.length) return { allOk: true, ok: [], missing: [] };
-        var checkRes = await bridgePostJson({
-            action: "checkSheetMarkBatch",
-            stockIdsJson: JSON.stringify(stockIds)
-        }, 45000);
-        if (checkRes && checkRes.status >= 200 && checkRes.status < 300) {
-            var crt = String(checkRes.responseText || "").trim();
-            dbg("checkSheetMarkBatch", "http", checkRes.status, "body", crt.slice(0, 400));
-            if (crt.charAt(0) === "{") {
-                try {
-                    var parsedCheck = JSON.parse(crt);
-                    if (parsedCheck && !parsedCheck.error) {
-                        return {
-                            allOk: parsedCheck.allOk === true,
-                            ok: parsedCheck.ok || [],
-                            missing: parsedCheck.missing || []
-                        };
-                    }
-                } catch (eC) {}
-            }
-            if (crt === "Invalid Action") {
-                dbg("checkSheetMarkBatch", "fallbackSingle");
-            }
-        } else {
-            dbg("checkSheetMarkBatch", "noResponse");
-        }
-        var ok = [];
-        var missing = [];
-        for (var vi = 0; vi < stockIds.length; vi++) {
-            if (abortMission) break;
-            var sid = stockIds[vi];
-            showCustomPopup("ARASAKA SYNC", "Prüfe Haken " + (vi + 1) + "/" + stockIds.length + ": " + sid, false);
-            var one = await bridgePostJson({ action: "checkSheetMark", stockId: sid }, 20000);
-            if (one && String(one.responseText || "").trim() === "OK") ok.push(sid);
-            else missing.push(sid);
-        }
-        return { allOk: missing.length === 0, ok: ok, missing: missing };
-    }
-
     async function markSheetSequential(entries) {
         var notFoundBatch = [];
         var markedCountB = 0;
@@ -422,95 +327,22 @@
             var ent = entries[si] || {};
             var stockToMarkB = String(ent.stockId || "").toUpperCase().replace(/\s+/g, "");
             if (!stockToMarkB) continue;
-            showCustomPopup("ARASAKA SYNC", "Einzel-Haken " + (si + 1) + "/" + entries.length + ": " + stockToMarkB, false);
             var res = await bridgePostJson({
                 action: "markSheet",
-                stockId: ent.stockId
-            }, 25000);
+                stockId: ent.stockId,
+                skippedDup: ent.skippedDup,
+                skippedComment: ent.skippedComment,
+                skippedFilenamePage: ent.skippedFilenamePage,
+                batchFiles: ent.batchFiles,
+                uniqueFiles: ent.uniqueFiles,
+                skipDupDetail: ent.skipDupDetail,
+                skipCommentDetail: ent.skipCommentDetail
+            }, 30000);
             var body = res && res.status >= 200 && res.status < 300 ? String(res.responseText || "").trim() : "";
             if (body === "OK") markedCountB++;
             else notFoundBatch.push(stockToMarkB);
         }
         return { allOk: notFoundBatch.length === 0, notFound: notFoundBatch, marked: markedCountB, total: entries.length };
-    }
-
-    function parseMarkSheetBatchBody(mrt, parsedHint) {
-        var syncStatus = "HTTP_ERROR";
-        var parsed = parsedHint || null;
-        if (bridgeBodyLooksLikeHtml(mrt)) {
-            syncStatus = "HTML_FEHLER";
-            dbg("markSheetBatch", "appsScriptHtml", bridgeHtmlErrorHint(mrt));
-            return { syncStatus: syncStatus, parsed: parsed };
-        }
-        if (mrt.charAt(0) === "{") {
-            try {
-                parsed = parsed || JSON.parse(mrt);
-                if (parsed && parsed.allOk === true) syncStatus = "OK";
-                else if (parsed && parsed.error === "SHEET_NOT_FOUND") syncStatus = "SHEET_NOT_FOUND";
-                else if (parsed && parsed.notFound && parsed.notFound.length) syncStatus = "PARTIAL";
-                else if (parsed && parsed.error) syncStatus = "ERROR_" + String(parsed.error);
-                else syncStatus = "PARTIAL";
-            } catch (eJ) {
-                syncStatus = "JSON_PARSE";
-            }
-        } else if (mrt) {
-            syncStatus = mrt;
-        }
-        return { syncStatus: syncStatus, parsed: parsed };
-    }
-
-    async function recoverChunkAfterTimeout(chunk, chunkNo) {
-        var stockIds = chunkStockIds(chunk);
-        showCustomPopup("ARASAKA SYNC", "Paket " + chunkNo + " Timeout — prüfe ob Haken schon gesetzt...", false);
-        var verified = await verifySheetMarks(stockIds);
-        dbg("markSheetBatch", "timeoutVerify", "chunkNo", chunkNo, "ok", (verified.ok || []).length, "missing", (verified.missing || []).length);
-        if (verified.allOk) {
-            return { syncStatus: "OK", parsed: { allOk: true, notFound: [], marked: stockIds.length, total: chunk.length } };
-        }
-        var needMark = [];
-        for (var i = 0; i < chunk.length; i++) {
-            var sid = String((chunk[i] && chunk[i].stockId) || "").toUpperCase().replace(/\s+/g, "");
-            if (sid && verified.missing.indexOf(sid) !== -1) needMark.push(chunk[i]);
-        }
-        if (!needMark.length) {
-            return { syncStatus: "OK", parsed: { allOk: true, notFound: [], marked: stockIds.length, total: chunk.length } };
-        }
-        showCustomPopup("ARASAKA SYNC", "Setze fehlende Haken einzeln (" + needMark.length + ")...", false);
-        var seq = await markSheetSequential(needMark);
-        var stillMissing = seq.notFound || [];
-        if (stillMissing.length) {
-            var recheck = await verifySheetMarks(stillMissing);
-            stillMissing = recheck.missing || stillMissing;
-        }
-        return {
-            syncStatus: stillMissing.length ? "PARTIAL" : "OK",
-            parsed: {
-                allOk: stillMissing.length === 0,
-                notFound: stillMissing,
-                marked: stockIds.length - stillMissing.length,
-                total: chunk.length
-            }
-        };
-    }
-
-    async function markSheetBatchOnce(chunk, chunkNo) {
-        var markRes = await bridgePostJson({
-            action: "markSheetBatch",
-            entriesJson: JSON.stringify(chunk)
-        }, 45000);
-        if (!markRes) {
-            dbg("markSheetBatch", "noResponse", "chunkSize", chunk.length);
-            return await recoverChunkAfterTimeout(chunk, chunkNo);
-        }
-        var mrt = String(markRes.responseText || "").trim();
-        dbg("markSheetBatch", "http", markRes.status, "chunkSize", chunk.length, "body", mrt.slice(0, 400));
-        var parsed = null;
-        if (mrt === "Invalid Action" && chunk.length > 0 && markRes.status >= 200 && markRes.status < 300) {
-            dbg("markSheetBatch", "fallbackMarkSheet", "chunkSize", chunk.length);
-            parsed = await markSheetSequential(chunk);
-            mrt = JSON.stringify(parsed);
-        }
-        return parseMarkSheetBatchBody(mrt, parsed);
     }
 
     async function flushTageslisteBatchIfAny() {
@@ -520,102 +352,74 @@
             return;
         }
         if (abortMission) return;
-        var chunkSize = ARASAKA_MARK_SHEET_CHUNK;
-        var totalChunks = Math.ceil(entries.length / chunkSize);
-        dbg("markSheetBatch", "start", "total", entries.length, "chunkSize", chunkSize, "chunks", totalChunks);
-        showCustomPopup("ARASAKA SYNC", "Setze Haken in der Tagesliste für " + entries.length + " Stock-ID(s) in " + totalChunks + " Paket(en)...", false);
+        sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
+        showCustomPopup("ARASAKA SYNC", "Setze Haken in der Tagesliste für " + entries.length + " Stock-ID(s)...", false);
         var syncDone = false;
         var warningTimer = setTimeout(function() {
             if (!syncDone && !abortMission) {
-                showCustomPopup("ARASAKA WARTET", "Noch am Setzen der Haken...\nBitte warten, UI aktualisiert sich gleich wieder.", false);
+                showCustomPopup("ARASAKA WARTET", "Warte noch kurz...\nGoogle braucht gerade etwas länger für die Haken. Gleich fertig!", false);
             }
-        }, 12000);
-        var allNotFound = [];
-        var totalMarked = 0;
-        var remaining = entries.slice();
-        var hardFail = false;
-        var lastSyncStatus = "OK";
-        var ci = 0;
-        try {
-            for (; ci < remaining.length; ) {
-                if (abortMission) break;
-                var chunk = remaining.slice(ci, ci + chunkSize);
-                var chunkNo = Math.floor(ci / chunkSize) + 1;
-                showCustomPopup("ARASAKA SYNC", "Tagesliste Haken: Paket " + chunkNo + "/" + totalChunks + " (" + Math.min(ci + chunk.length, entries.length) + "/" + entries.length + ")...", false);
-                var result = await markSheetBatchOnce(chunk, chunkNo);
-                if (result.syncStatus === "HTML_FEHLER" || result.syncStatus === "JSON_PARSE" || String(result.syncStatus).indexOf("ERROR_") === 0) {
-                    dbg("markSheetBatch", "chunkRecover", "chunkNo", chunkNo, "status", result.syncStatus);
-                    result = await recoverChunkAfterTimeout(chunk, chunkNo);
-                }
-                lastSyncStatus = result.syncStatus;
-                if (result.syncStatus === "SHEET_NOT_FOUND") {
-                    hardFail = true;
-                    break;
-                }
-                if (!result.parsed) {
-                    hardFail = true;
-                    break;
-                }
-                totalMarked += Number(result.parsed.marked) || 0;
-                if (result.parsed.notFound && result.parsed.notFound.length) {
-                    for (var nf = 0; nf < result.parsed.notFound.length; nf++) allNotFound.push(result.parsed.notFound[nf]);
-                }
-                ci += chunkSize;
-                var left = remaining.slice(ci);
-                if (left.length) sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(left));
-                else sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
-                if (ci < remaining.length) await sleep(250);
+        }, 5000);
+        var markRes = await bridgePostJson({
+            action: "markSheetBatch",
+            entriesJson: JSON.stringify(entries)
+        }, 90000);
+        var parsed = null;
+        var syncStatus = "HTTP_ERROR";
+        if (markRes) {
+            var mrt = String(markRes.responseText || "").trim();
+            dbg("markSheetBatch", "http", markRes.status, "body", mrt.slice(0, 400));
+            if (mrt === "Invalid Action" && entries.length > 0 && markRes.status >= 200 && markRes.status < 300) {
+                dbg("markSheetBatch", "fallbackMarkSheet");
+                parsed = await markSheetSequential(entries);
+                mrt = JSON.stringify(parsed);
             }
-        } finally {
-            syncDone = true;
-            clearTimeout(warningTimer);
+            if (bridgeBodyLooksLikeHtml(mrt)) {
+                syncStatus = "HTML_FEHLER";
+                dbg("markSheetBatch", "appsScriptHtml", bridgeHtmlErrorHint(mrt));
+            } else if (mrt.charAt(0) === "{") {
+                try {
+                    parsed = parsed || JSON.parse(mrt);
+                    if (parsed && parsed.allOk === true) syncStatus = "OK";
+                    else if (parsed && parsed.error === "SHEET_NOT_FOUND") syncStatus = "SHEET_NOT_FOUND";
+                    else if (parsed && parsed.notFound && parsed.notFound.length) syncStatus = "PARTIAL";
+                    else if (parsed && parsed.error) syncStatus = "ERROR_" + String(parsed.error);
+                    else syncStatus = "PARTIAL";
+                } catch (eJ) {
+                    syncStatus = "JSON_PARSE";
+                }
+            } else {
+                syncStatus = mrt;
+            }
+        } else {
+            dbg("markSheetBatch", "noResponse");
         }
-        var parsed = { allOk: !hardFail && allNotFound.length === 0 && !abortMission, notFound: allNotFound, marked: totalMarked, total: entries.length };
-        var syncStatus = hardFail ? lastSyncStatus : (parsed.allOk ? "OK" : "PARTIAL");
-        if (abortMission && readTageslistePending().length === 0 && ci < remaining.length) {
-            sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(remaining.slice(ci)));
-        }
-        dbg("markSheetBatch", "syncStatus", syncStatus, "parsed", parsed, "chunks", totalChunks);
+        syncDone = true;
+        clearTimeout(warningTimer);
+        dbg("markSheetBatch", "syncStatus", syncStatus, "parsed", parsed);
         if (syncStatus === "OK") {
-            sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
             showCustomPopup("ARASAKA", "Tagesliste: alle Haken für diesen Stapel gesetzt.", false);
             await sleep(1200);
             return;
         }
-        if (allNotFound.length) {
-            showCustomPopup("ARASAKA SYNC", "Schlussprüfung für " + allNotFound.length + " offene Haken...", false);
-            var finalCheck = await verifySheetMarks(allNotFound);
-            if (finalCheck.allOk) {
-                sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
-                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach Prüfung).", false);
+        if (syncStatus === "PARTIAL" && parsed && parsed.notFound && parsed.notFound.length) {
+            var stillMissing = [];
+            for (var ni = 0; ni < parsed.notFound.length; ni++) {
+                if (abortMission) break;
+                var sid = parsed.notFound[ni];
+                var checkRes = await bridgePostJson({ action: "checkSheetMark", stockId: sid }, 30000);
+                if (checkRes && String(checkRes.responseText || "").trim() === "OK") continue;
+                stillMissing.push(sid);
+            }
+            if (stillMissing.length === 0) {
+                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach kurzer Prüfung).", false);
                 await sleep(1200);
                 return;
             }
-            var stillMissing = finalCheck.missing || allNotFound;
-            var retryEntries = [];
-            for (var ri = 0; ri < entries.length; ri++) {
-                var eSid = String((entries[ri] && entries[ri].stockId) || "").toUpperCase().replace(/\s+/g, "");
-                if (stillMissing.indexOf(eSid) !== -1) retryEntries.push(entries[ri]);
-            }
-            if (retryEntries.length) sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(retryEntries));
             dbg("markSheetBatchHudWarn", "stillMissing", stillMissing);
             showCustomPopup("ARASAKA WARNUNG", "Stapel fertig, aber für " + stillMissing.length + " Stock-ID(s) fehlt der Haken in der Tagesliste. Konsole (F12) für Details.", false);
             await sleep(3500);
             return;
-        }
-        if (ci < remaining.length) {
-            sessionStorage.setItem(ARASAKA_TAGESLISTE_PENDING_KEY, JSON.stringify(remaining.slice(ci)));
-        }
-        if (!hardFail && !abortMission) {
-            showCustomPopup("ARASAKA SYNC", "Schlussprüfung aller Haken...", false);
-            var allIds = chunkStockIds(entries);
-            var allCheck = await verifySheetMarks(allIds);
-            if (allCheck.allOk) {
-                sessionStorage.removeItem(ARASAKA_TAGESLISTE_PENDING_KEY);
-                showCustomPopup("ARASAKA", "Tagesliste: alle Haken gesetzt (nach Prüfung).", false);
-                await sleep(1200);
-                return;
-            }
         }
         dbg("markSheetBatchHudWarn", "syncStatus", syncStatus);
         showCustomPopup("ARASAKA WARNUNG", "Stapel fertig, aber die Tagesliste konnte nicht vollständig bestätigt werden. Konsole (F12) für Details.", false);
@@ -798,35 +602,6 @@
         }
 
         let stockId = keys[idx].toUpperCase();
-        let allDataEarly = {};
-        try { allDataEarly = JSON.parse(sessionStorage.getItem('arasaka_batch_data') || '{}'); } catch (eEarly) { allDataEarly = {}; }
-        let rawFilesEarly = allDataEarly[stockId] || allDataEarly[keys[idx]] || [];
-        if (Array.isArray(rawFilesEarly) && rawFilesEarly.length > 0) {
-            let dedupedEarly = dedupeFilesByName(rawFilesEarly);
-            let uniqueEarly = dedupedEarly.unique;
-            let allAlreadyDone = uniqueEarly.length > 0 && uniqueEarly.every(function(f) { return fileSkipUploadAlreadyDone(f); });
-            if (allAlreadyDone) {
-                dbg('processNextStock', 'checkmarkOnly', stockId, 'files', uniqueEarly.length);
-                showCustomPopup("ARASAKA SKIP", "Stock " + stockId + ": Bilder schon hochgeladen — überspringe Upload, nur Haken.", false);
-                for (let d = 0; d < dedupedEarly.duplicates.length; d++) {
-                    if (abortMission) return;
-                    let dup = dedupedEarly.duplicates[d];
-                    let isRetoureDup = classifyUploadFile(dup.file.name) === 'retoure';
-                    if (!await moveFileOrStop(dup.file, isRetoureDup, {
-                        toDuplicate: true,
-                        logKind: 'skip_duplicate_filename',
-                        logStockId: stockId,
-                        logFileName: dup.file.name,
-                        logDetail: (dup.reason || 'same_name') + '_vs_' + dup.firstName
-                    })) return;
-                }
-                if (!await clearOffenFilesAsAlreadyDone(stockId, uniqueEarly)) return;
-                if (abortMission) return;
-                await finishStockCheckmarkOnly(stockId, rawFilesEarly, uniqueEarly, dedupedEarly.duplicates, uniqueEarly.length);
-                return;
-            }
-        }
-
         showCustomPopup("ARASAKA LÄUFT", `Suche nach Stock ID: ${stockId}...`, false);
 
         let searchInput = await findSearchBar();
@@ -986,20 +761,6 @@
 
             const mt = fileInfo.modifiedTime != null ? Number(fileInfo.modifiedTime) : 0;
             const stored = fileInfo.lastUploadedStored != null ? Number(fileInfo.lastUploadedStored) : null;
-
-            if (fileAlreadyInDoneFolder(fileInfo)) {
-                skipFilenameOnPageCount++;
-                dbg('skipAlreadyInDoneFolder', fileInfo.name, 'stockId', stockId);
-                showCustomPopup("ARASAKA SKIP", "Schon in Erledigt/Retoure: " + fileInfo.name + " — kein Upload.", false);
-                if (!await moveFileOrStop(fileInfo, isRetoure, {
-                    toDuplicate: true,
-                    logKind: 'skip_already_in_erledigt',
-                    logStockId: stockId,
-                    logFileName: fileInfo.name,
-                    logDetail: currentComment
-                })) return;
-                continue;
-            }
 
             if (stored != null && mt === stored) {
                 skipFilenameOnPageCount++;
