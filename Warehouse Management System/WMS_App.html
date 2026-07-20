@@ -22,6 +22,10 @@
 <?!= include('WMS_Styles') ?>
 </head>
 <body class="<?= String(mode) === 'standalone' ? 'wms-standalone' : 'wms-overlay' ?>">
+<script>
+  window.WMS_CLIENT_VERSION = <?!= JSON.stringify(String(appVersion || '')) ?>;
+  window.WMS_CLIENT_URL = <?!= JSON.stringify(String(appUrl || '')) ?>;
+</script>
 <div id="google_translate_element" aria-hidden="true"></div>
 <?!= include('WMS_Body') ?>
 <?!= include('WMS_DymoLabels') ?>

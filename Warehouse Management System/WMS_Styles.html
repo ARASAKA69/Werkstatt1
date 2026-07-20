@@ -1863,6 +1863,104 @@
     color: #1a1f27;
     background: rgba(26, 31, 39, 0.06);
   }
+  .wms-update-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(6, 10, 16, 0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+  .wms-update-overlay.open {
+    display: flex;
+  }
+  .wms-update-card {
+    width: min(560px, calc(100vw - 32px));
+    padding: 36px 40px 28px;
+    border-radius: 22px;
+    text-align: center;
+    background: linear-gradient(180deg, rgba(28, 18, 12, 0.98) 0%, rgba(14, 16, 22, 0.98) 100%);
+    border: 2px solid rgba(242, 116, 32, 0.55);
+    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.55);
+  }
+  .wms-update-kicker {
+    margin-bottom: 10px;
+    color: #F27420;
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+  }
+  .wms-update-title {
+    margin: 0 0 16px;
+    color: #f5f7fa;
+    font-size: clamp(22px, 3.2vw, 30px);
+    font-weight: 800;
+    line-height: 1.25;
+  }
+  .wms-update-version {
+    display: inline-block;
+    margin: 0 auto 16px;
+    padding: 10px 18px;
+    border-radius: 12px;
+    background: rgba(242, 116, 32, 0.14);
+    border: 1px solid rgba(242, 116, 32, 0.35);
+    color: #F27420;
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+  }
+  .wms-update-msg {
+    margin: 0 auto 18px;
+    max-width: 520px;
+    color: rgba(230, 235, 242, 0.88);
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+  .wms-update-changelog {
+    margin: 0 auto 24px;
+    max-width: 520px;
+    padding: 14px 16px;
+    border-radius: 14px;
+    text-align: left;
+    white-space: pre-wrap;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(230, 235, 242, 0.92);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+  }
+  .wms-update-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+  }
+  html[data-theme="light"] .wms-update-overlay {
+    background: rgba(20, 24, 30, 0.45);
+  }
+  html[data-theme="light"] .wms-update-card {
+    background: linear-gradient(180deg, #fff8f2 0%, #ffffff 100%);
+    border-color: rgba(242, 116, 32, 0.45);
+    box-shadow: 0 24px 56px rgba(40, 24, 10, 0.18);
+  }
+  html[data-theme="light"] .wms-update-title {
+    color: #1a1f27;
+  }
+  html[data-theme="light"] .wms-update-msg {
+    color: rgba(30, 36, 44, 0.82);
+  }
+  html[data-theme="light"] .wms-update-changelog {
+    background: rgba(26, 31, 39, 0.04);
+    border-color: rgba(26, 31, 39, 0.12);
+    color: rgba(30, 36, 44, 0.88);
+  }
   .wms-toast-stack {
     position: fixed;
     top: 112px;
@@ -5709,6 +5807,18 @@
     letter-spacing: 0.02em;
     color: var(--wms-text-subtle);
     line-height: 1.4;
+  }
+  .wms-build-note {
+    margin-top: 8px;
+    padding: 0 4px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    color: #F27420;
+    line-height: 1.35;
+  }
+  html[data-theme="light"] .wms-build-note {
+    color: #d96212;
   }
 
   #google_translate_element {

@@ -115,6 +115,7 @@
                 <div class="wms-lang-panel" id="wmsLangPanel" role="listbox" hidden></div>
               </div>
               <div class="wms-lang-note">Automatische Übersetzung via Google · Original = Deutsch</div>
+              <div class="wms-build-note" id="wmsBuildNote" translate="no">WMS build —</div>
             </div>
           </div>
         </div>
@@ -718,6 +719,19 @@
     <div class="stock-lock-msg" id="stockLockMsg">Bitte im Lager nachfragen und Infos zusammenlegen. Schließen öffnet die frische Oberfläche für den nächsten Auftrag.</div>
     <div class="stock-lock-actions">
       <button type="button" class="stock-lock-btn stock-lock-btn--primary" onclick="dismissStockLockBlock()">Schließen</button>
+    </div>
+  </div>
+</div>
+
+<div id="wmsUpdateOverlay" class="wms-update-overlay" aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="wmsUpdateTitle">
+  <div class="wms-update-card">
+    <div class="wms-update-kicker">Update verfügbar</div>
+    <div class="wms-update-title" id="wmsUpdateTitle">Neue WMS-Version bereit</div>
+    <div class="wms-update-version" id="wmsUpdateVersion"></div>
+    <div class="wms-update-msg">Bitte jetzt aktualisieren, damit alle mit dem gleichen Stand arbeiten.</div>
+    <div class="wms-update-changelog" id="wmsUpdateChangelog" hidden></div>
+    <div class="wms-update-actions">
+      <button type="button" class="stock-lock-btn stock-lock-btn--primary" id="wmsUpdateNowBtn" onclick="applyWmsAppUpdate()">Jetzt aktualisieren</button>
     </div>
   </div>
 </div>

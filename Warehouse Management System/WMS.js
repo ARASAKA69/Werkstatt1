@@ -17,7 +17,10 @@ const NACHBESTELL_ENTRYID_COL = 15;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
-const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbyJPYasx9K-j-rNjdAcS3S46GwiEAvrP0sjiuoWf9L2p-u38vx51Bu4WdLxz5rY1sHI/exec";
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzWVMPgPXYc7MH_UBXL0bfzkSxUiX1SNg7Bk52e2PK17yd3BllZn45WTiDl8JMV4D8J/exec";
+const WMS_APP_VERSION = "1.0.0";
+const WMS_APP_CHANGELOG =
+  "•";
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
@@ -1049,12 +1052,79 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     return HtmlService.createHtmlOutputFromFile(filename).getContent();
   }
 
+  function compareWmsAppVersion_(a, b) {
+    var pa = String(a || "").split(".");
+    var pb = String(b || "").split(".");
+    var n = Math.max(pa.length, pb.length);
+    for (var i = 0; i < n; i++) {
+      var x = parseInt(pa[i], 10);
+      var y = parseInt(pb[i], 10);
+      if (isNaN(x)) x = 0;
+      if (isNaN(y)) y = 0;
+      if (x > y) return 1;
+      if (x < y) return -1;
+    }
+    return 0;
+  }
+
+  function normalizeWmsAppUrl_(url) {
+    return String(url || "").trim().replace(/\/+$/, "").split("?")[0].split("#")[0];
+  }
+
+  function getWmsWebAppUrl_() {
+    return (WMS_WEB_APP_URL && String(WMS_WEB_APP_URL).trim()) || ScriptApp.getService().getUrl() || "";
+  }
+
+  function syncWmsAppReleaseMeta_() {
+    var mine = String(WMS_APP_VERSION || "0");
+    var url = getWmsWebAppUrl_();
+    if (!mine || !url) return;
+    PropertiesService.getScriptProperties().setProperties({
+      WMS_LATEST_VERSION: mine,
+      WMS_LATEST_URL: url,
+      WMS_LATEST_CHANGELOG: String(WMS_APP_CHANGELOG || "")
+    }, false);
+  }
+
+  function checkWmsAppUpdate(clientVersion, clientUrl) {
+    var serverVersion = String(WMS_APP_VERSION || "");
+    var serverUrl = getWmsWebAppUrl_();
+    var serverChangelog = String(WMS_APP_CHANGELOG || "");
+    var props = PropertiesService.getScriptProperties();
+    var propsVersion = String(props.getProperty("WMS_LATEST_VERSION") || "");
+    var propsUrl = String(props.getProperty("WMS_LATEST_URL") || "");
+    var propsChangelog = String(props.getProperty("WMS_LATEST_CHANGELOG") || "");
+    var latestVersion = serverVersion;
+    var latestUrl = serverUrl;
+    var changelog = serverChangelog;
+    if (propsUrl && serverUrl && normalizeWmsAppUrl_(propsUrl) !== normalizeWmsAppUrl_(serverUrl) && compareWmsAppVersion_(propsVersion, serverVersion) > 0) {
+      latestVersion = propsVersion;
+      latestUrl = propsUrl;
+      changelog = propsChangelog;
+    }
+    var verCmp = compareWmsAppVersion_(latestVersion, clientVersion);
+    var urlDiff = false;
+    if (latestUrl && clientUrl) {
+      urlDiff = normalizeWmsAppUrl_(latestUrl) !== normalizeWmsAppUrl_(clientUrl);
+    }
+    return {
+      updateAvailable: verCmp > 0 || (urlDiff && verCmp >= 0),
+      latestVersion: latestVersion,
+      clientVersion: String(clientVersion || ""),
+      url: latestUrl,
+      changelog: changelog
+    };
+  }
+
   function doGet(e) {
+    syncWmsAppReleaseMeta_();
     var p = e && e.parameter || {};
     var mode = String(p.mode || 'standalone').toLowerCase();
     if (mode !== 'overlay' && mode !== 'standalone') mode = 'standalone';
     var t = HtmlService.createTemplateFromFile('WMS_App');
     t.mode = mode;
+    t.appVersion = WMS_APP_VERSION;
+    t.appUrl = getWmsWebAppUrl_();
     return t.evaluate()
       .setTitle('Warehouse Management System')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -1062,7 +1132,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
   }
 
   function openWMS() {
-    var url = (WMS_WEB_APP_URL && String(WMS_WEB_APP_URL).trim()) || ScriptApp.getService().getUrl();
+    var url = getWmsWebAppUrl_();
     if (!url) {
       SpreadsheetApp.getUi().alert("Keine Web-App-URL. Bitte WMS_WEB_APP_URL setzen oder Web-App bereitstellen.");
       return;

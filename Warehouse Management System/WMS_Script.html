@@ -187,6 +187,99 @@
   }
   initWmsUserCapabilities();
 
+  (function initWmsBuildNote() {
+    var el = document.getElementById('wmsBuildNote');
+    if (!el) return;
+    var v = String(window.WMS_CLIENT_VERSION || '').trim();
+    el.textContent = v ? ('WMS build ' + v) : 'WMS build —';
+  })();
+
+  var wmsPendingUpdateUrl = '';
+  var wmsUpdateCheckBusy = false;
+  var wmsUpdateForced = false;
+
+  function showWmsUpdateBlock(info) {
+    wmsUpdateForced = true;
+    wmsPendingUpdateUrl = String((info && info.url) || '');
+    var el = document.getElementById('wmsUpdateOverlay');
+    var verEl = document.getElementById('wmsUpdateVersion');
+    var logEl = document.getElementById('wmsUpdateChangelog');
+    if (verEl) {
+      var fromV = String((info && info.clientVersion) || window.WMS_CLIENT_VERSION || '?');
+      var toV = String((info && info.latestVersion) || '?');
+      verEl.textContent = fromV + '  →  ' + toV;
+    }
+    if (logEl) {
+      var notes = String((info && info.changelog) || '').trim();
+      if (notes.length) {
+        logEl.hidden = false;
+        logEl.style.display = '';
+        logEl.textContent = notes;
+      } else {
+        logEl.hidden = true;
+        logEl.style.display = 'none';
+        logEl.textContent = '';
+      }
+    }
+    if (el) {
+      el.classList.add('open');
+      el.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function applyWmsAppUpdate() {
+    var btn = document.getElementById('wmsUpdateNowBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Aktualisiere…';
+    }
+    var url = String(window.WMS_CLIENT_URL || '').trim();
+    if (!url) {
+      try {
+        if (window.top && window.top !== window) {
+          window.top.location.reload();
+          return;
+        }
+      } catch (e) {}
+      window.location.reload();
+      return;
+    }
+    url += (url.indexOf('?') === -1 ? '?' : '&') + '_wms_v=' + Date.now();
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.href = url;
+        return;
+      }
+    } catch (e) {}
+    var a = document.createElement('a');
+    a.href = url;
+    a.target = '_top';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function runWmsAppUpdateCheck() {
+    if (wmsUpdateForced || wmsUpdateCheckBusy) return;
+    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+    wmsUpdateCheckBusy = true;
+    var clientVersion = String(window.WMS_CLIENT_VERSION || '');
+    var clientUrl = String(window.WMS_CLIENT_URL || '');
+    google.script.run.withSuccessHandler(function(res) {
+      wmsUpdateCheckBusy = false;
+      if (res && res.updateAvailable) showWmsUpdateBlock(res);
+    }).withFailureHandler(function() {
+      wmsUpdateCheckBusy = false;
+    }).checkWmsAppUpdate(clientVersion, clientUrl);
+  }
+
+  runWmsAppUpdateCheck();
+  setInterval(runWmsAppUpdateCheck, 45000);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) runWmsAppUpdateCheck();
+  });
+
   document.getElementById('searchInput').addEventListener('keypress', function(e) {
     if(e.key === 'Enter') loadData();
   });
