@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         WM Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  Automatisiert WM Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://*.customer-de.wm.de/*
@@ -14,12 +14,13 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '4.0';
+    const BOT_VERSION = '4.1';
     const MITTEILUNG_TEXT = 'Passt Nicht.';
     const HUD_POS_KEY = 'wm_retoure_hud_position';
     const PENDING_NEUE_SUCHE_KEY = 'wm_retoure_pending_neue_suche';
     const ACTIVE_FLOW_KEY = 'wm_retoure_active_flow';
     const LAST_EAN_KEY = 'wm_retoure_last_ean';
+    const LAST_ADDED_KEY = 'wm_retoure_last_added';
     const MIN_SEARCH_LEN = 3;
     const MIN_SCAN_LEN = 8;
     const SCAN_IDLE_MS = 2800;
@@ -49,6 +50,7 @@
             if (scanTimer) clearTimeout(scanTimer);
             sessionStorage.removeItem(PENDING_NEUE_SUCHE_KEY);
             sessionStorage.removeItem(ACTIVE_FLOW_KEY);
+            sessionStorage.removeItem(LAST_ADDED_KEY);
             searchSubmitted = false;
             searchListenersReady = false;
             userEditingSearch = false;
@@ -70,6 +72,87 @@
         el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         try { el.click(); } catch (e) {}
+    }
+
+    function saveLastAdded(info) {
+        try {
+            if (!info) return;
+            sessionStorage.setItem(LAST_ADDED_KEY, JSON.stringify({
+                part: String(info.part || ''),
+                name: String(info.name || ''),
+                qty: String(info.qty || ''),
+                ts: Date.now()
+            }));
+        } catch (e) {}
+    }
+
+    function loadLastAdded() {
+        try {
+            var raw = sessionStorage.getItem(LAST_ADDED_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            if (!data || typeof data !== 'object') return null;
+            if (!data.part && !data.name) return null;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function readLabeledFormValue(labelNeedles) {
+        var needles = Array.isArray(labelNeedles) ? labelNeedles : [labelNeedles];
+        var labels = document.querySelectorAll('label, td, th, span, div, legend, b, strong');
+        for (var i = 0; i < labels.length; i++) {
+            var txt = normalizeText(labels[i].textContent).toLowerCase().replace(/:$/, '');
+            var matched = false;
+            for (var n = 0; n < needles.length; n++) {
+                var needle = String(needles[n] || '').toLowerCase();
+                if (txt === needle || txt.indexOf(needle) === 0) {
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched) continue;
+            var scope = labels[i].closest('.fmRowSrd, tr, .fmLi, div') || labels[i].parentElement;
+            for (var p = 0; p < 5 && scope; p++) {
+                var input = scope.querySelector('input[type="text"], input:not([type]), input[readonly], textarea, select');
+                if (input) {
+                    var val = normalizeText(input.value || (input.options && input.selectedIndex >= 0 ? input.options[input.selectedIndex].text : ''));
+                    if (val && val.toLowerCase().indexOf(needles[0].toLowerCase()) === -1) return val;
+                }
+                var cells = scope.querySelectorAll('td, span, div, font');
+                for (var c = 0; c < cells.length; c++) {
+                    if (cells[c] === labels[i] || labels[i].contains(cells[c])) continue;
+                    var cellText = normalizeText(cells[c].textContent);
+                    if (!cellText) continue;
+                    var lower = cellText.toLowerCase();
+                    var skip = false;
+                    for (var s = 0; s < needles.length; s++) {
+                        if (lower === String(needles[s]).toLowerCase() || lower.indexOf(String(needles[s]).toLowerCase() + ':') === 0) {
+                            skip = true;
+                            break;
+                        }
+                    }
+                    if (skip) continue;
+                    if (cellText.length > 80) continue;
+                    if (cells[c].querySelector('input, select, textarea, button')) continue;
+                    return cellText;
+                }
+                scope = scope.parentElement;
+            }
+        }
+        return '';
+    }
+
+    function readQuantityPageArticleInfo(qty) {
+        var part = readLabeledFormValue(['Katalog-Nr.', 'Katalog-Nr', 'Katalog Nr.', 'Katalognummer']);
+        var name = readLabeledFormValue(['Bezeichnung']);
+        if (!part) part = sessionStorage.getItem(LAST_EAN_KEY) || '';
+        return {
+            part: part,
+            name: name,
+            qty: qty != null ? String(qty) : ''
+        };
     }
 
     function normalizeText(value) {
@@ -775,6 +858,7 @@
         }
         showHud('WM RETOURE LÄUFT', 'Menge ' + option.numeric + ' — klicke Übernehmen...', false);
         await sleep(250);
+        saveLastAdded(readQuantityPageArticleInfo(option.numeric));
         var submit = findClickableByText('Übernehmen', true);
         if (!submit) submit = await waitForClickableByText('Übernehmen', true, 8000);
         if (!submit || abortMission) {
@@ -1223,6 +1307,23 @@
             + '<div class="arasaka-hud-credit">by Arasaka</div>';
     }
 
+    function lastAddedHudHtml() {
+        var info = loadLastAdded();
+        if (!info) return '';
+        var lines = [];
+        if (info.name) lines.push('<div class="arasaka-hud-last-name">' + hudEscape(info.name) + '</div>');
+        var meta = [];
+        if (info.part) meta.push(hudEscape(info.part));
+        if (info.qty) meta.push('Menge ' + hudEscape(info.qty));
+        if (meta.length) lines.push('<div class="arasaka-hud-last-meta">' + meta.join(' · ') + '</div>');
+        if (!lines.length) return '';
+        return ''
+            + '<div class="arasaka-hud-last">'
+            + '  <div class="arasaka-hud-last-label">Zuletzt hinzugefügt</div>'
+            + lines.join('')
+            + '</div>';
+    }
+
     function hudMessageHtml(message) {
         return hudEscape(message).replace(/\n/g, '<br>');
     }
@@ -1351,6 +1452,11 @@
             + '.arasaka-hud-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 12px;'
             + '  border-top: 1px solid rgba(255,255,255,0.07); color: #8b949e; font-size: 12px; font-weight: 800; }'
             + '.arasaka-hud-credit { text-align: right; margin-top: 4px; color: #6e7681; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }'
+            + '.arasaka-hud-last { width: 100%; margin-top: 14px; padding: 12px 14px; border-radius: 14px;'
+            + '  background: rgba(61, 158, 220, 0.1); border: 1px solid rgba(61, 158, 220, 0.28); }'
+            + '.arasaka-hud-last-label { color: #8b949e; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }'
+            + '.arasaka-hud-last-name { color: #f0f6fc; font-size: 15px; font-weight: 800; line-height: 1.3; }'
+            + '.arasaka-hud-last-meta { color: #3FA0DB; font-size: 13px; font-weight: 800; margin-top: 4px; }'
             + '.wm-retoure-qty-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }'
             + '.wm-retoure-qty-btn { min-width: 72px; min-height: 56px; padding: 10px 18px; border-radius: 16px; border: 2px solid rgba(86, 211, 100, 0.42);'
             + '  background: rgba(13, 17, 23, 0.82); color: #56d364; font-size: 24px; font-weight: 900; cursor: pointer; transition: transform 0.14s, background 0.14s; }'
@@ -1405,7 +1511,8 @@
     function showHud(title, message, isEnd, showCartButton, hudAction) {
         hudEnsureStyles();
         var showCart = shouldShowCartButton(showCartButton);
-        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showCart + '|' + (hudAction || '');
+        var lastHtml = lastAddedHudHtml();
+        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showCart + '|' + (hudAction || '') + '|' + lastHtml;
         var existing = document.getElementById('arasaka-batch-popup');
         if (existing && signature === lastHudSignature) return;
         lastHudSignature = signature;
@@ -1425,6 +1532,7 @@
             + '  <div class="arasaka-hud-main">'
             + '    <div class="arasaka-hud-badge">' + hudEscape(hudToneLabel(tone)) + '</div>'
             + '    <div class="arasaka-hud-message">' + hudMessageHtml(message) + '</div>'
+            + lastHtml
             + '  </div>'
             + actionHtml
             + '  ' + hudFooterHtml()

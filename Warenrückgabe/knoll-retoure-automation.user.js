@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KNOLL Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      4.1
 // @description  Automatisiert KNOLL Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://shop.knoll.de/*
@@ -17,7 +17,7 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '4.0';
+    const BOT_VERSION = '4.1';
     const RETURN_ARTICLE_URL = 'https://shop.knoll.de/shop/my-account/return-article';
     const PENDING_RELOAD_KEY = 'knoll_retoure_pending_reload';
     const RELOAD_RETRY_KEY = 'knoll_retoure_reload_retry';
@@ -26,6 +26,8 @@
     const ACTIVE_FLOW_KEY = 'knoll_retoure_active_flow';
     const FLOW_STATE_KEY = 'knoll_retoure_flow_state';
     const LAST_EAN_KEY = 'knoll_retoure_last_ean';
+    const LAST_ADDED_KEY = 'knoll_retoure_last_added';
+    const PENDING_ARTICLE_KEY = 'knoll_retoure_pending_article';
     const EXCLUSION_OK_KEY = 'knoll_retoure_exclusion_ok';
     const GRUND_TEXT = 'Passt nicht.';
     const MIN_SEARCH_LEN = 3;
@@ -210,6 +212,8 @@
         sessionStorage.removeItem(FLOW_STATE_KEY);
         sessionStorage.removeItem(ACTIVE_FLOW_KEY);
         sessionStorage.removeItem(LAST_EAN_KEY);
+        sessionStorage.removeItem(LAST_ADDED_KEY);
+        sessionStorage.removeItem(PENDING_ARTICLE_KEY);
         sessionStorage.removeItem(EXCLUSION_OK_KEY);
         sessionStorage.removeItem(PENDING_RELOAD_KEY);
         sessionStorage.removeItem(RELOAD_RETRY_KEY);
@@ -268,6 +272,70 @@
         el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
         el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
         try { el.click(); } catch (e) {}
+    }
+
+    function saveLastAdded(info) {
+        try {
+            if (!info) return;
+            sessionStorage.setItem(LAST_ADDED_KEY, JSON.stringify({
+                part: String(info.part || ''),
+                name: String(info.name || ''),
+                qty: String(info.qty || ''),
+                ts: Date.now()
+            }));
+        } catch (e) {}
+    }
+
+    function loadLastAdded() {
+        try {
+            var raw = sessionStorage.getItem(LAST_ADDED_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            if (!data || typeof data !== 'object') return null;
+            if (!data.part && !data.name) return null;
+            return data;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function savePendingArticle(info) {
+        try {
+            if (!info) return;
+            sessionStorage.setItem(PENDING_ARTICLE_KEY, JSON.stringify({
+                part: String(info.part || ''),
+                name: String(info.name || '')
+            }));
+        } catch (e) {}
+    }
+
+    function loadPendingArticle() {
+        try {
+            var raw = sessionStorage.getItem(PENDING_ARTICLE_KEY);
+            if (!raw) return null;
+            var data = JSON.parse(raw);
+            return data && typeof data === 'object' ? data : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function parseArticleLabel(text) {
+        var raw = normalizeText(text);
+        if (!raw) return { part: '', name: '' };
+        var m = raw.match(/^(.+?)\s*:\s*(.+)$/);
+        if (m) return { part: normalizeText(m[1]), name: normalizeText(m[2]) };
+        return { part: raw, name: '' };
+    }
+
+    function rememberArticleFromTarget(target) {
+        if (!target) return;
+        var parsed = parseArticleLabel(target.textContent || '');
+        var ean = sessionStorage.getItem(LAST_EAN_KEY) || '';
+        savePendingArticle({
+            part: parsed.part || ean,
+            name: parsed.name
+        });
     }
 
     function normalizeText(value) {
@@ -560,6 +628,7 @@
 
     async function selectSearchResult(target) {
         if (!target) return false;
+        rememberArticleFromTarget(target);
         var clickTarget = target.querySelector('a, div.ui-menu-item-wrapper, .ui-menu-item') || target;
         forceClick(clickTarget);
         await sleep(350);
@@ -596,6 +665,7 @@
         }
         showHud('KNOLL RETOURE LÄUFT', 'Wähle Artikel aus Trefferliste...', false, true);
         var target = await waitForSearchResult(10000);
+        if (target) rememberArticleFromTarget(target);
         if (abortMission) return;
         if (isOrdersPage()) {
             if (orderHandledForSearch || isPendingReload()) {
@@ -1093,6 +1163,7 @@
         lastHandledStep = '';
         pauseWatcher(1500);
         saveFlowState({ active: true, searchSubmitted: true, step: 'articlePick', lastEan: value, orderHandled: false });
+        savePendingArticle({ part: value, name: '' });
         sessionStorage.removeItem(EXCLUSION_OK_KEY);
         lastHandledStep = '';
         grundFilled = false;
@@ -1487,6 +1558,13 @@
             }
             saveFlowState({ active: true, step: 'search', searchSubmitted: false, orderHandled: false });
             lastHandledStep = 'order-done';
+            var pending = loadPendingArticle() || {};
+            saveLastAdded({
+                part: pending.part || sessionStorage.getItem(LAST_EAN_KEY) || '',
+                name: pending.name || '',
+                qty: quantity
+            });
+            sessionStorage.removeItem(PENDING_ARTICLE_KEY);
             forceClick(addBtn);
             await sleep(400);
             await finishOrderAndReturnToSearch();
@@ -1852,6 +1930,23 @@
             + '<div class="arasaka-hud-credit">by Arasaka</div>';
     }
 
+    function lastAddedHudHtml() {
+        var info = loadLastAdded();
+        if (!info) return '';
+        var lines = [];
+        if (info.name) lines.push('<div class="arasaka-hud-last-name">' + hudEscape(info.name) + '</div>');
+        var meta = [];
+        if (info.part) meta.push(hudEscape(info.part));
+        if (info.qty) meta.push('Menge ' + hudEscape(info.qty));
+        if (meta.length) lines.push('<div class="arasaka-hud-last-meta">' + meta.join(' · ') + '</div>');
+        if (!lines.length) return '';
+        return ''
+            + '<div class="arasaka-hud-last">'
+            + '  <div class="arasaka-hud-last-label">Zuletzt hinzugefügt</div>'
+            + lines.join('')
+            + '</div>';
+    }
+
     function hudMessageHtml(message) {
         return hudEscape(message).replace(/\n/g, '<br>');
     }
@@ -1977,6 +2072,11 @@
             + '.arasaka-hud-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; padding-top: 12px;'
             + '  border-top: 1px solid rgba(255,255,255,0.07); color: #8b949e; font-size: 12px; font-weight: 800; }'
             + '.arasaka-hud-credit { text-align: right; margin-top: 4px; color: #6e7681; font-size: 10px; font-weight: 600; letter-spacing: 0.3px; }'
+            + '.arasaka-hud-last { width: 100%; margin-top: 14px; padding: 12px 14px; border-radius: 14px;'
+            + '  background: rgba(220, 61, 61, 0.1); border: 1px solid rgba(220, 61, 61, 0.28); }'
+            + '.arasaka-hud-last-label { color: #8b949e; font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }'
+            + '.arasaka-hud-last-name { color: #f0f6fc; font-size: 15px; font-weight: 800; line-height: 1.3; }'
+            + '.arasaka-hud-last-meta { color: #f07070; font-size: 13px; font-weight: 800; margin-top: 4px; }'
             + '.knoll-retoure-qty-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 18px; }'
             + '.knoll-retoure-qty-btn { min-width: 72px; min-height: 56px; padding: 10px 18px; border-radius: 16px; border: 2px solid rgba(220, 61, 61, 0.42);'
             + '  background: rgba(13, 17, 23, 0.82); color: #f07070; font-size: 24px; font-weight: 900; cursor: pointer; transition: transform 0.14s, background 0.14s; }'
@@ -2018,7 +2118,8 @@
 
     function showHud(title, message, isEnd, showListButton) {
         hudEnsureStyles();
-        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showListButton;
+        var lastHtml = lastAddedHudHtml();
+        var signature = title + '|' + message + '|' + !!isEnd + '|' + !!showListButton + '|' + lastHtml;
         var existing = document.getElementById('knoll-retoure-popup');
         if (existing && signature === lastHudSignature) return;
         lastHudSignature = signature;
@@ -2040,6 +2141,7 @@
             + '  <div class="arasaka-hud-main">'
             + '    <div class="arasaka-hud-badge">' + hudEscape(hudToneLabel(tone)) + '</div>'
             + '    <div class="arasaka-hud-message">' + hudMessageHtml(message) + '</div>'
+            + lastHtml
             + '  </div>'
             + actionHtml
             + '  ' + hudFooterHtml()
