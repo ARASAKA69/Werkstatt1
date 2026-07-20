@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KNOLL Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      4.1
+// @version      4.2
 // @description  Automatisiert KNOLL Warenrückgabe per EAN-Scan
 // @author       ARASAKA
 // @match        *://shop.knoll.de/*
@@ -17,7 +17,7 @@
 (function() {
     'use strict';
 
-    const BOT_VERSION = '4.1';
+    const BOT_VERSION = '4.2';
     const RETURN_ARTICLE_URL = 'https://shop.knoll.de/shop/my-account/return-article';
     const PENDING_RELOAD_KEY = 'knoll_retoure_pending_reload';
     const RELOAD_RETRY_KEY = 'knoll_retoure_reload_retry';
@@ -328,13 +328,101 @@
         return { part: raw, name: '' };
     }
 
+    function looksLikeEan(value) {
+        return /^\d{8,14}$/.test(String(value || '').replace(/\s+/g, ''));
+    }
+
+    function cellTextAt(row, index) {
+        if (!row || index < 0) return '';
+        var cells = row.querySelectorAll('td');
+        if (index < cells.length) return normalizeText(cells[index].textContent);
+        return '';
+    }
+
+    function readArticleInfoFromOrderRow(row, table) {
+        var part = '';
+        var name = '';
+        table = table || findOrdersTable();
+        if (table && row && row.querySelectorAll('td').length) {
+            var artIdx = getTableColumnIndex(table, 'Artikelnummer');
+            if (artIdx < 0) artIdx = getTableColumnIndex(table, 'Artikelnr');
+            if (artIdx < 0) artIdx = getTableColumnIndex(table, 'Artikel');
+            var nameIdx = getTableColumnIndex(table, 'Name');
+            if (nameIdx < 0) nameIdx = getTableColumnIndex(table, 'Bezeichnung');
+            if (artIdx >= 0) part = cellTextAt(row, artIdx);
+            if (nameIdx >= 0) name = cellTextAt(row, nameIdx);
+        }
+        if (row && (!part || !name)) {
+            var nodes = row.querySelectorAll('td, [class*="return-table__item--"], span, div, a, strong');
+            for (var i = 0; i < nodes.length; i++) {
+                var t = normalizeText(nodes[i].textContent);
+                if (!t || t.length > 80) continue;
+                if (/^\d{2}\.\d{2}\.\d{2,4}$/.test(t)) continue;
+                if (/^\d{6,}$/.test(t.replace(/\s+/g, '')) && !/[A-Za-z]/.test(t)) continue;
+                if (!part && /[A-Za-z0-9].*\s*:\s*.+/.test(t) && !looksLikeEan(t.split(':')[0])) {
+                    part = t;
+                    continue;
+                }
+                if (!name && /^[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9\/\-\+\. ]{1,40}$/.test(t) && t.toLowerCase().indexOf('neuteil') === -1) {
+                    if (t.toLowerCase() === 'ret.' || t.toLowerCase() === 'menge') continue;
+                    if (!/\d{2}\.\d{2}/.test(t) && t.indexOf(':') === -1) name = t;
+                }
+            }
+        }
+        if (!part || !name) {
+            var pageNodes = document.querySelectorAll('.return-table__header, [class*="return-table__head"], [class*="product"], [class*="article"], h1, h2, h3, strong, b, td, span, div');
+            for (var p = 0; p < pageNodes.length; p++) {
+                if (pageNodes[p].closest('#knoll-retoure-popup, #knoll-retoure-qty-popup, #knoll-retoure-exclusion-popup')) continue;
+                var pt = normalizeText(pageNodes[p].textContent);
+                if (!pt || pt.length > 90) continue;
+                if (!part && /[A-Za-z0-9].*\s*:\s*.+/.test(pt) && !looksLikeEan(pt.split(':')[0]) && pt.toLowerCase().indexOf('artikelnummer suchen') === -1) {
+                    part = pt;
+                }
+            }
+        }
+        if (part && name && part.toLowerCase().indexOf(name.toLowerCase()) !== -1) name = '';
+        return { part: part, name: name };
+    }
+
+    function resolveLastAddedArticle(row, table, quantity) {
+        var fromRow = readArticleInfoFromOrderRow(row, table);
+        var pending = loadPendingArticle() || {};
+        var part = fromRow.part || '';
+        var name = fromRow.name || '';
+        if ((!part || looksLikeEan(part)) && pending.part && !looksLikeEan(pending.part)) part = pending.part;
+        if (!name && pending.name && !looksLikeEan(pending.name)) name = pending.name;
+        if (!part && pending.part && !looksLikeEan(pending.part)) part = pending.part;
+        if (!part || looksLikeEan(part)) {
+            var ean = sessionStorage.getItem(LAST_EAN_KEY) || '';
+            if (!part && ean) part = ean;
+        }
+        return { part: part, name: name, qty: quantity };
+    }
+
     function rememberArticleFromTarget(target) {
         if (!target) return;
-        var parsed = parseArticleLabel(target.textContent || '');
-        var ean = sessionStorage.getItem(LAST_EAN_KEY) || '';
+        var raw = normalizeText(target.textContent || '');
+        var parsed = parseArticleLabel(raw);
+        var part = '';
+        var name = '';
+        if (raw.indexOf(' : ') !== -1 || raw.indexOf(':') !== -1) {
+            part = raw;
+            var pieces = raw.split(/\s{2,}|\n/);
+            if (pieces.length > 1) {
+                part = normalizeText(pieces[0]);
+                name = normalizeText(pieces.slice(1).join(' '));
+            } else if (parsed.name && !/[+]/.test(parsed.name) && parsed.name.length > 12) {
+                name = parsed.name;
+                part = parsed.part;
+            }
+        } else if (!looksLikeEan(raw)) {
+            part = raw;
+        }
+        if (looksLikeEan(part)) part = '';
+        if (!part && !name) return;
         savePendingArticle({
-            part: parsed.part || ean,
-            name: parsed.name
+            part: part,
+            name: name
         });
     }
 
@@ -1163,7 +1251,7 @@
         lastHandledStep = '';
         pauseWatcher(1500);
         saveFlowState({ active: true, searchSubmitted: true, step: 'articlePick', lastEan: value, orderHandled: false });
-        savePendingArticle({ part: value, name: '' });
+        sessionStorage.removeItem(PENDING_ARTICLE_KEY);
         sessionStorage.removeItem(EXCLUSION_OK_KEY);
         lastHandledStep = '';
         grundFilled = false;
@@ -1558,12 +1646,7 @@
             }
             saveFlowState({ active: true, step: 'search', searchSubmitted: false, orderHandled: false });
             lastHandledStep = 'order-done';
-            var pending = loadPendingArticle() || {};
-            saveLastAdded({
-                part: pending.part || sessionStorage.getItem(LAST_EAN_KEY) || '',
-                name: pending.name || '',
-                qty: quantity
-            });
+            saveLastAdded(resolveLastAddedArticle(row, table, quantity));
             sessionStorage.removeItem(PENDING_ARTICLE_KEY);
             forceClick(addBtn);
             await sleep(400);
