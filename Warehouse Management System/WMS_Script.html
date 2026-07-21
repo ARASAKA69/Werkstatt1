@@ -196,7 +196,6 @@
 
   var wmsUpdateCheckBusy = false;
   var wmsUpdateForced = false;
-  var wmsUpdateTargetVersion = '';
 
   function getCleanWmsUrl() {
     return String(window.WMS_CLIENT_URL || '').trim().split('?')[0].split('#')[0];
@@ -212,19 +211,8 @@
     a.remove();
   }
 
-  function wmsTopHref() {
-    try { return String(window.top.location.href || ''); } catch (e) {}
-    try { return String(window.location.href || ''); } catch (e2) {}
-    return '';
-  }
-
-  function wmsHrefHasJunk(href) {
-    return /[?&](_wms_v|wmsboot)=/i.test(String(href || ''));
-  }
-
   function showWmsUpdateBlock(info) {
     wmsUpdateForced = true;
-    wmsUpdateTargetVersion = String((info && info.latestVersion) || '');
     var el = document.getElementById('wmsUpdateOverlay');
     var verEl = document.getElementById('wmsUpdateVersion');
     var logEl = document.getElementById('wmsUpdateChangelog');
@@ -258,70 +246,17 @@
       btn.textContent = 'Aktualisiere…';
     }
     var base = getCleanWmsUrl();
-    var expect = String(wmsUpdateTargetVersion || window.WMS_CLIENT_VERSION || '').trim();
-    try {
-      sessionStorage.setItem('wms_expect_ver', expect);
-      sessionStorage.setItem('wms_boot_tries', '0');
-    } catch (e) {}
-    if (!base) {
-      try {
-        if (window.top && window.top !== window) {
-          window.top.location.reload();
-          return;
-        }
-      } catch (e2) {}
-      window.location.reload();
+    if (base) {
+      navigateWmsTop(base);
       return;
     }
-    navigateWmsTop(base + '?mode=standalone&wmsboot=' + Date.now());
-  }
-
-  function resolveWmsBootNavigation() {
-    var baked = String(window.WMS_CLIENT_VERSION || '').trim();
-    var clean = getCleanWmsUrl();
-    var href = wmsTopHref();
-    var junk = wmsHrefHasJunk(href);
-    var expect = '';
-    var tries = 0;
     try {
-      expect = String(sessionStorage.getItem('wms_expect_ver') || '').trim();
-      tries = parseInt(sessionStorage.getItem('wms_boot_tries') || '0', 10) || 0;
+      if (window.top && window.top !== window) {
+        window.top.location.reload();
+        return;
+      }
     } catch (e) {}
-
-    if (expect) {
-      if (baked && baked === expect) {
-        try {
-          sessionStorage.removeItem('wms_expect_ver');
-          sessionStorage.removeItem('wms_boot_tries');
-        } catch (e3) {}
-        if (junk && clean) {
-          navigateWmsTop(clean);
-          return true;
-        }
-        return false;
-      }
-      if (clean && tries < 1) {
-        try { sessionStorage.setItem('wms_boot_tries', String(tries + 1)); } catch (e4) {}
-        navigateWmsTop(clean + '?mode=standalone&wmsboot=' + Date.now());
-        return true;
-      }
-      try {
-        sessionStorage.removeItem('wms_expect_ver');
-        sessionStorage.removeItem('wms_boot_tries');
-      } catch (e5) {}
-      return false;
-    }
-
-    if (junk && clean) {
-      var mark = '';
-      try { mark = String(sessionStorage.getItem('wms_junk_cleared') || ''); } catch (e6) {}
-      if (mark !== baked) {
-        try { sessionStorage.setItem('wms_junk_cleared', baked); } catch (e7) {}
-        navigateWmsTop(clean);
-        return true;
-      }
-    }
-    return false;
+    window.location.reload();
   }
 
   function runWmsAppUpdateCheck() {
@@ -337,13 +272,11 @@
     }).checkWmsAppUpdate(clientVersion);
   }
 
-  if (!resolveWmsBootNavigation()) {
-    runWmsAppUpdateCheck();
-    setInterval(runWmsAppUpdateCheck, 45000);
-    document.addEventListener('visibilitychange', function() {
-      if (!document.hidden) runWmsAppUpdateCheck();
-    });
-  }
+  runWmsAppUpdateCheck();
+  setInterval(runWmsAppUpdateCheck, 45000);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) runWmsAppUpdateCheck();
+  });
 
   document.getElementById('searchInput').addEventListener('keypress', function(e) {
     if(e.key === 'Enter') loadData();
