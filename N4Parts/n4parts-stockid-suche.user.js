@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         N4Parts StockID Warenkorb Suche
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.1
 // @description  Sucht Warenkörbe nach StockID über alle Seiten via /api/cart/list
 // @author       ARASAKA
 // @match        https://www.n4parts.net/*
@@ -160,6 +160,10 @@
 #${PANEL_ID} .n4hit:hover{background:#f3fafa}
 #${PANEL_ID} .n4hit strong{display:block;color:#222}
 #${PANEL_ID} .n4hit span{color:#777;font-size:11px}
+#${PANEL_ID} .n4f{
+  border-top:1px solid #e6e6e6;padding:5px 10px;text-align:right;
+  color:#999;font-size:10px;letter-spacing:.02em;
+}
 `;
         document.head.appendChild(style);
     }
@@ -344,7 +348,8 @@
             '</div>' +
             '<div class="n4status"></div>' +
             '<div class="n4hits"></div>' +
-            '</div>';
+            '</div>' +
+            '<div class="n4f">by ARASAKA</div>';
         document.body.appendChild(panel);
         loadPos(panel);
         enableDrag(panel);
