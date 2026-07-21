@@ -18,8 +18,50 @@ const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
-const WMS_APP_VERSION = "2.0.9";
-const WMS_APP_CHANGELOG = "• Update Nachbestellung layout";
+const WMS_CHANGELOG_HISTORY = [
+  {
+    version: "2.1.1",
+    date: "21.07.2026",
+    notes:
+      "• Suche bleibt fokussiert nach Carol/Fertig — Suchleiste ready, kein manueller Klick\n" +
+      "• Letzte Stock-IDs als Chips unter der Sucheleiste (1-Tap laden)\n" +
+      "• NB: Button „Komplett + Carol“ + Prefetch(vorladen) wenn Zeile aufgeht\n" +
+      "• Beep bei Save ok / Fehler — Augen können woanders sein\n" +
+      "• ESC macht Busy/Regal/Lock-Overlays zu (falls WMS mal wieder hängt)\n" +
+      "• 5 Sek Undo bei versehentlich Komplett angeliefert (zur sicherheit)\n" +
+      "• Sidebar Changelog: Update infos immer verfügbar"
+  },
+  {
+    version: "2.1.0",
+    date: "21.07.2026",
+    notes: "• Sidebar: Update manuell prüfen (Slider über Build-Nummer)"
+  },
+  {
+    version: "2.0.9",
+    date: "21.07.2026",
+    notes: "• Alte wmsboot-Links werden automatisch auf den sauberen /exec Link umgeleitet"
+  },
+  {
+    version: "2.0.8",
+    date: "21.07.2026",
+    notes: "• Carol-Link aus Hyperlink-Zellen wieder korrekt lesen (Nachbestellung → Carol)"
+  },
+  {
+    version: "2.0.7",
+    date: "21.07.2026",
+    notes: "• Update öffnet nur noch den sauberen /exec Link (kein wmsboot-Chaos mehr)"
+  },
+  {
+    version: "2.0.6",
+    date: "20.07.2026",
+    notes:
+      "• Update-Hinweis für Kollegen: Popup wenn neue Version da ist\n" +
+      "• Changelog auf dem Update-Fenster (nur wenn was drin steht)\n" +
+      "• Build-Nummer unten im Menü — weißt immer worauf du stehst"
+  }
+];
+const WMS_APP_VERSION = String((WMS_CHANGELOG_HISTORY[0] && WMS_CHANGELOG_HISTORY[0].version) || "2.1.0");
+const WMS_APP_CHANGELOG = String((WMS_CHANGELOG_HISTORY[0] && WMS_CHANGELOG_HISTORY[0].notes) || "");
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
@@ -1122,6 +1164,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     t.appUrl = getWmsWebAppUrl_();
     t.cacheNonce = String(Date.now());
     t.stripBoot = !!(p.wmsboot || p._wms_v);
+    t.changelogHistoryJson = JSON.stringify(WMS_CHANGELOG_HISTORY || []);
     return t.evaluate()
       .setTitle('Warehouse Management System')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)

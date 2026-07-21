@@ -26,6 +26,7 @@
   window.WMS_CLIENT_VERSION = <?!= JSON.stringify(String(appVersion || '')) ?>;
   window.WMS_CLIENT_URL = <?!= JSON.stringify(String(appUrl || '')) ?>;
   window.WMS_CACHE_NONCE = <?!= JSON.stringify(String(cacheNonce || '')) ?>;
+  window.WMS_CHANGELOG_HISTORY = <?!= changelogHistoryJson || '[]' ?>;
 <? if (stripBoot) { ?>
   (function() {
     var clean = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];

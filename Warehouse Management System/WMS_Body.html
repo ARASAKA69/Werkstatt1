@@ -95,6 +95,16 @@
                 </span>
               </button>
             </div>
+            <div class="wms-menugroup" role="presentation" translate="no">
+              <div class="wms-menugroup-label">Info</div>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsChangelogModal(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">📰</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Changelog</span>
+                  <span class="wms-menuitem-sub">Was war neu in welchem Build</span>
+                </span>
+              </button>
+            </div>
             <div class="wms-menugroup" role="presentation">
               <div class="wms-menugroup-label">Darstellung</div>
               <div class="wms-theme-toggle">
@@ -148,6 +158,7 @@
           <input type="text" id="searchInput" placeholder="STOCK-ID / BESTELLNUMMER SCAN..." autocomplete="off">
           <button type="button" class="btn-search" onclick="loadData()">LADEN</button>
         </div>
+        <div class="search-recent" id="searchRecentChips" aria-label="Letzte Stock-IDs"></div>
       </div>
       <div class="status-row">
         <div id="globalStatus">System bereit.</div>
@@ -742,7 +753,25 @@
   </div>
 </div>
 
+<div id="wmsChangelogModal" class="wms-changelog-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="wmsChangelogTitle">
+  <div class="wms-changelog-dialog">
+    <div class="wms-changelog-header">
+      <div class="wms-changelog-title-block">
+        <div class="wms-changelog-kicker">Build History</div>
+        <div class="wms-changelog-title" id="wmsChangelogTitle">Changelog</div>
+      </div>
+      <button type="button" class="wms-changelog-close" onclick="closeWmsChangelogModal()">Schließen</button>
+    </div>
+    <div class="wms-changelog-body" id="wmsChangelogBody"></div>
+  </div>
+</div>
+
 <div id="wmsToastStack" class="wms-toast-stack" aria-live="polite" aria-relevant="additions"></div>
+
+<div id="nbUndoToast" class="nb-undo-toast" hidden aria-live="assertive">
+  <div class="nb-undo-toast-text" id="nbUndoToastText">Komplett in 5s…</div>
+  <button type="button" class="nb-undo-toast-btn" id="nbUndoToastBtn" onclick="cancelNbKomplettPending()">Rückgängig</button>
+</div>
 
 <div class="ai-modal" id="aiChatModal">
   <div class="ai-dialog">
@@ -754,12 +783,15 @@
       </div>
       <div class="ai-title-block">
         <div class="ai-title">ARASAKA Assistent</div>
-          <div class="ai-subtitle" id="aiSubtitle">Fragen &amp; Aktionen: Aufträge, Bestellungen &amp; Lager</div>
+        <div class="ai-subtitle" id="aiSubtitle">Fragen &amp; Aktionen: Aufträge, Bestellungen &amp; Lager</div>
+        <span class="ai-cache-hud" id="aiCacheHud">Daten: —</span>
       </div>
-      <span class="ai-cache-hud" id="aiCacheHud">Daten: —</span>
-      <button type="button" class="ai-agent-toggle" id="aiAgentToggle" role="switch" aria-checked="true" onclick="toggleAiAgentMode()" title="Agent-Modus: führt auf Wunsch Änderungen aus (mit Bestätigung). Aus = nur Fragen beantworten.">🤖 Agent: AN</button>
-      <button type="button" class="ai-reset-btn" onclick="resetAiChat()" title="Verlauf löschen">🧹 Neu</button>
-      <button type="button" class="ai-close" onclick="minimizeAiChat()">Zurück</button>
+      <div class="ai-header-actions">
+        <button type="button" class="ai-provider-toggle" id="aiProviderToggle" onclick="toggleAiProvider()" title="KI-Anbieter wechseln (Gemini / Z.ai)">Gemini</button>
+        <button type="button" class="ai-agent-toggle" id="aiAgentToggle" role="switch" aria-checked="true" onclick="toggleAiAgentMode()" title="Agent-Modus: führt auf Wunsch Änderungen aus (mit Bestätigung). Aus = nur Fragen beantworten.">🤖 Agent: AN</button>
+        <button type="button" class="ai-reset-btn" onclick="resetAiChat()" title="Verlauf löschen">🧹 Neu</button>
+        <button type="button" class="ai-close" onclick="minimizeAiChat()">Zurück</button>
+      </div>
     </div>
     <div class="ai-body" id="aiChatBody">
       <div class="ai-msg ai-msg--bot">

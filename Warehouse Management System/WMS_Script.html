@@ -46,11 +46,16 @@
   var GEMINI_API_KEY = '';
   var GEMINI_MODEL = 'gemini-3.5-flash';
   var GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+  var ZAI_API_KEY = '';
+  var ZAI_MODEL = 'glm-4.6';
+  var ZAI_API_BASE = 'https://api.z.ai/api/paas/v4/chat/completions';
+  var aiProvider = (localStorage.getItem('arasaka_ai_provider') === 'zai') ? 'zai' : 'gemini';
   var aiPendingTool = null;
   var aiAgentMode = (localStorage.getItem('arasaka_ai_agent_mode') !== 'off');
   var aiChatHistory = [];
   var aiChatBusy = false;
   var aiChatInited = false;
+  var aiToolCallSeq = 0;
   var lagerKistenCache = null;
   var commentEditor = document.getElementById('editAnlieferung');
   var reifenStockInput = document.getElementById('reifenStockInput');
@@ -342,6 +347,8 @@
   document.getElementById('searchInput').addEventListener('keypress', function(e) {
     if(e.key === 'Enter') loadData();
   });
+  renderRecentStockChips();
+  focusSearchBar({ delay: 80 });
 
   function formatShelfDdLabelHtml(raw) {
     var s = String(raw == null ? '' : raw);
@@ -665,6 +672,7 @@
     var isError = color === '#f85149' || /FEHLER|nicht gefunden|Nicht gefunden/i.test(String(msg || ''));
     el.className = isError ? 'global-status--error' : '';
     el.style.color = isError ? '' : (color || '#3FA0DB');
+    if (isError) wmsBeep('err');
   }
 
   function showStickyToast(type, title, message) {
@@ -680,11 +688,253 @@
       '</div>' +
       '<button type="button" class="wms-toast-x" onclick="dismissWmsToast(this)" aria-label="Schließen">&times;</button>';
     stack.appendChild(toast);
+    wmsBeep(type === 'ok' ? 'ok' : 'err');
   }
 
   function dismissWmsToast(btn) {
     var toast = btn && btn.closest ? btn.closest('.wms-toast') : null;
     if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+  }
+
+  var wmsAudioCtx = null;
+  function wmsBeep(kind) {
+    try {
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      if (!wmsAudioCtx) wmsAudioCtx = new AC();
+      if (wmsAudioCtx.state === 'suspended') wmsAudioCtx.resume();
+      var now = wmsAudioCtx.currentTime;
+      var osc = wmsAudioCtx.createOscillator();
+      var gain = wmsAudioCtx.createGain();
+      osc.connect(gain);
+      gain.connect(wmsAudioCtx.destination);
+      if (kind === 'err') {
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(220, now);
+        osc.frequency.setValueAtTime(160, now + 0.09);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+        osc.start(now);
+        osc.stop(now + 0.24);
+      } else {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.setValueAtTime(1175, now + 0.07);
+        gain.gain.setValueAtTime(0.0001, now);
+        gain.gain.exponentialRampToValueAtTime(0.06, now + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+        osc.start(now);
+        osc.stop(now + 0.18);
+      }
+    } catch (e) {}
+  }
+
+  function focusSearchBar(opts) {
+    opts = opts || {};
+    var search = document.getElementById('searchInput');
+    if (!search) return;
+    if (opts.clear) search.value = '';
+    var delay = typeof opts.delay === 'number' ? opts.delay : 30;
+    setTimeout(function() {
+      try {
+        search.focus({ preventScroll: true });
+        if (opts.select) search.select();
+      } catch (e) {
+        try { search.focus(); } catch (e2) {}
+      }
+    }, delay);
+  }
+
+  var WMS_RECENT_STOCKS_KEY = 'arasaka_wms_recent_stocks';
+  var WMS_RECENT_STOCKS_MAX = 6;
+  var skipRecentStockPush = false;
+
+  function getRecentStocks() {
+    try {
+      var raw = localStorage.getItem(WMS_RECENT_STOCKS_KEY);
+      var arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      var list = arr.map(function(x) { return normalizeStockInput(x); }).filter(Boolean);
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        if (out.indexOf(list[i]) === -1) out.push(list[i]);
+      }
+      var trimmed = out.length > WMS_RECENT_STOCKS_MAX;
+      if (trimmed) out = out.slice(0, WMS_RECENT_STOCKS_MAX);
+      if (trimmed || out.length !== list.length) {
+        try { localStorage.setItem(WMS_RECENT_STOCKS_KEY, JSON.stringify(out)); } catch (e2) {}
+      }
+      return out;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveRecentStocks(list) {
+    try { localStorage.setItem(WMS_RECENT_STOCKS_KEY, JSON.stringify(list || [])); } catch (e) {}
+  }
+
+  function pushRecentStock(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    var list = getRecentStocks().filter(function(x) { return x !== sid; });
+    list.unshift(sid);
+    if (list.length > WMS_RECENT_STOCKS_MAX) list = list.slice(0, WMS_RECENT_STOCKS_MAX);
+    saveRecentStocks(list);
+    renderRecentStockChips();
+  }
+
+  function removeRecentStock(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    var list = getRecentStocks().filter(function(x) { return x !== sid; });
+    saveRecentStocks(list);
+    renderRecentStockChips();
+  }
+
+  function renderRecentStockChips() {
+    var host = document.getElementById('searchRecentChips');
+    if (!host) return;
+    var list = getRecentStocks();
+    if (!list.length) {
+      host.innerHTML = '';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      html += '<button type="button" class="search-recent-chip" onclick="loadRecentStockChip(this, \'' + escapeJs(list[i]) + '\')">' + escapeHtml(list[i]) + '</button>';
+    }
+    host.innerHTML = html;
+  }
+
+  function loadRecentStockChip(btn, stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    var list = getRecentStocks().filter(function(x) { return x !== sid; });
+    saveRecentStocks(list);
+    if (btn && btn.classList) {
+      btn.classList.add('search-recent-chip--active');
+      btn.disabled = true;
+      setTimeout(function() {
+        if (btn.parentNode) btn.parentNode.removeChild(btn);
+        var host = document.getElementById('searchRecentChips');
+        if (host && !host.children.length) host.innerHTML = '';
+      }, 220);
+    } else {
+      renderRecentStockChips();
+    }
+    var search = document.getElementById('searchInput');
+    if (search) search.value = sid;
+    setStatus('📌 Letzte Stock-ID gewählt: ' + sid + ' — wird geladen…', '#F27420');
+    skipRecentStockPush = true;
+    loadData();
+  }
+
+  function handleWmsEscapeKey(e) {
+    if (!e) return;
+    var isEsc = (e.key === 'Escape' || e.keyCode === 27);
+    var isEnter = (e.key === 'Enter' || e.keyCode === 13);
+    if (!isEsc && !isEnter) return;
+
+    var oldRegal = document.getElementById('oldRegalModal');
+    if (oldRegal && oldRegal.classList.contains('open') && (isEsc || isEnter)) {
+      e.preventDefault();
+      e.stopPropagation();
+      closeOldRegalModal();
+      return;
+    }
+    if (!isEsc) return;
+
+    var cl = document.getElementById('wmsChangelogModal');
+    if (cl && cl.classList.contains('open')) {
+      e.preventDefault();
+      closeWmsChangelogModal();
+      return;
+    }
+    if (nbKomplettPending) {
+      e.preventDefault();
+      cancelNbKomplettPending();
+      return;
+    }
+    var regal = document.getElementById('regalScanOverlay');
+    if (regal && regal.classList.contains('open')) {
+      e.preventDefault();
+      closeRegalScan();
+      focusSearchBar();
+      return;
+    }
+    var busy = document.getElementById('hudBusyOverlay');
+    if (busy && busy.classList.contains('open')) {
+      e.preventDefault();
+      setHudBusy(false);
+      focusSearchBar();
+      return;
+    }
+    var lock = document.getElementById('stockLockOverlay');
+    if (lock && lock.classList.contains('open')) {
+      e.preventDefault();
+      dismissStockLockBlock();
+      focusSearchBar();
+      return;
+    }
+  }
+  document.addEventListener('keydown', handleWmsEscapeKey, true);
+
+  function getWmsChangelogHistoryClient() {
+    var raw = window.WMS_CHANGELOG_HISTORY;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === 'string') {
+      try {
+        var parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function renderWmsChangelogCards() {
+    var body = document.getElementById('wmsChangelogBody');
+    if (!body) return;
+    var list = getWmsChangelogHistoryClient();
+    var current = String(window.WMS_CLIENT_VERSION || '').trim();
+    if (!list.length) {
+      body.innerHTML = '<div class="wms-changelog-empty">Noch keine Changelog-Einträge.</div>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i] || {};
+      var ver = String(item.version || '').trim() || '?';
+      var date = String(item.date || '').trim() || '—';
+      var notes = String(item.notes || '').trim();
+      var isCurrent = current && ver === current;
+      html += '<article class="wms-changelog-card' + (isCurrent ? ' is-current' : '') + '">'
+        + '<div class="wms-changelog-card-top">'
+        +   '<div class="wms-changelog-card-version">WMS build ' + escapeHtml(ver) + (isCurrent ? ' · aktuell' : '') + '</div>'
+        +   '<div class="wms-changelog-card-date">' + escapeHtml(date) + '</div>'
+        + '</div>'
+        + '<div class="wms-changelog-card-notes">' + escapeHtml(notes || 'Keine Notes für den Build.') + '</div>'
+        + '</article>';
+    }
+    body.innerHTML = html;
+  }
+
+  function openWmsChangelogModal() {
+    renderWmsChangelogCards();
+    var el = document.getElementById('wmsChangelogModal');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeWmsChangelogModal() {
+    var el = document.getElementById('wmsChangelogModal');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
   }
 
   function setBaselines(kommentar, regal) {
@@ -841,10 +1091,6 @@
   function dismissStockLockBlock() {
     hideStockLockBlock();
     resetWmsHudForNextOrder('Bereit für nächsten Auftrag.');
-    var search = document.getElementById('searchInput');
-    if (search) {
-      try { search.focus(); } catch (e) {}
-    }
   }
 
   function isStockEditBlocked(stockId) {
@@ -1948,6 +2194,9 @@
         + '<div class="nb-detail-actions">'
         +   '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
         +     buildNbStatusSelect(i, e.status, e.row)
+        +     ((!nbIsExitOrder(e.typ) && String(e.status || '').toLowerCase().indexOf('komplett angeliefert') === -1)
+          ? '<button type="button" class="nb-komplett-btn" id="nb-komplett-btn-' + i + '" onclick="nbKomplettAndCarol(event,' + i + ')">⚡ Komplett + Carol</button>'
+          : '')
         +   '</div>'
         +   '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
         +     '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
@@ -1995,6 +2244,10 @@
       detail.classList.add('open');
       if(chev) chev.innerText = '▼';
       if(document.getElementById('nb-vasold-wrap-' + index)) loadNbVasoldForDetail(index);
+      var ent = nbDisplayEntries && nbDisplayEntries[index];
+      if(ent && ent.stockId && nbShouldStartCarol('komplett angeliefert', ent.typ)) {
+        prefetchNbCarol(ent.stockId);
+      }
     }
   }
 
@@ -2201,6 +2454,31 @@
     return /^https?:\/\//i.test(String(url || '').trim());
   }
 
+  var nbCarolPrefetch = {};
+
+  function prefetchNbCarol(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    var cur = nbCarolPrefetch[sid];
+    if (cur && cur !== 'pending' && cur !== 'fail') return;
+    if (cur === 'pending') return;
+    var fromCache = computeWmsFromCache(sid, refurbCache);
+    if (fromCache && fromCache.success && nbIsHttpUrl(fromCache.carolUrl)) {
+      nbCarolPrefetch[sid] = String(fromCache.carolUrl).trim();
+      return;
+    }
+    nbCarolPrefetch[sid] = 'pending';
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success && nbIsHttpUrl(res.carolUrl)) {
+        nbCarolPrefetch[sid] = String(res.carolUrl).trim();
+      } else {
+        nbCarolPrefetch[sid] = 'fail';
+      }
+    }).withFailureHandler(function() {
+      nbCarolPrefetch[sid] = 'fail';
+    }).fetchWmsData(sid);
+  }
+
   function nbShouldStartCarol(value, typ) {
     var valStr = String(value || '');
     var valLc = valStr.trim().toLowerCase();
@@ -2208,15 +2486,47 @@
     return !nbIsExitOrder(typ);
   }
 
+  function nbIsKomplettStatus(value) {
+    var valStr = String(value || '');
+    var valLc = valStr.trim().toLowerCase();
+    return valStr.indexOf('Angeliefert/Bereit') !== -1 || valLc.indexOf('komplett angeliefert') !== -1;
+  }
+
+  function nbKomplettStatusValue() {
+    var list = (nbStatusOptions && nbStatusOptions.length) ? nbStatusOptions : NB_STATUS_FALLBACK;
+    for (var i = 0; i < list.length; i++) {
+      var opt = String(list[i] != null ? list[i] : '').trim();
+      if (opt.toLowerCase().indexOf('komplett angeliefert') !== -1) return opt;
+    }
+    for (var j = 0; j < list.length; j++) {
+      var opt2 = String(list[j] != null ? list[j] : '').trim();
+      if (opt2.indexOf('Angeliefert/Bereit') !== -1) return opt2;
+    }
+    return 'komplett angeliefert';
+  }
+
+  function resolveNbCarolUrl(stockId) {
+    var sid = normalizeStockInput(stockId);
+    var pre = nbCarolPrefetch[sid];
+    if (pre && pre !== 'pending' && pre !== 'fail' && nbIsHttpUrl(pre)) return pre;
+    var fromCache = computeWmsFromCache(sid, refurbCache);
+    if (fromCache && fromCache.success && nbIsHttpUrl(fromCache.carolUrl)) {
+      nbCarolPrefetch[sid] = String(fromCache.carolUrl).trim();
+      return nbCarolPrefetch[sid];
+    }
+    return '';
+  }
+
   function startNbCarol(stockId, badge) {
     var showErr = function(msg) {
       carolReturnRestoreNb = null;
+      wmsBeep('err');
       if(badge) { badge.innerText = msg; badge.style.color = '#f85149'; }
     };
     carolReturnRestoreNb = stockId || true;
-    var fromCache = computeWmsFromCache(stockId, refurbCache);
-    if(fromCache && fromCache.success && nbIsHttpUrl(fromCache.carolUrl)) {
-      var win = window.open(nbCarolAutoUrl(fromCache.carolUrl), '_blank');
+    var readyUrl = resolveNbCarolUrl(stockId);
+    if (readyUrl) {
+      var win = window.open(nbCarolAutoUrl(readyUrl), '_blank');
       if(!win) showErr('Carol-Popup wurde blockiert!');
       else registerCarolWindow(win);
       return;
@@ -2231,6 +2541,7 @@
     } catch(e) {}
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success && nbIsHttpUrl(res.carolUrl)) {
+        nbCarolPrefetch[normalizeStockInput(stockId)] = String(res.carolUrl).trim();
         loaderWin.location.href = nbCarolAutoUrl(res.carolUrl);
         registerCarolWindow(loaderWin);
       } else {
@@ -2276,56 +2587,185 @@
     }
   }
 
-  function saveNbStatus(event, sheetRow, value, index) {
-    if(event) { event.stopPropagation(); event.preventDefault(); }
-    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
-    var sel = event ? event.target : null;
-    if(sel) sel.disabled = true;
+  var nbKomplettPending = null;
+  var nbKomplettCountdownTimer = null;
+
+  function hideNbUndoToast() {
+    var toast = document.getElementById('nbUndoToast');
+    if (toast) toast.hidden = true;
+    if (nbKomplettCountdownTimer) {
+      clearInterval(nbKomplettCountdownTimer);
+      nbKomplettCountdownTimer = null;
+    }
+  }
+
+  function showNbUndoToast(stockId, secondsLeft) {
+    var toast = document.getElementById('nbUndoToast');
+    var text = document.getElementById('nbUndoToastText');
+    if (text) {
+      text.textContent = 'Komplett für ' + (stockId || '—') + ' in ' + secondsLeft + 's — tipp Rückgängig falls Fail';
+    }
+    if (toast) toast.hidden = false;
+  }
+
+  function cancelNbKomplettPending(opts) {
+    opts = opts || {};
+    var silent = !!opts.silent;
+    if (!nbKomplettPending) {
+      hideNbUndoToast();
+      return;
+    }
+    var pending = nbKomplettPending;
+    nbKomplettPending = null;
+    if (pending.timer) clearTimeout(pending.timer);
+    hideNbUndoToast();
+    if (pending.sel) {
+      pending.sel.disabled = false;
+      var prev = String(pending.prevStatus || '');
+      var optsSel = pending.sel.options;
+      var matched = false;
+      for (var i = 0; i < optsSel.length; i++) {
+        if (String(optsSel[i].value) === prev) {
+          pending.sel.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched) pending.sel.value = prev;
+    }
+    var btn = document.getElementById('nb-komplett-btn-' + pending.index);
+    if (btn) btn.disabled = false;
+    if (silent) return;
     var badge = document.getElementById('nbTotalBadge');
-    if(badge) badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
-    if(nbShouldStartCarol(value, nbEnt.typ) && nbEnt.stockId) {
+    if (badge) {
+      badge.style.color = '';
+      badge.innerText = 'Abgebrochen — Status bleibt';
+      setTimeout(function() {
+        if (badge) badge.innerText = (nbAllEntries && nbAllEntries.length ? nbAllEntries.length : 0) + ' offen';
+      }, 2500);
+    }
+    wmsBeep('err');
+  }
+
+  function scheduleNbKomplettCommit(sheetRow, value, index, sel, prevStatus) {
+    cancelNbKomplettPending({ silent: true });
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    if (sel) {
+      sel.value = value;
+      sel.disabled = true;
+    }
+    var btn = document.getElementById('nb-komplett-btn-' + index);
+    if (btn) btn.disabled = true;
+    var left = 5;
+    showNbUndoToast(nbEnt.stockId || '', left);
+    nbKomplettCountdownTimer = setInterval(function() {
+      left -= 1;
+      if (left <= 0) return;
+      showNbUndoToast(nbEnt.stockId || '', left);
+    }, 1000);
+    var timer = setTimeout(function() {
+      nbKomplettPending = null;
+      hideNbUndoToast();
+      commitNbStatusSave(sheetRow, value, index, sel);
+    }, 5000);
+    nbKomplettPending = {
+      timer: timer,
+      sheetRow: sheetRow,
+      value: value,
+      index: index,
+      sel: sel,
+      prevStatus: prevStatus
+    };
+  }
+
+  function nbKomplettAndCarol(event, index) {
+    if (event) { event.stopPropagation(); event.preventDefault(); }
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    if (!nbEnt || !nbEnt.stockId) return;
+    if (nbIsExitOrder(nbEnt.typ)) return;
+    var value = nbKomplettStatusValue();
+    var sel = null;
+    var detail = document.getElementById('nb-detail-' + index);
+    if (detail) sel = detail.querySelector('select.nb-edit-input');
+    var prevStatus = String(nbEnt.status || '');
+    if (sel) prevStatus = String(sel.value || prevStatus);
+    if (nbEnt.stockId) prefetchNbCarol(nbEnt.stockId);
+    scheduleNbKomplettCommit(nbEnt.row, value, index, sel, prevStatus);
+  }
+
+  function commitNbStatusSave(sheetRow, value, index, sel) {
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    if (sel) sel.disabled = true;
+    var badge = document.getElementById('nbTotalBadge');
+    if (badge) {
+      badge.style.color = '';
+      badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
+    }
+    if (nbShouldStartCarol(value, nbEnt.typ) && nbEnt.stockId) {
       startNbCarol(nbEnt.stockId, badge);
     }
     google.script.run.withSuccessHandler(function(res) {
-      if(sel) sel.disabled = false;
-      if(res.success) {
-        if(sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 2500); }
-        for(var k = 0; k < nbAllEntries.length; k++) {
-          if(nbAllEntries[k].row === sheetRow) {
+      if (sel) sel.disabled = false;
+      var btn = document.getElementById('nb-komplett-btn-' + index);
+      if (res.success) {
+        wmsBeep('ok');
+        if (sel) { sel.style.borderColor = '#56d364'; setTimeout(function() { sel.style.borderColor = ''; }, 2500); }
+        for (var k = 0; k < nbAllEntries.length; k++) {
+          if (nbAllEntries[k].row === sheetRow) {
             nbAllEntries[k].status = value;
-            if(res.newRegal) nbAllEntries[k].regal = res.newRegal;
+            if (res.newRegal) nbAllEntries[k].regal = res.newRegal;
             break;
           }
         }
+        if (nbDisplayEntries && nbDisplayEntries[index]) nbDisplayEntries[index].status = value;
         var box = sel ? sel.closest('.nb-detail-box') : null;
-        if(box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
+        if (box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
         var regWrap = document.getElementById('nb-regal-wrap-' + index);
-        if(regWrap) regWrap.style.display = String(value || '').toLowerCase() === 'teilweise angeliefert' ? '' : 'none';
+        if (regWrap) regWrap.style.display = String(value || '').toLowerCase() === 'teilweise angeliefert' ? '' : 'none';
         var tbNb = document.getElementById('nbTableBody');
-        if(tbNb && tbNb.children[2 * index]) {
+        if (tbNb && tbNb.children[2 * index]) {
           var cells = tbNb.children[2 * index].querySelectorAll('td');
-          if(cells.length > 6) cells[6].textContent = value;
+          if (cells.length > 6) cells[6].textContent = value;
         }
+        if (btn && nbIsKomplettStatus(value)) btn.remove();
         var didDymo = false;
-        if(nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
+        if (nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
           didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
         }
-        if(!didDymo) {
-          if(badge) badge.innerText = res.message || 'Gespeichert!';
+        if (!didDymo) {
+          if (badge) badge.innerText = res.message || 'Gespeichert!';
         }
         if (res.printB64) {
           sendWerkstattauftragPrint(res.printB64, badge, null);
         } else {
-          setTimeout(function() { if(badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
+          setTimeout(function() { if (badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         }
       } else {
-        if(sel) sel.style.borderColor = '#f85149';
-        if(badge) { badge.innerText = res.message || 'Fehler'; badge.style.color = '#f85149'; }
+        wmsBeep('err');
+        if (sel) sel.style.borderColor = '#f85149';
+        if (btn) btn.disabled = false;
+        if (badge) { badge.innerText = res.message || 'Fehler'; badge.style.color = '#f85149'; }
       }
     }).withFailureHandler(function(err) {
-      if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
-      if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
+      wmsBeep('err');
+      if (sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
+      var btnFail = document.getElementById('nb-komplett-btn-' + index);
+      if (btnFail) btnFail.disabled = false;
+      if (badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
     }).updateNachbestellung(sheetRow, 'status', value, nbEnt.stockId || '', nbEnt.entryId || '');
+  }
+
+  function saveNbStatus(event, sheetRow, value, index) {
+    if (event) { event.stopPropagation(); event.preventDefault(); }
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    var sel = event ? event.target : null;
+    var prevStatus = String(nbEnt.status || '');
+    if (nbIsKomplettStatus(value)) {
+      if (nbEnt.stockId) prefetchNbCarol(nbEnt.stockId);
+      scheduleNbKomplettCommit(sheetRow, value, index, sel, prevStatus);
+      return;
+    }
+    commitNbStatusSave(sheetRow, value, index, sel);
   }
 
   function saveNbRegal(event, sheetRow, index) {
@@ -5283,8 +5723,8 @@
     var search = document.getElementById('searchInput');
     if (search) {
       search.value = '';
-      try { search.focus(); } catch (e) {}
     }
+    focusSearchBar({ clear: true, delay: 40 });
     toggleUI(false);
     if (statusMsg) setStatus(statusMsg, '#56d364');
     else setStatus('Bereit für nächsten Auftrag.', '#3FA0DB');
@@ -5294,6 +5734,11 @@
     if (res.success) {
       var prevStock = normalizeStockIdJs(currentStock);
       currentStock = normalizeStockInput(id);
+      if (skipRecentStockPush) {
+        skipRecentStockPush = false;
+      } else {
+        pushRecentStock(currentStock);
+      }
       var loadedStock = normalizeStockIdJs(currentStock);
       if (prevStock && prevStock !== loadedStock) {
         releaseStockEditLockClient(prevStock);
@@ -5397,6 +5842,7 @@
       maybeShowNbChooser(id);
       claimStockEditLockForCurrent(loadedStock);
     } else {
+      skipRecentStockPush = false;
       updateB2a1KandidatBadgeFromSchaeden('');
       hidePzContext();
       toggleUI(true);
@@ -5526,6 +5972,7 @@
     google.script.run.withSuccessHandler(function(res) {
       applyFetchWmsResult(res, id);
     }).withFailureHandler(function(err) {
+      skipRecentStockPush = false;
       setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
       toggleUI(true);
     }).fetchWmsData(id);
@@ -5881,11 +6328,18 @@
     valueEl.textContent = formatOldRegalDisplay(oldRegal);
     if (stockEl) stockEl.textContent = stockId ? stockId : '';
     modal.classList.add('open');
+    setTimeout(function() {
+      var okBtn = modal.querySelector('.reifen-action-btn');
+      if (okBtn) {
+        try { okBtn.focus(); } catch (e) {}
+      }
+    }, 40);
   }
 
   function closeOldRegalModal() {
     var modal = document.getElementById('oldRegalModal');
     if (modal) modal.classList.remove('open');
+    focusSearchBar({ clear: true, delay: 40 });
   }
 
   var activeCarolWindow = null;
@@ -5947,10 +6401,7 @@
       if (!cur || (target && cur === target)) {
         resetWmsHudForNextOrder('✅ Carol fertig — bereit für nächsten Auftrag.');
       } else {
-        var search = document.getElementById('searchInput');
-        if (search) {
-          try { search.focus(); } catch (e) {}
-        }
+        focusSearchBar({ delay: 40 });
       }
     }, 80);
   }
@@ -7416,6 +7867,37 @@
     if (sub) sub.textContent = aiAgentMode ? 'Fragen & Aktionen: Aufträge, Bestellungen & Lager' : 'Nur-Lesen-Modus · nur Fragen';
   }
 
+  function updateAiProviderToggleUi() {
+    var btn = document.getElementById('aiProviderToggle');
+    if (!btn) return;
+    var isZai = aiProvider === 'zai';
+    btn.textContent = isZai ? 'Z.ai' : 'Gemini';
+    btn.classList.toggle('ai-provider-toggle--zai', isZai);
+    btn.title = isZai
+      ? 'Aktuell: Z.ai (' + ZAI_MODEL + ') — klicken für Gemini'
+      : 'Aktuell: Gemini (' + GEMINI_MODEL + ') — klicken für Z.ai';
+  }
+
+  function toggleAiProvider() {
+    if (aiChatBusy) return;
+    if (aiPendingTool) {
+      var card = aiPendingTool.cardEl;
+      aiPendingTool = null;
+      aiRefreshSendBtn();
+      if (card) {
+        var acts = card.querySelector('.ai-tool-actions');
+        if (acts) acts.innerHTML = '<span class="ai-tool-cancelled">✖ Abgebrochen (Provider-Wechsel)</span>';
+      }
+    }
+    aiProvider = (aiProvider === 'zai') ? 'gemini' : 'zai';
+    try { localStorage.setItem('arasaka_ai_provider', aiProvider); } catch (e) {}
+    updateAiProviderToggleUi();
+    resetAiChat();
+    aiAppendMessage('bot', aiProvider === 'zai'
+      ? 'Provider: Z.ai (' + ZAI_MODEL + ').'
+      : 'Provider: Gemini (' + GEMINI_MODEL + ').');
+  }
+
   function toggleAiAgentMode() {
     aiAgentMode = !aiAgentMode;
     try { localStorage.setItem('arasaka_ai_agent_mode', aiAgentMode ? 'on' : 'off'); } catch (e) {}
@@ -7432,6 +7914,7 @@
     if (aiChatInited) return;
     aiChatInited = true;
     updateAiAgentToggleUi();
+    updateAiProviderToggleUi();
     var inp = document.getElementById('aiChatInput');
     if (inp) {
       inp.addEventListener('input', autoGrowAiInput);
@@ -7696,29 +8179,6 @@
     }
   }
 
-  function aiRequestToolConfirmation(name, args) {
-    aiPendingTool = { name: name, args: args };
-    var body = document.getElementById('aiChatBody');
-    if (!body) return;
-    var wrap = document.createElement('div');
-    wrap.className = 'ai-msg ai-msg--bot';
-    wrap.innerHTML =
-      '<div class="ai-msg-avatar">🤖</div>' +
-      '<div class="ai-msg-bubble ai-tool-card">' +
-        '<div class="ai-tool-title">⚡ Aktion vorgeschlagen</div>' +
-        '<div class="ai-tool-desc">' + aiRenderInline(aiDescribeTool(name, args)) + '</div>' +
-        '<div class="ai-tool-actions">' +
-          '<button type="button" class="ai-tool-btn ai-tool-run" onclick="aiConfirmPendingTool()">✅ Ausführen</button>' +
-          '<button type="button" class="ai-tool-btn ai-tool-cancel" onclick="aiCancelPendingTool()">✖ Abbrechen</button>' +
-        '</div>' +
-        '<div class="ai-tool-result" style="display:none;"></div>' +
-      '</div>';
-    body.appendChild(wrap);
-    body.scrollTop = body.scrollHeight;
-    aiPendingTool.cardEl = wrap;
-    aiRefreshSendBtn();
-  }
-
   function aiShowToolResult(card, result) {
     if (!card) return;
     var acts = card.querySelector('.ai-tool-actions');
@@ -7744,7 +8204,10 @@
     }
     aiExecuteTool(pend.name, pend.args).then(function(result) {
       aiShowToolResult(card, result);
-      aiChatHistory.push({ role: 'user', parts: [{ functionResponse: { name: pend.name, response: (result && typeof result === 'object') ? result : { value: String(result) } } }] });
+      var respObj = (result && typeof result === 'object') ? result : { value: String(result) };
+      var entry = { role: 'user', parts: [{ functionResponse: { name: pend.name, response: respObj } }] };
+      if (pend.toolCallId) entry._toolCallId = pend.toolCallId;
+      aiChatHistory.push(entry);
       aiRunTurn();
     });
   }
@@ -7759,12 +8222,128 @@
       var acts = card.querySelector('.ai-tool-actions');
       if (acts) acts.innerHTML = '<span class="ai-tool-cancelled">✖ Abgebrochen</span>';
     }
-    aiChatHistory.push({ role: 'user', parts: [{ functionResponse: { name: pend.name, response: { status: 'abgebrochen', message: 'Der Nutzer hat die Aktion abgelehnt.' } } }] });
+    var entry = { role: 'user', parts: [{ functionResponse: { name: pend.name, response: { status: 'abgebrochen', message: 'Der Nutzer hat die Aktion abgelehnt.' } } }] };
+    if (pend.toolCallId) entry._toolCallId = pend.toolCallId;
+    aiChatHistory.push(entry);
     aiRunTurn();
   }
 
-  function aiRunTurn() {
-    setAiBusy(true);
+  function aiGeminiTypeToJson(t) {
+    var u = String(t || '').toUpperCase();
+    if (u === 'STRING') return 'string';
+    if (u === 'NUMBER') return 'number';
+    if (u === 'INTEGER') return 'integer';
+    if (u === 'BOOLEAN') return 'boolean';
+    if (u === 'ARRAY') return 'array';
+    if (u === 'OBJECT') return 'object';
+    return 'string';
+  }
+
+  function aiSchemaToOpenAI(schema) {
+    if (!schema || typeof schema !== 'object') return { type: 'object', properties: {} };
+    var out = { type: aiGeminiTypeToJson(schema.type) };
+    if (schema.description) out.description = schema.description;
+    if (schema.enum) out.enum = schema.enum;
+    if (schema.properties) {
+      out.properties = {};
+      var keys = Object.keys(schema.properties);
+      for (var i = 0; i < keys.length; i++) {
+        out.properties[keys[i]] = aiSchemaToOpenAI(schema.properties[keys[i]]);
+      }
+    }
+    if (schema.required) out.required = schema.required;
+    if (schema.items) out.items = aiSchemaToOpenAI(schema.items);
+    return out;
+  }
+
+  function aiToolsOpenAI() {
+    var tools = [];
+    for (var i = 0; i < AI_AGENT_TOOLS.length; i++) {
+      var t = AI_AGENT_TOOLS[i];
+      tools.push({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: aiSchemaToOpenAI(t.parameters)
+        }
+      });
+    }
+    return tools;
+  }
+
+  function aiHistoryToZaiMessages(history) {
+    var msgs = [];
+    for (var i = 0; i < history.length; i++) {
+      var item = history[i];
+      if (!item || !item.parts) continue;
+      var fr = null;
+      var fc = null;
+      var text = '';
+      for (var p = 0; p < item.parts.length; p++) {
+        var part = item.parts[p];
+        if (!part) continue;
+        if (part.functionResponse) fr = part.functionResponse;
+        else if (part.functionCall) fc = part.functionCall;
+        else if (part.text) text += part.text;
+      }
+      if (fr) {
+        msgs.push({
+          role: 'tool',
+          tool_call_id: item._toolCallId || ('call_' + (fr.name || 'tool')),
+          content: JSON.stringify(fr.response != null ? fr.response : {})
+        });
+        continue;
+      }
+      if (fc) {
+        var tid = item._toolCallId || ('call_' + (++aiToolCallSeq));
+        item._toolCallId = tid;
+        msgs.push({
+          role: 'assistant',
+          content: text || null,
+          tool_calls: [{
+            id: tid,
+            type: 'function',
+            function: {
+              name: fc.name,
+              arguments: JSON.stringify(fc.args || {})
+            }
+          }]
+        });
+        continue;
+      }
+      msgs.push({
+        role: (item.role === 'model') ? 'assistant' : 'user',
+        content: text
+      });
+    }
+    return msgs;
+  }
+
+  function aiRequestToolConfirmation(name, args, toolCallId) {
+    aiPendingTool = { name: name, args: args, toolCallId: toolCallId || null };
+    var body = document.getElementById('aiChatBody');
+    if (!body) return;
+    var wrap = document.createElement('div');
+    wrap.className = 'ai-msg ai-msg--bot';
+    wrap.innerHTML =
+      '<div class="ai-msg-avatar">🤖</div>' +
+      '<div class="ai-msg-bubble ai-tool-card">' +
+        '<div class="ai-tool-title">⚡ Aktion vorgeschlagen</div>' +
+        '<div class="ai-tool-desc">' + aiRenderInline(aiDescribeTool(name, args)) + '</div>' +
+        '<div class="ai-tool-actions">' +
+          '<button type="button" class="ai-tool-btn ai-tool-run" onclick="aiConfirmPendingTool()">✅ Ausführen</button>' +
+          '<button type="button" class="ai-tool-btn ai-tool-cancel" onclick="aiCancelPendingTool()">✖ Abbrechen</button>' +
+        '</div>' +
+        '<div class="ai-tool-result" style="display:none;"></div>' +
+      '</div>';
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+    aiPendingTool.cardEl = wrap;
+    aiRefreshSendBtn();
+  }
+
+  function aiRunTurnGemini() {
     var typing = aiShowTyping();
     var systemText = buildAiSystemPrompt() + '\n\n' + buildAiDataContext();
     var payload = {
@@ -7819,6 +8398,92 @@
       setAiBusy(false);
       aiAppendMessage('bot', '⚠️ Verbindungsfehler: ' + (err && err.message ? err.message : err));
     });
+  }
+
+  function aiRunTurnZai() {
+    var typing = aiShowTyping();
+    var systemText = buildAiSystemPrompt() + '\n\n' + buildAiDataContext();
+    var messages = [{ role: 'system', content: systemText }].concat(aiHistoryToZaiMessages(aiChatHistory.slice(-24)));
+    var payload = {
+      model: ZAI_MODEL,
+      messages: messages,
+      temperature: 0.2,
+      max_tokens: 8192,
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'high'
+    };
+    if (aiAgentMode) {
+      payload.tools = aiToolsOpenAI();
+    }
+
+    fetch(ZAI_API_BASE, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + ZAI_API_KEY
+      },
+      body: JSON.stringify(payload)
+    }).then(function(resp) {
+      return resp.json().then(function(data) { return { ok: resp.ok, status: resp.status, data: data }; });
+    }).then(function(res) {
+      if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+      setAiBusy(false);
+      if (!res.ok) {
+        var errMsg = (res.data && res.data.error && (res.data.error.message || res.data.error))
+          ? (typeof res.data.error === 'string' ? res.data.error : res.data.error.message)
+          : ('HTTP ' + res.status);
+        aiAppendMessage('bot', '⚠️ Fehler von Z.ai: ' + errMsg);
+        return;
+      }
+      var msg = (res.data.choices && res.data.choices[0] && res.data.choices[0].message) ? res.data.choices[0].message : null;
+      if (!msg) {
+        aiAppendMessage('bot', '⚠️ Keine Antwort erhalten.');
+        return;
+      }
+      var toolCalls = msg.tool_calls;
+      if (toolCalls && toolCalls.length) {
+        var tc = toolCalls[0];
+        var fn = tc.function || {};
+        var args = {};
+        try { args = JSON.parse(fn.arguments || '{}'); } catch (e) { args = {}; }
+        var tid = tc.id || ('call_' + (++aiToolCallSeq));
+        aiChatHistory.push({
+          role: 'model',
+          parts: [{ functionCall: { name: fn.name, args: args } }],
+          _toolCallId: tid
+        });
+        aiRequestToolConfirmation(fn.name, args, tid);
+        return;
+      }
+      var answer = (typeof msg.content === 'string') ? msg.content : '';
+      if (!answer && msg.reasoning_content) answer = String(msg.reasoning_content);
+      if (!answer) answer = '⚠️ Keine Antwort erhalten.';
+      aiAppendMessage('bot', answer);
+      aiChatHistory.push({ role: 'model', parts: [{ text: answer }] });
+    }).catch(function(err) {
+      if (typing && typing.parentNode) typing.parentNode.removeChild(typing);
+      setAiBusy(false);
+      aiAppendMessage('bot', '⚠️ Verbindungsfehler: ' + (err && err.message ? err.message : err));
+    });
+  }
+
+  function aiRunTurn() {
+    setAiBusy(true);
+    if (aiProvider === 'zai') {
+      if (!ZAI_API_KEY) {
+        setAiBusy(false);
+        aiAppendMessage('bot', '⚠️ Z.ai API-Key fehlt — bitte in WMS_Script.html bei ZAI_API_KEY eintragen.');
+        return;
+      }
+      aiRunTurnZai();
+      return;
+    }
+    if (!GEMINI_API_KEY) {
+      setAiBusy(false);
+      aiAppendMessage('bot', '⚠️ Gemini API-Key fehlt — bitte in WMS_Script.html bei GEMINI_API_KEY eintragen.');
+      return;
+    }
+    aiRunTurnGemini();
   }
 
   function sendAiChatMessage() {
