@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         N4Parts StockID Warenkorb Suche
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.2
 // @description  Sucht Warenkörbe nach StockID über alle Seiten via /api/cart/list
 // @author       ARASAKA
 // @match        https://www.n4parts.net/*
@@ -15,11 +15,13 @@
 
     const PANEL_ID = 'n4-stockid-search-panel';
     const LAST_KEY = 'n4_stockid_last_query';
+    const POS_KEY = 'n4_stockid_panel_pos';
     const PAGE_SIZE = 20;
     const ACCENT = '#5CB8B2';
 
     let searching = false;
     let lastHits = [];
+    let dragState = null;
 
     function isWarenkoerbePage() {
         const h = (location.hash || '').split('?')[0];
@@ -27,14 +29,18 @@
     }
 
     function api(path, options) {
+        const opts = options || {};
+        const headers = {
+            Accept: 'application/json',
+            ...(opts.headers || {})
+        };
+        if (opts.body != null && !headers['Content-Type'] && !headers['content-type']) {
+            headers['Content-Type'] = 'application/json';
+        }
         return fetch(path, {
             credentials: 'include',
-            ...options,
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                ...(options && options.headers)
-            }
+            ...opts,
+            headers
         }).then(async (r) => {
             if (!r.ok) {
                 const text = await r.text().catch(() => '');
@@ -92,9 +98,18 @@
     }
 
     async function selectCart(id) {
+        try {
+            await api('/api/cart/select', {
+                method: 'PUT',
+                body: String(id)
+            });
+            return;
+        } catch (err) {
+            if (!String(err.message || '').startsWith('400')) throw err;
+        }
         await api('/api/cart/select', {
             method: 'PUT',
-            body: JSON.stringify(id)
+            body: JSON.stringify({ cartId: id })
         });
     }
 
@@ -110,14 +125,18 @@
   border:1px solid #bcbcba;border-radius:4px;
   box-shadow:0 4px 18px rgba(0,0,0,.18);
   font-family:Roboto,Arial,sans-serif;font-size:12px;line-height:1.35;
+  user-select:none;
 }
 #${PANEL_ID} .n4h{
   display:flex;align-items:center;justify-content:space-between;
   background:#3c3c3b;color:#fff;padding:8px 10px;font-weight:500;
+  cursor:move;touch-action:none;
 }
 #${PANEL_ID} .n4h button{
   background:transparent;border:0;color:#fff;cursor:pointer;font-size:14px;padding:0 2px;
 }
+#${PANEL_ID}.n4dragging{opacity:.92;box-shadow:0 8px 28px rgba(0,0,0,.28)}
+#${PANEL_ID} .n4b,#${PANEL_ID} input{user-select:text}
 #${PANEL_ID} .n4b{padding:10px}
 #${PANEL_ID} .n4row{display:flex;gap:6px}
 #${PANEL_ID} input[type="text"]{
@@ -225,6 +244,92 @@
         }
     }
 
+    function clampPos(left, top, panel) {
+        const w = panel.offsetWidth || 280;
+        const h = panel.offsetHeight || 120;
+        const maxL = Math.max(0, window.innerWidth - w);
+        const maxT = Math.max(0, window.innerHeight - h);
+        return {
+            left: Math.min(Math.max(0, left), maxL),
+            top: Math.min(Math.max(0, top), maxT)
+        };
+    }
+
+    function applyPos(panel, left, top) {
+        const p = clampPos(left, top, panel);
+        panel.style.left = p.left + 'px';
+        panel.style.top = p.top + 'px';
+        panel.style.right = 'auto';
+        panel.style.bottom = 'auto';
+        return p;
+    }
+
+    function loadPos(panel) {
+        try {
+            const raw = localStorage.getItem(POS_KEY);
+            if (!raw) return;
+            const pos = JSON.parse(raw);
+            if (typeof pos.left === 'number' && typeof pos.top === 'number') {
+                applyPos(panel, pos.left, pos.top);
+            }
+        } catch (e) {}
+    }
+
+    function savePos(panel) {
+        const left = parseFloat(panel.style.left);
+        const top = parseFloat(panel.style.top);
+        if (Number.isNaN(left) || Number.isNaN(top)) return;
+        localStorage.setItem(POS_KEY, JSON.stringify({ left, top }));
+    }
+
+    function enableDrag(panel) {
+        const handle = panel.querySelector('.n4h');
+        if (!handle) return;
+
+        function onPointerDown(e) {
+            if (e.button != null && e.button !== 0) return;
+            if (e.target && e.target.closest('[data-close]')) return;
+            const rect = panel.getBoundingClientRect();
+            dragState = {
+                panel,
+                offsetX: e.clientX - rect.left,
+                offsetY: e.clientY - rect.top,
+                pointerId: e.pointerId
+            };
+            panel.classList.add('n4dragging');
+            try {
+                handle.setPointerCapture(e.pointerId);
+            } catch (err) {}
+            e.preventDefault();
+        }
+
+        function onPointerMove(e) {
+            if (!dragState || dragState.panel !== panel) return;
+            applyPos(panel, e.clientX - dragState.offsetX, e.clientY - dragState.offsetY);
+        }
+
+        function onPointerUp(e) {
+            if (!dragState || dragState.panel !== panel) return;
+            applyPos(panel, e.clientX - dragState.offsetX, e.clientY - dragState.offsetY);
+            savePos(panel);
+            panel.classList.remove('n4dragging');
+            dragState = null;
+        }
+
+        handle.addEventListener('pointerdown', onPointerDown);
+        handle.addEventListener('pointermove', onPointerMove);
+        handle.addEventListener('pointerup', onPointerUp);
+        handle.addEventListener('pointercancel', onPointerUp);
+
+        window.addEventListener('resize', () => {
+            const left = parseFloat(panel.style.left);
+            const top = parseFloat(panel.style.top);
+            if (Number.isNaN(left) || Number.isNaN(top)) return;
+            const p = applyPos(panel, left, top);
+            localStorage.setItem(POS_KEY, JSON.stringify(p));
+        });
+    }
+
     function createPanel() {
         if (document.getElementById(PANEL_ID)) return;
         ensureStyles();
@@ -241,6 +346,8 @@
             '<div class="n4hits"></div>' +
             '</div>';
         document.body.appendChild(panel);
+        loadPos(panel);
+        enableDrag(panel);
 
         const input = panel.querySelector('input');
         const last = localStorage.getItem(LAST_KEY);
