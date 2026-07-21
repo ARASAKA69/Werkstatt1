@@ -26,6 +26,29 @@
   window.WMS_CLIENT_VERSION = <?!= JSON.stringify(String(appVersion || '')) ?>;
   window.WMS_CLIENT_URL = <?!= JSON.stringify(String(appUrl || '')) ?>;
   window.WMS_CACHE_NONCE = <?!= JSON.stringify(String(cacheNonce || '')) ?>;
+<? if (stripBoot) { ?>
+  (function() {
+    var clean = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
+    if (!clean) return;
+    try {
+      if (window.top && window.top !== window) {
+        window.top.location.replace(clean);
+        return;
+      }
+    } catch (e0) {}
+    try {
+      var a = document.createElement('a');
+      a.href = clean;
+      a.target = '_top';
+      a.rel = 'noopener';
+      document.documentElement.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e1) {
+      window.location.replace(clean);
+    }
+  })();
+<? } ?>
 </script>
 <div id="google_translate_element" aria-hidden="true"></div>
 <?!= include('WMS_Body') ?>

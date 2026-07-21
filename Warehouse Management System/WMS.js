@@ -18,8 +18,8 @@ const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
-const WMS_APP_VERSION = "2.0.5";
-const WMS_APP_CHANGELOG = "• Update öffnet nur noch den sauberen /exec Link (kein wmsboot mehr)";
+const WMS_APP_VERSION = "2.0.8";
+const WMS_APP_CHANGELOG = "• Sidebar: Update manuell prüfen (Slider über Build-Nummer)";
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
@@ -266,6 +266,37 @@ function nachbestellungLagerortToSheetValue(raw, allowedList) {
 function normalizeStockId(value) {
     return String(value || "").replace(/\s+/g, "").toUpperCase();
   }
+
+function linkUrlFromRichText_(rich) {
+  if (!rich) return "";
+  try {
+    var direct = rich.getLinkUrl();
+    if (direct) return String(direct).trim();
+  } catch (e0) {}
+  try {
+    var runs = rich.getRuns();
+    for (var i = 0; i < runs.length; i++) {
+      var u = runs[i].getLinkUrl();
+      if (u) return String(u).trim();
+    }
+  } catch (e1) {}
+  return "";
+}
+
+function carolUrlFromSheetParts_(rich, formula, value) {
+  var fromRich = linkUrlFromRichText_(rich);
+  if (fromRich) return fromRich;
+  var f = String(formula || "");
+  var m = f.match(/HYPERLINK\s*\(\s*"([^"]+)"/i) || f.match(/HYPERLINK\s*\(\s*'([^']+)'/i);
+  if (m && m[1]) return String(m[1]).trim();
+  return String(value || "").trim();
+}
+
+function getSheetCarolUrl_(sheet, row) {
+  if (!sheet || !(row > 0)) return "";
+  var cell = sheet.getRange(row, 3);
+  return carolUrlFromSheetParts_(cell.getRichTextValue(), cell.getFormula(), cell.getValue());
+}
 
 function cellMatchesStockId(cellVal, stockId) {
     var cv = normalizeStockId(cellVal);
@@ -844,7 +875,7 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
       return { success: false, message: "Kein „WSS ers“ in Schaden (Spalte W)." };
     }
 
-    var carol = carolUrlOpt || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var carol = carolUrlOpt || getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
     var marke = markeOpt || String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
     if (!carol) return { success: false, message: "Carol-Link fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
     if (!marke) return { success: false, message: "Marke & Model fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
@@ -959,7 +990,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     if (refurbRow === -1) return { success: false, message: "Stock-ID in Refurbisment List nicht gefunden!" };
 
     var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
-    var carol = String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var carol = getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
     var marke = String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
     if (!carol) return { success: false, message: "Carol-Link fehlt in Refurbishment." };
     if (!marke) return { success: false, message: "Marke & Model fehlt in Refurbishment." };
@@ -1090,6 +1121,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     t.appVersion = String(WMS_APP_VERSION || "");
     t.appUrl = getWmsWebAppUrl_();
     t.cacheNonce = String(Date.now());
+    t.stripBoot = !!(p.wmsboot || p._wms_v);
     return t.evaluate()
       .setTitle('Warehouse Management System')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
@@ -1234,7 +1266,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       if (hitRow > 0) {
         var rowData = sheet.getRange(hitRow, 1, 1, 30).getValues()[0];
         result.success = true;
-        result.carolUrl = String(rowData[2] || "");
+        result.carolUrl = getSheetCarolUrl_(sheet, hitRow) || String(rowData[2] || "").trim();
         result.schaeden = String(rowData[22] || "");
         result.kommBestellung = String(rowData[23] || "");
         result.kommAnlieferung = String(rowData[24] || "");
@@ -1517,15 +1549,24 @@ function getRefurbishmentCachePayload() {
 
     var lastRow = Math.max(2, sheet.getLastRow());
     var rawRows = [];
+    var carolRich = [];
+    var carolFormulas = [];
     if (lastRow >= 2) {
       rawRows = sheet.getRange(2, 1, lastRow, 30).getValues();
+      carolRich = sheet.getRange(2, 3, lastRow, 3).getRichTextValues();
+      carolFormulas = sheet.getRange(2, 3, lastRow, 3).getFormulas();
     }
     var rows = [];
     var ri;
     for (ri = 0; ri < rawRows.length; ri++) {
       var r = rawRows[ri];
+      var carolCell = carolUrlFromSheetParts_(
+        carolRich[ri] ? carolRich[ri][0] : null,
+        carolFormulas[ri] ? carolFormulas[ri][0] : "",
+        r[2]
+      );
       rows.push([
-        r[1], r[2], r[22], r[23], r[24], r[25], r[27], r[29], r[12]
+        r[1], carolCell, r[22], r[23], r[24], r[25], r[27], r[29], r[12]
       ]);
     }
 
@@ -2081,7 +2122,7 @@ function getRefurbishmentCachePayload() {
       }
 
       result.oldRegal = String(sheetRefurb.getRange(foundRow, 28).getValue() || "LEER");
-      result.carolUrl = String(sheetRefurb.getRange(foundRow, 3).getValue() || "");
+      result.carolUrl = getSheetCarolUrl_(sheetRefurb, foundRow) || String(sheetRefurb.getRange(foundRow, 3).getValue() || "");
 
       sheetRefurb.getRange(foundRow, 25).setBackground("#00FF00");
       sheetRefurb.getRange(foundRow, 26).setValue("Herausgegeben");

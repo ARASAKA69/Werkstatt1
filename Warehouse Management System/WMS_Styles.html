@@ -5817,6 +5817,26 @@
     color: #F27420;
     line-height: 1.35;
   }
+  .wms-update-check-toggle {
+    margin-top: 10px;
+  }
+  .wms-update-check-toggle .wms-theme-switch[aria-checked="true"] {
+    background: linear-gradient(135deg, #F27420 0%, #d96212 100%);
+    border-color: rgba(242, 116, 32, 0.85);
+  }
+  .wms-update-check-toggle .wms-theme-switch[aria-checked="true"] .wms-theme-thumb {
+    left: calc(100% - 25px);
+    background: radial-gradient(circle at 35% 35%, #fff7d8 0%, #ffd86a 50%, #ea8e15 100%);
+  }
+  .wms-update-check-toggle .wms-theme-switch[aria-checked="true"] .wms-theme-thumb::after {
+    opacity: 0;
+  }
+  .wms-update-check-toggle.is-checking .wms-theme-toggle-label {
+    color: #F27420;
+  }
+  .wms-update-check-toggle.is-current .wms-theme-toggle-label {
+    color: #56d364;
+  }
   html[data-theme="light"] .wms-build-note {
     color: #d96212;
   }

@@ -196,6 +196,7 @@
 
   var wmsUpdateCheckBusy = false;
   var wmsUpdateForced = false;
+  var wmsUpdateCheckFeedbackTimer = null;
 
   function getCleanWmsUrl() {
     return String(window.WMS_CLIENT_URL || '').trim().split('?')[0].split('#')[0];
@@ -211,8 +212,37 @@
     a.remove();
   }
 
+  function setWmsUpdateCheckSwitch(on) {
+    var sw = document.getElementById('wmsUpdateCheckSwitch');
+    if (!sw) return;
+    sw.setAttribute('aria-checked', on ? 'true' : 'false');
+  }
+
+  function setWmsUpdateCheckFeedback(state, text) {
+    var wrap = document.querySelector('.wms-update-check-toggle');
+    var label = document.getElementById('wmsUpdateCheckLabel');
+    if (wrap) {
+      wrap.classList.remove('is-checking', 'is-current');
+      if (state) wrap.classList.add(state);
+    }
+    if (label) label.textContent = text || 'Update prüfen';
+    if (wmsUpdateCheckFeedbackTimer) {
+      clearTimeout(wmsUpdateCheckFeedbackTimer);
+      wmsUpdateCheckFeedbackTimer = null;
+    }
+    if (state === 'is-current' || state === 'is-checking') {
+      wmsUpdateCheckFeedbackTimer = setTimeout(function() {
+        if (wrap) wrap.classList.remove('is-checking', 'is-current');
+        if (label) label.textContent = 'Update prüfen';
+        setWmsUpdateCheckSwitch(false);
+      }, state === 'is-checking' ? 12000 : 2500);
+    }
+  }
+
   function showWmsUpdateBlock(info) {
     wmsUpdateForced = true;
+    setWmsUpdateCheckSwitch(false);
+    setWmsUpdateCheckFeedback('', 'Update prüfen');
     var el = document.getElementById('wmsUpdateOverlay');
     var verEl = document.getElementById('wmsUpdateVersion');
     var logEl = document.getElementById('wmsUpdateChangelog');
@@ -259,21 +289,52 @@
     window.location.reload();
   }
 
-  function runWmsAppUpdateCheck() {
-    if (wmsUpdateForced || wmsUpdateCheckBusy) return;
-    if (typeof google === 'undefined' || !google.script || !google.script.run) return;
+  function runWmsAppUpdateCheck(opts) {
+    opts = opts || {};
+    var manual = !!opts.manual;
+    if (wmsUpdateForced) return;
+    if (wmsUpdateCheckBusy) {
+      if (manual) setWmsUpdateCheckFeedback('is-checking', 'Prüfe…');
+      return;
+    }
+    if (typeof google === 'undefined' || !google.script || !google.script.run) {
+      if (manual) {
+        setWmsUpdateCheckSwitch(false);
+        setWmsUpdateCheckFeedback('is-current', 'Nicht verfügbar');
+      }
+      return;
+    }
     wmsUpdateCheckBusy = true;
+    if (manual) {
+      setWmsUpdateCheckSwitch(true);
+      setWmsUpdateCheckFeedback('is-checking', 'Prüfe…');
+    }
     var clientVersion = String(window.WMS_CLIENT_VERSION || '');
     google.script.run.withSuccessHandler(function(res) {
       wmsUpdateCheckBusy = false;
-      if (res && res.updateAvailable) showWmsUpdateBlock(res);
+      if (res && res.updateAvailable) {
+        showWmsUpdateBlock(res);
+        return;
+      }
+      if (manual) {
+        setWmsUpdateCheckSwitch(false);
+        setWmsUpdateCheckFeedback('is-current', 'Aktuell');
+      }
     }).withFailureHandler(function() {
       wmsUpdateCheckBusy = false;
+      if (manual) {
+        setWmsUpdateCheckSwitch(false);
+        setWmsUpdateCheckFeedback('is-current', 'Prüfung fehlgeschlagen');
+      }
     }).checkWmsAppUpdate(clientVersion);
   }
 
+  function manualWmsUpdateCheck() {
+    runWmsAppUpdateCheck({ manual: true });
+  }
+
   runWmsAppUpdateCheck();
-  setInterval(runWmsAppUpdateCheck, 45000);
+  setInterval(function() { runWmsAppUpdateCheck(); }, 45000);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) runWmsAppUpdateCheck();
   });
@@ -2130,6 +2191,10 @@
     return carolUrl + (carolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1&arasaka_noprint=1';
   }
 
+  function nbIsHttpUrl(url) {
+    return /^https?:\/\//i.test(String(url || '').trim());
+  }
+
   function nbShouldStartCarol(value, typ) {
     var valStr = String(value || '');
     var valLc = valStr.trim().toLowerCase();
@@ -2144,7 +2209,7 @@
     };
     carolReturnRestoreNb = stockId || true;
     var fromCache = computeWmsFromCache(stockId, refurbCache);
-    if(fromCache && fromCache.success && fromCache.carolUrl) {
+    if(fromCache && fromCache.success && nbIsHttpUrl(fromCache.carolUrl)) {
       var win = window.open(nbCarolAutoUrl(fromCache.carolUrl), '_blank');
       if(!win) showErr('Carol-Popup wurde blockiert!');
       else registerCarolWindow(win);
@@ -2159,12 +2224,13 @@
       loaderWin.document.write('<title>Carol wird gestartet…</title><body style="background:#05080c;color:#00ffcc;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;"><div style="text-align:center;"><div style="font-size:22px;letter-spacing:2px;">ARASAKA SYS //</div><div style="margin-top:12px;opacity:0.7;">Lade Carol für ' + escapeHtml(stockId) + '…</div></div></body>');
     } catch(e) {}
     google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success && res.carolUrl) {
+      if(res && res.success && nbIsHttpUrl(res.carolUrl)) {
         loaderWin.location.href = nbCarolAutoUrl(res.carolUrl);
         registerCarolWindow(loaderWin);
       } else {
         try { loaderWin.close(); } catch(e) {}
-        showErr('Carol-Link für ' + stockId + ' nicht gefunden!');
+        var detail = (res && res.message) ? res.message : ((res && res.carolUrl) ? 'Carol-Zelle hat keinen gültigen http-Link' : 'kein Carol-Link in Refurbisment List');
+        showErr('Carol-Link für ' + stockId + ' nicht gefunden! (' + detail + ')');
       }
     }).withFailureHandler(function(err) {
       try { loaderWin.close(); } catch(e) {}
