@@ -1934,43 +1934,49 @@
       html += '<tr class="nb-detail" id="nb-detail-' + i + '">'
         + '<td colspan="8">'
         + '<div class="nb-detail-inner">'
-        + '<div class="nb-detail-box"><div class="nb-detail-lbl">Beschreibung</div>'
-        +   '<div class="nb-detail-val">' + escapeHtml(e.teil || '-') + '</div>'
-        + '</div>'
-        + '<div class="nb-detail-box"><div class="nb-detail-lbl">Artikel-Nr.</div>'
-        +   '<div class="nb-detail-val">' + escapeHtml(e.artikel || '-') + '</div>'
-        + '</div>'
-        + '<div class="nb-detail-box"><div class="nb-detail-lbl">Entry-ID</div>'
-        +   '<div class="nb-detail-val" style="font-family:monospace;font-weight:700;color:#3FA0DB;">' + escapeHtml(e.entryId || '-') + '</div>'
-        + '</div>'
-        + '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
-        +   buildNbStatusSelect(i, e.status, e.row)
-        + '</div>'
-        + '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
-        +   '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
-        +   '<button type="button" class="regal-scan-btn" onclick="openNbRegalScan(event,' + e.row + ',' + i + ')">📷 Regal scannen</button>'
-        + '</div>'
-        + nbVasoldHtml
-        + '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
-        +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
-        +   (e.entryId ? '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.entryId) + '\')">Entry-ID: ' + escapeHtml(e.entryId) + '</div>' : '')
-        +   '<div class="nb-copy-box" style="margin-bottom:6px;" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
-        +   (nbIsExitOrder(e.typ) ? '<div class="nb-copy-box nb-copy-exit" onclick="copyNbExit(event,' + i + ')">📋 EXIT-Nachricht<span class="nb-copy-exit-preview">' + escapeHtml(e.stockId) + ' / -&gt; ' + escapeHtml(e.teil || '') + ' / EXIT</span></div>' : '')
-        + '</div>'
-        + '<div class="nb-detail-box nb-box-gold"><div class="nb-detail-lbl">Etiketten</div>'
-        +   '<div class="nb-qty-stepper" style="margin-bottom:8px;">'
-        +     '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',-1)">−</button>'
-        +     '<input type="number" class="nb-print-input" id="nb-qty-' + i + '" value="1" min="0">'
-        +     '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',1)">+</button>'
+        + '<div class="nb-detail-info">'
+        +   '<div class="nb-detail-box nb-box-desc"><div class="nb-detail-lbl">Beschreibung</div>'
+        +     '<div class="nb-detail-val">' + escapeHtml(e.teil || '-') + '</div>'
         +   '</div>'
-        +   '<button class="nb-print-btn" style="width:100%;" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
+        +   '<div class="nb-detail-box"><div class="nb-detail-lbl">Artikel-Nr.</div>'
+        +     '<div class="nb-detail-val">' + escapeHtml(e.artikel || '-') + '</div>'
+        +   '</div>'
+        +   '<div class="nb-detail-box"><div class="nb-detail-lbl">Entry-ID</div>'
+        +     '<div class="nb-detail-val nb-detail-val--mono">' + escapeHtml(e.entryId || '-') + '</div>'
+        +   '</div>'
         + '</div>'
-        + (wmsWerkstattPrintEnabled
+        + '<div class="nb-detail-actions">'
+        +   '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
+        +     buildNbStatusSelect(i, e.status, e.row)
+        +   '</div>'
+        +   '<div class="nb-detail-box nb-box-gold" id="nb-regal-wrap-' + i + '" style="' + (showNbRegal ? '' : 'display:none;') + '"><div class="nb-detail-lbl">Regal (erste Kiste)</div>'
+        +     '<select class="nb-edit-input" id="nb-regal-sel-' + i + '" onchange="saveNbRegal(event,' + e.row + ',' + i + ')" onclick="event.stopPropagation();">' + buildNbRegalOptions(e.regal, nbLagerortOptions) + '</select>'
+        +     '<button type="button" class="regal-scan-btn" onclick="openNbRegalScan(event,' + e.row + ',' + i + ')">📷 Regal scannen</button>'
+        +   '</div>'
+        +   nbVasoldHtml
+        +   '<div class="nb-detail-box nb-box-purple"><div class="nb-detail-lbl">Kopieren</div>'
+        +     '<div class="nb-copy-grid">'
+        +       '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.stockId) + '\')">Stock-ID: ' + escapeHtml(e.stockId) + '</div>'
+        +       (e.entryId ? '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.entryId) + '\')">Entry-ID: ' + escapeHtml(e.entryId) + '</div>' : '')
+        +       '<div class="nb-copy-box" onclick="copyNbValue(event,\'' + escapeJs(e.teil) + '\')">' + escapeHtml(e.teil || 'Beschreibung') + '</div>'
+        +       (nbIsExitOrder(e.typ) ? '<div class="nb-copy-box nb-copy-exit" onclick="copyNbExit(event,' + i + ')">📋 EXIT-Nachricht<span class="nb-copy-exit-preview">' + escapeHtml(e.stockId) + ' / -&gt; ' + escapeHtml(e.teil || '') + ' / EXIT</span></div>' : '')
+        +     '</div>'
+        +   '</div>'
+        +   '<div class="nb-detail-box nb-box-gold nb-box-etikett"><div class="nb-detail-lbl">Etiketten</div>'
+        +     '<div class="nb-qty-stepper">'
+        +       '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',-1)">−</button>'
+        +       '<input type="number" class="nb-print-input" id="nb-qty-' + i + '" value="1" min="0">'
+        +       '<button type="button" class="nb-qty-btn" onclick="event.stopPropagation();stepQty(\'nb-qty-' + i + '\',1)">+</button>'
+        +     '</div>'
+        +     '<button class="nb-print-btn" type="button" onclick="printNbLabel(event,\'' + escapeJs(e.stockId) + '\',' + i + ')">Drucken</button>'
+        +   '</div>'
+        +   (wmsWerkstattPrintEnabled
           ? '<div class="nb-detail-box nb-box-gold" id="nb-wa-print-wrap-' + i + '"><div class="nb-detail-lbl">Werkstattauftrag</div>'
-          +   '<button type="button" class="nb-print-btn" style="width:100%;" id="nb-wa-print-btn-' + i + '" onclick="printNbWerkstattauftrag(event,' + i + ')">Auftrag drucken</button>'
+          +   '<button type="button" class="nb-print-btn" id="nb-wa-print-btn-' + i + '" onclick="printNbWerkstattauftrag(event,' + i + ')">Auftrag drucken</button>'
           +   '<div class="nb-vasold-msg" id="nb-wa-print-msg-' + i + '"></div>'
           + '</div>'
           : '')
+        + '</div>'
         + '</div>'
         + '</td>'
         + '</tr>';
@@ -2238,6 +2244,38 @@
     }).fetchWmsData(stockId);
   }
 
+  function nbShouldAutoPrintDymo(value) {
+    return String(value || '').trim().toLowerCase().indexOf('komplett angeliefert') !== -1;
+  }
+
+  function autoPrintNbDymo(stockId, index, badge) {
+    var qtyInput = document.getElementById('nb-qty-' + index);
+    var qty = parseInt(qtyInput ? qtyInput.value : '1', 10);
+    if(isNaN(qty) || qty <= 0) {
+      if(badge) badge.innerText = 'Status gespeichert – Etikett-Anzahl ist 0';
+      return false;
+    }
+    try {
+      if(typeof dymo === 'undefined' || !dymo.label || !dymo.label.framework) {
+        if(badge) badge.innerText = 'Status gespeichert – Dymo nicht bereit';
+        return false;
+      }
+      var dymoCtx = requireDymoLabelPrinter();
+      if(!dymoCtx.ok) {
+        if(badge) badge.innerText = 'Status gespeichert – ' + (dymoCtx.message || 'kein Dymo-Drucker');
+        return false;
+      }
+      var typedInitials = document.getElementById('dymoInitials');
+      var initials = ((typedInitials && typedInitials.value.trim()) || 'LAGER').toUpperCase();
+      printDymoLabelToPrinter(normalizeStockInput(stockId), initials, qty, dymoCtx.printerName, dymoCtx.variant);
+      if(badge) badge.innerText = 'Status gespeichert – ' + qty + '× Dymo gedruckt';
+      return true;
+    } catch(err) {
+      if(badge) badge.innerText = 'Status gespeichert – Dymo-Fehler: ' + (err.message || String(err));
+      return false;
+    }
+  }
+
   function saveNbStatus(event, sheetRow, value, index) {
     if(event) { event.stopPropagation(); event.preventDefault(); }
     var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
@@ -2268,7 +2306,13 @@
           var cells = tbNb.children[2 * index].querySelectorAll('td');
           if(cells.length > 6) cells[6].textContent = value;
         }
-        if(badge) badge.innerText = res.message || 'Gespeichert!';
+        var didDymo = false;
+        if(nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
+          didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
+        }
+        if(!didDymo) {
+          if(badge) badge.innerText = res.message || 'Gespeichert!';
+        }
         if (res.printB64) {
           sendWerkstattauftragPrint(res.printB64, badge, null);
         } else {
