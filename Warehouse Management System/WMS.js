@@ -17,10 +17,9 @@ const NACHBESTELL_ENTRYID_COL = 15;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
-const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbzWVMPgPXYc7MH_UBXL0bfzkSxUiX1SNg7Bk52e2PK17yd3BllZn45WTiDl8JMV4D8J/exec";
-const WMS_APP_VERSION = "1.0.0";
-const WMS_APP_CHANGELOG =
-  "•";
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
+const WMS_APP_VERSION = "2.0.2";
+const WMS_APP_CHANGELOG = "• Update-Reload Fix: kein Loop mehr, sauberer Link ohne ?_wms_v=";
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
@@ -1067,64 +1066,30 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     return 0;
   }
 
-  function normalizeWmsAppUrl_(url) {
-    return String(url || "").trim().replace(/\/+$/, "").split("?")[0].split("#")[0];
-  }
-
   function getWmsWebAppUrl_() {
     return (WMS_WEB_APP_URL && String(WMS_WEB_APP_URL).trim()) || ScriptApp.getService().getUrl() || "";
   }
 
-  function syncWmsAppReleaseMeta_() {
-    var mine = String(WMS_APP_VERSION || "0");
-    var url = getWmsWebAppUrl_();
-    if (!mine || !url) return;
-    PropertiesService.getScriptProperties().setProperties({
-      WMS_LATEST_VERSION: mine,
-      WMS_LATEST_URL: url,
-      WMS_LATEST_CHANGELOG: String(WMS_APP_CHANGELOG || "")
-    }, false);
-  }
-
-  function checkWmsAppUpdate(clientVersion, clientUrl) {
+  function checkWmsAppUpdate(clientVersion) {
     var serverVersion = String(WMS_APP_VERSION || "");
-    var serverUrl = getWmsWebAppUrl_();
-    var serverChangelog = String(WMS_APP_CHANGELOG || "");
-    var props = PropertiesService.getScriptProperties();
-    var propsVersion = String(props.getProperty("WMS_LATEST_VERSION") || "");
-    var propsUrl = String(props.getProperty("WMS_LATEST_URL") || "");
-    var propsChangelog = String(props.getProperty("WMS_LATEST_CHANGELOG") || "");
-    var latestVersion = serverVersion;
-    var latestUrl = serverUrl;
-    var changelog = serverChangelog;
-    if (propsUrl && serverUrl && normalizeWmsAppUrl_(propsUrl) !== normalizeWmsAppUrl_(serverUrl) && compareWmsAppVersion_(propsVersion, serverVersion) > 0) {
-      latestVersion = propsVersion;
-      latestUrl = propsUrl;
-      changelog = propsChangelog;
-    }
-    var verCmp = compareWmsAppVersion_(latestVersion, clientVersion);
-    var urlDiff = false;
-    if (latestUrl && clientUrl) {
-      urlDiff = normalizeWmsAppUrl_(latestUrl) !== normalizeWmsAppUrl_(clientUrl);
-    }
     return {
-      updateAvailable: verCmp > 0 || (urlDiff && verCmp >= 0),
-      latestVersion: latestVersion,
+      updateAvailable: compareWmsAppVersion_(serverVersion, clientVersion) > 0,
+      latestVersion: serverVersion,
       clientVersion: String(clientVersion || ""),
-      url: latestUrl,
-      changelog: changelog
+      url: getWmsWebAppUrl_(),
+      changelog: String(WMS_APP_CHANGELOG || "")
     };
   }
 
   function doGet(e) {
-    syncWmsAppReleaseMeta_();
     var p = e && e.parameter || {};
     var mode = String(p.mode || 'standalone').toLowerCase();
     if (mode !== 'overlay' && mode !== 'standalone') mode = 'standalone';
     var t = HtmlService.createTemplateFromFile('WMS_App');
     t.mode = mode;
-    t.appVersion = WMS_APP_VERSION;
+    t.appVersion = String(WMS_APP_VERSION || "");
     t.appUrl = getWmsWebAppUrl_();
+    t.cacheNonce = String(Date.now());
     return t.evaluate()
       .setTitle('Warehouse Management System')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
