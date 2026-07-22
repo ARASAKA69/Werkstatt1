@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         N4Parts StockID Warenkorb Suche
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Sucht Warenkörbe nach StockID über alle Seiten via /api/cart/list
+// @version      3.0
+// @description  StockID-Suche + Bestellung auslösen inkl. Packzettel-Scan (N4P)
 // @author       ARASAKA
 // @match        https://www.n4parts.net/*
 // @match        https://n4parts.net/*
@@ -13,19 +13,59 @@
 (function () {
     'use strict';
 
+    const BOT_VERSION = '3.0';
     const PANEL_ID = 'n4-stockid-search-panel';
     const LAST_KEY = 'n4_stockid_last_query';
     const POS_KEY = 'n4_stockid_panel_pos';
+    const FLOW_KEY = 'n4_stockid_order_flow';
     const PAGE_SIZE = 20;
-    const ACCENT = '#5CB8B2';
+    const GREEN = '#56d364';
+    const ORANGE = '#f59e0b';
 
     let searching = false;
     let lastHits = [];
     let dragState = null;
+    let flowBusy = false;
+    let flowAbort = false;
+    let pdfHookInstalled = false;
+
+    function sleep(ms) {
+        return new Promise((r) => setTimeout(r, ms));
+    }
 
     function isWarenkoerbePage() {
         const h = (location.hash || '').split('?')[0];
         return h === '#/cart' || h === '#/cart/';
+    }
+
+    function defaultFlow() {
+        return { stage: 'idle', step: '', bestellnummer: '', error: '', startedAt: 0 };
+    }
+
+    function getFlow() {
+        try {
+            const raw = sessionStorage.getItem(FLOW_KEY);
+            if (!raw) return defaultFlow();
+            return Object.assign(defaultFlow(), JSON.parse(raw));
+        } catch (e) {
+            return defaultFlow();
+        }
+    }
+
+    function setFlow(patch) {
+        const next = Object.assign(getFlow(), patch || {});
+        sessionStorage.setItem(FLOW_KEY, JSON.stringify(next));
+        renderOrderSection();
+        return next;
+    }
+
+    function isFlowActive() {
+        const f = getFlow();
+        return f.stage === 'confirm' || f.stage === 'running' || (f.stage === 'done' && f.bestellnummer);
+    }
+
+    function shouldShowPanel() {
+        return isWarenkoerbePage() || isFlowActive() || !!getFlow().bestellnummer;
     }
 
     function api(path, options) {
@@ -113,59 +153,397 @@
         });
     }
 
+    function normalizeText(s) {
+        return String(s || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function isVisible(el) {
+        if (!el || !el.getBoundingClientRect) return false;
+        const r = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        return r.width > 0 && r.height > 0;
+    }
+
+    function findControlByText(label) {
+        const want = normalizeText(label).toLowerCase();
+        const nodes = document.querySelectorAll('button, a, [role="button"], .btn, .order-btn, input[type="button"], input[type="submit"]');
+        let best = null;
+        let bestScore = Infinity;
+        for (const el of nodes) {
+            if (!isVisible(el)) continue;
+            const txt = normalizeText(el.value || el.textContent || '').toLowerCase();
+            if (!txt) continue;
+            if (txt === want) return el;
+            if (txt.includes(want) && txt.length < bestScore) {
+                best = el;
+                bestScore = txt.length;
+            }
+        }
+        return best;
+    }
+
+    function panelTone() {
+        const f = getFlow();
+        if (f.stage === 'running') return 'active';
+        if (f.stage === 'done' && f.bestellnummer) return 'done';
+        if (f.stage === 'confirm') return 'warn';
+        if (f.error || (f.stage === 'done' && !f.bestellnummer && f.error)) return 'error';
+        return 'idle';
+    }
+
+    function syncPanelTone() {
+        const panel = document.getElementById(PANEL_ID);
+        if (!panel) return;
+        panel.setAttribute('data-tone', panelTone());
+        const badge = panel.querySelector('[data-tone-badge]');
+        const map = { idle: 'BEREIT', active: 'LÄUFT', warn: 'CHECK', done: 'FERTIG', error: 'FEHLER' };
+        if (badge) badge.textContent = map[panelTone()] || 'BEREIT';
+    }
+
     function ensureStyles() {
-        if (document.getElementById(PANEL_ID + '-style')) return;
+        const styleId = PANEL_ID + '-style-v3';
+        const old = document.getElementById(PANEL_ID + '-style');
+        if (old) old.remove();
+        if (document.getElementById(styleId)) return;
         const style = document.createElement('style');
-        style.id = PANEL_ID + '-style';
+        style.id = styleId;
         style.textContent = `
+@keyframes n4-click-blink {
+  0%, 100% { outline-color: ${ORANGE}; box-shadow: 0 0 0 2px rgba(245,158,11,.85), 0 0 14px 2px rgba(86,211,100,.45); }
+  50% { outline-color: ${GREEN}; box-shadow: 0 0 0 4px rgba(86,211,100,.4), 0 0 22px 4px rgba(245,158,11,.7); }
+}
+.n4-click-blink {
+  outline: 3px solid ${ORANGE} !important;
+  outline-offset: 2px !important;
+  animation: n4-click-blink .4s ease-in-out 5 !important;
+  position: relative !important;
+  z-index: 2147483000 !important;
+}
 #${PANEL_ID}{
   position:fixed;top:72px;left:12px;z-index:2147483646;
-  width:280px;max-width:calc(100vw - 24px);
-  background:#fff;color:#3c3c3b;
-  border:1px solid #bcbcba;border-radius:4px;
-  box-shadow:0 4px 18px rgba(0,0,0,.18);
-  font-family:Roboto,Arial,sans-serif;font-size:12px;line-height:1.35;
+  width:min(420px, calc(100vw - 32px));
+  color:#c9d1d9;
+  font-family:"Segoe UI",Arial,sans-serif;
+  border-radius:22px;overflow:hidden;
+  background:
+    radial-gradient(circle at top left, rgba(86,211,100,.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(245,158,11,.14), transparent 32%),
+    linear-gradient(180deg, rgba(21,27,35,.98) 0%, rgba(14,19,26,.98) 100%);
+  border:1px solid #2d3642;
+  box-shadow:0 24px 56px rgba(0,0,0,.52);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   user-select:none;
 }
+#${PANEL_ID}[data-tone="active"]{border-color:rgba(245,158,11,.55)}
+#${PANEL_ID}[data-tone="done"]{border-color:rgba(86,211,100,.55)}
+#${PANEL_ID}[data-tone="warn"]{border-color:rgba(245,158,11,.68)}
+#${PANEL_ID}[data-tone="error"]{border-color:rgba(248,81,73,.68)}
+#${PANEL_ID}.n4dragging{opacity:.94;box-shadow:0 28px 64px rgba(0,0,0,.62)}
 #${PANEL_ID} .n4h{
-  display:flex;align-items:center;justify-content:space-between;
-  background:#3c3c3b;color:#fff;padding:8px 10px;font-weight:500;
-  cursor:move;touch-action:none;
+  display:flex;align-items:center;justify-content:space-between;gap:18px;
+  padding:18px 20px 16px;
+  background:linear-gradient(180deg, rgba(22,27,34,.99) 0%, rgba(18,23,30,.99) 100%);
+  border-bottom:1px solid #242d39;cursor:move;touch-action:none;
 }
-#${PANEL_ID} .n4h button{
-  background:transparent;border:0;color:#fff;cursor:pointer;font-size:14px;padding:0 2px;
+#${PANEL_ID} .n4h-eyebrow{
+  color:#8b949e;font-size:12px;font-weight:800;letter-spacing:1.6px;
+  text-transform:uppercase;margin-bottom:4px;
 }
-#${PANEL_ID}.n4dragging{opacity:.92;box-shadow:0 8px 28px rgba(0,0,0,.28)}
-#${PANEL_ID} .n4b,#${PANEL_ID} input{user-select:text}
-#${PANEL_ID} .n4b{padding:10px}
-#${PANEL_ID} .n4row{display:flex;gap:6px}
+#${PANEL_ID} .n4h-title{
+  color:#f0f6fc;font-size:20px;font-weight:900;letter-spacing:.5px;
+  line-height:1.15;text-transform:uppercase;
+}
+#${PANEL_ID} .n4h-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+#${PANEL_ID} .n4h-close{
+  border:1px solid rgba(255,255,255,.12);border-radius:14px;
+  background:rgba(13,17,23,.72);color:#c9d1d9;
+  min-width:42px;height:40px;padding:0 14px;
+  font-size:13px;font-weight:900;cursor:pointer;
+}
+#${PANEL_ID} .n4b{padding:22px}
+#${PANEL_ID} .n4b,#${PANEL_ID} input,#${PANEL_ID} .n4hit,#${PANEL_ID} .n4bnr strong{user-select:text}
+#${PANEL_ID} .n4badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:36px;padding:8px 14px;margin-bottom:14px;
+  border-radius:999px;background:rgba(13,17,23,.7);
+  border:2px solid rgba(245,158,11,.38);color:${ORANGE};
+  font-size:12px;font-weight:900;letter-spacing:1.2px;text-transform:uppercase;
+}
+#${PANEL_ID}[data-tone="done"] .n4badge{border-color:rgba(86,211,100,.42);color:${GREEN}}
+#${PANEL_ID}[data-tone="active"] .n4badge{border-color:rgba(245,158,11,.5);color:${ORANGE}}
+#${PANEL_ID}[data-tone="error"] .n4badge{border-color:rgba(248,81,73,.5);color:#f85149}
+#${PANEL_ID} .n4row{display:flex;gap:10px}
 #${PANEL_ID} input[type="text"]{
-  flex:1;min-width:0;border:1px solid #bcbcba;border-radius:2px;
-  padding:6px 8px;font:inherit;outline:none;
+  flex:1;min-width:0;border:1px solid #2d3642;border-radius:14px;
+  padding:12px 14px;font:inherit;font-size:14px;font-weight:700;
+  outline:none;background:rgba(13,17,23,.82);color:#f0f6fc;
 }
-#${PANEL_ID} input[type="text"]:focus{border-color:${ACCENT}}
+#${PANEL_ID} input[type="text"]::placeholder{color:#8b949e;font-weight:600}
+#${PANEL_ID} input[type="text"]:focus{border-color:rgba(245,158,11,.65);box-shadow:0 0 0 3px rgba(245,158,11,.15)}
 #${PANEL_ID} .n4go{
-  border:0;border-radius:2px;background:${ACCENT};color:#fff;
-  padding:6px 10px;cursor:pointer;font:inherit;font-weight:500;white-space:nowrap;
+  border:2px solid rgba(245,158,11,.55);border-radius:14px;
+  background:rgba(245,158,11,.14);color:${ORANGE};
+  padding:0 16px;cursor:pointer;font:inherit;font-size:13px;font-weight:900;
+  white-space:nowrap;min-height:46px;
 }
-#${PANEL_ID} .n4go:disabled{opacity:.55;cursor:default}
-#${PANEL_ID} .n4status{margin-top:8px;color:#666;min-height:16px}
-#${PANEL_ID} .n4status.ok{color:#1f7a4d}
-#${PANEL_ID} .n4status.err{color:#b00020}
-#${PANEL_ID} .n4hits{margin-top:8px;max-height:220px;overflow:auto;border-top:1px solid #e6e6e6}
+#${PANEL_ID} .n4go:hover{background:rgba(245,158,11,.22);transform:translateY(-1px)}
+#${PANEL_ID} .n4go:disabled{opacity:.55;cursor:default;transform:none}
+#${PANEL_ID} .n4status{
+  margin-top:12px;min-height:18px;color:#8b949e;
+  font-size:13px;font-weight:700;line-height:1.4;
+}
+#${PANEL_ID} .n4status.ok{color:${GREEN}}
+#${PANEL_ID} .n4status.err{color:#f85149}
+#${PANEL_ID} .n4hits{
+  margin-top:14px;max-height:180px;overflow:auto;
+  border-radius:14px;border:1px solid rgba(255,255,255,.07);
+  background:rgba(13,17,23,.45);
+}
 #${PANEL_ID} .n4hit{
-  display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #eee;
-  background:#fff;padding:8px 6px;cursor:pointer;font:inherit;color:inherit;
+  display:block;width:100%;text-align:left;border:0;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  background:transparent;padding:12px 14px;cursor:pointer;font:inherit;color:inherit;
 }
-#${PANEL_ID} .n4hit:hover{background:#f3fafa}
-#${PANEL_ID} .n4hit strong{display:block;color:#222}
-#${PANEL_ID} .n4hit span{color:#777;font-size:11px}
-#${PANEL_ID} .n4f{
-  border-top:1px solid #e6e6e6;padding:5px 10px;text-align:right;
-  color:#999;font-size:10px;letter-spacing:.02em;
+#${PANEL_ID} .n4hit:last-child{border-bottom:0}
+#${PANEL_ID} .n4hit:hover{background:rgba(86,211,100,.08)}
+#${PANEL_ID} .n4hit strong{display:block;color:#f0f6fc;font-size:14px;font-weight:800}
+#${PANEL_ID} .n4hit span{color:#8b949e;font-size:12px;font-weight:700}
+#${PANEL_ID} .n4order{
+  margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,.07);
+}
+#${PANEL_ID} .n4order-title{
+  color:#8b949e;font-size:11px;font-weight:800;letter-spacing:1px;
+  text-transform:uppercase;margin-bottom:10px;
+}
+#${PANEL_ID} .n4obtn{
+  display:block;width:100%;border-radius:14px;padding:12px 14px;
+  margin-top:10px;cursor:pointer;font:inherit;font-size:14px;font-weight:900;
+  text-align:center;border:2px solid rgba(255,255,255,.14);
+  background:rgba(13,17,23,.82);color:#d7dee8;transition:transform .14s,background .14s;
+}
+#${PANEL_ID} .n4obtn:hover{transform:translateY(-1px)}
+#${PANEL_ID} .n4obtn-primary{
+  border-color:rgba(245,158,11,.55);background:rgba(245,158,11,.12);color:${ORANGE};
+}
+#${PANEL_ID} .n4obtn-yes{
+  border-color:rgba(86,211,100,.55);background:rgba(86,211,100,.12);color:${GREEN};
+}
+#${PANEL_ID} .n4obtn-no{
+  border-color:rgba(255,255,255,.14);color:#d7dee8;
+}
+#${PANEL_ID} .n4obtn:disabled{opacity:.55;cursor:default;transform:none}
+#${PANEL_ID} .n4confirm{
+  color:#d7dee8;font-size:15px;font-weight:800;line-height:1.45;margin-bottom:4px;
+}
+#${PANEL_ID} .n4bnr{
+  margin-top:4px;margin-bottom:8px;padding:14px;
+  background:rgba(86,211,100,.1);border:1px solid rgba(86,211,100,.28);
+  border-radius:14px;text-align:center;
+}
+#${PANEL_ID} .n4bnr label{
+  display:block;color:#8b949e;font-size:11px;font-weight:800;
+  letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;
+}
+#${PANEL_ID} .n4bnr strong{
+  font-size:18px;letter-spacing:.04em;color:#f0f6fc;font-weight:900;
+}
+#${PANEL_ID} .n4bnr-row{
+  display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:2px;
+}
+#${PANEL_ID} .n4copy{
+  border:2px solid rgba(86,211,100,.45);border-radius:12px;
+  background:rgba(13,17,23,.82);color:${GREEN};
+  padding:8px 12px;cursor:pointer;font:inherit;font-size:12px;font-weight:900;
+  white-space:nowrap;
+}
+#${PANEL_ID} .n4copy.ok{
+  border-color:rgba(86,211,100,.7);background:rgba(86,211,100,.18);color:${GREEN};
+}
+#${PANEL_ID} .n4copy-hint{margin-top:8px;min-height:14px;font-size:12px;font-weight:700;color:${GREEN}}
+#${PANEL_ID} .n4foot{
+  display:flex;justify-content:space-between;gap:10px;
+  margin-top:16px;padding-top:12px;border-top:1px solid rgba(255,255,255,.07);
+  color:#8b949e;font-size:12px;font-weight:800;
+}
+#${PANEL_ID} .n4credit{
+  text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px;
 }
 `;
         document.head.appendChild(style);
+    }
+
+    async function clickWithBlink(el) {
+        if (!el) throw new Error('Element fehlt');
+        el.classList.add('n4-click-blink');
+        try {
+            el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        } catch (e) {}
+        await sleep(550);
+        el.click();
+        await sleep(250);
+        setTimeout(() => el.classList.remove('n4-click-blink'), 1800);
+    }
+
+    async function waitForControl(label, timeoutMs) {
+        const timeout = timeoutMs || 45000;
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            if (flowAbort) throw new Error('Abgebrochen');
+            const el = findControlByText(label);
+            if (el) return el;
+            await sleep(300);
+        }
+        throw new Error('Timeout: „' + label + '“ nicht gefunden');
+    }
+
+    function pdfBytesToAscii(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let out = '';
+        for (let i = 0; i < bytes.length; i++) {
+            const c = bytes[i];
+            out += c >= 32 && c < 127 ? String.fromCharCode(c) : ' ';
+        }
+        return out;
+    }
+
+    function extractBestellnummer(buffer) {
+        if (!buffer) return '';
+        const ascii = pdfBytesToAscii(buffer);
+        let m = ascii.match(/Bestellnummer\s*[:\-]?\s*(N4P\d+)/i);
+        if (m) return m[1].toUpperCase();
+        m = ascii.match(/KNOLL[_\-]?N4P(\d+)/i);
+        if (m) return ('N4P' + m[1]).toUpperCase();
+        m = ascii.match(/\b(N4P\d{5,})\b/i);
+        if (m) return m[1].toUpperCase();
+        return '';
+    }
+
+    function rememberBestellnummer(nr) {
+        if (!nr) return;
+        const cur = getFlow().bestellnummer;
+        if (cur) return;
+        setFlow({ bestellnummer: nr });
+    }
+
+    function installPdfHook() {
+        if (pdfHookInstalled) return;
+        pdfHookInstalled = true;
+        const origFetch = window.fetch.bind(window);
+        window.fetch = async function (input, init) {
+            const res = await origFetch(input, init);
+            try {
+                const url = typeof input === 'string' ? input : (input && input.url) || '';
+                const ct = (res.headers.get('content-type') || '').toLowerCase();
+                const looksPdf = ct.includes('pdf') || /\/documents\/packing\/download/i.test(url) || /\.pdf(\?|$)/i.test(url);
+                if (looksPdf && getFlow().stage === 'running') {
+                    const clone = res.clone();
+                    clone.arrayBuffer().then((buf) => {
+                        const nr = extractBestellnummer(buf);
+                        if (nr) rememberBestellnummer(nr);
+                    }).catch(() => {});
+                }
+            } catch (e) {}
+            return res;
+        };
+    }
+
+    async function fetchPackingPdfFromLink(el) {
+        if (!el) return '';
+        let href = el.getAttribute('href') || '';
+        if (!href && el.closest) {
+            const a = el.closest('a');
+            if (a) href = a.getAttribute('href') || '';
+        }
+        if (!href || href === '#' || href.startsWith('javascript:')) return '';
+        try {
+            const abs = new URL(href, location.origin).toString();
+            const res = await fetch(abs, { credentials: 'include' });
+            if (!res.ok) return '';
+            const buf = await res.arrayBuffer();
+            return extractBestellnummer(buf);
+        } catch (e) {
+            return '';
+        }
+    }
+
+    async function waitForBestellnummer(timeoutMs) {
+        const timeout = timeoutMs || 12000;
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            if (flowAbort) throw new Error('Abgebrochen');
+            const nr = getFlow().bestellnummer;
+            if (nr) return nr;
+            await sleep(300);
+        }
+        return getFlow().bestellnummer || '';
+    }
+
+    async function runOrderFlow() {
+        if (flowBusy) return;
+        flowBusy = true;
+        flowAbort = false;
+        installPdfHook();
+        const freshStart = getFlow().stage === 'confirm' || getFlow().stage === 'idle' || !getFlow().step;
+        setFlow({
+            stage: 'running',
+            error: '',
+            startedAt: Date.now(),
+            ...(freshStart ? { bestellnummer: '', step: '' } : {})
+        });
+        try {
+            const hasOpen = !!findControlByText('Packzettel öffnen');
+            const hasMail = !!findControlByText('Packzettel per Email senden');
+            const hasAbsenden = !!findControlByText('Bestellung absenden');
+            const hasZur = !!findControlByText('Zur Bestellung');
+
+            if (!hasOpen && !hasMail && !hasAbsenden) {
+                setFlow({ step: 'Zur Bestellung…' });
+                const zur = await waitForControl('Zur Bestellung');
+                await clickWithBlink(zur);
+            } else if (hasZur && !hasAbsenden && !hasMail && !hasOpen) {
+                setFlow({ step: 'Zur Bestellung…' });
+                await clickWithBlink(findControlByText('Zur Bestellung'));
+            }
+
+            if (!hasOpen && !hasMail) {
+                setFlow({ step: 'Bestellung absenden…' });
+                const absenden = await waitForControl('Bestellung absenden');
+                await clickWithBlink(absenden);
+            }
+
+            setFlow({ step: 'Packzettel per Email…' });
+            const mailBtn = await waitForControl('Packzettel per Email senden');
+            await clickWithBlink(mailBtn);
+            await sleep(700);
+
+            setFlow({ step: 'Packzettel öffnen / scannen…' });
+            const openBtn = await waitForControl('Packzettel öffnen');
+            const scanned = await fetchPackingPdfFromLink(openBtn);
+            if (scanned) rememberBestellnummer(scanned);
+            await clickWithBlink(openBtn);
+
+            const nr = await waitForBestellnummer(15000);
+            if (nr) {
+                setFlow({ stage: 'done', step: 'Fertig', error: '', bestellnummer: nr });
+            } else {
+                setFlow({
+                    stage: 'done',
+                    step: 'Fertig (N4P nicht gelesen)',
+                    error: 'Packzettel geöffnet, Bestellnummer nicht erkannt – bitte PDF checken',
+                    bestellnummer: ''
+                });
+            }
+        } catch (err) {
+            if (flowAbort) {
+                setFlow({ stage: 'idle', step: '', error: '' });
+            } else {
+                setFlow({ stage: 'idle', step: '', error: String(err.message || err) });
+            }
+        } finally {
+            flowBusy = false;
+            flowAbort = false;
+        }
     }
 
     function setStatus(text, kind) {
@@ -198,6 +576,116 @@
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
+    }
+
+    function renderOrderSection() {
+        const host = document.querySelector('#' + PANEL_ID + ' .n4order');
+        if (!host) return;
+        const flow = getFlow();
+        let html = '<div class="n4order-title">Bestellung</div>';
+
+        if (flow.bestellnummer) {
+            html +=
+                '<div class="n4bnr"><label>Bestellnummer</label>' +
+                '<div class="n4bnr-row"><strong data-bnr>' +
+                escapeHtml(flow.bestellnummer) +
+                '</strong>' +
+                '<button type="button" class="n4copy" data-copy-bnr>Kopieren</button></div>' +
+                '<div class="n4copy-hint" data-copy-hint></div></div>';
+        }
+
+        if (flow.stage === 'idle') {
+            html += '<button type="button" class="n4obtn n4obtn-primary" data-order-start>Bestellung Jetzt auslösen</button>';
+            if (flow.error) html += '<div class="n4status err" style="margin-top:8px">' + escapeHtml(flow.error) + '</div>';
+        } else if (flow.stage === 'confirm') {
+            html +=
+                '<div class="n4confirm">Bist du Dir sicher?</div>' +
+                '<button type="button" class="n4obtn n4obtn-yes" data-order-yes>JA jetzt bestellen</button>' +
+                '<button type="button" class="n4obtn n4obtn-no" data-order-no>Nein, Abbrechen</button>';
+        } else if (flow.stage === 'running') {
+            html +=
+                '<div class="n4status ok">Läuft: ' + escapeHtml(flow.step || '…') + '</div>' +
+                '<button type="button" class="n4obtn n4obtn-no" data-order-abort>Abbrechen</button>';
+        } else if (flow.stage === 'done') {
+            if (!flow.bestellnummer && flow.error) {
+                html += '<div class="n4status err">' + escapeHtml(flow.error) + '</div>';
+            } else if (flow.bestellnummer) {
+                html += '<div class="n4status ok">Bestellung durch</div>';
+            }
+            html += '<button type="button" class="n4obtn n4obtn-primary" data-order-next>Nächste Bestellung bearbeiten</button>';
+            html += '<button type="button" class="n4obtn n4obtn-no" data-order-reset>Zurücksetzen</button>';
+        }
+
+        host.innerHTML = html;
+        syncPanelTone();
+
+        const copyBtn = host.querySelector('[data-copy-bnr]');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', async () => {
+                const nr = getFlow().bestellnummer || '';
+                const hint = host.querySelector('[data-copy-hint]');
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(nr);
+                    } else {
+                        const ta = document.createElement('textarea');
+                        ta.value = nr;
+                        ta.style.position = 'fixed';
+                        ta.style.left = '-9999px';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        ta.remove();
+                    }
+                    copyBtn.textContent = 'Kopiert!';
+                    copyBtn.classList.add('ok');
+                    if (hint) {
+                        hint.textContent = nr + ' in Zwischenablage';
+                        hint.style.color = '';
+                    }
+                    setTimeout(() => {
+                        copyBtn.textContent = 'Kopieren';
+                        copyBtn.classList.remove('ok');
+                        if (hint) hint.textContent = '';
+                    }, 1800);
+                } catch (err) {
+                    if (hint) {
+                        hint.textContent = 'Kopieren fehlgeschlagen';
+                        hint.style.color = '#f85149';
+                    }
+                }
+            });
+        }
+
+        const start = host.querySelector('[data-order-start]');
+        if (start) start.addEventListener('click', () => setFlow({ stage: 'confirm', error: '', step: '' }));
+
+        const yes = host.querySelector('[data-order-yes]');
+        if (yes) yes.addEventListener('click', () => runOrderFlow());
+
+        const no = host.querySelector('[data-order-no]');
+        if (no) no.addEventListener('click', () => setFlow({ stage: 'idle', step: '', error: '' }));
+
+        const abort = host.querySelector('[data-order-abort]');
+        if (abort) abort.addEventListener('click', () => {
+            flowAbort = true;
+            setFlow({ stage: 'idle', step: '', error: 'Abgebrochen' });
+        });
+
+        const next = host.querySelector('[data-order-next]');
+        if (next) {
+            next.addEventListener('click', () => {
+                sessionStorage.removeItem(FLOW_KEY);
+                location.hash = '#/cart';
+                location.reload();
+            });
+        }
+
+        const reset = host.querySelector('[data-order-reset]');
+        if (reset) reset.addEventListener('click', () => {
+            sessionStorage.removeItem(FLOW_KEY);
+            renderOrderSection();
+        });
     }
 
     async function openCart(hit) {
@@ -335,24 +823,41 @@
     }
 
     function createPanel() {
-        if (document.getElementById(PANEL_ID)) return;
+        if (document.getElementById(PANEL_ID)) {
+            renderOrderSection();
+            return;
+        }
         ensureStyles();
         const panel = document.createElement('div');
         panel.id = PANEL_ID;
+        panel.setAttribute('data-tone', 'idle');
         panel.innerHTML =
-            '<div class="n4h"><span>StockID suchen</span><button type="button" title="Schließen" data-close>×</button></div>' +
+            '<div class="n4h">' +
+            '  <div>' +
+            '    <div class="n4h-eyebrow">N4PARTS · STOCKID</div>' +
+            '    <div class="n4h-title">Warenkorb Suche</div>' +
+            '  </div>' +
+            '  <div class="n4h-actions">' +
+            '    <button type="button" class="n4h-close" title="Schließen" data-close>X</button>' +
+            '  </div>' +
+            '</div>' +
             '<div class="n4b">' +
-            '<div class="n4row">' +
-            '<input type="text" placeholder="z.B. RC28374" autocomplete="off" spellcheck="false">' +
-            '<button type="button" class="n4go">Suchen</button>' +
-            '</div>' +
-            '<div class="n4status"></div>' +
-            '<div class="n4hits"></div>' +
-            '</div>' +
-            '<div class="n4f">by ARASAKA</div>';
+            '  <div class="n4badge" data-tone-badge>BEREIT</div>' +
+            '  <div class="n4row">' +
+            '    <input type="text" placeholder="z.B. RC28374" autocomplete="off" spellcheck="false">' +
+            '    <button type="button" class="n4go">Suchen</button>' +
+            '  </div>' +
+            '  <div class="n4status"></div>' +
+            '  <div class="n4hits"></div>' +
+            '  <div class="n4order"></div>' +
+            '  <div class="n4foot"><span>Bot v' + BOT_VERSION + '</span><span>Stock · Order</span></div>' +
+            '  <div class="n4credit">by Arasaka</div>' +
+            '</div>';
         document.body.appendChild(panel);
         loadPos(panel);
         enableDrag(panel);
+        renderOrderSection();
+        syncPanelTone();
 
         const input = panel.querySelector('input');
         const last = localStorage.getItem(LAST_KEY);
@@ -369,7 +874,7 @@
     }
 
     function syncPanel() {
-        if (isWarenkoerbePage()) {
+        if (shouldShowPanel()) {
             createPanel();
         } else {
             const el = document.getElementById(PANEL_ID);
@@ -377,13 +882,26 @@
         }
     }
 
+    if (getFlow().stage === 'running') {
+        installPdfHook();
+        setTimeout(() => {
+            if (getFlow().stage === 'running' && !flowBusy) runOrderFlow();
+        }, 800);
+    }
+
     let lastHash = location.hash;
+    let lastFlowSig = sessionStorage.getItem(FLOW_KEY) || '';
     setInterval(() => {
         if (location.hash !== lastHash) {
             lastHash = location.hash;
             syncPanel();
-        } else if (isWarenkoerbePage() && !document.getElementById(PANEL_ID)) {
+        } else if (shouldShowPanel() && !document.getElementById(PANEL_ID)) {
             syncPanel();
+        }
+        const sig = sessionStorage.getItem(FLOW_KEY) || '';
+        if (sig !== lastFlowSig) {
+            lastFlowSig = sig;
+            if (document.getElementById(PANEL_ID)) renderOrderSection();
         }
     }, 500);
 
