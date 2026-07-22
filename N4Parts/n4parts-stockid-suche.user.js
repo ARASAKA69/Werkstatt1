@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         N4Parts StockID Warenkorb Suche
 // @namespace    http://tampermonkey.net/
-// @version      3.1
+// @version      3.2
 // @description  StockID-Suche + Bestellung auslösen inkl. Packzettel-Scan (N4P)
 // @author       ARASAKA
 // @match        https://www.n4parts.net/*
 // @match        https://n4parts.net/*
+// @require      https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -13,7 +14,7 @@
 (function () {
     'use strict';
 
-    const BOT_VERSION = '3.1';
+    const BOT_VERSION = '3.2';
     const PANEL_ID = 'n4-stockid-search-panel';
     const LAST_KEY = 'n4_stockid_last_query';
     const POS_KEY = 'n4_stockid_panel_pos';
@@ -202,8 +203,8 @@
     }
 
     function ensureStyles() {
-        const styleId = PANEL_ID + '-style-v31';
-        ['-style', '-style-v3'].forEach((s) => {
+        const styleId = PANEL_ID + '-style-v32';
+        ['-style', '-style-v3', '-style-v31'].forEach((s) => {
             const old = document.getElementById(PANEL_ID + s);
             if (old) old.remove();
         });
@@ -397,6 +398,25 @@
         throw new Error('Timeout: „' + label + '“ nicht gefunden');
     }
 
+    function findN4pInText(text) {
+        const t = String(text || '');
+        let m = t.match(/Bestellnummer\s*[:\-]?\s*(N4P\d+)/i);
+        if (m) return m[1].toUpperCase();
+        m = t.match(/KNOLL[_\-\s]*N4P(\d+)/i);
+        if (m) return ('N4P' + m[1]).toUpperCase();
+        m = t.match(/\b(N4P\d{5,})\b/i);
+        if (m) return m[1].toUpperCase();
+        return '';
+    }
+
+    function findN4pInDom() {
+        try {
+            return findN4pInText(document.body && document.body.innerText);
+        } catch (e) {
+            return '';
+        }
+    }
+
     function pdfBytesToAscii(buffer) {
         const bytes = new Uint8Array(buffer);
         let out = '';
@@ -407,64 +427,267 @@
         return out;
     }
 
-    function extractBestellnummer(buffer) {
+    function pdfBytesToUtf16Ascii(buffer) {
+        const bytes = new Uint8Array(buffer);
+        let out = '';
+        for (let i = 0; i < bytes.length - 1; i++) {
+            if (bytes[i] === 0 && bytes[i + 1] >= 32 && bytes[i + 1] < 127) {
+                out += String.fromCharCode(bytes[i + 1]);
+            } else if (bytes[i] >= 32 && bytes[i] < 127 && bytes[i + 1] === 0) {
+                out += String.fromCharCode(bytes[i]);
+                i += 1;
+            }
+        }
+        return out;
+    }
+
+    async function inflateBytes(data) {
+        for (const format of ['deflate', 'deflate-raw']) {
+            try {
+                const ds = new DecompressionStream(format);
+                const ab = await new Response(new Blob([data]).stream().pipeThrough(ds)).arrayBuffer();
+                return new Uint8Array(ab);
+            } catch (e) {}
+        }
+        return null;
+    }
+
+    function collectPdfStreams(u8) {
+        const bodies = [];
+        const n = u8.length;
+        for (let i = 0; i < n - 15; i++) {
+            if (
+                u8[i] === 0x73 && u8[i + 1] === 0x74 && u8[i + 2] === 0x72 &&
+                u8[i + 3] === 0x65 && u8[i + 4] === 0x61 && u8[i + 5] === 0x6d
+            ) {
+                let start = i + 6;
+                if (start < n && u8[start] === 0x0d) start += 1;
+                if (start < n && u8[start] === 0x0a) start += 1;
+                let end = -1;
+                for (let j = start; j < n - 9; j++) {
+                    if (
+                        u8[j] === 0x65 && u8[j + 1] === 0x6e && u8[j + 2] === 0x64 &&
+                        u8[j + 3] === 0x73 && u8[j + 4] === 0x74 && u8[j + 5] === 0x72 &&
+                        u8[j + 6] === 0x65 && u8[j + 7] === 0x61 && u8[j + 8] === 0x6d
+                    ) {
+                        end = j;
+                        break;
+                    }
+                }
+                if (end > start) bodies.push(u8.subarray(start, end));
+            }
+        }
+        return bodies;
+    }
+
+    async function extractViaInflate(buffer) {
+        const u8 = new Uint8Array(buffer);
+        const streams = collectPdfStreams(u8);
+        let text = '';
+        for (const body of streams) {
+            const inflated = await inflateBytes(body);
+            if (!inflated) continue;
+            text += pdfBytesToAscii(inflated.buffer) + '\n';
+            text += pdfBytesToUtf16Ascii(inflated.buffer) + '\n';
+            const nr = findN4pInText(text);
+            if (nr) return nr;
+        }
+        return findN4pInText(text);
+    }
+
+    async function extractViaPdfJs(buffer) {
+        const pdfjsLib = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+        if (!pdfjsLib || !pdfjsLib.getDocument) return '';
+        try {
+            pdfjsLib.GlobalWorkerOptions.workerSrc =
+                'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+            const task = pdfjsLib.getDocument({
+                data: new Uint8Array(buffer),
+                useSystemFonts: true,
+                isEvalSupported: false,
+                disableFontFace: true
+            });
+            const doc = await task.promise;
+            let text = '';
+            const max = Math.min(doc.numPages || 1, 3);
+            for (let i = 1; i <= max; i++) {
+                const page = await doc.getPage(i);
+                const content = await page.getTextContent();
+                text += content.items.map((it) => it.str || '').join(' ') + '\n';
+                const nr = findN4pInText(text);
+                if (nr) {
+                    try { doc.destroy(); } catch (e) {}
+                    return nr;
+                }
+            }
+            try { doc.destroy(); } catch (e) {}
+            return findN4pInText(text);
+        } catch (e) {
+            return '';
+        }
+    }
+
+    async function extractBestellnummer(buffer) {
         if (!buffer) return '';
-        const ascii = pdfBytesToAscii(buffer);
-        let m = ascii.match(/Bestellnummer\s*[:\-]?\s*(N4P\d+)/i);
-        if (m) return m[1].toUpperCase();
-        m = ascii.match(/KNOLL[_\-]?N4P(\d+)/i);
-        if (m) return ('N4P' + m[1]).toUpperCase();
-        m = ascii.match(/\b(N4P\d{5,})\b/i);
-        if (m) return m[1].toUpperCase();
+        let nr = findN4pInText(pdfBytesToAscii(buffer));
+        if (nr) return nr;
+        nr = findN4pInText(pdfBytesToUtf16Ascii(buffer));
+        if (nr) return nr;
+        nr = await extractViaInflate(buffer);
+        if (nr) return nr;
+        nr = await extractViaPdfJs(buffer);
+        if (nr) return nr;
         return '';
     }
 
     function rememberBestellnummer(nr) {
-        if (!nr) return;
+        if (!nr) return false;
         const cur = getFlow().bestellnummer;
-        if (cur) return;
-        setFlow({ bestellnummer: nr });
+        if (cur) return true;
+        setFlow({ bestellnummer: String(nr).toUpperCase() });
+        return true;
+    }
+
+    function resolveHref(el) {
+        if (!el) return '';
+        let href = el.getAttribute && (el.getAttribute('href') || '');
+        if (!href && el.closest) {
+            const a = el.closest('a');
+            if (a) href = a.getAttribute('href') || '';
+        }
+        if (!href || href === '#' || href.toLowerCase().startsWith('javascript:')) return '';
+        try {
+            return new URL(href, location.origin).toString();
+        } catch (e) {
+            return '';
+        }
     }
 
     function installPdfHook() {
         if (pdfHookInstalled) return;
         pdfHookInstalled = true;
         const origFetch = window.fetch.bind(window);
+
+        function scanPayload(payload) {
+            try {
+                if (!payload) return;
+                if (typeof payload === 'string') {
+                    rememberBestellnummer(findN4pInText(payload));
+                    return;
+                }
+                if (payload instanceof ArrayBuffer) {
+                    extractBestellnummer(payload).then((nr) => rememberBestellnummer(nr));
+                    return;
+                }
+                rememberBestellnummer(findN4pInText(JSON.stringify(payload)));
+            } catch (e) {}
+        }
+
         window.fetch = async function (input, init) {
             const res = await origFetch(input, init);
             try {
                 const url = typeof input === 'string' ? input : (input && input.url) || '';
                 const ct = (res.headers.get('content-type') || '').toLowerCase();
-                const looksPdf = ct.includes('pdf') || /\/documents\/packing\/download/i.test(url) || /\.pdf(\?|$)/i.test(url);
-                if (looksPdf && getFlow().stage === 'running') {
+                const flow = getFlow();
+                if (flow.stage !== 'running' && flow.stage !== 'done') return res;
+                if (/\/cart\/order(?:\?|$)/i.test(url) || /\/documents\/packing\//i.test(url)) {
                     const clone = res.clone();
-                    clone.arrayBuffer().then((buf) => {
-                        const nr = extractBestellnummer(buf);
-                        if (nr) rememberBestellnummer(nr);
-                    }).catch(() => {});
+                    if (ct.includes('json')) {
+                        clone.json().then(scanPayload).catch(() => {});
+                    } else {
+                        clone.arrayBuffer().then(scanPayload).catch(() => {});
+                    }
+                } else if (ct.includes('pdf') || /\.pdf(\?|$)/i.test(url)) {
+                    res.clone().arrayBuffer().then(scanPayload).catch(() => {});
                 }
             } catch (e) {}
             return res;
         };
+
+        const OrigXHR = window.XMLHttpRequest;
+        function WrappedXHR() {
+            const xhr = new OrigXHR();
+            let url = '';
+            const open = xhr.open;
+            xhr.open = function (method, u) {
+                url = String(u || '');
+                return open.apply(xhr, arguments);
+            };
+            xhr.addEventListener('load', function () {
+                try {
+                    const flow = getFlow();
+                    if (flow.stage !== 'running' && flow.stage !== 'done') return;
+                    if (!/\/cart\/order|\/documents\/packing|\.pdf/i.test(url)) return;
+                    const ct = String(xhr.getResponseHeader('content-type') || '').toLowerCase();
+                    if (ct.includes('json') || typeof xhr.response === 'string') {
+                        scanPayload(xhr.responseText || xhr.response);
+                    } else if (xhr.response instanceof ArrayBuffer) {
+                        scanPayload(xhr.response);
+                    }
+                } catch (e) {}
+            });
+            return xhr;
+        }
+        WrappedXHR.prototype = OrigXHR.prototype;
+        window.XMLHttpRequest = WrappedXHR;
     }
 
-    async function fetchPackingPdfFromLink(el) {
-        if (!el) return '';
-        let href = el.getAttribute('href') || '';
-        if (!href && el.closest) {
-            const a = el.closest('a');
-            if (a) href = a.getAttribute('href') || '';
-        }
-        if (!href || href === '#' || href.startsWith('javascript:')) return '';
+    async function downloadPdfBuffer(url) {
+        const res = await fetch(url, {
+            credentials: 'include',
+            headers: { Accept: 'application/pdf,*/*' }
+        });
+        if (!res.ok) throw new Error('PDF Download ' + res.status);
+        return res.arrayBuffer();
+    }
+
+    function offerPdfLocally(buffer, filename) {
         try {
-            const abs = new URL(href, location.origin).toString();
-            const res = await fetch(abs, { credentials: 'include' });
-            if (!res.ok) return '';
-            const buf = await res.arrayBuffer();
-            return extractBestellnummer(buf);
-        } catch (e) {
-            return '';
+            const blob = new Blob([buffer], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'Packzettel.pdf';
+            a.rel = 'noopener';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+        } catch (e) {}
+    }
+
+    async function handlePackzettelOpen(openBtn) {
+        openBtn.classList.add('n4-click-blink');
+        try {
+            openBtn.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+        } catch (e) {}
+        await sleep(400);
+
+        let nr = findN4pInDom();
+        if (nr) {
+            rememberBestellnummer(nr);
+            setTimeout(() => openBtn.classList.remove('n4-click-blink'), 1200);
+            return nr;
         }
+
+        const href = resolveHref(openBtn);
+        if (!href) {
+            openBtn.click();
+            await sleep(1200);
+            nr = findN4pInDom() || getFlow().bestellnummer;
+            setTimeout(() => openBtn.classList.remove('n4-click-blink'), 1200);
+            return nr || '';
+        }
+
+        setFlow({ step: 'Packzettel laden…' });
+        const buf = await downloadPdfBuffer(href);
+        setFlow({ step: 'Packzettel scannen…' });
+        nr = await extractBestellnummer(buf);
+        if (nr) rememberBestellnummer(nr);
+
+        offerPdfLocally(buf, (nr || 'Packzettel') + '.pdf');
+        setTimeout(() => openBtn.classList.remove('n4-click-blink'), 1200);
+        return nr || getFlow().bestellnummer || '';
     }
 
     async function waitForBestellnummer(timeoutMs) {
@@ -472,8 +695,11 @@
         const start = Date.now();
         while (Date.now() - start < timeout) {
             if (flowAbort) throw new Error('Abgebrochen');
-            const nr = getFlow().bestellnummer;
-            if (nr) return nr;
+            const nr = getFlow().bestellnummer || findN4pInDom();
+            if (nr) {
+                rememberBestellnummer(nr);
+                return nr;
+            }
             await sleep(300);
         }
         return getFlow().bestellnummer || '';
@@ -515,22 +741,20 @@
             setFlow({ step: 'Packzettel per Email…' });
             const mailBtn = await waitForControl('Packzettel per Email senden');
             await clickWithBlink(mailBtn);
-            await sleep(700);
+            await sleep(900);
 
             setFlow({ step: 'Packzettel öffnen / scannen…' });
             const openBtn = await waitForControl('Packzettel öffnen');
-            const scanned = await fetchPackingPdfFromLink(openBtn);
-            if (scanned) rememberBestellnummer(scanned);
-            await clickWithBlink(openBtn);
+            let nr = await handlePackzettelOpen(openBtn);
+            if (!nr) nr = await waitForBestellnummer(8000);
 
-            const nr = await waitForBestellnummer(15000);
             if (nr) {
                 setFlow({ stage: 'done', step: 'Fertig', error: '', bestellnummer: nr });
             } else {
                 setFlow({
                     stage: 'done',
                     step: 'Fertig (N4P nicht gelesen)',
-                    error: 'Packzettel geöffnet, Bestellnummer nicht erkannt – bitte PDF checken',
+                    error: 'PDF geladen, aber Bestellnummer (N4P…) nicht gefunden',
                     bestellnummer: ''
                 });
             }
