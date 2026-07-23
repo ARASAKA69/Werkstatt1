@@ -735,31 +735,96 @@ function buildNachbestellMap_() {
   try {
     var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
     var sheet = ss.getSheetByName(NACHBESTELL_TAB);
-    if (sheet) {
-      var lastRow = Math.max(2, sheet.getLastRow());
-      var lastCol = Math.min(20, Math.max(1, sheet.getLastColumn()));
-      var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
-      var header = data[0];
-      var stockCol = 2, teilCol = 5, statusCol = 11, regalCol = 13, typCol = 3;
-      for (var h = 0; h < header.length; h++) {
-        var t = String(header[h] || '').toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
-        if (t.indexOf('stock') !== -1) stockCol = h + 1;
-        if (t.indexOf('ersatzteil') !== -1 || t === 'teil' || t.indexOf('benennung') !== -1) teilCol = h + 1;
-        if (t === 'status') statusCol = h + 1;
-        if (t.indexOf('lagerort') !== -1 || t === 'regal') regalCol = h + 1;
-        if (t === 'art' || t.indexOf('nachbestellung') !== -1 || t === 'typ') typCol = h + 1;
+    if (!sheet) return map;
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var lastCol = Math.min(30, Math.max(1, sheet.getLastColumn()));
+    var scanRows = Math.min(8, lastRow);
+    var scan = sheet.getRange(1, 1, scanRows, lastCol).getValues();
+    var headerRow = 0;
+    var bestScore = 0;
+    for (var hr = 0; hr < scan.length; hr++) {
+      var score = 0;
+      for (var hc = 0; hc < scan[hr].length; hc++) {
+        var ht = String(scan[hr][hc] || '').toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+        if (ht.indexOf('stock') !== -1) score += 3;
+        if (ht === 'status') score += 2;
+        if (ht.indexOf('lagerort') !== -1 || ht === 'regal') score += 2;
+        if (ht.indexOf('datum') !== -1 || ht === 'date') score += 1;
+        if (ht.indexOf('ersatzteil') !== -1 || ht.indexOf('benennung') !== -1 || ht === 'teil') score += 1;
       }
-      for (var i = 1; i < data.length; i++) {
-        var sid = normalizeStockId_(data[i][stockCol - 1]);
-        if (!sid) continue;
-        if (!map[sid]) map[sid] = [];
-        map[sid].push({
-          source: 'Nachbestellung',
-          typ: String(data[i][typCol - 1] || '').trim(),
-          teil: String(data[i][teilCol - 1] || '').trim(),
-          status: String(data[i][statusCol - 1] || '').trim(),
-          regal: String(data[i][regalCol - 1] || '').trim()
-        });
+      if (score > bestScore) {
+        bestScore = score;
+        headerRow = hr;
+      }
+    }
+    var header = scan[headerRow];
+    var stockCol = 2;
+    var teilCol = 5;
+    var statusCol = 11;
+    var regalCol = 13;
+    var typCol = 0;
+    var dateCol = 0;
+    for (var h = 0; h < header.length; h++) {
+      var t = String(header[h] || '').toLowerCase().replace(/[^a-z0-9äöüß]/g, '');
+      if (t.indexOf('stock') !== -1) stockCol = h + 1;
+      if (t.indexOf('ersatzteil') !== -1 || t === 'teil' || t.indexOf('benennung') !== -1 || t.indexOf('bezeichnung') !== -1) teilCol = h + 1;
+      if (t === 'status') statusCol = h + 1;
+      if (t.indexOf('lagerort') !== -1 || t === 'regal') regalCol = h + 1;
+      if (t === 'art' || t === 'typ' || t.indexOf('artdernachbestellung') !== -1) typCol = h + 1;
+      if (t === 'datum' || t === 'date' || t.indexOf('bestelldatum') !== -1 || t.indexOf('erstellt') !== -1) dateCol = h + 1;
+    }
+    var data = sheet.getRange(headerRow + 1, 1, lastRow, lastCol).getValues();
+    for (var i = 1; i < data.length; i++) {
+      var sid = normalizeStockId_(data[i][stockCol - 1]);
+      if (!sid) continue;
+      var rawDate = dateCol ? data[i][dateCol - 1] : '';
+      var dateMs = 0;
+      var dateStr = '';
+      if (rawDate instanceof Date || Object.prototype.toString.call(rawDate) === '[object Date]') {
+        if (!isNaN(rawDate.getTime())) {
+          dateMs = rawDate.getTime();
+          dateStr = formatDateDe_(rawDate);
+        }
+      } else if (rawDate) {
+        dateStr = String(rawDate).trim();
+        var parsed = new Date(rawDate);
+        if (!isNaN(parsed.getTime())) {
+          dateMs = parsed.getTime();
+          dateStr = formatDateDe_(parsed);
+        }
+      }
+      var typVal = typCol ? data[i][typCol - 1] : '';
+      if (typVal instanceof Date || Object.prototype.toString.call(typVal) === '[object Date]') typVal = '';
+      if (!map[sid]) map[sid] = [];
+      map[sid].push({
+        source: 'Nachbestellung',
+        typ: String(typVal || '').trim(),
+        teil: String(data[i][teilCol - 1] || '').trim(),
+        status: String(data[i][statusCol - 1] || '').trim(),
+        regal: String(data[i][regalCol - 1] || '').trim(),
+        date: dateStr,
+        dateMs: dateMs,
+        sheetRow: headerRow + 1 + i
+      });
+    }
+    var keys = Object.keys(map);
+    for (var k = 0; k < keys.length; k++) {
+      var list = map[keys[k]];
+      list.sort(function(a, b) {
+        return (b.dateMs || 0) - (a.dateMs || 0);
+      });
+      var currentIdx = -1;
+      for (var n = 0; n < list.length; n++) {
+        var st = String(list[n].status || '').toLowerCase();
+        var closed = st.indexOf('komplett') !== -1 || st.indexOf('fertiggestellt') !== -1 || st === 'angeliefert' || st.indexOf('fahrzeug rr') !== -1;
+        if (!closed) {
+          currentIdx = n;
+          break;
+        }
+      }
+      if (currentIdx < 0 && list.length) currentIdx = 0;
+      for (var m = 0; m < list.length; m++) {
+        list[m].current = m === currentIdx;
       }
     }
   } catch (e1) {}

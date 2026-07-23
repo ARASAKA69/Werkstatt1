@@ -459,12 +459,44 @@
       margin: 0 0 var(--space-lg);
     }
     .section-head h2 { margin: 0; }
-    .nb {
-      border: 1px solid var(--border); border-radius: 12px; padding: 8px 10px;
-      margin-top: 8px; font-size: 13px; background: var(--surface);
+    .nb-wrap { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .nb-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--foreground-muted); font-weight: 600;
     }
-    .nb .t { font-weight: 600; }
-    .nb .m { color: var(--foreground-muted); margin-top: 2px; font-size: 12px; }
+    .nb {
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      font-size: 14px; background: var(--surface);
+      border-left: 4px solid var(--border-strong);
+    }
+    .nb.ok { border-left-color: #34d399; background: rgba(52, 211, 153, 0.08); }
+    .nb.partial { border-left-color: #fbbf24; background: rgba(251, 191, 36, 0.1); }
+    .nb.open { border-left-color: #4a86e8; background: rgba(74, 134, 232, 0.1); }
+    .nb.warn { border-left-color: #ff9900; background: rgba(255, 153, 0, 0.1); }
+    .nb.current {
+      border-color: rgba(13, 148, 136, 0.55);
+      box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.25);
+    }
+    .nb-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .nb .t { font-weight: 700; font-size: 15px; line-height: 1.3; }
+    .nb-badge {
+      flex-shrink: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; padding: 3px 8px; border-radius: 999px;
+      background: rgba(13, 148, 136, 0.2); color: var(--color-secondary);
+      border: 1px solid rgba(13, 148, 136, 0.45);
+    }
+    .nb-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .nb-pill {
+      display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+      font-size: 12px; font-weight: 600; border: 1px solid var(--border);
+      color: var(--foreground-muted); background: rgba(255,255,255,0.04);
+    }
+    .nb-pill.status-ok { color: #34d399; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+    .nb-pill.status-partial { color: #fbbf24; border-color: rgba(251,191,36,0.4); background: rgba(251,191,36,0.1); }
+    .nb-pill.status-open { color: #60a5fa; border-color: rgba(74,134,232,0.4); background: rgba(74,134,232,0.1); }
+    .nb-pill.status-warn { color: #ff9900; border-color: rgba(255,153,0,0.4); background: rgba(255,153,0,0.1); }
+    .nb-pill.regal { color: #fbbf24; border-color: rgba(251,191,36,0.35); }
 
     .toast {
       position: fixed; right: 16px; bottom: 16px; z-index: 30;
@@ -977,14 +1009,68 @@
       applyChecks(ch);
 
       var nbs = d.nachbestellungen || [];
-      var nbHtml = '';
-      if (!nbs.length) nbHtml = '<div class="m" style="color:var(--foreground-muted);font-size:13px;margin-top:8px">Keine Nachbestell-Zeilen</div>';
+      $('nbBox').innerHTML = renderNbList(nbs);
+    }
+
+    function formatNbDate(val) {
+      if (!val && val !== 0) return '';
+      if (Object.prototype.toString.call(val) === '[object Date]' || val instanceof Date) {
+        if (isNaN(val.getTime())) return '';
+        var d = val;
+        var dd = ('0' + d.getDate()).slice(-2);
+        var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+        return dd + '.' + mm + '.' + d.getFullYear();
+      }
+      var s = String(val).trim();
+      if (!s) return '';
+      if (/GMT|Mitteleurop|Central European|UTC|\(/i.test(s)) {
+        var p = new Date(s);
+        if (!isNaN(p.getTime())) {
+          var dd2 = ('0' + p.getDate()).slice(-2);
+          var mm2 = ('0' + (p.getMonth() + 1)).slice(-2);
+          return dd2 + '.' + mm2 + '.' + p.getFullYear();
+        }
+      }
+      var m = s.match(/^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})/);
+      if (m) {
+        var y = m[3].length === 2 ? ('20' + m[3]) : m[3];
+        return ('0' + m[1]).slice(-2) + '.' + ('0' + m[2]).slice(-2) + '.' + y;
+      }
+      return s;
+    }
+
+    function nbStatusClass(status) {
+      var s = String(status || '').toLowerCase();
+      if (s.indexOf('komplett') !== -1 || s === 'angeliefert' || s.indexOf('fertiggestellt') !== -1) return 'ok';
+      if (s.indexOf('teilweise') !== -1) return 'partial';
+      if (s.indexOf('rückstand') !== -1 || s.indexOf('ruckstand') !== -1 || s.indexOf('b2a1') !== -1) return 'warn';
+      if (s.indexOf('bestellt') !== -1 || s.indexOf('nicht bestellt') !== -1 || s.indexOf('konsi') !== -1) return 'open';
+      return 'open';
+    }
+
+    function renderNbList(nbs) {
+      nbs = nbs || [];
+      if (!nbs.length) {
+        return '<div class="m" style="color:var(--foreground-muted);font-size:14px;margin-top:8px">Keine Nachbestell-Zeilen</div>';
+      }
+      var html = '<div class="nb-wrap"><div class="nb-head"><span>Nachbestellungen</span><span>' + nbs.length + '</span></div>';
       for (var i = 0; i < nbs.length; i++) {
         var n = nbs[i];
-        nbHtml += '<div class="nb"><div class="t">' + escapeHtml(n.teil || n.status || n.source) + '</div>'
-          + '<div class="m">' + escapeHtml([n.source, n.typ, n.status, n.regal, n.date].filter(Boolean).join(' · ')) + '</div></div>';
+        var st = String(n.status || '').trim();
+        var sc = nbStatusClass(st);
+        var dateStr = formatNbDate(n.date);
+        var title = n.teil || n.typ || n.source || 'Nachbestellung';
+        html += '<div class="nb ' + sc + (n.current ? ' current' : '') + '">'
+          + '<div class="nb-top"><div class="t">' + escapeHtml(title) + '</div>'
+          + (n.current ? '<span class="nb-badge">Aktuell</span>' : '')
+          + '</div><div class="nb-meta">';
+        if (dateStr) html += '<span class="nb-pill">' + escapeHtml(dateStr) + '</span>';
+        if (st) html += '<span class="nb-pill status-' + sc + '">' + escapeHtml(st) + '</span>';
+        if (n.regal) html += '<span class="nb-pill regal">' + escapeHtml(n.regal) + '</span>';
+        if (n.typ && n.typ !== title) html += '<span class="nb-pill">' + escapeHtml(n.typ) + '</span>';
+        html += '</div></div>';
       }
-      $('nbBox').innerHTML = nbHtml;
+      return html + '</div>';
     }
 
     function renderComments(comments) {
