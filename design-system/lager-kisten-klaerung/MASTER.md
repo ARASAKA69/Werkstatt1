@@ -6,10 +6,10 @@
 
 ---
 
-**Project:** WMS Upgrade
-**Generated:** 2026-07-21 19:28:30
-**Category:** Inventory & Stock Management
-**Design Dials:** Variance 3/10 (Centered / Minimal) | Motion 3/10 (Subtle) | Density 9/10 (Dense / Dashboard)
+**Project:** Lager Kisten Klaerung
+**Generated:** 2026-07-23 16:57:40
+**Category:** Productivity Tool
+**Design Dials:** Variance 4/10 (Balanced / Modern) | Motion 4/10 (Standard) | Density 8/10 (Dense / Dashboard)
 
 ---
 
@@ -19,34 +19,34 @@
 
 | Role | Hex | CSS Variable |
 |------|-----|--------------|
-| Primary | `#334155` | `--color-primary` |
+| Primary | `#0D9488` | `--color-primary` |
 | On Primary | `#FFFFFF` | `--color-on-primary` |
-| Secondary | `#475569` | `--color-secondary` |
-| Accent/CTA | `#059669` | `--color-accent` |
-| Background | `#F8FAFC` | `--color-background` |
-| Foreground | `#0F172A` | `--color-foreground` |
-| Muted | `#F2F3F4` | `--color-muted` |
-| Border | `#E6E8EA` | `--color-border` |
+| Secondary | `#14B8A6` | `--color-secondary` |
+| Accent/CTA | `#EA580C` | `--color-accent` |
+| Background | `#F0FDFA` | `--color-background` |
+| Foreground | `#134E4A` | `--color-foreground` |
+| Muted | `#E8F1F4` | `--color-muted` |
+| Border | `#99F6E4` | `--color-border` |
 | Destructive | `#DC2626` | `--color-destructive` |
-| Ring | `#334155` | `--color-ring` |
+| Ring | `#0D9488` | `--color-ring` |
 
-**Color Notes:** Industrial slate + stock green
+**Color Notes:** Teal focus + action orange [Accent adjusted from #F97316 for WCAG 3:1]
 
 ### Typography
 
-- **Heading Font:** Roboto
-- **Body Font:** Roboto
-- **Mood:** material design 3, md3, android, google, tonal, friendly, rounded, accessible, adaptive
-- **Google Fonts:** [Roboto + Roboto](https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400)
+- **Heading Font:** Plus Jakarta Sans
+- **Body Font:** Plus Jakarta Sans
+- **Mood:** friendly, modern, saas, clean, approachable, professional
+- **Google Fonts:** [Plus Jakarta Sans + Plus Jakarta Sans](https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap)
 
 **CSS Import:**
 ```css
-@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 ```
 
 ### Spacing Variables
 
-*Density: 9/10 — Dense / Dashboard*
+*Density: 8/10 — Dense / Dashboard*
 
 | Token | Value | Usage |
 |-------|-------|-------|
@@ -76,7 +76,7 @@
 ```css
 /* Primary Button */
 .btn-primary {
-  background: #059669;
+  background: #EA580C;
   color: white;
   padding: 12px 24px;
   border-radius: 8px;
@@ -93,8 +93,8 @@
 /* Secondary Button */
 .btn-secondary {
   background: transparent;
-  color: #334155;
-  border: 2px solid #334155;
+  color: #0D9488;
+  border: 2px solid #0D9488;
   padding: 12px 24px;
   border-radius: 8px;
   font-weight: 600;
@@ -107,7 +107,7 @@
 
 ```css
 .card {
-  background: #F8FAFC;
+  background: #F0FDFA;
   border-radius: 12px;
   padding: 24px;
   box-shadow: var(--shadow-md);
@@ -133,9 +133,9 @@
 }
 
 .input:focus {
-  border-color: #334155;
+  border-color: #0D9488;
   outline: none;
-  box-shadow: 0 0 0 3px #33415520;
+  box-shadow: 0 0 0 3px #0D948820;
 }
 ```
 
@@ -161,45 +161,43 @@
 
 ## Style Guidelines
 
-**Style:** Exaggerated Minimalism
+**Style:** Modern Dark (Cinema Mobile)
 
-**Keywords:** Bold minimalism, oversized typography, high contrast, negative space, loud minimal, statement design
+**Keywords:** dark mode, cinematic, ambient light, glassmorphism, deep black, indigo, glow, blur, atmospheric, reanimated, haptic, premium, layered, frosted glass, linear gradient
 
-**Best For:** Fashion, architecture, portfolios, agency landing pages, luxury brands, editorial
+**Best For:** Developer tools, pro productivity apps, fintech/trading dashboards, media/streaming platforms, AI tool interfaces, high-end gaming companion apps
 
-**Key Effects:** font-size: clamp(3rem 10vw 12rem), font-weight: 900, letter-spacing: -0.05em, massive whitespace
+**Key Effects:** Expo.out Bezier(0.16,1,0.3,1) easing; spring modals (damping:20 stiffness:90); haptic-linked press (Impact Light/Medium); animated ambient light blobs (Reanimated translateX/Y slow oscillation); BlurView glassmorphism headers/nav (intensity 20); scale press 0.97 → 1.0; avoid pure #000000 (OLED smear)
 
 ### Page Pattern
 
-**Pattern Name:** Real-Time / Operations Landing
+**Pattern Name:** Interactive Demo + Feature-Rich
 
-- **Conversion Strategy:** For ops/security/iot products. Demo or sandbox link. Trust signals.
-- **CTA Placement:** Primary CTA in nav + After metrics
-- **Section Order:** 1. Hero (product + live preview or status), 2. Key metrics/indicators, 3. How it works, 4. CTA (Start trial / Contact)
+- **CTA Placement:** Above fold
+- **Section Order:** Hero > Features > CTA
 
 ---
 
 ## Motion
 
-**Page Transition** (Subtle) — Trigger: route change | Duration: 200-300ms | Easing: `power1.inOut`
+**Page Transition** (Standard) — Trigger: route change | Duration: 400-600ms | Easing: `power2.inOut`
 
 ```js
-gsap.to(main, { opacity: 0, duration: 0.2, onComplete: () => { navigate(); gsap.fromTo(main, { opacity: 0 }, { opacity: 1, duration: 0.2 }); } });
+const tl = gsap.timeline(); tl.to('.transition-overlay', { yPercent: 0, duration: 0.4, ease: 'power2.inOut' }).call(navigate).to('.transition-overlay', { yPercent: -100, duration: 0.4, ease: 'power2.inOut', delay: 0.1 });
 ```
 
-**Framework notes:** Pair with the router's transition hooks (Next.js App Router transitions, React Router's useNavigate, Vue Router's beforeEach/afterEach)
+**Framework notes:** Keep the overlay element mounted at the layout root (outside the page component) so it survives the route swap
 
-- ✅ Preload the destination route's critical assets before the exit tween finishes
-- ❌ Don't block navigation on animation; cap exit duration at ~250ms so the app never feels unresponsive
-- ⚡ Exit animation should always resolve faster than entrance (asymmetric timing) so back/forward feels snappy
+- ✅ Show a lightweight loading indicator if the destination route's data fetch outlasts the overlay
+- ❌ Don't tie the overlay's reveal directly to data-fetch completion without a max-wait timeout; a slow API stalls the whole transition
+- ⚡ Prefer CSS transform (yPercent) over top/left to keep the overlay animation on the compositor thread
 
 ---
 
 ## Anti-Patterns (Do NOT Use)
 
-- ❌ Excessive decoration
-- ❌ Complex shadows
-- ❌ 3D effects
+- ❌ Complex onboarding
+- ❌ Slow performance
 
 ### Additional Forbidden Patterns
 
