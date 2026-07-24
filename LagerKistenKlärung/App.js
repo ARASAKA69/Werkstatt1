@@ -170,6 +170,7 @@ function normalizeColor_(color) {
   if (s === 'complete' || s === '#00ffff' || s === '#00bcd4' || s.indexOf('complete') !== -1) return 'complete';
   if (s === 'tagesliste' || s === '#00ff00' || s === '#34a853' || s.indexOf('tagesliste') !== -1) return 'tagesliste';
   if (s.indexOf('übersicht') !== -1 || s.indexOf('ubersicht') !== -1 || s === 'uebersicht' || s === '#9900ff' || s === '#9c27b0') return 'uebersicht';
+  if (s === 'erledigt' || s === 'done' || s === '#cfd8dc' || s === '#34d399' || s.indexOf('erledigt') !== -1) return 'erledigt';
   return 'none';
 }
 
@@ -182,11 +183,13 @@ function colorLabel_(color) {
   if (c === 'complete') return 'COMPLETE';
   if (c === 'tagesliste') return 'Tagesliste';
   if (c === 'uebersicht') return 'Übersicht Nachbestellung';
+  if (c === 'erledigt') return 'Erledigt';
   return '';
 }
 
 function colorPriority_(color) {
   var c = normalizeColor_(color);
+  if (c === 'erledigt') return 5;
   if (c === 'b2a1') return 4;
   if (c === 'alfah') return 3;
   if (c === 'nachbestellt') return 2;
@@ -647,16 +650,12 @@ function commentsForStock_(all, stockId, cellKey) {
 }
 
 function primaryFromComments_(comments) {
-  var best = null;
-  var bestP = -1;
+  if (!comments || !comments.length) return null;
   for (var i = 0; i < comments.length; i++) {
-    var p = colorPriority_(comments[i].color);
-    if (p > bestP) {
-      bestP = p;
-      best = comments[i];
-    }
+    var c = normalizeColor_(comments[i].color);
+    if (c && c !== 'none') return comments[i];
   }
-  return best;
+  return comments[0];
 }
 
 function pruneToolNotes_(activeCellKeys, activeStockIds) {
@@ -1254,9 +1253,14 @@ function syncSheetColor_(cellKey, color) {
   if (!pos) return;
   try {
     var cell = getLagerSheet_().getRange(pos.row, pos.col);
-    var hex = statusColor_(color);
-    if (hex) cell.setBackground(hex);
-    else cell.setBackground(null);
+    var c = normalizeColor_(color);
+    if (!c || c === 'none' || c === 'erledigt') {
+      cell.setBackground(null);
+    } else {
+      var hex = statusColor_(c);
+      if (hex) cell.setBackground(hex);
+      else cell.setBackground(null);
+    }
     SpreadsheetApp.flush();
   } catch (e) {}
 }
@@ -1370,6 +1374,26 @@ function addStockComment(cellKey, stockId, color, text) {
         canDelete: true
       }
     };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function markStockErledigt(cellKey, stockId) {
+  try {
+    cellKey = String(cellKey || '');
+    stockId = normalizeStockId_(stockId);
+    if (!cellKey || !stockId) return { success: false, message: 'Stock/Zelle fehlt' };
+    var by = activeUser_();
+    var byName = shortName_(by) || 'Team';
+    var text = 'Als Erledigt markiert';
+    var res = addStockComment(cellKey, stockId, 'erledigt', text);
+    if (res && res.success) {
+      syncSheetColor_(cellKey, 'erledigt');
+      SpreadsheetApp.flush();
+      res.message = 'Als Erledigt markiert — Sheet-Farbe zurückgesetzt';
+    }
+    return res;
   } catch (err) {
     return { success: false, message: String(err.message || err) };
   }
