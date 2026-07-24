@@ -206,20 +206,40 @@
       color: inherit; border-radius: 12px; padding: 12px 14px; cursor: pointer; margin-bottom: 6px;
       transition: background 160ms var(--easing), border-color 160ms var(--easing), transform 150ms var(--easing);
     }
-    .item:hover { background: var(--surface); }
+    .item:hover { filter: brightness(1.08); }
     .item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
     .item:active { transform: scale(0.985); }
     .item.active {
-      background: rgba(13, 148, 136, 0.14); border-color: rgba(13, 148, 136, 0.45);
+      box-shadow: inset 0 0 0 2px rgba(13, 148, 136, 0.75);
     }
+    .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
+    .item.st-alfah { background: rgba(255, 153, 0, 0.18); border-color: rgba(255, 153, 0, 0.45); }
+    .item.st-nachbestellt { background: rgba(74, 134, 232, 0.18); border-color: rgba(74, 134, 232, 0.45); }
+    .item.st-kontrollieren { background: rgba(255, 255, 0, 0.14); border-color: rgba(255, 255, 0, 0.45); }
+    .item.st-uebersicht { background: rgba(153, 0, 255, 0.18); border-color: rgba(153, 0, 255, 0.45); }
+    .item.st-tagesliste { background: rgba(0, 255, 0, 0.12); border-color: rgba(0, 255, 0, 0.4); }
+    .item.st-complete { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
     .item-top { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
     .sid { font-weight: 700; font-size: 16px; letter-spacing: -0.02em; }
+    .status-pill {
+      display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+      padding: 3px 8px; border-radius: 999px; white-space: nowrap; line-height: 1.2;
+      color: #fff; background: rgba(255,255,255,0.12); border: 1px solid transparent;
+    }
+    .status-pill.b2a1 { background: #ff0000; border-color: #ff0000; color: #fff; }
+    .status-pill.alfah { background: #ff9900; border-color: #ff9900; color: #1a1a1a; }
+    .status-pill.nachbestellt { background: #4a86e8; border-color: #4a86e8; color: #fff; }
+    .status-pill.kontrollieren { background: #ffff00; border-color: #ffff00; color: #1a1a1a; }
+    .status-pill.uebersicht { background: #9900ff; border-color: #9900ff; color: #fff; }
+    .status-pill.tagesliste { background: #00ff00; border-color: #00ff00; color: #1a1a1a; }
+    .status-pill.complete { background: #00ffff; border-color: #00ffff; color: #1a1a1a; }
     .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
     .hint.yellow { color: var(--yellow-status); }
     .hint.orange { color: #fb923c; }
     .hint.green { color: var(--green-status); }
     .hint.red { color: #f87171; }
     .hint.purple { color: #c084fc; }
+    .hint.blue { color: #60a5fa; }
     .regal-tag {
       display: inline-block; font-weight: 700; font-size: 14px; letter-spacing: 0.02em;
       color: #fbbf24; background: rgba(251, 191, 36, 0.12);
@@ -268,13 +288,13 @@
       border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
       border-left: 4px solid var(--border-strong); background: var(--surface);
     }
-    .citem.b2a1 { border-left-color: #ff0000; background: rgba(255,0,0,0.14); }
-    .citem.alfah { border-left-color: #ff9900; background: rgba(255,153,0,0.12); }
-    .citem.nachbestellt { border-left-color: #4a86e8; background: rgba(74,134,232,0.12); }
-    .citem.kontrollieren { border-left-color: #ffff00; background: rgba(255,255,0,0.1); }
-    .citem.complete { border-left-color: #00ffff; background: rgba(0,255,255,0.1); }
-    .citem.tagesliste { border-left-color: #00ff00; background: rgba(0,255,0,0.1); }
-    .citem.uebersicht { border-left-color: #9900ff; background: rgba(153,0,255,0.12); }
+    .citem.b2a1 { border-color: rgba(255,0,0,0.45); border-left-color: #ff0000; background: rgba(255,0,0,0.22); }
+    .citem.alfah { border-color: rgba(255,153,0,0.45); border-left-color: #ff9900; background: rgba(255,153,0,0.2); }
+    .citem.nachbestellt { border-color: rgba(74,134,232,0.45); border-left-color: #4a86e8; background: rgba(74,134,232,0.2); }
+    .citem.kontrollieren { border-color: rgba(255,255,0,0.5); border-left-color: #ffff00; background: rgba(255,255,0,0.18); }
+    .citem.complete { border-color: rgba(0,255,255,0.45); border-left-color: #00ffff; background: rgba(0,255,255,0.16); }
+    .citem.tagesliste { border-color: rgba(0,255,0,0.45); border-left-color: #00ff00; background: rgba(0,255,0,0.16); }
+    .citem.uebersicht { border-color: rgba(153,0,255,0.45); border-left-color: #9900ff; background: rgba(153,0,255,0.2); }
     .citem-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 4px; }
     .citem-meta { font-size: 12px; color: var(--foreground-muted); font-weight: 600; }
     .citem-body { font-size: 15px; white-space: pre-wrap; word-break: break-word; }
@@ -512,7 +532,7 @@
 
     .busy .side, .busy .main { opacity: 0.72; }
     .busy-flag {
-      position: fixed; top: 12px; right: 12px; z-index: 25;
+      position: fixed; top: 12px; right: 64px; z-index: 25;
       display: none; align-items: center; gap: 8px;
       padding: 8px 12px; border-radius: var(--radius-pill);
       background: rgba(14, 16, 20, 0.9); border: 1px solid var(--border);
@@ -526,6 +546,110 @@
       animation: spin 0.7s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .bell-wrap {
+      position: fixed; top: 12px; right: 12px; z-index: 40;
+    }
+    .bell-btn {
+      width: 44px; height: 44px; border-radius: 12px;
+      border: 1px solid var(--border-strong);
+      background: rgba(14, 16, 20, 0.92);
+      color: var(--foreground);
+      display: grid; place-items: center; cursor: pointer;
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+    .bell-btn:hover { border-color: rgba(13, 148, 136, 0.55); color: var(--color-secondary); }
+    .bell-btn svg { width: 20px; height: 20px; }
+    .bell-badge {
+      position: absolute; top: -4px; right: -4px; min-width: 18px; height: 18px;
+      padding: 0 5px; border-radius: 999px; font-size: 11px; font-weight: 700;
+      background: var(--color-accent); color: #fff;
+      display: none; align-items: center; justify-content: center;
+      border: 2px solid #0a0a0f;
+    }
+    .bell-badge.show { display: inline-flex; }
+    .bell-panel {
+      position: absolute; top: 52px; right: 0; width: min(360px, calc(100vw - 24px));
+      max-height: min(420px, 70vh);
+      display: none; flex-direction: column;
+      background: rgba(14, 16, 20, 0.96); border: 1px solid var(--border-strong);
+      border-radius: 14px; box-shadow: var(--shadow-lg); backdrop-filter: blur(14px);
+      overflow: hidden;
+    }
+    .bell-panel.open { display: flex; }
+    .bell-head {
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 12px 14px; border-bottom: 1px solid var(--border);
+    }
+    .bell-head strong { font-size: 14px; }
+    .bell-clear {
+      border: 0; background: transparent; color: var(--foreground-muted);
+      font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px 6px; border-radius: 6px;
+    }
+    .bell-clear:hover { color: #fca5a5; background: rgba(220,38,38,0.12); }
+    .bell-list { overflow: auto; padding: 8px; flex: 1; }
+    .bell-empty {
+      padding: 24px 12px; text-align: center; color: var(--foreground-muted); font-size: 13px;
+    }
+    .nitem {
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: rgba(255,255,255,0.04); margin-bottom: 8px;
+    }
+    .nitem:last-child { margin-bottom: 0; }
+    .nitem-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .nitem-title { font-size: 13px; font-weight: 700; line-height: 1.35; }
+    .nitem-title .sid { color: var(--color-secondary); }
+    .nitem-x {
+      border: 0; background: transparent; color: var(--foreground-muted);
+      cursor: pointer; font-size: 16px; line-height: 1; padding: 0 2px; border-radius: 4px;
+    }
+    .nitem-x:hover { color: #fca5a5; }
+    .nitem-preview {
+      margin-top: 4px; font-size: 12px; color: var(--foreground-muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .nitem-meta { margin-top: 4px; font-size: 11px; color: var(--foreground-muted); opacity: 0.85; }
+    .nitem-actions { margin-top: 8px; display: flex; gap: 6px; }
+    .nitem-open {
+      border: 1px solid rgba(13, 148, 136, 0.45);
+      background: rgba(13, 148, 136, 0.16);
+      color: var(--color-secondary);
+      font-size: 12px; font-weight: 700; border-radius: 999px;
+      padding: 4px 10px; cursor: pointer;
+    }
+    .nitem-open:hover { background: rgba(13, 148, 136, 0.28); }
+
+    .notif-stack {
+      position: fixed; right: 16px; top: 68px; z-index: 45;
+      display: flex; flex-direction: column; gap: 8px;
+      width: min(360px, calc(100vw - 32px));
+      pointer-events: none;
+    }
+    .notif-card {
+      pointer-events: auto;
+      background: rgba(14, 16, 20, 0.96);
+      border: 1px solid rgba(13, 148, 136, 0.5);
+      border-radius: 14px; padding: 12px 14px;
+      box-shadow: var(--shadow-lg); backdrop-filter: blur(12px);
+      animation: notifIn 220ms var(--easing);
+    }
+    .notif-card.b2a1 { border-color: rgba(255,0,0,0.55); }
+    .notif-card.alfah { border-color: rgba(255,153,0,0.55); }
+    .notif-card.nachbestellt { border-color: rgba(74,134,232,0.55); }
+    .notif-card.kontrollieren { border-color: rgba(255,255,0,0.55); }
+    @keyframes notifIn {
+      from { opacity: 0; transform: translateX(16px); }
+      to { opacity: 1; transform: none; }
+    }
+    .notif-card-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+    .notif-card-title { font-size: 13px; font-weight: 700; line-height: 1.35; }
+    .notif-card-title .sid { color: var(--color-secondary); }
+    .notif-card-preview { margin-top: 4px; font-size: 12px; color: var(--foreground-muted); }
+    .notif-card-actions { margin-top: 10px; display: flex; gap: 8px; align-items: center; }
+    .notif-card .nitem-open { pointer-events: auto; }
+    .notif-card .nitem-x { font-size: 18px; }
   </style>
 </head>
 <body>
@@ -535,6 +659,20 @@
     <div class="blob c"></div>
   </div>
   <div class="busy-flag" id="busyFlag"><span class="spinner"></span> Lädt…</div>
+  <div class="bell-wrap" id="bellWrap">
+    <button type="button" class="bell-btn" id="bellBtn" title="Benachrichtigungen" aria-label="Benachrichtigungen" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+      <span class="bell-badge" id="bellBadge">0</span>
+    </button>
+    <div class="bell-panel" id="bellPanel" role="dialog" aria-label="Benachrichtigungen">
+      <div class="bell-head">
+        <strong>Benachrichtigungen</strong>
+        <button type="button" class="bell-clear" id="bellClear">Alles leeren</button>
+      </div>
+      <div class="bell-list" id="bellList"><div class="bell-empty">Keine Benachrichtigungen</div></div>
+    </div>
+  </div>
+  <div class="notif-stack" id="notifStack" aria-live="polite"></div>
 
   <div class="app" id="app">
     <aside class="side">
@@ -705,7 +843,12 @@
       detail: null,
       busy: false,
       cachedAt: '',
-      commentColor: 'b2a1'
+      commentColor: 'b2a1',
+      notifs: [],
+      notifBootMs: Date.now(),
+      notifToasted: {},
+      notifReady: false,
+      bellOpen: false
     };
 
     function $(id) { return document.getElementById(id); }
@@ -737,6 +880,155 @@
           $('list').innerHTML = '<div class="empty">Fehler: ' + escapeHtml(String(err && err.message ? err.message : err)) + '</div>';
         }
       });
+    }
+
+    function apiQuiet() {
+      return google.script.run.withFailureHandler(function() {});
+    }
+
+    function applyNotifs(res, fromPoll) {
+      if (!res || !res.success) return;
+      var items = res.items || [];
+      state.notifs = items;
+      updateBellBadge(items.length);
+      renderBellList();
+      if (!state.notifReady) {
+        for (var i = 0; i < items.length; i++) state.notifToasted[items[i].id] = true;
+        state.notifReady = true;
+        return;
+      }
+      if (!fromPoll) return;
+      for (var j = 0; j < items.length; j++) {
+        var n = items[j];
+        if (state.notifToasted[n.id]) continue;
+        if (n.createdAtMs && n.createdAtMs < state.notifBootMs - 2000) {
+          state.notifToasted[n.id] = true;
+          continue;
+        }
+        state.notifToasted[n.id] = true;
+        showLiveNotif(n);
+      }
+    }
+
+    function updateBellBadge(count) {
+      var badge = $('bellBadge');
+      if (!badge) return;
+      if (count > 0) {
+        badge.textContent = count > 99 ? '99+' : String(count);
+        badge.classList.add('show');
+      } else {
+        badge.classList.remove('show');
+      }
+    }
+
+    function notifTitleHtml(n) {
+      var who = escapeHtml(n.byName || n.by || 'Team');
+      var sid = escapeHtml(n.stockId || '');
+      var label = n.colorLabel ? (' · ' + escapeHtml(n.colorLabel)) : '';
+      return who + ' hat <span class="sid">' + sid + '</span> kommentiert' + label;
+    }
+
+    function renderBellList() {
+      var box = $('bellList');
+      if (!box) return;
+      var items = state.notifs || [];
+      if (!items.length) {
+        box.innerHTML = '<div class="bell-empty">Keine Benachrichtigungen</div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < items.length; i++) {
+        var n = items[i];
+        html += '<div class="nitem" data-id="' + escapeHtml(n.id) + '">'
+          + '<div class="nitem-top"><div class="nitem-title">' + notifTitleHtml(n) + '</div>'
+          + '<button type="button" class="nitem-x" data-dismiss="' + escapeHtml(n.id) + '" aria-label="Schließen">×</button></div>'
+          + (n.preview ? ('<div class="nitem-preview">' + escapeHtml(n.preview) + '</div>') : '')
+          + '<div class="nitem-meta">' + escapeHtml(n.createdAt || '') + '</div>'
+          + '<div class="nitem-actions"><button type="button" class="nitem-open" data-open-sid="' + escapeHtml(n.stockId) + '" data-open-key="' + escapeHtml(n.cellKey || '') + '">Öffnen</button></div>'
+          + '</div>';
+      }
+      box.innerHTML = html;
+    }
+
+    function showLiveNotif(n) {
+      var stack = $('notifStack');
+      if (!stack) return;
+      var card = document.createElement('div');
+      card.className = 'notif-card ' + escapeHtml(n.color || '');
+      card.setAttribute('data-id', n.id);
+      card.innerHTML = '<div class="notif-card-top"><div class="notif-card-title">' + notifTitleHtml(n) + '</div>'
+        + '<button type="button" class="nitem-x" data-dismiss="' + escapeHtml(n.id) + '" aria-label="Schließen">×</button></div>'
+        + (n.preview ? ('<div class="notif-card-preview">' + escapeHtml(n.preview) + '</div>') : '')
+        + '<div class="notif-card-actions"><button type="button" class="nitem-open" data-open-sid="' + escapeHtml(n.stockId) + '" data-open-key="' + escapeHtml(n.cellKey || '') + '">Öffnen</button></div>';
+      stack.insertBefore(card, stack.firstChild);
+      while (stack.children.length > 4) stack.removeChild(stack.lastChild);
+      clearTimeout(card._t);
+      card._t = setTimeout(function() {
+        if (card.parentNode) card.parentNode.removeChild(card);
+      }, 14000);
+    }
+
+    function removeLiveNotif(id) {
+      var stack = $('notifStack');
+      if (!stack) return;
+      var cards = stack.querySelectorAll('.notif-card');
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].getAttribute('data-id') === id) {
+          clearTimeout(cards[i]._t);
+          cards[i].parentNode.removeChild(cards[i]);
+        }
+      }
+    }
+
+    function openFromNotif(stockId, cellKey) {
+      setBellOpen(false);
+      if (!stockId) return;
+      if (cellKey) {
+        selectItem(stockId, cellKey);
+        return;
+      }
+      var found = null;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId === stockId) { found = state.items[i]; break; }
+      }
+      if (found) selectItem(found.stockId, found.cellKey);
+      else selectItem(stockId, '');
+    }
+
+    function dismissNotif(id) {
+      if (!id) return;
+      removeLiveNotif(id);
+      state.notifs = (state.notifs || []).filter(function(n) { return n.id !== id; });
+      updateBellBadge(state.notifs.length);
+      renderBellList();
+      apiQuiet()
+        .withSuccessHandler(function(res) { applyNotifs(res, false); })
+        .dismissNotification(id);
+    }
+
+    function clearAllNotifs() {
+      state.notifs = [];
+      updateBellBadge(0);
+      renderBellList();
+      var stack = $('notifStack');
+      if (stack) stack.innerHTML = '';
+      apiQuiet()
+        .withSuccessHandler(function(res) { applyNotifs(res, false); })
+        .clearAllNotifications();
+    }
+
+    function pollNotifications() {
+      apiQuiet()
+        .withSuccessHandler(function(res) { applyNotifs(res, true); })
+        .getNotifications();
+    }
+
+    function setBellOpen(on) {
+      state.bellOpen = !!on;
+      var panel = $('bellPanel');
+      var btn = $('bellBtn');
+      if (panel) panel.classList.toggle('open', state.bellOpen);
+      if (btn) btn.setAttribute('aria-expanded', state.bellOpen ? 'true' : 'false');
     }
 
     function showListSkeleton() {
@@ -861,6 +1153,19 @@
         .setCheckStep(key, d.stockId, step, !!checked);
     }
 
+    function statusKey(it) {
+      var pc = String(it.primaryColor || '').toLowerCase();
+      var sh = String(it.statusHint || '');
+      if (pc === 'b2a1' || sh === 'B2A1') return 'b2a1';
+      if (pc === 'nachbestellt' || sh === 'Nachbestellt') return 'nachbestellt';
+      if (pc === 'alfah' || sh === 'ALFAH' || /rückfrage|ruckfrage/i.test(sh)) return 'alfah';
+      if (pc === 'kontrollieren' || sh === 'Kontrollieren' || it.yellow) return 'kontrollieren';
+      if (pc === 'tagesliste' || sh === 'Tagesliste') return 'tagesliste';
+      if (pc === 'uebersicht' || /übersicht|ubersicht/i.test(sh)) return 'uebersicht';
+      if (pc === 'complete' || sh === 'COMPLETE') return 'complete';
+      return '';
+    }
+
     function renderList() {
       var q = String($('qSearch').value || '').trim().toUpperCase();
       var html = '';
@@ -870,29 +1175,22 @@
         var hay = [it.stockId, it.comment, it.regal, it.markeModel, it.refurbStatus, it.kategorie].join(' ').toUpperCase();
         if (q && hay.indexOf(q) === -1) continue;
         shown++;
-        var hintClass = '';
-        var sh = String(it.statusHint || '');
-        var pc = String(it.primaryColor || '');
-        if (pc === 'b2a1' || sh === 'B2A1') hintClass = 'red';
-        else if (pc === 'nachbestellt' || sh === 'Nachbestellt') hintClass = 'blue';
-        else if (pc === 'alfah' || sh === 'ALFAH' || /rückfrage|ruckfrage/i.test(sh)) hintClass = 'orange';
-        else if (pc === 'kontrollieren' || sh === 'Kontrollieren' || it.yellow) hintClass = 'yellow';
-        else if (pc === 'tagesliste' || sh === 'Tagesliste') hintClass = 'green';
-        else if (pc === 'uebersicht' || /übersicht|ubersicht/i.test(sh)) hintClass = 'purple';
-        else if (pc === 'complete' || sh === 'COMPLETE') hintClass = 'blue';
-        var dotClass = pc || (it.hasNote ? 'none' : '');
+        var sk = statusKey(it);
+        var cardClass = sk ? (' st-' + sk) : '';
+        var dotClass = sk || String(it.primaryColor || '') || (it.hasNote ? 'none' : '');
         var noteMark = it.hasNote ? '<span class="note-dot ' + escapeHtml(dotClass) + '" title="Kommentar"></span>' : '';
         var done = Number(it.checksDone) || 0;
         var total = Number(it.checksTotal) || 3;
         var regalHtml = it.regal ? '<span class="regal-tag">' + escapeHtml(it.regal) + '</span>' : '';
         var progHtml = '<span class="prog ' + progClass(done, total) + '">' + done + '/' + total + ' kontrolliert</span>';
-        var line2 = [it.kategorie || it.statusHint, it.markeModel].filter(Boolean).join(' · ');
+        var statusHtml = it.statusHint
+          ? ('<span class="status-pill ' + escapeHtml(sk || 'none') + '">' + escapeHtml(it.statusHint) + '</span>')
+          : '';
+        var line2 = it.markeModel || '';
         var line3 = it.comment || '';
-        html += '<button type="button" class="item' + (state.selectedKey === it.cellKey ? ' active' : '') + '" data-key="' + escapeHtml(it.cellKey) + '" data-sid="' + escapeHtml(it.stockId) + '">'
+        html += '<button type="button" class="item' + cardClass + (state.selectedKey === it.cellKey ? ' active' : '') + '" data-key="' + escapeHtml(it.cellKey) + '" data-sid="' + escapeHtml(it.stockId) + '">'
           + '<div class="item-top"><span class="sid">' + noteMark + escapeHtml(it.stockId) + '</span>'
-          + '<span class="item-meta">' + progHtml
-          + (it.statusHint ? ('<span class="hint ' + hintClass + '">' + escapeHtml(it.statusHint) + '</span>') : '')
-          + '</span></div>'
+          + '<span class="item-meta">' + progHtml + statusHtml + '</span></div>'
           + '<div class="sub">' + regalHtml + escapeHtml(line2 || '—') + '</div>'
           + (line3 ? '<div class="sub">' + escapeHtml(line3) + '</div>' : '')
           + '</button>';
@@ -1213,6 +1511,38 @@
     }
 
     loadQueue();
+    pollNotifications();
+    setInterval(pollNotifications, 8000);
+
+    $('bellBtn').onclick = function(e) {
+      e.stopPropagation();
+      setBellOpen(!state.bellOpen);
+      if (state.bellOpen) pollNotifications();
+    };
+    $('bellClear').onclick = function(e) {
+      e.stopPropagation();
+      clearAllNotifs();
+    };
+    document.addEventListener('click', function(e) {
+      var openBtn = e.target.closest('[data-open-sid]');
+      if (openBtn) {
+        e.preventDefault();
+        openFromNotif(openBtn.getAttribute('data-open-sid'), openBtn.getAttribute('data-open-key'));
+        var live = openBtn.closest('.notif-card');
+        if (live && live.parentNode) {
+          clearTimeout(live._t);
+          live.parentNode.removeChild(live);
+        }
+        return;
+      }
+      var x = e.target.closest('[data-dismiss]');
+      if (x) {
+        e.preventDefault();
+        dismissNotif(x.getAttribute('data-dismiss'));
+        return;
+      }
+      if (state.bellOpen && !e.target.closest('#bellWrap')) setBellOpen(false);
+    });
   </script>
 </body>
 </html>
