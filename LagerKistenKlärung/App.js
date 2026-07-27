@@ -9,6 +9,7 @@ var NOTES_TAB = '_KlärungNotes';
 var CHECKS_TAB = '_KlärungChecks';
 var NOTIFS_TAB = '_KlärungNotifs';
 var NOTIF_STATE_TAB = '_KlärungNotifState';
+var USER_NOTES_TAB = '_KlärungUserNotes';
 var CACHE_TTL_MS = 15 * 60 * 1000;
 var CACHE_CHUNK = 48000;
 var SYNC_STATUS_COLOR_TO_SHEET = true;
@@ -16,6 +17,7 @@ var CHECK_STEPS = ['carol', 'parts', 'mail'];
 var CHECK_TOTAL = 3;
 var NOTIF_MAX_ROWS = 250;
 var NOTIF_PREVIEW_LEN = 80;
+var USER_NOTE_BODY_MAX = 45000;
 
 var COLOR_B2A1 = '#ff0000';
 var COLOR_ALFAH = '#ff9900';
@@ -1578,6 +1580,212 @@ function setCheckStep(cellKey, stockId, step, checked) {
       checks: row,
       message: row.done + '/' + CHECK_TOTAL + ' kontrolliert'
     };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function getUserNotesSheet_() {
+  var sh = getOrCreateTab_(USER_NOTES_TAB);
+  var header = String(sh.getRange(1, 1).getValue() || '').trim().toLowerCase();
+  if (header !== 'id') {
+    if (sh.getLastRow() <= 1) {
+      sh.clear();
+      sh.getRange(1, 1, 1, 10).setValues([[
+        'id', 'email', 'title', 'category', 'color', 'body', 'createdAt', 'updatedAt', 'createdAtMs', 'updatedAtMs'
+      ]]);
+    } else if (!header) {
+      sh.getRange(1, 1, 1, 10).setValues([[
+        'id', 'email', 'title', 'category', 'color', 'body', 'createdAt', 'updatedAt', 'createdAtMs', 'updatedAtMs'
+      ]]);
+    }
+  }
+  try { sh.getRange(1, 1, Math.max(1, sh.getMaxRows()), 1).setNumberFormat('@'); } catch (eFmt) {}
+  return sh;
+}
+
+function normalizeNoteColor_(color) {
+  var s = String(color || '').trim().toLowerCase();
+  if (s === 'blue' || s === '#3fa0db') return 'blue';
+  if (s === 'orange' || s === '#f27420') return 'orange';
+  if (s === 'green' || s === '#34d399') return 'green';
+  if (s === 'purple' || s === '#9900ff') return 'purple';
+  if (s === 'yellow' || s === '#ffff00' || s === '#fde047') return 'yellow';
+  if (s === 'red' || s === '#ff0000' || s === 'b2a1') return 'red';
+  if (s === 'teal' || s === '#0d9488') return 'teal';
+  return 'teal';
+}
+
+function normalizeNoteCategory_(cat) {
+  var s = String(cat || '').trim();
+  if (!s) return 'Allgemein';
+  if (s.length > 40) s = s.substring(0, 40);
+  return s;
+}
+
+function stripNoteBody_(html) {
+  var s = String(html == null ? '' : html);
+  if (s.length > USER_NOTE_BODY_MAX) s = s.substring(0, USER_NOTE_BODY_MAX);
+  return s;
+}
+
+function notePreview_(html) {
+  var t = String(html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (t.length <= 90) return t;
+  return t.substring(0, 89) + '…';
+}
+
+function getUserNotebookNotes() {
+  try {
+    var me = String(activeUser_() || '').trim().toLowerCase();
+    if (!me) return { success: false, message: 'Kein User', notes: [] };
+    var sh = getUserNotesSheet_();
+    var last = sh.getLastRow();
+    var notes = [];
+    if (last < 2) return { success: true, notes: notes, me: me };
+    var data = sh.getRange(2, 1, last, 10).getDisplayValues();
+    var rawMs = sh.getRange(2, 9, last, 10).getValues();
+    for (var i = 0; i < data.length; i++) {
+      var id = String(data[i][0] || '').trim();
+      var email = String(data[i][1] || '').trim().toLowerCase();
+      if (!id || email !== me) continue;
+      var body = String(data[i][5] == null ? '' : data[i][5]);
+      notes.push({
+        id: id,
+        title: String(data[i][2] || 'Notiz').trim() || 'Notiz',
+        category: normalizeNoteCategory_(data[i][3]),
+        color: normalizeNoteColor_(data[i][4]),
+        body: body,
+        preview: notePreview_(body),
+        createdAt: String(data[i][6] || '').trim(),
+        updatedAt: String(data[i][7] || '').trim(),
+        createdAtMs: Number(rawMs[i][0]) || 0,
+        updatedAtMs: Number(rawMs[i][1]) || 0
+      });
+    }
+    notes.sort(function(a, b) {
+      return (b.updatedAtMs || b.createdAtMs || 0) - (a.updatedAtMs || a.createdAtMs || 0);
+    });
+    return { success: true, notes: notes, me: me };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), notes: [] };
+  }
+}
+
+function createUserNotebookNote(title, category, color, body) {
+  try {
+    var me = String(activeUser_() || '').trim();
+    if (!me) return { success: false, message: 'Kein User' };
+    title = String(title || '').trim() || 'Neue Notiz';
+    if (title.length > 80) title = title.substring(0, 80);
+    category = normalizeNoteCategory_(category);
+    color = normalizeNoteColor_(color);
+    body = stripNoteBody_(body);
+    var id = newCommentId_();
+    var at = nowStamp_();
+    var ms = Date.now();
+    var sh = getUserNotesSheet_();
+    sh.appendRow(['', me.toLowerCase(), title, category, color, body, at, at, ms, ms]);
+    var row = sh.getLastRow();
+    try {
+      sh.getRange(row, 1).setNumberFormat('@').setValue(String(id));
+      sh.getRange(row, 7).setNumberFormat('@').setValue(at);
+      sh.getRange(row, 8).setNumberFormat('@').setValue(at);
+      sh.getRange(row, 9).setNumberFormat('0').setValue(ms);
+      sh.getRange(row, 10).setNumberFormat('0').setValue(ms);
+    } catch (eFmt) {
+      sh.getRange(row, 1, 1, 10).setValues([[String(id), me.toLowerCase(), title, category, color, body, at, at, ms, ms]]);
+    }
+    SpreadsheetApp.flush();
+    return {
+      success: true,
+      message: 'Notiz erstellt',
+      note: {
+        id: id,
+        title: title,
+        category: category,
+        color: color,
+        body: body,
+        preview: notePreview_(body),
+        createdAt: at,
+        updatedAt: at,
+        createdAtMs: ms,
+        updatedAtMs: ms
+      }
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function updateUserNotebookNote(noteId, title, category, color, body) {
+  try {
+    noteId = String(noteId || '').trim();
+    if (!noteId) return { success: false, message: 'Keine Notiz-ID' };
+    var me = String(activeUser_() || '').trim().toLowerCase();
+    if (!me) return { success: false, message: 'Kein User' };
+    title = String(title || '').trim() || 'Notiz';
+    if (title.length > 80) title = title.substring(0, 80);
+    category = normalizeNoteCategory_(category);
+    color = normalizeNoteColor_(color);
+    body = stripNoteBody_(body);
+    var sh = getUserNotesSheet_();
+    var last = sh.getLastRow();
+    if (last < 2) return { success: false, message: 'Notiz nicht gefunden' };
+    var data = sh.getRange(2, 1, last, 2).getDisplayValues();
+    var want = noteId.toLowerCase();
+    for (var i = 0; i < data.length; i++) {
+      var id = String(data[i][0] || '').trim();
+      var email = String(data[i][1] || '').trim().toLowerCase();
+      if (id.toLowerCase() !== want || email !== me) continue;
+      var row = i + 2;
+      var at = nowStamp_();
+      var ms = Date.now();
+      sh.getRange(row, 3, 1, 6).setValues([[title, category, color, body]]);
+      sh.getRange(row, 8).setNumberFormat('@').setValue(at);
+      sh.getRange(row, 10).setNumberFormat('0').setValue(ms);
+      SpreadsheetApp.flush();
+      return {
+        success: true,
+        message: 'Notiz gespeichert',
+        note: {
+          id: noteId,
+          title: title,
+          category: category,
+          color: color,
+          body: body,
+          preview: notePreview_(body),
+          updatedAt: at,
+          updatedAtMs: ms
+        }
+      };
+    }
+    return { success: false, message: 'Notiz nicht gefunden' };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function deleteUserNotebookNote(noteId) {
+  try {
+    noteId = String(noteId || '').trim();
+    if (!noteId) return { success: false, message: 'Keine Notiz-ID' };
+    var me = String(activeUser_() || '').trim().toLowerCase();
+    if (!me) return { success: false, message: 'Kein User' };
+    var sh = getUserNotesSheet_();
+    var last = sh.getLastRow();
+    if (last < 2) return { success: false, message: 'Notiz nicht gefunden' };
+    var data = sh.getRange(2, 1, last, 2).getDisplayValues();
+    var want = noteId.toLowerCase();
+    for (var i = 0; i < data.length; i++) {
+      var id = String(data[i][0] || '').trim();
+      var email = String(data[i][1] || '').trim().toLowerCase();
+      if (id.toLowerCase() !== want || email !== me) continue;
+      sh.deleteRow(i + 2);
+      SpreadsheetApp.flush();
+      return { success: true, message: 'Notiz gelöscht' };
+    }
+    return { success: false, message: 'Notiz nicht gefunden' };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
   }
