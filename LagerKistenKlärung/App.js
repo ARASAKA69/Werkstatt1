@@ -617,6 +617,7 @@ function readAllComments_() {
         createdBy: by,
         createdByName: name,
         canDelete: canDeleteComment_(by, me),
+        canEdit: canDeleteComment_(by, me),
         sheetRow: i + 2
       });
     }
@@ -1371,7 +1372,8 @@ function addStockComment(cellKey, stockId, color, text) {
         createdAt: at,
         createdBy: by,
         createdByName: byName === 'Team' ? 'Ich' : byName,
-        canDelete: true
+        canDelete: true,
+        canEdit: true
       }
     };
   } catch (err) {
@@ -1394,6 +1396,68 @@ function markStockErledigt(cellKey, stockId) {
       res.message = 'Als Erledigt markiert — Sheet-Farbe zurückgesetzt';
     }
     return res;
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function editStockComment(commentId, text, color) {
+  try {
+    commentId = String(commentId || '').trim();
+    text = String(text || '').trim();
+    if (!commentId) return { success: false, message: 'Keine Kommentar-ID' };
+    if (!text) return { success: false, message: 'Leerer Kommentar' };
+    var sh = getNotesSheet_();
+    var last = sh.getLastRow();
+    if (last < 2) return { success: false, message: 'Kein Kommentar' };
+    var data = sh.getRange(2, 1, last, 7).getDisplayValues();
+    var raw = sh.getRange(2, 1, last, 1).getValues();
+    var me = activeUser_();
+    var want = commentId.toLowerCase().replace(/[^a-z0-9]/g, '');
+    var hasColor = arguments.length >= 3 && color != null && String(color) !== '';
+    if (hasColor) color = normalizeColor_(color);
+    for (var i = 0; i < data.length; i++) {
+      var rowId = String(data[i][0] || '').trim();
+      if (!rowId) rowId = String(raw[i][0] == null ? '' : raw[i][0]).trim();
+      var norm = rowId.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!norm || (norm !== want && rowId.toLowerCase() !== commentId.toLowerCase())) continue;
+      var by = String(data[i][6] || '').trim();
+      if (!canDeleteComment_(by, me)) {
+        return { success: false, message: 'Nur eigener Kommentar editierbar' };
+      }
+      var stockId = normalizeStockId_(data[i][1]);
+      var cellKey = String(data[i][2] || '').trim();
+      var row = i + 2;
+      var nextColor = hasColor ? color : normalizeColor_(data[i][3]);
+      sh.getRange(row, 4).setValue(nextColor);
+      sh.getRange(row, 5).setValue(text);
+      SpreadsheetApp.flush();
+      var left = commentsForStock_(readAllComments_(), stockId, cellKey);
+      var primary = primaryFromComments_(left);
+      syncSheetColor_(cellKey, primary ? primary.color : '');
+      SpreadsheetApp.flush();
+      refreshCellInCache_(cellKey, stockId);
+      return {
+        success: true,
+        message: 'Kommentar aktualisiert',
+        cellKey: cellKey,
+        stockId: stockId,
+        comment: {
+          id: commentId,
+          stockId: stockId,
+          cellKey: cellKey,
+          color: nextColor,
+          colorLabel: colorLabel_(nextColor),
+          comment: text,
+          createdAt: String(data[i][5] || '').trim(),
+          createdBy: by,
+          createdByName: shortName_(by) || 'Ich',
+          canDelete: true,
+          canEdit: true
+        }
+      };
+    }
+    return { success: false, message: 'Kommentar nicht gefunden — Seite neu laden und erneut versuchen' };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
   }

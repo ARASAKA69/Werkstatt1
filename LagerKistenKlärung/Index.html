@@ -363,6 +363,19 @@
       padding: 4px 6px; border-radius: 6px;
     }
     .citem .del:hover { background: rgba(220,38,38,0.15); }
+    .citem-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+    .citem .edit {
+      border: 0; background: transparent; color: #7dd3fc; cursor: pointer; font-size: 11px; font-weight: 700;
+      padding: 4px 6px; border-radius: 6px;
+    }
+    .citem .edit:hover { background: rgba(63, 160, 219, 0.15); color: #3FA0DB; }
+    .citem-edit { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .citem-edit textarea {
+      min-height: 4.5rem; max-height: 10rem; resize: vertical;
+      font-size: 1rem !important; padding: 0.65rem 0.75rem;
+    }
+    .citem-edit-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .citem-edit-actions .btn { min-height: 2.4rem; padding: 0.45rem 0.85rem; font-size: 0.9rem; }
     .sub {
       margin-top: 3px; font-size: 0.82rem; color: var(--foreground-muted);
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -1666,12 +1679,15 @@
       for (var i = 0; i < comments.length; i++) {
         var c = comments[i];
         var col = escapeHtml(c.color || 'none');
-        html += '<div class="citem ' + col + '">'
+        var own = !!(c.canEdit || c.canDelete || !c.createdBy);
+        html += '<div class="citem ' + col + '" data-cid="' + escapeHtml(c.id) + '">'
           + '<div class="citem-top"><div class="citem-meta">'
           + escapeHtml((c.colorLabel || 'Notiz') + ' · ' + (c.createdByName || c.createdBy || 'Team') + ' · ' + (c.createdAt || ''))
-          + '</div>'
-          + ((c.canDelete || !c.createdBy) ? ('<button type="button" class="del" data-id="' + escapeHtml(c.id) + '">Löschen</button>') : '')
-          + '</div><div class="citem-body">' + escapeHtml(c.comment || '') + '</div></div>';
+          + '</div><div class="citem-actions">'
+          + (own ? ('<button type="button" class="edit" data-id="' + escapeHtml(c.id) + '">Bearbeiten</button>') : '')
+          + (own ? ('<button type="button" class="del" data-id="' + escapeHtml(c.id) + '">Löschen</button>') : '')
+          + '</div></div>'
+          + '<div class="citem-body">' + escapeHtml(c.comment || '') + '</div></div>';
       }
       box.innerHTML = html;
       var dels = box.querySelectorAll('.del');
@@ -1680,6 +1696,77 @@
           deleteComment(this.getAttribute('data-id'));
         };
       }
+      var edits = box.querySelectorAll('.edit');
+      for (var e = 0; e < edits.length; e++) {
+        edits[e].onclick = function() {
+          startEditComment(this.getAttribute('data-id'));
+        };
+      }
+    }
+
+    function findComment(id) {
+      var list = (state.detail && state.detail.kisten && state.detail.kisten.comments) || [];
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].id) === String(id)) return list[i];
+      }
+      return null;
+    }
+
+    function startEditComment(id) {
+      var c = findComment(id);
+      var card = document.querySelector('.citem[data-cid="' + id + '"]');
+      if (!c || !card || state.busy) return;
+      var open = document.querySelector('.citem-edit');
+      if (open) {
+        renderComments((state.detail && state.detail.kisten && state.detail.kisten.comments) || []);
+        card = document.querySelector('.citem[data-cid="' + id + '"]');
+        if (!card) return;
+      }
+      var body = card.querySelector('.citem-body');
+      var actions = card.querySelector('.citem-actions');
+      if (actions) actions.style.visibility = 'hidden';
+      if (body) body.style.display = 'none';
+      var wrap = document.createElement('div');
+      wrap.className = 'citem-edit';
+      wrap.innerHTML = '<textarea class="edit-box" aria-label="Kommentar bearbeiten"></textarea>'
+        + '<div class="citem-edit-actions">'
+        + '<button type="button" class="btn teal btn-save-edit">Speichern</button>'
+        + '<button type="button" class="btn ghost btn-cancel-edit">Abbrechen</button>'
+        + '</div>';
+      card.appendChild(wrap);
+      var ta = wrap.querySelector('.edit-box');
+      ta.value = c.comment || '';
+      ta.focus();
+      wrap.querySelector('.btn-cancel-edit').onclick = function() {
+        renderComments((state.detail && state.detail.kisten && state.detail.kisten.comments) || []);
+      };
+      wrap.querySelector('.btn-save-edit').onclick = function() {
+        saveEditComment(id, ta.value, c.color || 'none');
+      };
+    }
+
+    function saveEditComment(id, text, color) {
+      var key = currentKey();
+      var d = state.detail;
+      if (!id || !d) return;
+      text = String(text || '').trim();
+      if (!text) {
+        toast('Leerer Kommentar', true);
+        return;
+      }
+      setBusy(true, 'Aktualisiert Kommentar…');
+      api()
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (!res || !res.success) {
+            toast((res && res.message) || 'Bearbeiten fehlgeschlagen', true);
+            return;
+          }
+          toast('Kommentar aktualisiert');
+          selectItem(d.stockId, key || (res.cellKey || ''));
+          loadQueue();
+        })
+        .editStockComment(id, text, color || 'none');
     }
 
     function currentKey() {
