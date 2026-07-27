@@ -1741,7 +1741,7 @@ function updateUserNotebookNote(noteId, title, category, color, body) {
       var row = i + 2;
       var at = nowStamp_();
       var ms = Date.now();
-      sh.getRange(row, 3, 1, 6).setValues([[title, category, color, body]]);
+      sh.getRange(row, 3, 1, 4).setValues([[title, category, color, body]]);
       sh.getRange(row, 8).setNumberFormat('@').setValue(at);
       sh.getRange(row, 10).setNumberFormat('0').setValue(ms);
       SpreadsheetApp.flush();
