@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,7 +17,7 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbwfYBk2ZEul4clmuWwQq-QQ2mbA9W8Ops39YqV7KUGcfqrT5E3ggQlaE0viAoJKBPN-/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.7";
+    const ARASAKA_BOT_VERSION = "1.8";
     const ARASAKA_BRIDGE_VERSION = "16";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
@@ -47,12 +47,13 @@
 
     function bridgeAppsScriptHtmlPopupText() {
         return 'Die Web-App antwortet mit einer Google-Fehlerseite (HTML), nicht mit JSON.\n\n'
-            + 'Typisch: Deployment-Zugriff, fehlende Autorisierung, oder falscher Google-Account.\n\n'
-            + '1) Im Browser mit dem Workspace-Konto einloggen (z. B. @autohero.com).\n'
-            + '2) Apps Script öffnen → Deploy → Verwaltung → neue Version, Zugriff z. B. "Alle innerhalb der Domain" oder "Jeder".\n'
-            + '3) Die /exec-URL einmal im gleichen Browser öffnen und Berechtigungen erlauben.\n'
-            + '4) Falls im Skript eine E-Mail-Whitelist aktiv ist: actor-Parameter setzen oder Liste prüfen.\n'
-            + '5) Neues Apps-Skript deployen (doPost muss enthalten sein — aktueller drive-bridge.gs).';
+            + 'Aktuell: Deployment verlangt Login (AccountChooser) — Tampermonkey kann das nicht.\n\n'
+            + 'FIX in Apps Script → Deploy → Verwaltung → Bearbeiten:\n'
+            + '1) Ausführen als: Ich\n'
+            + '2) Wer hat Zugriff: JEDER (nicht nur Domain!)\n'
+            + '3) Neue Version → Deploy → neue /exec-URL in den Bot kopieren\n'
+            + '4) URL im Browser öffnen: muss JSON oder "Zugriff verweigert!" zeigen — KEIN Sign-in\n'
+            + '5) Test: .../exec?action=ping&key=ARASAKA_2026 → {"ok":true,...}';
     }
 
     function bridgeExtraHintForDriveError(msg) {
@@ -482,7 +483,7 @@
         if (bridgeBodyLooksLikeHtml(rt)) {
             dbg('getBatch', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
             dbg('getBatch', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
-            showCustomPopup("FEHLER", "Die Verbindung zur Google-Web-App ist fehlgeschlagen (HTML statt Daten). Bei Bedarf Konsole (F12) für Details.", true);
+            showCustomPopup("FEHLER", "Google-Web-App blockiert (Login/HTML statt Daten).\n\nDeploy-Zugriff auf \"Jeder\" stellen — nicht nur Domain. Details: Konsole F12.", true);
             isProcessing = false;
             return;
         }
@@ -1298,7 +1299,7 @@
             return '<span class="arasaka-hud-chip">' + hudEscape(chip) + '</span>';
         }).join('');
         let resetHtml = tone === 'error'
-            ? '<div class="arasaka-hud-reset">Erst hart neu laden: Strg+F5 oder Ctrl+Shift+R. Danach ALT+B nochmal versuchen. Wenn es wieder kommt, Konsole (F12) offen lassen.</div>'
+            ? '<div class="arasaka-hud-reset">Apps Script Deploy: Zugriff = <b>Jeder</b> (nicht nur Domain), Ausführen als = Ich. Neue /exec-URL in den Bot. Im Browser muss die URL JSON/"Zugriff verweigert!" zeigen — kein Sign-in.</div>'
             : '';
         let popup = document.createElement('div');
         popup.id = 'arasaka-batch-popup';
