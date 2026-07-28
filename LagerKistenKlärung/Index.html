@@ -1336,6 +1336,7 @@
       detail: null,
       detailByKey: {},
       detailReqId: 0,
+      softReqId: 0,
       busy: false,
       cachedAt: '',
       commentColor: 'b2a1',
@@ -1542,6 +1543,7 @@
     function loadQueue(forceRebuild) {
       setBusy(true, forceRebuild ? 'Cache neu…' : 'Lädt Liste…');
       showListSkeleton();
+      var needDetails = !!forceRebuild || !Object.keys(state.detailByKey).length;
       var run = function() {
         api()
           .withSuccessHandler(function(res) {
@@ -1554,10 +1556,20 @@
             state.items = res.items || [];
             state.cachedAt = res.cachedAt || '';
             if (forceRebuild) state.detailByKey = {};
+            if (res.details) {
+              var keys = Object.keys(res.details);
+              for (var i = 0; i < keys.length; i++) {
+                state.detailByKey[keys[i]] = res.details[keys[i]];
+              }
+            }
             $('cacheLabel').textContent = (res.totalCached ? (res.totalCached + ' · ') : '') + (res.cachedAt ? ('Cache ' + res.cachedAt) : '');
             renderList();
+            if (state.selectedKey && state.detailByKey[state.selectedKey]) {
+              state.detail = state.detailByKey[state.selectedKey];
+              renderDetail();
+            }
           })
-          .getQueue(state.filter);
+          .getQueue(state.filter, needDetails);
       };
       if (forceRebuild) {
         state.detailByKey = {};
@@ -1727,38 +1739,80 @@
       }
     }
 
+    function syncListItemFromDetail(res) {
+      var key = res && res.kisten && res.kisten.cellKey;
+      if (!key) return;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].cellKey !== key) continue;
+        var it = state.items[i];
+        var k = res.kisten || {};
+        var ch = res.checks || {};
+        it.comment = k.comment || '';
+        it.hasNote = !!k.hasNote;
+        it.commentCount = (k.comments && k.comments.length) || (it.hasNote ? 1 : 0);
+        it.statusHint = k.status || '';
+        it.primaryColor = k.primaryColor || '';
+        it.kategorie = k.status || '';
+        it.yellow = !!k.yellow;
+        it.checksDone = Number(ch.done) || 0;
+        it.checksTotal = Number(ch.total) || 3;
+        it.done = it.checksDone >= it.checksTotal;
+        break;
+      }
+    }
+
+    function softRefreshDetail(stockId, cellKey, rev) {
+      if (!stockId || !cellKey) return;
+      var softId = ++state.softReqId;
+      var keyAtStart = cellKey;
+      api()
+        .withSuccessHandler(function(res) {
+          if (softId !== state.softReqId) return;
+          if (state.selectedKey !== keyAtStart) return;
+          if (!res || !res.success || res.unchanged) return;
+          state.detailByKey[cellKey] = res;
+          state.detail = res;
+          syncListItemFromDetail(res);
+          renderDetail();
+          renderList();
+        })
+        .getStockDetailIfChanged(stockId, cellKey, Number(rev) || 0);
+    }
+
     function selectItem(stockId, cellKey, forceNet) {
       state.selectedKey = cellKey;
       renderList();
       $('detailSid').textContent = stockId;
       if ($('btnCopySid')) $('btnCopySid').disabled = !stockId || stockId === '—';
-      var local = !forceNet && cellKey && state.detailByKey[cellKey];
-      if (local) {
+      var local = cellKey && state.detailByKey[cellKey];
+      if (local && !forceNet) {
         state.detail = local;
-        $('detailSub').textContent = 'Sofort…';
+        $('detailSub').textContent = local.cachedAt ? ('Cache ' + local.cachedAt) : 'Lokal';
         renderDetail();
         setBusy(false);
-      } else {
-        setBusy(true, 'Lädt Detail…');
-        $('detailSub').textContent = 'Aus Cache…';
+        softRefreshDetail(stockId, cellKey, local.rev);
+        return;
       }
+      setBusy(true, 'Lädt Detail…');
+      $('detailSub').textContent = 'Aus Cache…';
       var reqId = ++state.detailReqId;
       api()
         .withSuccessHandler(function(res) {
           if (reqId !== state.detailReqId) return;
           setBusy(false);
           if (!res || !res.success) {
-            if (!local) toast((res && res.message) || 'Detail fehlgeschlagen', true);
+            toast((res && res.message) || 'Detail fehlgeschlagen', true);
             return;
           }
           state.detail = res;
           if (cellKey) state.detailByKey[cellKey] = res;
+          syncListItemFromDetail(res);
           renderDetail();
         })
         .withFailureHandler(function() {
           if (reqId !== state.detailReqId) return;
           setBusy(false);
-          if (!local) toast('Detail fehlgeschlagen', true);
+          toast('Detail fehlgeschlagen', true);
         })
         .getStockDetail(stockId, cellKey);
     }

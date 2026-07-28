@@ -936,7 +936,8 @@ function rebuildKlärungCache() {
       checks: checks,
       gmailSearchUrl: gmailSearchUrl_(stockId),
       carolSearchHint: 'Carol: begonnen / Fertiggestellt / B2A1 prüfen',
-      fromCache: true
+      fromCache: true,
+      rev: builtAtMs
     };
   }
 
@@ -1158,13 +1159,13 @@ function applyLiveCommentsToItems_(items) {
   return items;
 }
 
-function getQueue(filter) {
+function getQueue(filter, includeDetails) {
   try {
     var cache = readCache_();
     if (!cache || !cache.items) cache = rebuildKlärungCache();
     var items = applyLiveCommentsToItems_((cache.items || []).slice());
     items = filterItems_(items, filter);
-    return {
+    var out = {
       success: true,
       items: items,
       count: items.length,
@@ -1173,6 +1174,16 @@ function getQueue(filter) {
       source: cache.source || 'LAGER',
       fromCache: true
     };
+    if (includeDetails) {
+      var dmap = cache.details || {};
+      var keys = Object.keys(dmap);
+      var details = {};
+      for (var i = 0; i < keys.length; i++) {
+        details[keys[i]] = detailFromCache_(cache, dmap[keys[i]]);
+      }
+      out.details = details;
+    }
+    return out;
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [] };
   }
@@ -1201,6 +1212,39 @@ function getStockDetail(stockId, cellKey) {
   }
 }
 
+function getStockDetailIfChanged(stockId, cellKey, clientRev) {
+  try {
+    stockId = normalizeStockId_(stockId);
+    cellKey = String(cellKey || '');
+    clientRev = Number(clientRev) || 0;
+    if (!stockId) return { success: false, message: 'Keine Stock-ID' };
+    var cache = readCache_();
+    if (!cache || !cache.details) {
+      return { success: false, message: 'Nicht im Cache — rebuildKlärungCache ausführen' };
+    }
+    var d = null;
+    if (cellKey && cache.details[cellKey]) d = cache.details[cellKey];
+    if (!d) {
+      var keys = Object.keys(cache.details);
+      for (var i = 0; i < keys.length; i++) {
+        if (cache.details[keys[i]].stockId === stockId) {
+          d = cache.details[keys[i]];
+          cellKey = keys[i];
+          break;
+        }
+      }
+    }
+    if (!d) return { success: false, message: 'Nicht im Cache — rebuildKlärungCache ausführen' };
+    var rev = Number(d.rev) || Number(cache.builtAtMs) || 0;
+    if (clientRev > 0 && rev === clientRev) {
+      return { success: true, unchanged: true, rev: rev, stockId: stockId, cellKey: cellKey };
+    }
+    return detailFromCache_(cache, d);
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
 function detailFromCache_(cache, d) {
   var checks = d.checks || (d.kisten && d.kisten.checks) || emptyChecks_();
   countChecks_(checks);
@@ -1218,6 +1262,7 @@ function detailFromCache_(cache, d) {
   kisten.yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
   return {
     success: true,
+    unchanged: false,
     stockId: d.stockId,
     kisten: kisten,
     regal: d.regal,
@@ -1228,7 +1273,8 @@ function detailFromCache_(cache, d) {
     gmailSearchUrl: d.gmailSearchUrl,
     carolSearchHint: d.carolSearchHint,
     fromCache: true,
-    cachedAt: cache.builtAt || ''
+    cachedAt: cache.builtAt || '',
+    rev: Number(d.rev) || Number(cache.builtAtMs) || 0
   };
 }
 
@@ -1348,6 +1394,7 @@ function refreshCellInCache_(cellKey, stockId) {
     cache.details[cellKey].kisten.status = statusHint;
     cache.details[cellKey].kisten.primaryColor = primary ? primary.color : '';
     cache.details[cellKey].kisten.sheetKategorie = liveKat;
+    cache.details[cellKey].rev = Date.now();
     for (var i = 0; i < cache.items.length; i++) {
       if (cache.items[i].cellKey !== cellKey) continue;
       cache.items[i].comment = preview;
@@ -1612,6 +1659,7 @@ function setCheckStep(cellKey, stockId, step, checked) {
       if (cache && cache.details && cache.details[cellKey]) {
         cache.details[cellKey].checks = row;
         if (cache.details[cellKey].kisten) cache.details[cellKey].kisten.checks = row;
+        cache.details[cellKey].rev = Date.now();
         for (var j = 0; j < cache.items.length; j++) {
           if (cache.items[j].cellKey !== cellKey) continue;
           cache.items[j].checksDone = row.done;
