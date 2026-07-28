@@ -90,7 +90,34 @@ function handleRequest_(e) {
         var fileIdGet = e.parameter.fileId;
         var fileGet = DriveApp.getFileById(fileIdGet);
         var b64 = Utilities.base64Encode(fileGet.getBlob().getBytes());
-        return ContentService.createTextOutput(b64);
+        var chunkSize = parseInt(e.parameter.chunkSize, 10);
+        if (!chunkSize || chunkSize < 1000) chunkSize = 40000;
+        var chunkIdx = e.parameter.chunk;
+        if (chunkIdx === undefined || chunkIdx === null || chunkIdx === "") {
+            return ContentService.createTextOutput(b64);
+        }
+        var ci = parseInt(chunkIdx, 10);
+        if (isNaN(ci) || ci < 0) {
+            var totalChunksMeta = Math.ceil(b64.length / chunkSize) || 1;
+            return ContentService.createTextOutput(JSON.stringify({
+                ok: true,
+                totalChars: b64.length,
+                chunkSize: chunkSize,
+                chunks: totalChunksMeta,
+                mimeType: fileGet.getMimeType(),
+                bridge: 17
+            })).setMimeType(ContentService.MimeType.JSON);
+        }
+        var start = ci * chunkSize;
+        var part = b64.substring(start, start + chunkSize);
+        var totalChunks = Math.ceil(b64.length / chunkSize) || 1;
+        return ContentService.createTextOutput(JSON.stringify({
+            ok: true,
+            chunk: ci,
+            chunks: totalChunks,
+            data: part,
+            done: start + part.length >= b64.length
+        })).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "moveFile") {

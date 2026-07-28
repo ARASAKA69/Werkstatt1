@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.8
+// @version      1.9
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,8 +17,8 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbwfYBk2ZEul4clmuWwQq-QQ2mbA9W8Ops39YqV7KUGcfqrT5E3ggQlaE0viAoJKBPN-/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.8";
-    const ARASAKA_BRIDGE_VERSION = "16";
+    const ARASAKA_BOT_VERSION = "1.9";
+    const ARASAKA_BRIDGE_VERSION = "17";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
 
@@ -45,15 +45,20 @@
         return out;
     }
 
-    function bridgeAppsScriptHtmlPopupText() {
-        return 'Die Web-App antwortet mit einer Google-Fehlerseite (HTML), nicht mit JSON.\n\n'
-            + 'Aktuell: Deployment verlangt Login (AccountChooser) — Tampermonkey kann das nicht.\n\n'
-            + 'FIX in Apps Script → Deploy → Verwaltung → Bearbeiten:\n'
-            + '1) Ausführen als: Ich\n'
-            + '2) Wer hat Zugriff: JEDER (nicht nur Domain!)\n'
-            + '3) Neue Version → Deploy → neue /exec-URL in den Bot kopieren\n'
-            + '4) URL im Browser öffnen: muss JSON oder "Zugriff verweigert!" zeigen — KEIN Sign-in\n'
-            + '5) Test: .../exec?action=ping&key=ARASAKA_2026 → {"ok":true,...}';
+    function bridgeHtmlLooksLikeAuthWall(html) {
+        var h = String(html || '');
+        return /AccountChooser|Sign in - Google Accounts|accounts\.google\.com\/ServiceLogin/i.test(h);
+    }
+
+    function bridgeAppsScriptHtmlPopupText(html) {
+        if (bridgeHtmlLooksLikeAuthWall(html)) {
+            return 'Deployment verlangt Login (AccountChooser) — Tampermonkey kann das nicht.\n\n'
+                + 'FIX: Deploy → Zugriff = JEDER, Ausführen als = Ich. Neue /exec-URL in den Bot.\n'
+                + 'Browser-Test ohne Login: JSON oder "Zugriff verweigert!" — kein Sign-in.';
+        }
+        return 'Google ContentService-Redirect ist gerade flaky (Page Not Found / echo 404).\n'
+            + 'Dein /exec ist ok (JSON im Browser) — das ist kein Zugriffsproblem.\n'
+            + 'Bot retried automatisch. Wenn Bilder oft failen: Bridge v17 deployen (chunked getFileData).';
     }
 
     function bridgeExtraHintForDriveError(msg) {
@@ -93,7 +98,15 @@
         return '';
     }
 
-    function bridgePostJson(payload, timeoutMs) {
+    function bridgeResponseIsTransientFail(r) {
+        if (!r) return true;
+        var rt = r.responseText || '';
+        if (bridgeBodyLooksLikeHtml(rt)) return true;
+        if (r.status === 404 || r.status === 302 || r.status === 0) return true;
+        return false;
+    }
+
+    function bridgePostJsonOnce(payload, timeoutMs) {
         var body = JSON.stringify(Object.assign({ key: API_KEY }, payload));
         return new Promise(function(resolve) {
             GM_xmlhttpRequest({
@@ -113,6 +126,55 @@
                 }
             });
         });
+    }
+
+    async function bridgePostJson(payload, timeoutMs, retries) {
+        var maxTry = retries == null ? 4 : retries;
+        var last = null;
+        for (var attempt = 1; attempt <= maxTry; attempt++) {
+            if (abortMission) return last;
+            last = await bridgePostJsonOnce(payload, timeoutMs);
+            if (!bridgeResponseIsTransientFail(last)) return last;
+            var head = last && last.responseText ? String(last.responseText).slice(0, 80) : '';
+            dbg('bridgePostJson', 'retry', attempt + '/' + maxTry, 'action', payload && payload.action, 'status', last && last.status, 'head', head);
+            if (attempt < maxTry) await new Promise(function(r) { setTimeout(r, 700 * attempt); });
+        }
+        return last;
+    }
+
+    async function bridgeDownloadFileBase64(fileId) {
+        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: 40000 }, 60000);
+        if (!metaRes || bridgeBodyLooksLikeHtml(metaRes.responseText || '')) {
+            dbg('getFileData', 'metaFail', fileId, metaRes && metaRes.status);
+            return null;
+        }
+        var metaRt = String(metaRes.responseText || '').trim();
+        var meta = null;
+        try { meta = JSON.parse(metaRt); } catch (e) { meta = null; }
+        if (!meta || !meta.chunks) {
+            var legacyProblem = base64ResponseProblem(metaRt);
+            if (!legacyProblem) return normalizeBase64Response(metaRt);
+            dbg('getFileData', 'metaInvalid', fileId, legacyProblem);
+            return null;
+        }
+        var parts = [];
+        for (var c = 0; c < meta.chunks; c++) {
+            if (abortMission) return null;
+            showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild-Teil " + (c + 1) + "/" + meta.chunks + "…", false);
+            var chunkRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: c, chunkSize: meta.chunkSize || 40000 }, 60000);
+            if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) {
+                dbg('getFileData', 'chunkFail', fileId, c, chunkRes && chunkRes.status);
+                return null;
+            }
+            var chunkParsed = null;
+            try { chunkParsed = JSON.parse(chunkRes.responseText || ''); } catch (e2) { chunkParsed = null; }
+            if (!chunkParsed || typeof chunkParsed.data !== 'string') {
+                dbg('getFileData', 'chunkInvalid', fileId, c);
+                return null;
+            }
+            parts.push(chunkParsed.data);
+        }
+        return normalizeBase64Response(parts.join(''));
     }
 
     let isProcessing = false;
@@ -482,8 +544,10 @@
         dbg('getBatch', 'http', response.status, 'finalUrl', response.finalUrl || '', 'len', rt.length, 'head', rt.slice(0, 240));
         if (bridgeBodyLooksLikeHtml(rt)) {
             dbg('getBatch', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
-            dbg('getBatch', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
-            showCustomPopup("FEHLER", "Google-Web-App blockiert (Login/HTML statt Daten).\n\nDeploy-Zugriff auf \"Jeder\" stellen — nicht nur Domain. Details: Konsole F12.", true);
+            dbg('getBatch', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText(rt));
+            showCustomPopup("FEHLER", bridgeHtmlLooksLikeAuthWall(rt)
+                ? "Google-Web-App blockiert (Login). Deploy-Zugriff auf \"Jeder\" stellen."
+                : "Google-Bridge kurz gestört (HTML/404). Nochmal ALT+B — /exec ist ok, Redirect flaky.", true);
             isProcessing = false;
             return;
         }
@@ -543,9 +607,9 @@
                 dbg('getBatchRecheck', 'http', response.status, 'finalUrl', response.finalUrl || '', 'len', rt.length, 'head', rt.slice(0, 240));
                 if (bridgeBodyLooksLikeHtml(rt)) {
                     dbg('getBatchRecheck', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
-                    dbg('getBatchRecheck', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
+                    dbg('getBatchRecheck', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText(rt));
                     playSuccessSound();
-                    showCustomPopup("ARASAKA", "Stapel fertig. Drive-Check fehlgeschlagen (Google HTML). Uploads sind durch — später ALT+B zum Nachscannen.", true);
+                    showCustomPopup("ARASAKA", "Stapel fertig. Drive-Check kurz fehlgeschlagen (Google flaky). Uploads sind durch — später ALT+B.", true);
                     isProcessing = false;
                     return;
                 }
@@ -813,21 +877,13 @@
 
             dbg('uploadStep', i + 1, totalFiles, cls, currentComment, fileInfo.name, 'stockId', stockId);
             showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild " + (i + 1) + " von " + totalFiles + " aus Drive...", false);
-            let b64 = await new Promise((resolve) => {
-                bridgePostJson({ action: 'getFileData', fileId: fileInfo.id }, 45000).then(function(res) {
-                    if (!res) { dbg('getFileData', 'noResponse', fileInfo.id); resolve(null); return; }
-                    dbg('getFileData', 'http', res.status, 'fileId', fileInfo.id, 'b64len', (res.responseText || '').length);
-                    resolve(res.responseText);
-                });
-            });
-
+            let b64 = await bridgeDownloadFileBase64(fileInfo.id);
             let b64Problem = base64ResponseProblem(b64);
             if (b64Problem) {
                 dbg('getFileData', 'invalidBody', fileInfo.id, b64Problem, 'bodyHead', String(b64 || '').slice(0, 240));
                 await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
                 return;
             }
-            b64 = normalizeBase64Response(b64);
 
             showCustomPopup("ARASAKA UPLOAD", "Lade Bild " + (i + 1) + " hoch...", false);
 
@@ -1299,7 +1355,7 @@
             return '<span class="arasaka-hud-chip">' + hudEscape(chip) + '</span>';
         }).join('');
         let resetHtml = tone === 'error'
-            ? '<div class="arasaka-hud-reset">Apps Script Deploy: Zugriff = <b>Jeder</b> (nicht nur Domain), Ausführen als = Ich. Neue /exec-URL in den Bot. Im Browser muss die URL JSON/"Zugriff verweigert!" zeigen — kein Sign-in.</div>'
+            ? '<div class="arasaka-hud-reset">Wenn /exec im Browser JSON zeigt: Google-Redirect flaky — nochmal ALT+B. Sonst Deploy-Zugriff = Jeder. Bridge v17 für Bild-Chunks redeployen.</div>'
             : '';
         let popup = document.createElement('div');
         popup.id = 'arasaka-batch-popup';
