@@ -390,6 +390,18 @@ function canonicalTireSizeServer(str) {
     return m ? (m[1] + "/" + m[2] + "/" + m[3]) : "";
   }
 
+function isPaketdienstText_(val) {
+    return String(val || "").toLowerCase().indexOf("paketdienst") !== -1;
+  }
+
+function rowHasPaketdienst_(row) {
+    if (!row || !row.length) return false;
+    for (var c = 0; c < row.length; c++) {
+      if (isPaketdienstText_(row[c])) return true;
+    }
+    return false;
+  }
+
 function findReifenStockRowsDetailed(sheet, stockId) {
     stockId = normalizeStockId(stockId);
     var lastRow = Math.max(1, sheet.getLastRow());
@@ -420,7 +432,8 @@ function findReifenStockRowsDetailed(sheet, stockId) {
           groesse: groesseCol !== -1 ? String(data[i][groesseCol - 1] || "").trim() : "",
           lastindex: lastIndexCol !== -1 ? String(data[i][lastIndexCol - 1] || "").trim() : "",
           gwindex: gwIndexCol !== -1 ? String(data[i][gwIndexCol - 1] || "").trim() : "",
-          menge: mengeVal
+          menge: mengeVal,
+          paketdienst: rowHasPaketdienst_(data[i])
         });
       }
     }
@@ -430,6 +443,7 @@ function findReifenStockRowsDetailed(sheet, stockId) {
 function pickReifenUnbookedRow(matches, sizeHint) {
     var unbooked = [];
     for (var i = 0; i < matches.length; i++) {
+      if (matches[i].paketdienst) continue;
       if (matches[i].status !== "ja" && matches[i].status !== "nein") unbooked.push(matches[i]);
     }
     var sizeCanon = canonicalTireSizeServer(sizeHint);
@@ -702,25 +716,29 @@ function getAvailableReifenStockIds(tabName) {
       var lastIndexCol = getColIndex(headerRow, ["lastindex", "last"]);
       var gwIndexCol = getColIndex(headerRow, ["gwindex", "gw"]);
       var mengeCol = getColIndex(headerRow, ["menge", "anzahl"]);
+      var kommentarCol = getColIndex(headerRow, ["kommentar", "comment"]);
       var stockData = sheet.getRange(startRow, search.stockCol, numRows, 1).getValues();
       var statusData = angeliefertCol !== -1 ? sheet.getRange(startRow, angeliefertCol, numRows, 1).getValues() : [];
       var groesseData = groesseCol !== -1 ? sheet.getRange(startRow, groesseCol, numRows, 1).getValues() : [];
       var lastIndexData = lastIndexCol !== -1 ? sheet.getRange(startRow, lastIndexCol, numRows, 1).getValues() : [];
       var gwIndexData = gwIndexCol !== -1 ? sheet.getRange(startRow, gwIndexCol, numRows, 1).getValues() : [];
       var mengeData = mengeCol !== -1 ? sheet.getRange(startRow, mengeCol, numRows, 1).getValues() : [];
+      var kommentarData = kommentarCol !== -1 ? sheet.getRange(startRow, kommentarCol, numRows, 1).getValues() : [];
       var ids = [];
       for (var i = 0; i < stockData.length; i++) {
         var val = normalizeStockId(stockData[i][0]);
         if (val) {
           var mengeVal = mengeCol !== -1 ? (parseInt(mengeData[i][0], 10) || 0) : 0;
           if (mengeVal < 1) mengeVal = 2;
+          var isPaket = kommentarCol !== -1 && isPaketdienstText_(kommentarData[i][0]);
           ids.push({
             id: val,
             status: angeliefertCol !== -1 ? String(statusData[i][0] || "").trim().toLowerCase() : "",
             groesse: groesseCol !== -1 ? String(groesseData[i][0] || "").trim() : "",
             lastindex: lastIndexCol !== -1 ? String(lastIndexData[i][0] || "").trim() : "",
             gwindex: gwIndexCol !== -1 ? String(gwIndexData[i][0] || "").trim() : "",
-            menge: mengeVal
+            menge: mengeVal,
+            paketdienst: isPaket
           });
         }
       }
@@ -741,6 +759,13 @@ function checkReifenStock(tabName, stockId) {
       var det = findReifenStockRowsDetailed(sheet, stockId);
       if (det.headerIdx === -1) return { found: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
       if (!det.matches.length) return { found: false, message: "Stock-ID '" + stockId + "' in '" + sheet.getName() + "' nicht gefunden!" };
+      var onlyPaket = true;
+      for (var mi = 0; mi < det.matches.length; mi++) {
+        if (!det.matches[mi].paketdienst) { onlyPaket = false; break; }
+      }
+      if (onlyPaket) {
+        return { found: false, message: "Stock-ID '" + stockId + "' ist Paketdienst – bitte über Reifensuche nach Größe verbuchen." };
+      }
       var pick = pickReifenUnbookedRow(det.matches, null);
       if (!pick.chosen) {
         return { found: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheet.getName() + "' bereits verbucht!" };
@@ -775,6 +800,13 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
       var det = findReifenStockRowsDetailed(sheetSeng, stockId);
       if (det.headerIdx === -1) return { success: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
       if (!det.matches.length) return { success: false, message: "Stock-ID '" + stockId + "' in '" + sheetSeng.getName() + "' nicht gefunden!" };
+      var onlyPaketProcess = true;
+      for (var mpi = 0; mpi < det.matches.length; mpi++) {
+        if (!det.matches[mpi].paketdienst) { onlyPaketProcess = false; break; }
+      }
+      if (onlyPaketProcess) {
+        return { success: false, message: "Stock-ID '" + stockId + "' ist Paketdienst – nicht über Annahme verbuchen." };
+      }
       var pick = pickReifenUnbookedRow(det.matches, sizeHint);
       if (!pick.chosen) return { success: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheetSeng.getName() + "' bereits verbucht!" };
 

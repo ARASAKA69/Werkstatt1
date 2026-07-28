@@ -3212,6 +3212,7 @@
     if(!search || !cachedReifenStockIds.length) return;
     var matches = [];
     for(var i = 0; i < cachedReifenStockIds.length; i++) {
+      if (cachedReifenStockIds[i].paketdienst) continue;
       if(cachedReifenStockIds[i].id.indexOf(search) !== -1) {
         matches.push(cachedReifenStockIds[i]);
         if(matches.length >= 30) break;
@@ -4213,8 +4214,21 @@
     reifenBatch.items = reifenBatch.items.filter(function(it) {
       return !(normalizeStockIdJs(it.stockId) === sid && (!tab || it.tab === tab));
     });
+    if (normalizeStockIdJs(currentVerifiedReifenStock) === sid && (!tab || currentReifenTab === tab)) {
+      clearReifenScanInputForNext();
+    }
     saveReifenBatch();
     renderReifenBatchList();
+  }
+
+  function removeReifenBatchItemFromList(stockId, tab, ev) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    if (!window.confirm("'" + stockId + "' aus Sammel-Scan entfernen?")) return;
+    removeReifenBatchItem(stockId, tab);
+    setReifenStatus("'" + stockId + "' aus Sammel-Scan entfernt.", "#8b949e");
   }
 
   function clearReifenBatch() {
@@ -4253,6 +4267,8 @@
     }
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
+      var row = document.createElement('div');
+      row.className = 'reifen-batch-row';
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'reifen-batch-item' + (reifenBatchItemIncomplete(it) ? ' is-warn' : '');
@@ -4262,6 +4278,9 @@
       var scanned = parseInt(it.tyresScanned, 10) || 0;
       var qtyLabel = expected + ' bestellt / ' + scanned + ' hier';
       var pk = it.paketTotal ? ((it.packetsSeen || []).length + '/' + it.paketTotal) : '';
+      var numSpan = document.createElement('span');
+      numSpan.className = 'reifen-batch-num';
+      numSpan.textContent = '#' + (i + 1);
       var stockSpan = document.createElement('span');
       stockSpan.className = 'reifen-batch-stock';
       stockSpan.textContent = it.stockId;
@@ -4271,6 +4290,7 @@
       var qtySpan = document.createElement('span');
       qtySpan.className = 'reifen-batch-qty' + (scanned < expected ? ' is-warn' : ' is-ok');
       qtySpan.textContent = qtyLabel;
+      btn.appendChild(numSpan);
       btn.appendChild(stockSpan);
       btn.appendChild(metaSpan);
       btn.appendChild(qtySpan);
@@ -4283,7 +4303,18 @@
       (function(stockId, tab) {
         btn.addEventListener('click', function() { workDownReifenBatchItem(stockId, tab); });
       })(it.stockId, it.tab);
-      list.appendChild(btn);
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'reifen-batch-del';
+      delBtn.title = 'Entfernen';
+      delBtn.setAttribute('aria-label', 'Entfernen');
+      delBtn.textContent = '×';
+      (function(stockId, tab) {
+        delBtn.addEventListener('click', function(ev) { removeReifenBatchItemFromList(stockId, tab, ev); });
+      })(it.stockId, it.tab);
+      row.appendChild(btn);
+      row.appendChild(delBtn);
+      list.appendChild(row);
     }
     panel.style.display = 'flex';
   }
@@ -4374,7 +4405,7 @@
   function findReifenStockAcrossTabs(stockId) {
     ensureReifenHudShape();
     var sid = normalizeStockIdJs(stockId);
-    var out = { unbooked: [], booked: [] };
+    var out = { unbooked: [], booked: [], paketdienst: [] };
     if (!sid) return out;
     var byTab = reifenHudCache.stocksByTab || {};
     var tabOrder = (reifenHudCache.tabs && reifenHudCache.tabs.length) ? reifenHudCache.tabs : Object.keys(byTab);
@@ -4384,16 +4415,19 @@
       if (!list || !list.length) continue;
       var unbookedEntries = [];
       var bookedFound = false;
+      var paketFound = false;
       for (var i = 0; i < list.length; i++) {
         var entry = list[i];
         var idVal = entry && entry.id !== undefined ? entry.id : entry;
         if (!cellMatchesStockIdJs(idVal, sid)) continue;
+        if (entry && entry.paketdienst) { paketFound = true; continue; }
         var st = entry && entry.status !== undefined ? String(entry.status || '').trim().toLowerCase() : '';
         if (st === 'ja' || st === 'nein') bookedFound = true;
         else unbookedEntries.push(entry);
       }
       if (unbookedEntries.length) out.unbooked.push({ tab: tab, entry: unbookedEntries[0], entries: unbookedEntries });
       else if (bookedFound) out.booked.push({ tab: tab, entry: null });
+      else if (paketFound) out.paketdienst.push({ tab: tab });
     }
     return out;
   }
@@ -4442,6 +4476,9 @@
     } else if (res.booked.length) {
       var tabs = res.booked.map(function(b) { return b.tab; }).join(', ');
       setReifenStatus("❌ '" + stockId + "' bereits verbucht (" + tabs + ").", "#f85149");
+      clearReifenScanInputForNext();
+    } else if (res.paketdienst && res.paketdienst.length) {
+      setReifenStatus("❌ '" + stockId + "' ist Paketdienst – kommt per Paket, nicht über Annahme verbuchen.", "#f85149");
       clearReifenScanInputForNext();
     } else {
       setReifenStatus("❌ '" + stockId + "' in keinem Blatt (heute + 7 Tage) gefunden.", "#f85149");
@@ -4633,15 +4670,20 @@
     if (!sid) return null;
     var anyMatch = false;
     var anyUnbooked = false;
+    var anyNonPaket = false;
+    var anyPaket = false;
     for (var i = 0; i < list.length; i++) {
       var entry = list[i];
       var idVal = entry && entry.id !== undefined ? entry.id : entry;
       if (!cellMatchesStockIdJs(idVal, sid)) continue;
       anyMatch = true;
+      if (entry && entry.paketdienst) { anyPaket = true; continue; }
+      anyNonPaket = true;
       var st = entry && entry.status !== undefined ? String(entry.status || "").trim().toLowerCase() : "";
       if (st !== "ja" && st !== "nein") { anyUnbooked = true; break; }
     }
     if (!anyMatch) return { found: false, message: "Stock-ID '" + stockId + "' in '" + tab + "' nicht gefunden!" };
+    if (!anyNonPaket && anyPaket) return { found: false, message: "Stock-ID '" + stockId + "' ist Paketdienst – kommt per Paket, nicht über Annahme verbuchen." };
     if (!anyUnbooked) return { found: false, message: "Stock-ID '" + stockId + "' wurde in '" + tab + "' bereits verbucht!" };
     return { found: true, message: "Stock-ID gefunden! Bitte Status auswählen:" };
   }
@@ -4655,6 +4697,7 @@
       var entry = list[i];
       var idVal = entry && entry.id !== undefined ? entry.id : entry;
       if (!cellMatchesStockIdJs(idVal, sid)) continue;
+      if (entry && entry.paketdienst) continue;
       var st = entry && entry.status !== undefined ? String(entry.status || "").trim().toLowerCase() : "";
       if (st === "ja" || st === "nein") continue;
       out.push(entry);
@@ -4691,6 +4734,9 @@
     } else if (res.booked.length) {
       var tabs = res.booked.map(function(b) { return b.tab; }).join(', ');
       setReifenStatus("❌ '" + stockId + "' bereits verbucht (" + tabs + ").", "#f85149");
+      reifenStockInput.focus();
+    } else if (res.paketdienst && res.paketdienst.length) {
+      setReifenStatus("❌ '" + stockId + "' ist Paketdienst – kommt per Paket, nicht über Annahme verbuchen.", "#f85149");
       reifenStockInput.focus();
     } else {
       setReifenStatus("❌ '" + stockId + "' in keinem Blatt (heute + 7 Tage) gefunden.", "#f85149");

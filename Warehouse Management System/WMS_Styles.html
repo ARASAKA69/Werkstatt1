@@ -3923,11 +3923,17 @@
     font-size: 13px;
     padding: 10px;
   }
+  .reifen-batch-row {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+  }
   .reifen-batch-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     text-align: left;
     padding: 10px 12px;
     border-radius: 11px;
@@ -3943,6 +3949,31 @@
   .reifen-batch-item.is-warn {
     border-color: rgba(242, 116, 32, 0.5);
     background: rgba(242, 116, 32, 0.08);
+  }
+  .reifen-batch-del {
+    flex-shrink: 0;
+    width: 38px;
+    border-radius: 11px;
+    border: 1px solid rgba(248, 81, 73, 0.25);
+    background: rgba(248, 81, 73, 0.1);
+    color: #f85149;
+    font-size: 20px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+    transition: 0.16s;
+  }
+  .reifen-batch-del:hover {
+    background: rgba(248, 81, 73, 0.22);
+    border-color: rgba(248, 81, 73, 0.45);
+  }
+  .reifen-batch-num {
+    flex-shrink: 0;
+    min-width: 28px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #8b949e;
+    font-variant-numeric: tabular-nums;
   }
   .reifen-batch-stock {
     font-size: 15px;
