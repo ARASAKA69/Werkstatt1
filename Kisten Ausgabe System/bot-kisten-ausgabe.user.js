@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -9,6 +9,8 @@
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
 // @connect      googleusercontent.com
+// @connect      www.googleapis.com
+// @connect      googleapis.com
 // ==/UserScript==
 
 (function() {
@@ -17,8 +19,8 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbwfYBk2ZEul4clmuWwQq-QQ2mbA9W8Ops39YqV7KUGcfqrT5E3ggQlaE0viAoJKBPN-/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.10";
-    const ARASAKA_BRIDGE_VERSION = "18";
+    const ARASAKA_BOT_VERSION = "1.11";
+    const ARASAKA_BRIDGE_VERSION = "19";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
     const FILE_CHUNK_SIZE = 200000;
@@ -130,7 +132,7 @@
     }
 
     async function bridgePostJson(payload, timeoutMs, retries) {
-        var maxTry = retries == null ? 4 : retries;
+        var maxTry = retries == null ? 3 : retries;
         var last = null;
         for (var attempt = 1; attempt <= maxTry; attempt++) {
             if (abortMission) return last;
@@ -138,13 +140,47 @@
             if (!bridgeResponseIsTransientFail(last)) return last;
             var head = last && last.responseText ? String(last.responseText).slice(0, 80) : '';
             dbg('bridgePostJson', 'retry', attempt + '/' + maxTry, 'action', payload && payload.action, 'status', last && last.status, 'head', head);
-            if (attempt < maxTry) await new Promise(function(r) { setTimeout(r, 700 * attempt); });
+            if (attempt < maxTry) await new Promise(function(r) { setTimeout(r, 350 * attempt); });
         }
         return last;
     }
 
+    function gmGetBlob(url, headers, timeoutMs) {
+        return new Promise(function(resolve) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                headers: headers || {},
+                responseType: 'blob',
+                timeout: timeoutMs || 60000,
+                onload: function(r) {
+                    if (!r || r.status < 200 || r.status >= 300 || !r.response) {
+                        dbg('gmGetBlob', 'badStatus', r && r.status, 'type', r && r.response && r.response.type);
+                        resolve(null);
+                        return;
+                    }
+                    var blob = r.response;
+                    if (blob && blob.type && /text\/html|application\/json/i.test(blob.type) && blob.size < 50000) {
+                        dbg('gmGetBlob', 'looksLikeHtmlOrJson', blob.type, blob.size);
+                        resolve(null);
+                        return;
+                    }
+                    resolve(blob);
+                },
+                onerror: function(err) {
+                    dbg('gmGetBlob', 'onerror', err && err.status);
+                    resolve(null);
+                },
+                ontimeout: function() {
+                    dbg('gmGetBlob', 'ontimeout');
+                    resolve(null);
+                }
+            });
+        });
+    }
+
     async function bridgeDownloadFileBase64(fileId) {
-        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: FILE_CHUNK_SIZE }, 60000);
+        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: FILE_CHUNK_SIZE }, 60000, 2);
         if (!metaRes || bridgeBodyLooksLikeHtml(metaRes.responseText || '')) {
             dbg('getFileData', 'metaFail', fileId, metaRes && metaRes.status);
             return null;
@@ -162,24 +198,75 @@
             dbg('getFileData', 'singleShot', fileId, 'chars', meta.data.length);
             return normalizeBase64Response(meta.data);
         }
-        var parts = [];
+        showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild in " + meta.chunks + " Teilen parallel…", false);
+        var chunkPromises = [];
         for (var c = 0; c < meta.chunks; c++) {
-            if (abortMission) return null;
-            showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild-Teil " + (c + 1) + "/" + meta.chunks + "…", false);
-            var chunkRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: c, chunkSize: meta.chunkSize || FILE_CHUNK_SIZE }, 60000);
-            if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) {
-                dbg('getFileData', 'chunkFail', fileId, c, chunkRes && chunkRes.status);
+            (function(idx) {
+                chunkPromises.push(bridgePostJson({
+                    action: 'getFileData',
+                    fileId: fileId,
+                    chunk: idx,
+                    chunkSize: meta.chunkSize || FILE_CHUNK_SIZE
+                }, 60000, 2).then(function(chunkRes) {
+                    if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) return null;
+                    try {
+                        var chunkParsed = JSON.parse(chunkRes.responseText || '');
+                        if (chunkParsed && typeof chunkParsed.data === 'string') return { idx: idx, data: chunkParsed.data };
+                    } catch (e2) {}
+                    return null;
+                }));
+            })(c);
+        }
+        var chunkResults = await Promise.all(chunkPromises);
+        var parts = new Array(meta.chunks);
+        for (var i = 0; i < chunkResults.length; i++) {
+            var cr = chunkResults[i];
+            if (!cr) {
+                dbg('getFileData', 'chunkFailParallel', fileId, i);
                 return null;
             }
-            var chunkParsed = null;
-            try { chunkParsed = JSON.parse(chunkRes.responseText || ''); } catch (e2) { chunkParsed = null; }
-            if (!chunkParsed || typeof chunkParsed.data !== 'string') {
-                dbg('getFileData', 'chunkInvalid', fileId, c);
+            parts[cr.idx] = cr.data;
+        }
+        for (var j = 0; j < parts.length; j++) {
+            if (typeof parts[j] !== 'string') {
+                dbg('getFileData', 'chunkMissing', fileId, j);
                 return null;
             }
-            parts.push(chunkParsed.data);
         }
         return normalizeBase64Response(parts.join(''));
+    }
+
+    async function bridgeDownloadFileBlob(fileId, mimeType) {
+        var authRes = await bridgePostJson({ action: 'getFileAuth', fileId: fileId }, 20000, 2);
+        if (authRes && !bridgeBodyLooksLikeHtml(authRes.responseText || '')) {
+            var auth = null;
+            try { auth = JSON.parse(authRes.responseText || ''); } catch (e) { auth = null; }
+            if (auth && auth.ok && auth.token && auth.url) {
+                dbg('getFileAuth', 'ok', fileId, 'size', auth.size);
+                showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild direkt aus Drive…", false);
+                var blob = await gmGetBlob(auth.url, { Authorization: 'Bearer ' + auth.token }, 90000);
+                if (blob && blob.size > 100) {
+                    dbg('getFileAuth', 'directOk', fileId, 'blobSize', blob.size, 'type', blob.type);
+                    if (mimeType && (!blob.type || blob.type === 'application/octet-stream')) {
+                        blob = blob.slice(0, blob.size, mimeType);
+                    }
+                    return blob;
+                }
+                dbg('getFileAuth', 'directFail', fileId, 'fallbackChunks');
+            } else {
+                dbg('getFileAuth', 'badPayload', fileId, String(authRes.responseText || '').slice(0, 200));
+            }
+        } else {
+            dbg('getFileAuth', 'bridgeFail', fileId, authRes && authRes.status);
+        }
+        var b64 = await bridgeDownloadFileBase64(fileId);
+        if (!b64 || base64ResponseProblem(b64)) return null;
+        try {
+            return b64toBlob(normalizeBase64Response(b64), mimeType || '');
+        } catch (e2) {
+            dbg('getFileData', 'decodeFailed', fileId, e2 && e2.message);
+            return null;
+        }
     }
 
     let isProcessing = false;
@@ -882,10 +969,9 @@
 
             dbg('uploadStep', i + 1, totalFiles, cls, currentComment, fileInfo.name, 'stockId', stockId);
             showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild " + (i + 1) + " von " + totalFiles + " aus Drive...", false);
-            let b64 = await bridgeDownloadFileBase64(fileInfo.id);
-            let b64Problem = base64ResponseProblem(b64);
-            if (b64Problem) {
-                dbg('getFileData', 'invalidBody', fileInfo.id, b64Problem, 'bodyHead', String(b64 || '').slice(0, 240));
+            let blob = await bridgeDownloadFileBlob(fileInfo.id, fileInfo.mimeType);
+            if (!blob || !blob.size) {
+                dbg('getFileData', 'noBlob', fileInfo.id);
                 await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
                 return;
             }
@@ -951,15 +1037,7 @@
                 isProcessing = false;
                 return;
             }
-            let blob;
-            try {
-                blob = b64toBlob(b64, fileInfo.mimeType);
-            } catch (e2) {
-                dbg('getFileData', 'decodeFailed', fileInfo.id, e2 && e2.message);
-                await handleStockError(stockId, idx, `Bild ${i+1} konnte nicht geladen werden`);
-                return;
-            }
-            let file = new File([blob], fileInfo.name, { type: fileInfo.mimeType });
+            let file = new File([blob], fileInfo.name, { type: fileInfo.mimeType || blob.type || 'image/jpeg' });
             let dataTransfer = new DataTransfer();
             dataTransfer.items.add(file);
             fileInput.files = dataTransfer.files;

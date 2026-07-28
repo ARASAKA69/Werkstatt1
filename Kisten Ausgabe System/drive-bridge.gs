@@ -94,7 +94,22 @@ function handleRequest_(e) {
     var props = PropertiesService.getScriptProperties();
 
     if (action === "ping") {
-        return ContentService.createTextOutput(JSON.stringify({ ok: true, t: Date.now() })).setMimeType(ContentService.MimeType.JSON);
+        return ContentService.createTextOutput(JSON.stringify({ ok: true, t: Date.now(), bridge: 19 })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === "getFileAuth") {
+        var fileIdAuth = e.parameter.fileId;
+        var fileAuth = DriveApp.getFileById(fileIdAuth);
+        return ContentService.createTextOutput(JSON.stringify({
+            ok: true,
+            fileId: fileIdAuth,
+            name: fileAuth.getName(),
+            mimeType: fileAuth.getMimeType(),
+            size: fileAuth.getSize(),
+            token: ScriptApp.getOAuthToken(),
+            url: "https://www.googleapis.com/drive/v3/files/" + encodeURIComponent(fileIdAuth) + "?alt=media&supportsAllDrives=true",
+            bridge: 19
+        })).setMimeType(ContentService.MimeType.JSON);
     }
 
     if (action === "getBatch") {
@@ -143,7 +158,7 @@ function handleRequest_(e) {
                     data: b64,
                     done: true,
                     mimeType: DriveApp.getFileById(fileIdGet).getMimeType(),
-                    bridge: 18
+                    bridge: 19
                 })).setMimeType(ContentService.MimeType.JSON);
             }
             return ContentService.createTextOutput(JSON.stringify({
@@ -152,7 +167,7 @@ function handleRequest_(e) {
                 chunkSize: chunkSize,
                 chunks: totalChunks,
                 mimeType: DriveApp.getFileById(fileIdGet).getMimeType(),
-                bridge: 18
+                bridge: 19
             })).setMimeType(ContentService.MimeType.JSON);
         }
         var start = ci * chunkSize;
