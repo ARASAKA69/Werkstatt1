@@ -23,6 +23,40 @@ function appendTextLogInFolder_(folderId, fileName, line) {
     }
 }
 
+function getFileDataB64Cached_(cache, fileId) {
+    var metaKey = "fdm_" + fileId;
+    var meta = cache.get(metaKey);
+    if (meta) {
+        var partsMeta = meta.split("|");
+        var n = parseInt(partsMeta[0], 10);
+        var total = parseInt(partsMeta[1], 10);
+        if (n > 0 && total >= 0) {
+            var out = [];
+            var ok = true;
+            for (var i = 0; i < n; i++) {
+                var piece = cache.get("fd_" + fileId + "_" + i);
+                if (piece == null) { ok = false; break; }
+                out.push(piece);
+            }
+            if (ok) {
+                var joined = out.join("");
+                if (joined.length === total) return joined;
+            }
+        }
+    }
+    var fileGet = DriveApp.getFileById(fileId);
+    var b64 = Utilities.base64Encode(fileGet.getBlob().getBytes());
+    var pieceSize = 90000;
+    var nPut = Math.ceil(b64.length / pieceSize) || 1;
+    try {
+        cache.put(metaKey, String(nPut) + "|" + String(b64.length), 600);
+        for (var p = 0; p < nPut; p++) {
+            cache.put("fd_" + fileId + "_" + p, b64.substring(p * pieceSize, (p + 1) * pieceSize), 600);
+        }
+    } catch (cacheErr) {}
+    return b64;
+}
+
 function doGet(e) {
     try {
         return handleRequest_(e);
@@ -88,29 +122,41 @@ function handleRequest_(e) {
 
     if (action === "getFileData") {
         var fileIdGet = e.parameter.fileId;
-        var fileGet = DriveApp.getFileById(fileIdGet);
-        var b64 = Utilities.base64Encode(fileGet.getBlob().getBytes());
         var chunkSize = parseInt(e.parameter.chunkSize, 10);
-        if (!chunkSize || chunkSize < 1000) chunkSize = 40000;
+        if (!chunkSize || chunkSize < 1000) chunkSize = 200000;
         var chunkIdx = e.parameter.chunk;
+        var cache = CacheService.getScriptCache();
+        var b64 = getFileDataB64Cached_(cache, fileIdGet);
         if (chunkIdx === undefined || chunkIdx === null || chunkIdx === "") {
             return ContentService.createTextOutput(b64);
         }
         var ci = parseInt(chunkIdx, 10);
+        var totalChunks = Math.ceil(b64.length / chunkSize) || 1;
         if (isNaN(ci) || ci < 0) {
-            var totalChunksMeta = Math.ceil(b64.length / chunkSize) || 1;
+            if (totalChunks <= 1) {
+                return ContentService.createTextOutput(JSON.stringify({
+                    ok: true,
+                    totalChars: b64.length,
+                    chunkSize: chunkSize,
+                    chunks: 1,
+                    chunk: 0,
+                    data: b64,
+                    done: true,
+                    mimeType: DriveApp.getFileById(fileIdGet).getMimeType(),
+                    bridge: 18
+                })).setMimeType(ContentService.MimeType.JSON);
+            }
             return ContentService.createTextOutput(JSON.stringify({
                 ok: true,
                 totalChars: b64.length,
                 chunkSize: chunkSize,
-                chunks: totalChunksMeta,
-                mimeType: fileGet.getMimeType(),
-                bridge: 17
+                chunks: totalChunks,
+                mimeType: DriveApp.getFileById(fileIdGet).getMimeType(),
+                bridge: 18
             })).setMimeType(ContentService.MimeType.JSON);
         }
         var start = ci * chunkSize;
         var part = b64.substring(start, start + chunkSize);
-        var totalChunks = Math.ceil(b64.length / chunkSize) || 1;
         return ContentService.createTextOutput(JSON.stringify({
             ok: true,
             chunk: ci,

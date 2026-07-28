@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.9
+// @version      1.10
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,10 +17,11 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbwfYBk2ZEul4clmuWwQq-QQ2mbA9W8Ops39YqV7KUGcfqrT5E3ggQlaE0viAoJKBPN-/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.9";
-    const ARASAKA_BRIDGE_VERSION = "17";
+    const ARASAKA_BOT_VERSION = "1.10";
+    const ARASAKA_BRIDGE_VERSION = "18";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
+    const FILE_CHUNK_SIZE = 200000;
 
     function dbg() {
         if (!ARASAKA_DEBUG) return;
@@ -143,7 +144,7 @@
     }
 
     async function bridgeDownloadFileBase64(fileId) {
-        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: 40000 }, 60000);
+        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: FILE_CHUNK_SIZE }, 60000);
         if (!metaRes || bridgeBodyLooksLikeHtml(metaRes.responseText || '')) {
             dbg('getFileData', 'metaFail', fileId, metaRes && metaRes.status);
             return null;
@@ -157,11 +158,15 @@
             dbg('getFileData', 'metaInvalid', fileId, legacyProblem);
             return null;
         }
+        if (typeof meta.data === 'string' && meta.data.length) {
+            dbg('getFileData', 'singleShot', fileId, 'chars', meta.data.length);
+            return normalizeBase64Response(meta.data);
+        }
         var parts = [];
         for (var c = 0; c < meta.chunks; c++) {
             if (abortMission) return null;
             showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild-Teil " + (c + 1) + "/" + meta.chunks + "…", false);
-            var chunkRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: c, chunkSize: meta.chunkSize || 40000 }, 60000);
+            var chunkRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: c, chunkSize: meta.chunkSize || FILE_CHUNK_SIZE }, 60000);
             if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) {
                 dbg('getFileData', 'chunkFail', fileId, c, chunkRes && chunkRes.status);
                 return null;
