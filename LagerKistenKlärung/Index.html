@@ -1334,6 +1334,8 @@
       items: [],
       selectedKey: null,
       detail: null,
+      detailByKey: {},
+      detailReqId: 0,
       busy: false,
       cachedAt: '',
       commentColor: 'b2a1',
@@ -1551,12 +1553,14 @@
             }
             state.items = res.items || [];
             state.cachedAt = res.cachedAt || '';
+            if (forceRebuild) state.detailByKey = {};
             $('cacheLabel').textContent = (res.totalCached ? (res.totalCached + ' · ') : '') + (res.cachedAt ? ('Cache ' + res.cachedAt) : '');
             renderList();
           })
           .getQueue(state.filter);
       };
       if (forceRebuild) {
+        state.detailByKey = {};
         api()
           .withSuccessHandler(function(r) {
             if (r && !r.success) toast((r && r.message) || 'Rebuild fehlgeschlagen', true);
@@ -1723,22 +1727,38 @@
       }
     }
 
-    function selectItem(stockId, cellKey) {
+    function selectItem(stockId, cellKey, forceNet) {
       state.selectedKey = cellKey;
       renderList();
-      setBusy(true, 'Lädt Detail…');
       $('detailSid').textContent = stockId;
-      $('detailSub').textContent = 'Aus Cache…';
       if ($('btnCopySid')) $('btnCopySid').disabled = !stockId || stockId === '—';
+      var local = !forceNet && cellKey && state.detailByKey[cellKey];
+      if (local) {
+        state.detail = local;
+        $('detailSub').textContent = 'Sofort…';
+        renderDetail();
+        setBusy(false);
+      } else {
+        setBusy(true, 'Lädt Detail…');
+        $('detailSub').textContent = 'Aus Cache…';
+      }
+      var reqId = ++state.detailReqId;
       api()
         .withSuccessHandler(function(res) {
+          if (reqId !== state.detailReqId) return;
           setBusy(false);
           if (!res || !res.success) {
-            toast((res && res.message) || 'Detail fehlgeschlagen', true);
+            if (!local) toast((res && res.message) || 'Detail fehlgeschlagen', true);
             return;
           }
           state.detail = res;
+          if (cellKey) state.detailByKey[cellKey] = res;
           renderDetail();
+        })
+        .withFailureHandler(function() {
+          if (reqId !== state.detailReqId) return;
+          setBusy(false);
+          if (!local) toast('Detail fehlgeschlagen', true);
         })
         .getStockDetail(stockId, cellKey);
     }
@@ -1988,7 +2008,9 @@
             return;
           }
           toast('Kommentar aktualisiert');
-          selectItem(d.stockId, key || (res.cellKey || ''));
+          var ck = key || (res.cellKey || '');
+          if (ck) delete state.detailByKey[ck];
+          selectItem(d.stockId, ck, true);
           loadQueue();
         })
         .editStockComment(id, text, color || 'none');
@@ -2014,7 +2036,8 @@
           }
           toast('Gespeichert');
           $('commentBox').value = '';
-          selectItem(d.stockId, key);
+          delete state.detailByKey[key];
+          selectItem(d.stockId, key, true);
           loadQueue();
         })
         .addStockComment(key, d.stockId, state.commentColor || 'none', text);
@@ -2033,7 +2056,8 @@
             return;
           }
           toast('Als Erledigt markiert');
-          selectItem(d.stockId, key);
+          delete state.detailByKey[key];
+          selectItem(d.stockId, key, true);
           loadQueue();
         })
         .markStockErledigt(key, d.stockId);
@@ -2052,7 +2076,8 @@
             return;
           }
           toast('Gelöscht');
-          if (d) selectItem(d.stockId, key);
+          if (key) delete state.detailByKey[key];
+          if (d) selectItem(d.stockId, key, true);
           loadQueue();
         })
         .deleteStockComment(id);

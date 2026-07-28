@@ -12,6 +12,9 @@ var NOTIF_STATE_TAB = '_KlärungNotifState';
 var USER_NOTES_TAB = '_KlärungUserNotes';
 var CACHE_TTL_MS = 15 * 60 * 1000;
 var CACHE_CHUNK = 48000;
+var HOT_CACHE_PREFIX = 'klarung_v1_';
+var HOT_CACHE_CHUNK = 90000;
+var HOT_CACHE_TTL_SEC = 300;
 var SYNC_STATUS_COLOR_TO_SHEET = true;
 var CHECK_STEPS = ['carol', 'parts', 'mail'];
 var CHECK_TOTAL = 3;
@@ -683,6 +686,49 @@ function isCacheStale_(cache) {
   return (Date.now() - Number(cache.builtAtMs)) > CACHE_TTL_MS;
 }
 
+function writeHotCache_(json) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var parts = Math.max(1, Math.ceil(json.length / HOT_CACHE_CHUNK));
+    if (parts > 90) return;
+    cache.put(HOT_CACHE_PREFIX + 'n', String(parts), HOT_CACHE_TTL_SEC);
+    var batch = {};
+    var batchCount = 0;
+    for (var i = 0; i < parts; i++) {
+      batch[HOT_CACHE_PREFIX + i] = json.substr(i * HOT_CACHE_CHUNK, HOT_CACHE_CHUNK);
+      batchCount++;
+      if (batchCount >= 20) {
+        cache.putAll(batch, HOT_CACHE_TTL_SEC);
+        batch = {};
+        batchCount = 0;
+      }
+    }
+    if (batchCount) cache.putAll(batch, HOT_CACHE_TTL_SEC);
+  } catch (e) {}
+}
+
+function readHotCache_() {
+  try {
+    var cache = CacheService.getScriptCache();
+    var nStr = cache.get(HOT_CACHE_PREFIX + 'n');
+    var parts = parseInt(nStr, 10) || 0;
+    if (parts < 1) return null;
+    var keys = [];
+    for (var i = 0; i < parts; i++) keys.push(HOT_CACHE_PREFIX + i);
+    var got = cache.getAll(keys);
+    var json = '';
+    for (var j = 0; j < parts; j++) {
+      var chunk = got[HOT_CACHE_PREFIX + j];
+      if (chunk == null) return null;
+      json += chunk;
+    }
+    if (!json) return null;
+    return JSON.parse(json);
+  } catch (e) {
+    return null;
+  }
+}
+
 function writeCachePayload_(obj) {
   var json = JSON.stringify(obj);
   var sh = getCacheSheet_();
@@ -694,9 +740,12 @@ function writeCachePayload_(obj) {
     rows.push([json.substr(i * CACHE_CHUNK, CACHE_CHUNK)]);
   }
   sh.getRange(2, 1, parts, 1).setValues(rows);
+  writeHotCache_(json);
 }
 
 function readCache_() {
+  var hot = readHotCache_();
+  if (hot) return hot;
   try {
     var sh = SpreadsheetApp.openById(LAGER_SHEET_ID).getSheetByName(CACHE_TAB);
     if (!sh || sh.getLastRow() < 2) return null;
@@ -707,6 +756,7 @@ function readCache_() {
     var json = '';
     for (var i = 0; i < chunks.length; i++) json += String(chunks[i][0] || '');
     if (!json) return null;
+    writeHotCache_(json);
     return JSON.parse(json);
   } catch (err) {
     return null;
@@ -1155,19 +1205,17 @@ function detailFromCache_(cache, d) {
   var checks = d.checks || (d.kisten && d.kisten.checks) || emptyChecks_();
   countChecks_(checks);
   var kisten = d.kisten ? JSON.parse(JSON.stringify(d.kisten)) : {};
-  try {
-    var live = commentsForStock_(readAllComments_(), d.stockId, kisten.cellKey || '');
-    var primary = primaryFromComments_(live);
-    var sheetKat = kisten.sheetKategorie || '';
-    var toolStatus = primary ? colorLabel_(primary.color) : '';
-    var statusHint = toolStatus || statusFromSheetKat_(sheetKat) || kisten.status || '';
-    kisten.comments = live;
-    kisten.comment = live.length ? live[0].comment : '';
-    kisten.hasNote = live.length > 0;
-    kisten.status = statusHint;
-    kisten.primaryColor = primary ? primary.color : (sheetKat ? normalizeColor_(sheetKat) : '');
-    kisten.yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
-  } catch (eLive) {}
+  var comments = kisten.comments || [];
+  var primary = primaryFromComments_(comments);
+  var sheetKat = kisten.sheetKategorie || '';
+  var toolStatus = primary ? colorLabel_(primary.color) : '';
+  var statusHint = toolStatus || statusFromSheetKat_(sheetKat) || kisten.status || '';
+  kisten.comments = comments;
+  kisten.comment = comments.length ? comments[0].comment : (kisten.comment || '');
+  kisten.hasNote = comments.length > 0;
+  kisten.status = statusHint;
+  kisten.primaryColor = primary ? primary.color : (sheetKat ? normalizeColor_(sheetKat) : '');
+  kisten.yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
   return {
     success: true,
     stockId: d.stockId,
