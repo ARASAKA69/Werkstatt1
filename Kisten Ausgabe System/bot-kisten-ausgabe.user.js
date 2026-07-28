@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.12
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -19,7 +19,7 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbwfYBk2ZEul4clmuWwQq-QQ2mbA9W8Ops39YqV7KUGcfqrT5E3ggQlaE0viAoJKBPN-/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.11";
+    const ARASAKA_BOT_VERSION = "1.12";
     const ARASAKA_BRIDGE_VERSION = "19";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
@@ -140,7 +140,7 @@
             if (!bridgeResponseIsTransientFail(last)) return last;
             var head = last && last.responseText ? String(last.responseText).slice(0, 80) : '';
             dbg('bridgePostJson', 'retry', attempt + '/' + maxTry, 'action', payload && payload.action, 'status', last && last.status, 'head', head);
-            if (attempt < maxTry) await new Promise(function(r) { setTimeout(r, 350 * attempt); });
+            if (attempt < maxTry) await new Promise(function(r) { setTimeout(r, 500 * attempt); });
         }
         return last;
     }
@@ -180,7 +180,29 @@
     }
 
     async function bridgeDownloadFileBase64(fileId) {
-        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: FILE_CHUNK_SIZE }, 60000, 2);
+        showCustomPopup("ARASAKA DOWNLOAD", "Fallback: Bild in einem Stück…", false);
+        var fullRes = await bridgePostJson({ action: 'getFileData', fileId: fileId }, 90000, 5);
+        if (fullRes && !bridgeBodyLooksLikeHtml(fullRes.responseText || '')) {
+            var fullRt = String(fullRes.responseText || '').trim();
+            if (fullRt.charAt(0) !== '{') {
+                var fullProblem = base64ResponseProblem(fullRt);
+                if (!fullProblem) {
+                    dbg('getFileData', 'fullShotOk', fileId, 'chars', fullRt.length);
+                    return normalizeBase64Response(fullRt);
+                }
+            } else {
+                try {
+                    var fullJson = JSON.parse(fullRt);
+                    if (fullJson && typeof fullJson.data === 'string' && fullJson.data.length) {
+                        dbg('getFileData', 'fullShotJsonOk', fileId, 'chars', fullJson.data.length);
+                        return normalizeBase64Response(fullJson.data);
+                    }
+                } catch (e0) {}
+            }
+        }
+
+        showCustomPopup("ARASAKA DOWNLOAD", "Fallback: Meta für Chunks…", false);
+        var metaRes = await bridgePostJson({ action: 'getFileData', fileId: fileId, chunk: -1, chunkSize: FILE_CHUNK_SIZE }, 45000, 4);
         if (!metaRes || bridgeBodyLooksLikeHtml(metaRes.responseText || '')) {
             dbg('getFileData', 'metaFail', fileId, metaRes && metaRes.status);
             return null;
@@ -198,67 +220,63 @@
             dbg('getFileData', 'singleShot', fileId, 'chars', meta.data.length);
             return normalizeBase64Response(meta.data);
         }
-        showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild in " + meta.chunks + " Teilen parallel…", false);
-        var chunkPromises = [];
+        var parts = [];
         for (var c = 0; c < meta.chunks; c++) {
-            (function(idx) {
-                chunkPromises.push(bridgePostJson({
-                    action: 'getFileData',
-                    fileId: fileId,
-                    chunk: idx,
-                    chunkSize: meta.chunkSize || FILE_CHUNK_SIZE
-                }, 60000, 2).then(function(chunkRes) {
-                    if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) return null;
-                    try {
-                        var chunkParsed = JSON.parse(chunkRes.responseText || '');
-                        if (chunkParsed && typeof chunkParsed.data === 'string') return { idx: idx, data: chunkParsed.data };
-                    } catch (e2) {}
-                    return null;
-                }));
-            })(c);
-        }
-        var chunkResults = await Promise.all(chunkPromises);
-        var parts = new Array(meta.chunks);
-        for (var i = 0; i < chunkResults.length; i++) {
-            var cr = chunkResults[i];
-            if (!cr) {
-                dbg('getFileData', 'chunkFailParallel', fileId, i);
+            if (abortMission) return null;
+            showCustomPopup("ARASAKA DOWNLOAD", "Fallback-Teil " + (c + 1) + "/" + meta.chunks + "…", false);
+            var chunkRes = await bridgePostJson({
+                action: 'getFileData',
+                fileId: fileId,
+                chunk: c,
+                chunkSize: meta.chunkSize || FILE_CHUNK_SIZE
+            }, 45000, 3);
+            if (!chunkRes || bridgeBodyLooksLikeHtml(chunkRes.responseText || '')) {
+                dbg('getFileData', 'chunkFail', fileId, c, chunkRes && chunkRes.status);
                 return null;
             }
-            parts[cr.idx] = cr.data;
-        }
-        for (var j = 0; j < parts.length; j++) {
-            if (typeof parts[j] !== 'string') {
-                dbg('getFileData', 'chunkMissing', fileId, j);
+            var chunkParsed = null;
+            try { chunkParsed = JSON.parse(chunkRes.responseText || ''); } catch (e2) { chunkParsed = null; }
+            if (!chunkParsed || typeof chunkParsed.data !== 'string') {
+                dbg('getFileData', 'chunkInvalid', fileId, c);
                 return null;
             }
+            parts.push(chunkParsed.data);
         }
         return normalizeBase64Response(parts.join(''));
     }
 
     async function bridgeDownloadFileBlob(fileId, mimeType) {
-        var authRes = await bridgePostJson({ action: 'getFileAuth', fileId: fileId }, 20000, 2);
-        if (authRes && !bridgeBodyLooksLikeHtml(authRes.responseText || '')) {
+        await new Promise(function(r) { setTimeout(r, 400); });
+        for (var a = 1; a <= 6; a++) {
+            if (abortMission) return null;
+            showCustomPopup("ARASAKA DOWNLOAD", "Drive-Direkt Versuch " + a + "/6…", false);
+            var authRes = await bridgePostJsonOnce({ action: 'getFileAuth', fileId: fileId }, 25000);
+            if (bridgeResponseIsTransientFail(authRes)) {
+                dbg('getFileAuth', 'retry', a + '/6', 'status', authRes && authRes.status);
+                await new Promise(function(r) { setTimeout(r, 700 * a); });
+                continue;
+            }
             var auth = null;
             try { auth = JSON.parse(authRes.responseText || ''); } catch (e) { auth = null; }
-            if (auth && auth.ok && auth.token && auth.url) {
-                dbg('getFileAuth', 'ok', fileId, 'size', auth.size);
-                showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild direkt aus Drive…", false);
-                var blob = await gmGetBlob(auth.url, { Authorization: 'Bearer ' + auth.token }, 90000);
-                if (blob && blob.size > 100) {
-                    dbg('getFileAuth', 'directOk', fileId, 'blobSize', blob.size, 'type', blob.type);
-                    if (mimeType && (!blob.type || blob.type === 'application/octet-stream')) {
-                        blob = blob.slice(0, blob.size, mimeType);
-                    }
-                    return blob;
-                }
-                dbg('getFileAuth', 'directFail', fileId, 'fallbackChunks');
-            } else {
+            if (!auth || !auth.ok || !auth.token || !auth.url) {
                 dbg('getFileAuth', 'badPayload', fileId, String(authRes.responseText || '').slice(0, 200));
+                await new Promise(function(r) { setTimeout(r, 700 * a); });
+                continue;
             }
-        } else {
-            dbg('getFileAuth', 'bridgeFail', fileId, authRes && authRes.status);
+            dbg('getFileAuth', 'ok', fileId, 'size', auth.size, 'try', a);
+            showCustomPopup("ARASAKA DOWNLOAD", "Lade Bild direkt aus Drive…", false);
+            var blob = await gmGetBlob(auth.url, { Authorization: 'Bearer ' + auth.token }, 90000);
+            if (blob && blob.size > 100) {
+                dbg('getFileAuth', 'directOk', fileId, 'blobSize', blob.size, 'type', blob.type);
+                if (mimeType && (!blob.type || blob.type === 'application/octet-stream')) {
+                    blob = blob.slice(0, blob.size, mimeType);
+                }
+                return blob;
+            }
+            dbg('getFileAuth', 'directFail', fileId, 'try', a);
+            await new Promise(function(r) { setTimeout(r, 500 * a); });
         }
+        dbg('getFileAuth', 'allTriesFailed', fileId, 'fallback');
         var b64 = await bridgeDownloadFileBase64(fileId);
         if (!b64 || base64ResponseProblem(b64)) return null;
         try {
