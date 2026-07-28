@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         ARASAKA Master-Bot (Upload)
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Live-Version
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,7 +17,7 @@
     const DRIVE_WEB_APP_URL = "https://script.google.com/a/macros/autohero.com/s/AKfycbz0yz1BdUx4ZXgT4V4rqfif8KM3D76rNDjWXY2DZD9JIP0D4y9cjsGsFooOZqaGlm1c/exec";
     const API_KEY = "ARASAKA_2026";
     const ARASAKA_DEBUG = true;
-    const ARASAKA_BOT_VERSION = "1.5";
+    const ARASAKA_BOT_VERSION = "1.6";
     const ARASAKA_BRIDGE_VERSION = "16";
     const ARASAKA_HUD_POS_KEY = "arasaka_hud_position";
     const ARASAKA_TAGESLISTE_PENDING_KEY = "arasaka_tagesliste_pending";
@@ -90,30 +90,6 @@
         if (b64.length % 4 === 1) return 'BASE64_BAD_LENGTH';
         if (!/^[A-Za-z0-9+/]*={0,2}$/.test(b64)) return 'BASE64_BAD_CHARS';
         return '';
-    }
-
-    function bridgeGetJson(payload, timeoutMs) {
-        var params = Object.assign({ key: API_KEY }, payload);
-        var qs = Object.keys(params).map(function(k) {
-            return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]);
-        }).join('&');
-        var url = DRIVE_WEB_APP_URL + '?' + qs;
-        return new Promise(function(resolve) {
-            GM_xmlhttpRequest({
-                method: 'GET',
-                url: url,
-                timeout: timeoutMs || 15000,
-                onload: function(r) { resolve(r); },
-                onerror: function(err) {
-                    dbg('bridgeGetJson', 'onerror', 'status', err && err.status, 'statusText', err && err.statusText, 'finalUrl', err && err.finalUrl, 'responseText', err && String(err.responseText || '').slice(0, 300));
-                    resolve(null);
-                },
-                ontimeout: function(err) {
-                    dbg('bridgeGetJson', 'ontimeout', 'status', err && err.status, 'finalUrl', err && err.finalUrl);
-                    resolve(null);
-                }
-            });
-        });
     }
 
     function bridgePostJson(payload, timeoutMs) {
@@ -494,7 +470,7 @@
         dbg('startBatchProcess');
         showCustomPopup("ARASAKA ONLINE", "Prüfe Kisten im Google Drive...", false);
         if (abortMission) return;
-        let response = await bridgeGetJson({ action: 'getBatch' }, 30000);
+        let response = await bridgePostJson({ action: 'getBatch' }, 30000);
         if (!response) {
             dbg('getBatch', 'noResponse');
             showCustomPopup("FEHLER", "Keine Verbindung zu Google Drive möglich.", true);
@@ -554,9 +530,11 @@
             showCustomPopup("ARASAKA", "Stapel fertig. Kurzer Check im Drive...", false);
             (async function() {
                 if (abortMission) return;
-                let response = await bridgeGetJson({ action: 'getBatch' }, 30000);
+                let response = await bridgePostJson({ action: 'getBatch' }, 30000);
                 if (!response) {
                     dbg('getBatchRecheck', 'noResponse');
+                    playSuccessSound();
+                    showCustomPopup("ARASAKA", "Stapel fertig. Drive-Check nicht erreichbar — bitte später mit ALT+B nochmal scannen.", true);
                     isProcessing = false;
                     return;
                 }
@@ -565,7 +543,8 @@
                 if (bridgeBodyLooksLikeHtml(rt)) {
                     dbg('getBatchRecheck', 'appsScriptHtml', bridgeHtmlErrorHint(rt));
                     dbg('getBatchRecheck', 'appsScriptHtmlHelp', bridgeAppsScriptHtmlPopupText());
-                    showCustomPopup("FEHLER", "Die Verbindung zur Google-Web-App ist fehlgeschlagen (HTML statt Daten). Bei Bedarf Konsole (F12) für Details.", true);
+                    playSuccessSound();
+                    showCustomPopup("ARASAKA", "Stapel fertig. Drive-Check fehlgeschlagen (Google HTML). Uploads sind durch — später ALT+B zum Nachscannen.", true);
                     isProcessing = false;
                     return;
                 }
@@ -573,7 +552,8 @@
                 try { parsedErr2 = JSON.parse(rt); } catch (e1) {}
                 if (parsedErr2 && typeof parsedErr2.error === 'string') {
                     dbg('getBatchRecheck', 'serverError', parsedErr2.error, bridgeExtraHintForDriveError(parsedErr2.error));
-                    showCustomPopup("FEHLER", "Server- oder Drive-Fehler. Konsole (F12) für den genauen Text.", true);
+                    playSuccessSound();
+                    showCustomPopup("ARASAKA", "Stapel fertig. Drive-Check meldet Fehler — Konsole (F12). Später ALT+B.", true);
                     isProcessing = false;
                     return;
                 }
@@ -594,7 +574,8 @@
                     }
                 } catch (err) {
                     dbg('getBatchRecheck', 'parseError', err && err.message);
-                    showCustomPopup("FEHLER", "Fehler beim Auto-Recheck.", true);
+                    playSuccessSound();
+                    showCustomPopup("ARASAKA", "Stapel fertig. Auto-Recheck konnte nicht gelesen werden — später ALT+B.", true);
                     isProcessing = false;
                 }
             })();
