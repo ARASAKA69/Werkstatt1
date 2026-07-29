@@ -20,6 +20,21 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.1.3",
+    date: "29.07.2026",
+    notes:
+      "• Paketdienst-Reifen können wieder über Reifensuche nach Größe (Paketdienst) verbucht werden\n" +
+      "• Annahme-Scan blockiert Paketdienst weiterhin korrekt"
+  },
+  {
+    version: "2.1.2",
+    date: "28.07.2026",
+    notes:
+      "• Reifen scan zeigt pro position eine kennung eg. #1, #2 usw.\n" +
+      "• Paketdienst wird jetzt bei Reifen Scan annahme ausgeschlossen\n" +
+      "• Jede position kann jetzt auch einzeln gelöscht werden im sammel scan"
+  },
+  {
     version: "2.1.1",
     date: "21.07.2026",
     notes:
@@ -440,10 +455,14 @@ function findReifenStockRowsDetailed(sheet, stockId) {
     return { headerIdx: headerIdx, stockCol: stockCol, header: header, angeliefertCol: angeliefertCol, matches: matches };
   }
 
-function pickReifenUnbookedRow(matches, sizeHint) {
+function pickReifenUnbookedRow(matches, sizeHint, allowPaketdienst) {
     var unbooked = [];
     for (var i = 0; i < matches.length; i++) {
-      if (matches[i].paketdienst) continue;
+      if (allowPaketdienst) {
+        if (!matches[i].paketdienst) continue;
+      } else if (matches[i].paketdienst) {
+        continue;
+      }
       if (matches[i].status !== "ja" && matches[i].status !== "nein") unbooked.push(matches[i]);
     }
     var sizeCanon = canonicalTireSizeServer(sizeHint);
@@ -786,9 +805,10 @@ function formatReifenRegalLabel(val) {
     return "";
   }
 
-function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
+function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketdienst) {
     try {
       stockId = normalizeStockId(stockId);
+      allowPaketdienst = !!allowPaketdienst;
       var sheetSeng = getReifenSheetTab(tabName);
       if (!sheetSeng) return { success: false, message: "Bitte ein gültiges Tabellenblatt auswählen." };
 
@@ -800,14 +820,16 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint) {
       var det = findReifenStockRowsDetailed(sheetSeng, stockId);
       if (det.headerIdx === -1) return { success: false, message: "Kopfzeile 'Stock ID' in Reifenliste nicht gefunden!" };
       if (!det.matches.length) return { success: false, message: "Stock-ID '" + stockId + "' in '" + sheetSeng.getName() + "' nicht gefunden!" };
-      var onlyPaketProcess = true;
-      for (var mpi = 0; mpi < det.matches.length; mpi++) {
-        if (!det.matches[mpi].paketdienst) { onlyPaketProcess = false; break; }
+      if (!allowPaketdienst) {
+        var onlyPaketProcess = true;
+        for (var mpi = 0; mpi < det.matches.length; mpi++) {
+          if (!det.matches[mpi].paketdienst) { onlyPaketProcess = false; break; }
+        }
+        if (onlyPaketProcess) {
+          return { success: false, message: "Stock-ID '" + stockId + "' ist Paketdienst – nicht über Annahme verbuchen." };
+        }
       }
-      if (onlyPaketProcess) {
-        return { success: false, message: "Stock-ID '" + stockId + "' ist Paketdienst – nicht über Annahme verbuchen." };
-      }
-      var pick = pickReifenUnbookedRow(det.matches, sizeHint);
+      var pick = pickReifenUnbookedRow(det.matches, sizeHint, allowPaketdienst);
       if (!pick.chosen) return { success: false, message: "Stock-ID '" + stockId + "' wurde in '" + sheetSeng.getName() + "' bereits verbucht!" };
 
       var search = { row: pick.chosen.row, headerIdx: det.headerIdx, stockCol: det.stockCol };

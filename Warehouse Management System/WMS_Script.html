@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   var currentStock = "";
   var currentCarolUrl = "";
   var currentShelves = [];
@@ -1784,7 +1784,7 @@
 
   function printRaFallback(html) {
     var w = window.open('', '_blank');
-    w.document.write(html + '<script>window.print();<\/script>');
+    w.document.write(html + '<' + 'script>window.print();</' + 'script>');
     w.document.close();
   }
 
@@ -4074,7 +4074,7 @@
       statusEl.style.color = '#f85149';
       statusEl.innerText = 'Fehler: ' + (err.message || String(err));
       if(btn) { btn.disabled = false; btn.innerText = 'Buchen'; }
-    }).processReifenStock(tire.tabName, tire.stockId, true, tire.groesse || "");
+    }).processReifenStock(tire.tabName, tire.stockId, true, tire.groesse || "", true);
   }
 
   function onReifenTabChange() {
