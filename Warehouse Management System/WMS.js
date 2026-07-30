@@ -20,6 +20,12 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.1.4",
+    date: "30.07.2026",
+    notes:
+      "• MADAFAKA"
+  },
+  {
     version: "2.1.3",
     date: "29.07.2026",
     notes:

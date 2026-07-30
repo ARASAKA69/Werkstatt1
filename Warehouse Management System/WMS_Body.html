@@ -1,4 +1,9 @@
-﻿<div class="app-shell">
+﻿<div class="ambient" aria-hidden="true">
+  <div class="blob a"></div>
+  <div class="blob b"></div>
+  <div class="blob c"></div>
+</div>
+<div class="app-shell">
   <header class="wms-header">
     <div class="wms-nav-bar">
       <nav class="wms-nav-tools" aria-label="WMS Schnellzugriff">
@@ -207,7 +212,7 @@
       </div>
 
       <div class="workspace-panel">
-        <div class="card-header" style="border-top: 1px solid #242d39; padding-top: 15px;">
+        <div class="card-header" style="border-top: 1px solid var(--border); padding-top: 15px;">
           <h3 class="card-title">📦 Einlagern</h3>
         </div>
         <div style="display:flex;justify-content:center;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
@@ -232,7 +237,7 @@
     </div>
 
     <div class="workspace-merge-action">
-      <div style="color:#9da7b3;font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
+      <div style="color:var(--foreground-muted);font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
       <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
     </div>
   </div>
@@ -296,13 +301,13 @@
         <div class="dymo-fields">
           <div class="dymo-field">
             <div class="field-label">Drucker für Werkstattauftrag</div>
-            <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(242,116,32,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+            <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(234,88,12,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
               <option value="">Bridge nicht verbunden</option>
             </select>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <span id="bridgeStatusDot" style="width:10px;height:10px;border-radius:50%;background:#f85149;display:inline-block;"></span>
-            <span id="bridgeStatusText" style="color:#9da7b3;font-size:11px;font-weight:700;letter-spacing:0.5px;">Offline</span>
+            <span id="bridgeStatusText" style="color:var(--foreground-muted);font-size:11px;font-weight:700;letter-spacing:0.5px;">Offline</span>
           </div>
           <div id="bridgeHelpBox" class="bridge-help-box" hidden>
             <div class="bridge-help-title">ARASAKA Print Bridge</div>
@@ -346,13 +351,13 @@
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
       <div class="overview-title">Stock-ID + Regal Übersicht</div>
-      <button type="button" onclick="refreshStockOverview()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <button type="button" onclick="refreshStockOverview()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
       <button type="button" class="ra-btn ra-btn-print ov-btn-print" onclick="printOverviewList()">🖨️ Drucken</button>
       <button type="button" class="ra-btn ra-btn-print ov-btn-print-detail" onclick="printOverviewDetailList()">🖨️ Drucken + ET</button>
       <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
     </div>
     <div class="overview-body">
-      <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
+      <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
       <div class="overview-table-wrap">
         <table class="overview-table">
           <thead>
@@ -367,7 +372,7 @@
             </tr>
           </thead>
           <tbody id="overviewTableBody">
-            <tr><td colspan="7" style="text-align:center;color:#9da7b3;">Lade Übersicht...</td></tr>
+            <tr><td colspan="7" style="text-align:center;color:var(--foreground-muted);">Lade Übersicht...</td></tr>
           </tbody>
         </table>
       </div>
@@ -405,7 +410,7 @@
           </tr>
         </thead>
         <tbody id="raTableBody">
-          <tr><td colspan="4" style="text-align:center;color:#9da7b3;padding:18px;">Lade Reifenausgabe...</td></tr>
+          <tr><td colspan="4" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Reifenausgabe...</td></tr>
         </tbody>
       </table>
     </div>
@@ -421,7 +426,7 @@
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
       <div class="nb-title">Nachbestellungen</div>
-      <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
+      <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
       <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
     </div>
     <div class="nb-toolbar">
@@ -429,7 +434,7 @@
         <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
         <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
       </div>
-      <button type="button" onclick="refreshNbModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <button type="button" onclick="refreshNbModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
     </div>
     <div class="nb-body">
       <table class="nb-table">
@@ -446,7 +451,7 @@
           </tr>
         </thead>
         <tbody id="nbTableBody">
-          <tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Lade Nachbestellungen...</td></tr>
+          <tr><td colspan="8" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Nachbestellungen...</td></tr>
         </tbody>
       </table>
     </div>
@@ -486,8 +491,8 @@
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
       <div class="nb-title">📄 Packzettel &amp; Belege</div>
-      <span id="pzTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(242,116,32,0.12);border:2px solid rgba(242,116,32,0.26);color:#F27420;font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
-      <button type="button" onclick="refreshPzModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <span id="pzTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
+      <button type="button" onclick="refreshPzModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
       <button class="nb-close" onclick="minimizePzModal()">Zurück</button>
     </div>
     <div class="nb-toolbar">
@@ -508,7 +513,7 @@
             </tr>
           </thead>
           <tbody id="pzTableBody">
-            <tr><td colspan="5" style="text-align:center;color:#9da7b3;padding:18px;">Lade Belege...</td></tr>
+            <tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Belege...</td></tr>
           </tbody>
         </table>
       </div>
@@ -531,7 +536,7 @@
       </div>
       <div class="reifen-title">Reifen Annahme</div>
       <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
-      <button type="button" onclick="refreshReifenModal()" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
+      <button type="button" onclick="refreshReifenModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
       <button type="button" class="reifen-close" id="reifenMinimizeBtn" onclick="minimizeReifenModal()">Zurück</button>
     </div>
     <div class="reifen-body-outer">
