@@ -1790,6 +1790,101 @@
     max-width: 440px;
     line-height: 1.4;
   }
+  .load-skate {
+    --arm-front: 24deg;
+    --arm-front-end: -48deg;
+    --arm-back: 164deg;
+    --arm-back-end: -50deg;
+    --leg-front: 40deg;
+    --leg-front-end: 30deg;
+    --leg-back: 120deg;
+    --leg-back-end: -36deg;
+    --board-r: 0deg;
+    --board-x: 0px;
+    --body-r: 12deg;
+    --body-y: -65%;
+    --body-x: -85%;
+    --skate-x: 0px;
+    --skate-y: 0px;
+    --color: #F9A28E;
+    position: relative;
+    width: 72px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    transform: scale(1.35);
+    transform-origin: center center;
+  }
+  .load-skate .skate {
+    position: relative;
+    width: 40px;
+    height: 46px;
+    transform: translate(var(--skate-x), var(--skate-y)) translateZ(0);
+  }
+  .load-skate .body {
+    background: var(--color);
+    height: 15px;
+    width: 7px;
+    border-radius: 4px;
+    transform-origin: 4px 11px;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(var(--body-x), var(--body-y)) rotate(var(--body-r)) translateZ(0);
+  }
+  .load-skate .body::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 4px;
+    bottom: 16px;
+    left: 0;
+    position: absolute;
+    background: var(--color);
+    transform: translateY(-0.5px);
+  }
+  .load-skate .arm,
+  .load-skate .arm::before,
+  .load-skate .leg,
+  .load-skate .leg::before {
+    content: '';
+    width: var(--w, 11px);
+    height: 4px;
+    top: var(--t, 0);
+    left: var(--l, 2px);
+    border-radius: 2px;
+    transform-origin: 2px 2px;
+    position: absolute;
+    background: var(--color);
+    transform: rotate(var(--r, 0deg));
+  }
+  .load-skate .arm::before { --l: 8px; }
+  .load-skate .arm.front { --r: var(--arm-front); }
+  .load-skate .arm.front::before { --r: var(--arm-front-end); }
+  .load-skate .arm.back { --r: var(--arm-back); }
+  .load-skate .arm.back::before { --r: var(--arm-back-end); }
+  .load-skate .leg { --w: 11px; --t: 11px; }
+  .load-skate .leg::before { --t: 0; --l: 8px; }
+  .load-skate .leg.front { --r: var(--leg-front); }
+  .load-skate .leg.front::before { --r: var(--leg-front-end); }
+  .load-skate .leg.back { --l: 1px; --r: var(--leg-back); }
+  .load-skate .leg.back::before { --r: var(--leg-back-end); }
+  .load-skate .board {
+    position: absolute;
+    left: 2px;
+    bottom: -1px;
+    transform: translateX(var(--board-x)) rotate(var(--board-r)) translateZ(0);
+    transform-origin: 7px 5.5px;
+  }
+  .load-skate .board svg {
+    display: block;
+    width: 34px;
+    height: 8px;
+    fill: var(--color);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .load-skate { transform: scale(1.35); }
+  }
   .stock-lock-overlay {
     position: fixed;
     inset: 0;

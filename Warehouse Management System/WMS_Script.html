@@ -1215,6 +1215,135 @@
     return /^Regal\s+\d+\.\d+$/i.test(String(regal || '').trim());
   }
 
+  var skateLoaders = {};
+
+  function skateResetPose() {
+    return {
+      '--arm-front': '24deg',
+      '--arm-front-end': '-48deg',
+      '--arm-back': '164deg',
+      '--arm-back-end': '-50deg',
+      '--leg-front': '40deg',
+      '--leg-front-end': '30deg',
+      '--leg-back': '120deg',
+      '--leg-back-end': '-36deg',
+      '--board-r': '0deg',
+      '--board-x': '0px',
+      '--body-r': '12deg',
+      '--body-y': '-65%',
+      '--body-x': '-85%',
+      '--skate-x': '0px',
+      '--skate-y': '0px'
+    };
+  }
+
+  function ensureSkateLoader(id) {
+    var el = document.getElementById(id);
+    if (!el || !window.gsap) return null;
+    if (!skateLoaders[id]) {
+      skateLoaders[id] = { el: el, jumpTimer: null, jumpKick: null, active: false, busy: false };
+      gsap.set(el, skateResetPose());
+    }
+    return skateLoaders[id];
+  }
+
+  function skateJump(id) {
+    var s = skateLoaders[id];
+    if (!window.gsap || !s || !s.el || s.active || !s.busy) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    s.active = true;
+    var el = s.el;
+    gsap.to(el, {
+      keyframes: [
+        { '--skate-x': '-12px', duration: 0.3 },
+        { '--skate-x': '12px', duration: 0.5 },
+        { '--skate-x': '0px', duration: 0.5 }
+      ]
+    });
+    gsap.to(el, {
+      keyframes: [
+        { '--skate-y': '-32px', duration: 0.4, delay: 0.2 },
+        { '--skate-y': '0px', duration: 0.2 }
+      ]
+    });
+    gsap.to(el, {
+      keyframes: [
+        {
+          duration: 0.2,
+          delay: 0.2,
+          '--arm-front': '40deg',
+          '--arm-front-end': '-12deg',
+          '--arm-back': '172deg',
+          '--arm-back-end': '38deg',
+          '--leg-front': '-8deg',
+          '--leg-front-end': '102deg',
+          '--leg-back': '103deg',
+          '--leg-back-end': '-16deg',
+          '--board-r': '-40deg',
+          '--body-r': '7deg',
+          '--body-y': '-90%',
+          '--body-x': '-160%'
+        },
+        {
+          duration: 0.2,
+          '--arm-front': '24deg',
+          '--arm-front-end': '-48deg',
+          '--arm-back': '172deg',
+          '--arm-back-end': '15deg',
+          '--leg-front': '22deg',
+          '--leg-front-end': '55deg',
+          '--leg-back': '142deg',
+          '--leg-back-end': '-58deg',
+          '--board-r': '3deg',
+          '--body-r': '12deg',
+          '--body-y': '-56%',
+          '--body-x': '-60%'
+        },
+        {
+          duration: 0.2,
+          '--arm-front': '24deg',
+          '--arm-front-end': '-48deg',
+          '--arm-back': '164deg',
+          '--arm-back-end': '-36deg',
+          '--leg-front': '-4deg',
+          '--leg-front-end': '66deg',
+          '--leg-back': '111deg',
+          '--leg-back-end': '-36deg',
+          '--board-r': '0deg',
+          '--body-r': '34deg',
+          '--body-y': '-53%',
+          '--body-x': '-28%'
+        },
+        Object.assign(skateResetPose(), {
+          duration: 0.4,
+          onComplete: function() { s.active = false; }
+        })
+      ]
+    });
+  }
+
+  function setSkateBusy(id, on) {
+    var s = ensureSkateLoader(id);
+    if (!s) return;
+    clearInterval(s.jumpTimer);
+    clearTimeout(s.jumpKick);
+    s.jumpTimer = null;
+    s.jumpKick = null;
+    s.busy = !!on;
+    if (on) {
+      s.active = false;
+      gsap.set(s.el, skateResetPose());
+      if (!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+        s.jumpTimer = setInterval(function() { skateJump(id); }, 2600);
+        s.jumpKick = setTimeout(function() { skateJump(id); }, 700);
+      }
+    } else {
+      s.active = false;
+      gsap.killTweensOf(s.el);
+      gsap.set(s.el, skateResetPose());
+    }
+  }
+
   function setHudBusy(active, message) {
     var el = document.getElementById('hudBusyOverlay');
     var tx = document.getElementById('hudBusyText');
@@ -1227,10 +1356,12 @@
       el.classList.add('open');
       el.setAttribute('aria-hidden', 'false');
       if(tx) tx.textContent = message || '';
+      setSkateBusy('hudLoadSkate', true);
     } else {
       el.classList.remove('open');
       el.setAttribute('aria-hidden', 'true');
       if(tx) tx.textContent = '';
+      setSkateBusy('hudLoadSkate', false);
     }
   }
 
@@ -3390,10 +3521,12 @@
       el.classList.add('open');
       el.setAttribute('aria-hidden', 'false');
       if (tx) tx.textContent = message || '';
+      setSkateBusy('reifenLoadSkate', true);
     } else {
       el.classList.remove('open');
       el.setAttribute('aria-hidden', 'true');
       if (tx) tx.textContent = '';
+      setSkateBusy('reifenLoadSkate', false);
     }
   }
 
@@ -3544,6 +3677,7 @@
     if (!ov) return;
     ov.classList.toggle('is-open', !!on);
     ov.setAttribute('aria-hidden', on ? 'false' : 'true');
+    setSkateBusy('wssLoadSkate', !!on);
   }
 
   function resetWssModalVasoldLocks() {

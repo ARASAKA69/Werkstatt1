@@ -1478,14 +1478,14 @@ function addStockComment(cellKey, stockId, color, text) {
   }
 }
 
-function markStockErledigt(cellKey, stockId) {
+function markStockErledigt(cellKey, stockId, commentText) {
   try {
     cellKey = String(cellKey || '');
     stockId = normalizeStockId_(stockId);
     if (!cellKey || !stockId) return { success: false, message: 'Stock/Zelle fehlt' };
     var by = activeUser_();
     var byName = shortName_(by) || 'Team';
-    var text = 'Als Erledigt markiert';
+    var text = String(commentText || '').trim() || 'Als Erledigt markiert';
     var res = addStockComment(cellKey, stockId, 'erledigt', text);
     if (res && res.success) {
       syncSheetColor_(cellKey, 'erledigt');
