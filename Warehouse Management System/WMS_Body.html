@@ -41,6 +41,13 @@
                   <span class="wms-menuitem-sub">Öffnet Tool in neuem Tab</span>
                 </span>
               </button>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" data-window="wssEinbuchen" role="menuitem" onclick="openWssEinbuchenModal(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">🪟</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">WSS Einbuchen</span>
+                  <span class="wms-menuitem-sub">Vasold buchen · Stock-ID, Artikel- &amp; Belegsuche</span>
+                </span>
+              </button>
             </div>
             <div class="wms-menugroup" role="presentation">
               <div class="wms-menugroup-label">Reifen</div>
@@ -777,6 +784,72 @@
         <div class="reifen-actions wss-submit-actions" style="margin-top:8px;">
           <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtn" onclick="submitWssVasold()">✅ Vasold Liste + WSS da //</button>
           <button type="button" class="reifen-action-btn active-ja" id="wssSubmitBtnGummi" onclick="submitWssGummiOnly()">✅ Gummileiste in Vasold erfassen</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nb-modal" id="wssEinbuchenModal">
+  <div class="nb-dialog">
+    <div class="nb-header">
+      <div class="wms-window-dots" aria-hidden="true" data-window="wssEinbuchen">
+        <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeWssEinbuchenModal()"></span>
+        <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeWssEinbuchenModal()"></span>
+        <span class="wms-window-dot wms-window-dot--idle"></span>
+      </div>
+      <div class="nb-title">🪟 WSS Einbuchen</div>
+      <button class="nb-close" onclick="minimizeWssEinbuchenModal()">Zurück</button>
+    </div>
+    <div class="nb-toolbar">
+      <div class="nb-search-wrap">
+        <input type="text" id="wssEbSearchInput" placeholder="Stock-ID, Artikel-Nr. oder Belegnummer scannen / eingeben..." autocomplete="off" oninput="filterWssEbBySearch()">
+      </div>
+    </div>
+    <div class="pz-split">
+      <div class="pz-list-wrap">
+        <table class="pz-table">
+          <thead>
+            <tr>
+              <th>Datum</th>
+              <th>Quelle</th>
+              <th>Bestellnr.</th>
+              <th>Referenz</th>
+              <th>Stock-ID</th>
+            </tr>
+          </thead>
+          <tbody id="wssEbTableBody">
+            <tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Stock-ID, Artikel- oder Belegnummer eingeben...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pz-preview-wrap" id="wssEbFormWrap">
+        <div class="pz-preview-empty" id="wssEbFormEmpty">Stock-ID links auswählen oder direkt oben eine Stock-ID eingeben.</div>
+        <div class="wss-eb-form" id="wssEbForm">
+          <div class="reifen-field">
+            <div class="field-label">Stock-ID</div>
+            <div id="wssEbStock" class="wss-eb-stock-value">—</div>
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Carol-Link</div>
+            <input type="text" id="wssEbCarolInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Marke &amp; Model</div>
+            <input type="text" id="wssEbMarkeInput" class="reifen-size-input" style="font-size:15px;">
+          </div>
+          <div class="reifen-field">
+            <div class="field-label">Nachuntersuchung</div>
+            <div id="wssEbHu" class="wss-modal-hu-value">—</div>
+          </div>
+          <div class="wss-eb-check-row">
+            <label class="wss-eb-check"><input type="checkbox" id="wssEbWssCheck"> WSS da</label>
+            <label class="wss-eb-check"><input type="checkbox" id="wssEbGummiCheck"> Gummileiste da</label>
+          </div>
+          <div class="reifen-status" id="wssEbStatus"></div>
+          <div class="reifen-actions" style="margin-top:8px;">
+            <button type="button" class="reifen-action-btn active-ja" id="wssEbSubmitBtn" onclick="submitWssEinbuchen()">✅ In Vasold Liste einbuchen</button>
+          </div>
         </div>
       </div>
     </div>

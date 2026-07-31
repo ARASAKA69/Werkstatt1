@@ -3992,6 +3992,193 @@
       .processWssVasoldBooking(currentStock, carol, marke, gummi);
   }
 
+  var wssEbSessionActive = false;
+  var wssEbEntries = [];
+  var wssEbSearchTimer = null;
+  var wssEbCurrentStock = '';
+
+  function openWssEinbuchenModal() {
+    wssEbSessionActive = true;
+    document.getElementById('wssEinbuchenModal').classList.add('open');
+  }
+
+  function minimizeWssEinbuchenModal() {
+    document.getElementById('wssEinbuchenModal').classList.remove('open');
+  }
+
+  function closeWssEinbuchenModal() {
+    document.getElementById('wssEinbuchenModal').classList.remove('open');
+    wssEbSessionActive = false;
+    wssEbEntries = [];
+    wssEbCurrentStock = '';
+    var inp = document.getElementById('wssEbSearchInput');
+    if (inp) inp.value = '';
+    document.getElementById('wssEbTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Stock-ID, Artikel- oder Belegnummer eingeben...</td></tr>';
+    hideWssEbForm('Stock-ID links auswählen oder direkt oben eine Stock-ID eingeben.');
+  }
+
+  function hideWssEbForm(msg) {
+    document.getElementById('wssEbForm').style.display = 'none';
+    var empty = document.getElementById('wssEbFormEmpty');
+    empty.style.display = 'flex';
+    empty.innerHTML = escapeHtml(msg || '');
+  }
+
+  function renderWssEbTable(entries) {
+    var body = document.getElementById('wssEbTableBody');
+    if (!entries || !entries.length) {
+      body.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9da7b3;padding:18px;">Keine Belege gefunden.</td></tr>';
+      return;
+    }
+    var html = '';
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var srcColor = '#F27420';
+      if (e.source && e.source.indexOf('n4') !== -1) srcColor = '#3FA0DB';
+      else if (e.source && e.source.indexOf('alfah') !== -1) srcColor = '#B14BE3';
+      var clickable = !!e.stockId;
+      html += '<tr class="pz-row"' + (clickable ? (' style="cursor:pointer;" onclick="resolveWssEbStock(\'' + escapeHtml(e.stockId) + '\')"') : ' style="opacity:0.5;"') + '>'
+        + '<td style="white-space:nowrap;">' + escapeHtml(e.messageDate) + '</td>'
+        + '<td style="color:' + srcColor + ';font-weight:800;">' + escapeHtml(e.source || '-') + '</td>'
+        + '<td style="font-weight:700;">' + escapeHtml(e.orderNumber || '-') + '</td>'
+        + '<td>' + escapeHtml(e.referenceNumber || '-') + '</td>'
+        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId || '-') + '</td>'
+        + '</tr>';
+    }
+    body.innerHTML = html;
+  }
+
+  function filterWssEbBySearch() {
+    var q = (document.getElementById('wssEbSearchInput').value || '').trim();
+    if (wssEbSearchTimer) clearTimeout(wssEbSearchTimer);
+    if (!q) {
+      document.getElementById('wssEbTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Stock-ID, Artikel- oder Belegnummer eingeben...</td></tr>';
+      return;
+    }
+    wssEbSearchTimer = setTimeout(function() {
+      if (isStockIdFormat(q)) {
+        resolveWssEbStock(normalizeStockInput(q));
+        document.getElementById('wssEbTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Stock-ID direkt geladen — siehe rechts.</td></tr>';
+        return;
+      }
+      document.getElementById('wssEbTableBody').innerHTML = hudLoadingRowHtml(5, 'Suche…');
+      google.script.run.withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          document.getElementById('wssEbTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res && res.message ? res.message : 'unbekannt') + '</td></tr>';
+          return;
+        }
+        wssEbEntries = res.entries || [];
+        renderWssEbTable(wssEbEntries);
+      }).withFailureHandler(function(err) {
+        document.getElementById('wssEbTableBody').innerHTML = '<tr><td colspan="5" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
+      }).getPackzettelList(q);
+    }, 350);
+  }
+
+  function resolveWssEbStock(stockId) {
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    wssEbCurrentStock = sid;
+    document.getElementById('wssEbForm').style.display = 'none';
+    var empty = document.getElementById('wssEbFormEmpty');
+    empty.style.display = 'flex';
+    empty.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:8px">Lade Auftrag…</span>';
+    google.script.run
+      .withSuccessHandler(function(res) { applyWssEbLookup(res, sid); })
+      .withFailureHandler(function(err) { hideWssEbForm('❌ ' + ((err && err.message) || String(err))); })
+      .getWssEinbuchenLookup(sid);
+  }
+
+  function applyWssEbLookup(res, sid) {
+    if (!res || !res.success) {
+      hideWssEbForm('❌ ' + (res && res.message ? res.message : 'Fehler beim Laden.'));
+      return;
+    }
+    if (!res.found) {
+      hideWssEbForm('❌ Stock-ID nicht in Refurbishment List gefunden.');
+      return;
+    }
+    document.getElementById('wssEbFormEmpty').style.display = 'none';
+    document.getElementById('wssEbForm').style.display = 'flex';
+    document.getElementById('wssEbStock').textContent = sid;
+    document.getElementById('wssEbCarolInput').value = res.carolUrl || '';
+    document.getElementById('wssEbMarkeInput').value = res.markeModel || '';
+    document.getElementById('wssEbHu').textContent = res.huVasold || '---------------';
+
+    var wssCb = document.getElementById('wssEbWssCheck');
+    var gummiCb = document.getElementById('wssEbGummiCheck');
+    wssCb.checked = false;
+    wssCb.disabled = false;
+    gummiCb.checked = false;
+    gummiCb.disabled = false;
+
+    var hints = [];
+    if (res.vasoldRowFound && res.frontscheibeJa) {
+      wssCb.checked = true;
+      wssCb.disabled = true;
+      hints.push('WSS in Vasold bereits „Ja“.');
+    }
+    if (res.vasoldRowFound && res.gummileisteDa) {
+      gummiCb.checked = true;
+      gummiCb.disabled = true;
+      hints.push('Gummileiste in Vasold bereits erfasst.');
+    }
+    var st = document.getElementById('wssEbStatus');
+    st.textContent = hints.join(' ');
+    st.style.color = '#8b949e';
+  }
+
+  function submitWssEinbuchen() {
+    if (!wssEbCurrentStock) return;
+    var wssCb = document.getElementById('wssEbWssCheck');
+    var gummiCb = document.getElementById('wssEbGummiCheck');
+    var wssYes = !!wssCb.checked && !wssCb.disabled;
+    var gummiYes = !!gummiCb.checked && !gummiCb.disabled;
+    var carol = document.getElementById('wssEbCarolInput').value.trim();
+    var marke = document.getElementById('wssEbMarkeInput').value.trim();
+    var st = document.getElementById('wssEbStatus');
+    var btn = document.getElementById('wssEbSubmitBtn');
+    if (!wssYes && !gummiYes) {
+      st.textContent = 'Bitte „WSS da“ und/oder „Gummileiste da“ auswählen.';
+      st.style.color = '#f85149';
+      return;
+    }
+    if (!carol || !marke) {
+      st.textContent = !carol && !marke ? 'Carol-Link und Marke & Model fehlen noch.' : (!carol ? 'Carol-Link fehlt noch.' : 'Marke & Model fehlt noch.');
+      st.style.color = '#f85149';
+      return;
+    }
+    btn.disabled = true;
+    st.textContent = 'Speichere in Vasold…';
+    st.style.color = '#F27420';
+    var stockAtSubmit = wssEbCurrentStock;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        btn.disabled = false;
+        if (!res || !res.success) {
+          st.textContent = '❌ ' + (res && res.message ? res.message : 'Vorgang fehlgeschlagen.');
+          st.style.color = '#f85149';
+          return;
+        }
+        st.textContent = '✅ ' + res.message;
+        st.style.color = '#56d364';
+        if (stockAtSubmit === currentStock) {
+          loadRefurbishmentCache(true, function() {
+            document.getElementById('searchInput').value = currentStock;
+            loadData();
+          });
+          loadKommentarVerlaufCache(true);
+        }
+        resolveWssEbStock(stockAtSubmit);
+      })
+      .withFailureHandler(function(err) {
+        btn.disabled = false;
+        st.textContent = '❌ ' + ((err && err.message) || String(err));
+        st.style.color = '#f85149';
+      })
+      .processWssEinbuchenBooking(stockAtSubmit, carol, marke, wssYes, gummiYes);
+  }
+
   function openReifenModal() {
     document.getElementById('reifenModal').classList.add('open');
     loadReifenBatch();
@@ -6917,7 +7104,10 @@
         defaultSize: { w: 1180, h: 820 }, openFn: 'openReifenModal', minFn: 'minimizeReifenModal', closeFn: 'closeReifenModal',
         session: function() { try { return (typeof reifenSessionActive !== 'undefined' && reifenSessionActive); } catch(e) { return false; } } },
       { id: 'wss', modalId: 'wssModal', dialogCls: 'reifen-dialog', headerCls: 'reifen-header', title: 'WSS Vasold', icon: '🪟',
-        defaultSize: { w: 760, h: 720 }, openFn: null, minFn: null, closeFn: 'closeWssModal', hideFromMenu: true, hideFromTaskbar: true }
+        defaultSize: { w: 760, h: 720 }, openFn: null, minFn: null, closeFn: 'closeWssModal', hideFromMenu: true, hideFromTaskbar: true },
+      { id: 'wssEinbuchen', modalId: 'wssEinbuchenModal', dialogCls: 'nb-dialog', headerCls: 'nb-header', title: 'WSS Einbuchen', icon: '🪟',
+        defaultSize: { w: 1400, h: 860 }, openFn: 'openWssEinbuchenModal', minFn: 'minimizeWssEinbuchenModal', closeFn: 'closeWssEinbuchenModal',
+        session: function() { try { return !!wssEbSessionActive; } catch(e) { return false; } } }
     ];
 
     var zTop = Z_BASE;

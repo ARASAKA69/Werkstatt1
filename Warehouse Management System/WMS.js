@@ -20,6 +20,15 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.1.7",
+    date: "31.07.2026",
+    notes:
+      "• Neu im Menü unter „Lager Kisten Klärung“: „WSS Einbuchen“ — eigenes Fenster für Vasold, unabhängig vom geladenen Auftrag\n" +
+      "• Suche darin per Stock-ID, Artikel-Nummer oder Belegnummer (wie bei Packzettel), findet den Auftrag auch wenn Schäden-Text kein „WSS ers“ enthält\n" +
+      "• WSS da / Gummileiste da als Checkboxen wählbar — legt Zeile in Vasold WSS an oder aktualisiert sie wie gehabt\n" +
+      "• Kommentar Anlieferung bekommt „WSS da //“ ans Ende angehängt statt vorne rein, ohne Farbe"
+  },
+  {
     version: "2.1.6",
     date: "31.07.2026",
     notes:
@@ -1187,6 +1196,155 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       stockId: stockId,
       isNew: isNew,
       row: targetRow
+    };
+  } catch (err) {
+    return { success: false, message: "Fehler: " + err.message };
+  }
+}
+
+function getWssEinbuchenLookup(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+
+    var sheetRef = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheetRef) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+    var lastRef = Math.max(2, sheetRef.getLastRow());
+    var stockCol = sheetRef.getRange(1, 2, lastRef, 1).getValues();
+    var refurbRow = -1;
+    for (var ir = 1; ir < stockCol.length; ir++) {
+      if (cellMatchesStockId(stockCol[ir][0], stockId)) {
+        refurbRow = ir + 1;
+        break;
+      }
+    }
+    if (refurbRow === -1) {
+      return { success: true, found: false, stockId: stockId };
+    }
+
+    var carol = getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var marke = String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
+    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
+    var huVasold = huVasoldValueFromSchaedenText(wText);
+
+    var vasold = getVasoldWssSyncState(stockId);
+
+    return {
+      success: true,
+      found: true,
+      stockId: stockId,
+      carolUrl: carol,
+      markeModel: marke,
+      huVasold: huVasold,
+      vasoldRowFound: !!(vasold && vasold.rowFound),
+      frontscheibeJa: !!(vasold && vasold.frontscheibeJa),
+      gummileisteDa: !!(vasold && vasold.gummileisteDa)
+    };
+  } catch (err) {
+    return { success: false, message: "Fehler: " + err.message };
+  }
+}
+
+function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummiDa) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var wssYes = wssJa === true || wssJa === "true";
+    var gummiYes = gummiDa === true || gummiDa === "true";
+    if (!wssYes && !gummiYes) {
+      return { success: false, message: "Bitte „WSS da“ und/oder „Gummileiste da“ auswählen." };
+    }
+    carolUrlOpt = String(carolUrlOpt || "").trim();
+    markeOpt = String(markeOpt || "").trim();
+
+    var sheetRef = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheetRef) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+
+    var lastRef = Math.max(2, sheetRef.getLastRow());
+    var stockCol = sheetRef.getRange(1, 2, lastRef, 1).getValues();
+    var refurbRow = -1;
+    for (var ir = 1; ir < stockCol.length; ir++) {
+      if (cellMatchesStockId(stockCol[ir][0], stockId)) {
+        refurbRow = ir + 1;
+        break;
+      }
+    }
+    if (refurbRow === -1) return { success: false, message: "Stock-ID in Refurbisment List nicht gefunden!" };
+
+    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
+    var carol = carolUrlOpt || getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+    var marke = markeOpt || String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
+    if (!carol) return { success: false, message: "Carol-Link fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
+    if (!marke) return { success: false, message: "Marke & Model fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
+
+    var huVasold = huVasoldValueFromSchaedenText(wText);
+
+    var ssV = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sheetV = ssV.getSheetByName(VASOLD_WSS_TAB);
+    if (!sheetV) return { success: false, message: "Tab „" + VASOLD_WSS_TAB + "“ in Hemau Tageslisten nicht gefunden!" };
+
+    var searchV = findRowFast(sheetV, ["stockid", "stock"], stockId);
+    if (searchV.headerIdx === -1) {
+      return { success: false, message: "Vasold WSS: Kopfzeile mit Stock-ID nicht gefunden!" };
+    }
+
+    var hdr1 = searchV.headerIdx + 1;
+    var targetRow;
+    var isNew = false;
+    if (searchV.row === -1) {
+      isNew = true;
+      var lrV = sheetV.getLastRow();
+      targetRow = Math.max(lrV, hdr1) + 1;
+    } else {
+      targetRow = searchV.row;
+    }
+
+    var eRaw = sheetV.getRange(targetRow, 5).getValue();
+    var fRaw = sheetV.getRange(targetRow, 6).getValue();
+    var eVal = String(eRaw != null ? eRaw : "").trim().toLowerCase();
+    var fVal = String(fRaw != null ? fRaw : "").trim().toLowerCase();
+    var eHasJa = eVal === "ja";
+    var fHasGummi = fVal === "vorhanden" || fVal === "da" || fVal.indexOf("vorhanden") !== -1;
+
+    var needWssWrite = wssYes && (isNew || !eHasJa);
+    var needGummiWrite = gummiYes && (isNew || !fHasGummi);
+    if (!needWssWrite && !needGummiWrite) {
+      return {
+        success: true,
+        skipped: true,
+        isNew: isNew,
+        message: "Vasold hatte die gewählten Werte bereits — nichts geändert."
+      };
+    }
+
+    sheetV.getRange(targetRow, 1).setValue(stockId);
+    sheetV.getRange(targetRow, 2).setValue(carol);
+    sheetV.getRange(targetRow, 3).setValue(marke);
+    sheetV.getRange(targetRow, 4).setValue(huVasold);
+    if (needWssWrite) sheetV.getRange(targetRow, 5).setValue("Ja");
+    if (needGummiWrite) sheetV.getRange(targetRow, 6).setValue("Vorhanden");
+
+    if (needWssWrite) {
+      var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
+      if (!/wss\s+da\b/i.test(curCom)) {
+        var wssCom = curCom ? (curCom + " // WSS da //") : "WSS da //";
+        sheetRef.getRange(refurbRow, 25).setValue(wssCom);
+        logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
+      }
+    }
+
+    SpreadsheetApp.flush();
+    var parts = [];
+    if (needWssWrite) parts.push("WSS Ja");
+    if (needGummiWrite) parts.push("Gummileiste");
+    return {
+      success: true,
+      skipped: false,
+      isNew: isNew,
+      stockId: stockId,
+      row: targetRow,
+      message: "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert")
     };
   } catch (err) {
     return { success: false, message: "Fehler: " + err.message };
