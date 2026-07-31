@@ -802,9 +802,13 @@
       <button class="nb-close" onclick="minimizeWssEinbuchenModal()">Zurück</button>
     </div>
     <div class="nb-toolbar">
-      <div class="nb-search-wrap">
-        <input type="text" id="wssEbSearchInput" placeholder="Stock-ID, Artikel-Nr. oder Belegnummer scannen / eingeben..." autocomplete="off" oninput="filterWssEbBySearch()">
+      <div class="nb-search-wrap wss-eb-search-wrap">
+        <span class="wss-eb-search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="wssEbSearchInput" placeholder="Stock-ID, Artikel-Nr. oder Belegnummer scannen / eingeben..." autocomplete="off" oninput="filterWssEbBySearch()" onkeydown="onWssEbSearchKeydown(event)">
+        <button type="button" class="wss-eb-search-clear" id="wssEbSearchClear" onclick="clearWssEbSearch()" aria-label="Suche leeren" style="display:none;">✕</button>
       </div>
+      <span id="wssEbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;white-space:nowrap;">—</span>
+      <button type="button" onclick="refreshWssEbBelege()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
     </div>
     <div class="pz-split">
       <div class="pz-list-wrap">
@@ -819,33 +823,42 @@
             </tr>
           </thead>
           <tbody id="wssEbTableBody">
-            <tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Stock-ID, Artikel- oder Belegnummer eingeben...</td></tr>
+            <tr><td colspan="5" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Belege…</td></tr>
           </tbody>
         </table>
       </div>
       <div class="pz-preview-wrap" id="wssEbFormWrap">
         <div class="pz-preview-empty" id="wssEbFormEmpty">Stock-ID links auswählen oder direkt oben eine Stock-ID eingeben.</div>
         <div class="wss-eb-form" id="wssEbForm">
-          <div class="reifen-field">
-            <div class="field-label">Stock-ID</div>
-            <div id="wssEbStock" class="wss-eb-stock-value">—</div>
+          <div class="wss-eb-stock-value" id="wssEbStock">—</div>
+          <div class="wss-eb-card">
+            <div class="wss-eb-card-title">Auftrags-Daten</div>
+            <div class="reifen-field">
+              <div class="field-label">Carol-Link</div>
+              <input type="text" id="wssEbCarolInput" class="reifen-size-input" style="font-size:15px;">
+            </div>
+            <div class="reifen-field">
+              <div class="field-label">Marke &amp; Model</div>
+              <input type="text" id="wssEbMarkeInput" class="reifen-size-input" style="font-size:15px;">
+            </div>
+            <div class="reifen-field">
+              <div class="field-label">Nachuntersuchung</div>
+              <div id="wssEbHu" class="wss-modal-hu-value">—</div>
+            </div>
           </div>
-          <div class="reifen-field">
-            <div class="field-label">Carol-Link</div>
-            <input type="text" id="wssEbCarolInput" class="reifen-size-input" style="font-size:15px;">
+          <div class="wss-eb-toggle-row">
+            <button type="button" class="wss-eb-toggle" id="wssEbWssToggle" aria-pressed="false" onclick="toggleWssEbCheck('wss')">
+              <input type="checkbox" id="wssEbWssCheck" tabindex="-1">
+              <span class="wss-eb-toggle-mark" aria-hidden="true">✓</span>
+              <span class="wss-eb-toggle-label">WSS da</span>
+            </button>
+            <button type="button" class="wss-eb-toggle" id="wssEbGummiToggle" aria-pressed="false" onclick="toggleWssEbCheck('gummi')">
+              <input type="checkbox" id="wssEbGummiCheck" tabindex="-1">
+              <span class="wss-eb-toggle-mark" aria-hidden="true">✓</span>
+              <span class="wss-eb-toggle-label">Gummileiste da</span>
+            </button>
           </div>
-          <div class="reifen-field">
-            <div class="field-label">Marke &amp; Model</div>
-            <input type="text" id="wssEbMarkeInput" class="reifen-size-input" style="font-size:15px;">
-          </div>
-          <div class="reifen-field">
-            <div class="field-label">Nachuntersuchung</div>
-            <div id="wssEbHu" class="wss-modal-hu-value">—</div>
-          </div>
-          <div class="wss-eb-check-row">
-            <label class="wss-eb-check"><input type="checkbox" id="wssEbWssCheck"> WSS da</label>
-            <label class="wss-eb-check"><input type="checkbox" id="wssEbGummiCheck"> Gummileiste da</label>
-          </div>
+          <div class="wss-eb-hints" id="wssEbHints"></div>
           <div class="reifen-status" id="wssEbStatus"></div>
           <div class="reifen-actions" style="margin-top:8px;">
             <button type="button" class="reifen-action-btn active-ja" id="wssEbSubmitBtn" onclick="submitWssEinbuchen()">✅ In Vasold Liste einbuchen</button>

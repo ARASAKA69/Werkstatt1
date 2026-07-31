@@ -18,7 +18,15 @@ const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
+const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
+  {
+    version: "2.1.8",
+    date: "31.07.2026",
+    notes:
+      "• WSS da / Gummileiste da senden jetzt automatisch eine Chat-Nachricht (StockID -> WSS da / StockID -> Gummileiste da)\n" +
+      "• Gilt für WSS übernehmen, Nachbestellung Vasold und WSS Einbuchen — nur bei tatsächlich neuen Buchungen, keine Duplikate bei erneutem Speichern"
+  },
   {
     version: "2.1.7",
     date: "31.07.2026",
@@ -967,6 +975,21 @@ function extractHuDateOnlyFromNachuntersuchungSegment(segment) {
   return "";
 }
 
+function notifyWssGummiChat_(stockId, wssNew, gummiNew) {
+  try {
+    if (!wssNew && !gummiNew) return;
+    var lines = [];
+    if (wssNew) lines.push(stockId + " -> WSS da");
+    if (gummiNew) lines.push(stockId + " -> Gummileiste da");
+    UrlFetchApp.fetch(WSS_CHAT_WEBHOOK_URL, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ text: lines.join("\n") }),
+      muteHttpExceptions: true
+    });
+  } catch (err) {}
+}
+
 function huVasoldValueFromSchaedenText(wText) {
   var dash = "---------------";
   var m = String(wText || "").match(/Nachuntersuchung\s*bis\s*:\s*([^\n\r]+)/i);
@@ -1032,6 +1055,16 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
       targetRow = searchV.row;
     }
 
+    var priorEVal = "", priorFVal = "";
+    if (!isNew) {
+      var priorE = sheetV.getRange(targetRow, 5).getValue();
+      var priorF = sheetV.getRange(targetRow, 6).getValue();
+      priorEVal = String(priorE != null ? priorE : "").trim().toLowerCase();
+      priorFVal = String(priorF != null ? priorF : "").trim().toLowerCase();
+    }
+    var wasWssJa = priorEVal === "ja";
+    var wasGummiDa = priorFVal === "vorhanden" || priorFVal === "da" || priorFVal.indexOf("vorhanden") !== -1;
+
     sheetV.getRange(targetRow, 1).setValue(stockId);
     sheetV.getRange(targetRow, 2).setValue(carol);
     sheetV.getRange(targetRow, 3).setValue(marke);
@@ -1047,6 +1080,7 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
     }
 
     SpreadsheetApp.flush();
+    notifyWssGummiChat_(stockId, !wasWssJa, gummiYes && !wasGummiDa);
     return {
       success: true,
       message: (isNew ? "Vasold WSS: neue Zeile. " : "Vasold WSS: Zeile aktualisiert. ") + "Kommentar Anlieferung: WSS da //",
@@ -1186,6 +1220,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     }
 
     SpreadsheetApp.flush();
+    notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
     var parts = [];
     if (needWssWrite) parts.push("WSS Ja");
     if (needGummiWrite) parts.push("Gummileiste");
@@ -1335,6 +1370,7 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
     }
 
     SpreadsheetApp.flush();
+    notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
     var parts = [];
     if (needWssWrite) parts.push("WSS Ja");
     if (needGummiWrite) parts.push("Gummileiste");

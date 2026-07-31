@@ -3090,51 +3090,163 @@
     border: 0;
     background: #fff;
   }
+  .wss-eb-search-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  #wssEbSearchInput {
+    width: 100%;
+    background: #0f141c;
+    color: var(--wms-blue);
+    border: 1.5px solid #354152;
+    padding: 14px 44px;
+    font-size: 17px;
+    font-weight: 700;
+    border-radius: 14px;
+    outline: none;
+    transition: 0.2s;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  }
+  #wssEbSearchInput::placeholder {
+    color: var(--wms-text-subtle);
+    font-weight: 500;
+  }
+  #wssEbSearchInput:focus {
+    border-color: rgba(234, 88, 12, 0.55);
+    box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.16);
+  }
+  .wss-eb-search-icon {
+    position: absolute;
+    left: 16px;
+    font-size: 16px;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+  .wss-eb-search-clear {
+    position: absolute;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: none;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--foreground-muted);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: 0.15s;
+  }
+  .wss-eb-search-clear:hover {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+  }
   .wss-eb-form {
     display: none;
     flex-direction: column;
-    gap: 16px;
-    padding: 24px 28px;
+    gap: 18px;
+    padding: 26px 28px;
     overflow: auto;
   }
   .wss-eb-stock-value {
     text-align: center;
     width: 100%;
     color: var(--wms-orange);
-    font-size: 26px;
+    font-size: 28px;
     font-weight: 800;
     letter-spacing: 2px;
     text-transform: uppercase;
     text-shadow: 0 0 28px rgba(234, 88, 12, 0.35);
   }
-  .wss-eb-check-row {
+  .wss-eb-card {
     display: flex;
+    flex-direction: column;
     gap: 16px;
+    padding: 18px 20px;
+    border: 1px solid #242d39;
+    border-radius: 16px;
+    background: rgba(13, 17, 23, 0.5);
+  }
+  .wss-eb-card-title {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: var(--foreground-muted);
+  }
+  .wss-eb-toggle-row {
+    display: flex;
+    gap: 14px;
     justify-content: center;
     flex-wrap: wrap;
   }
-  .wss-eb-check {
+  .wss-eb-toggle {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 14px 20px;
+    padding: 14px 22px;
     border-radius: 14px;
     border: 2px solid rgba(234, 88, 12, 0.3);
     background: rgba(15, 20, 28, 0.65);
-    color: #e6edf3;
+    color: var(--foreground-muted);
     font-size: 15px;
     font-weight: 800;
     cursor: pointer;
+    transition: 0.18s;
   }
-  .wss-eb-check input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    accent-color: var(--wms-orange);
-    cursor: pointer;
+  .wss-eb-toggle:hover {
+    border-color: rgba(234, 88, 12, 0.55);
+    color: #e6edf3;
   }
-  .wss-eb-check:has(input:disabled) {
-    opacity: 0.6;
+  .wss-eb-toggle input[type="checkbox"] {
+    display: none;
+  }
+  .wss-eb-toggle-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    border: 2px solid rgba(234, 88, 12, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    color: transparent;
+    flex-shrink: 0;
+    transition: 0.15s;
+  }
+  .wss-eb-toggle.is-on {
+    border-color: rgba(46, 160, 67, 0.55);
+    background: rgba(46, 160, 67, 0.12);
+    color: #56d364;
+  }
+  .wss-eb-toggle.is-on .wss-eb-toggle-mark {
+    background: linear-gradient(180deg, #2ea043 0%, #238636 100%);
+    border-color: transparent;
+    color: #0d1117;
+  }
+  .wss-eb-toggle.is-locked {
     cursor: not-allowed;
+    opacity: 0.72;
+  }
+  .wss-eb-hints {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .wss-eb-hint-pill {
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+    background: rgba(86, 211, 100, 0.14);
+    color: #56d364;
+    border: 1px solid rgba(86, 211, 100, 0.24);
   }
   .nb-modal {
     position: fixed;
