@@ -20,6 +20,25 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.1.6",
+    date: "31.07.2026",
+    notes:
+      "• Neu im Menü: „Shortcuts — alle Tastenkombis auf einen Blick, kurz erklärt\n" +
+      "• Strg+Y = Auftrag beenden & Carol starten, Strg+R = Reifen Annahme auf\n" +
+      "• Reifen Annahme Fenster minimierbar, taucht unten in der Leiste wieder auf (ging vorher nicht)\n" +
+      "• Lieferschein sammelt jetzt auch in ner Liste wie Scan — Stück für Stück abarbeiten\n" +
+      "• Buttons & Dropdowns glowen beim Hover" +
+      "• Menü/Sidebar hängt jetzt immer oben drüber, auch wenn Fenster offen sind\n" +
+      "• Fenster verstecken sich nicht mehr hinter Suchleiste & Kopfzeile\n" +
+      "• Lagerkisten Klärung Tool im Menü (sidebar) integriert — öffnet in neuem Tab, WMS bleibt offen"
+  },
+  {
+    version: "2.1.5",
+    date: "30.07.2026",
+    notes:
+      "• Design aus Lagerkisten Klärung Tool in WMS integriert Kurwa"
+  },
+  {
     version: "2.1.4",
     date: "30.07.2026",
     notes:

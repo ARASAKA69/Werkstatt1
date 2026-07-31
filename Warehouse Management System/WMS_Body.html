@@ -15,7 +15,7 @@
           <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Reifen Ausgabe</button>
         </div>
         <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
-          <button type="button" class="wms-menutrigger" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
+          <button type="button" class="wms-menutrigger btn-glow" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
             <span class="wms-menutrigger-icon" aria-hidden="true"><span></span><span></span><span></span></span>
             <span class="wms-menutrigger-text">Menü</span>
             <span class="wms-menutrigger-chevron" aria-hidden="true">▾</span>
@@ -32,6 +32,13 @@
                 <span class="wms-menuitem-body">
                   <span class="wms-menuitem-title">Übersicht</span>
                   <span class="wms-menuitem-sub">Stock-ID &amp; Regalplätze</span>
+                </span>
+              </button>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openLagerKistenKlaerung(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">🗃️</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Lager Kisten Klärung</span>
+                  <span class="wms-menuitem-sub">Öffnet Tool in neuem Tab</span>
                 </span>
               </button>
             </div>
@@ -109,6 +116,13 @@
                   <span class="wms-menuitem-sub">Was war neu in welchem Build</span>
                 </span>
               </button>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsShortcutsModal(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">⌨️</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Shortcuts</span>
+                  <span class="wms-menuitem-sub">Alle Tastenkombis auf einen Blick</span>
+                </span>
+              </button>
             </div>
             <div class="wms-menugroup" role="presentation">
               <div class="wms-menugroup-label">Darstellung</div>
@@ -161,7 +175,7 @@
       <div class="search-container">
         <div class="search-box">
           <input type="text" id="searchInput" placeholder="STOCK-ID / BESTELLNUMMER SCAN..." autocomplete="off">
-          <button type="button" class="btn-search" onclick="loadData()">LADEN</button>
+          <button type="button" class="btn-search btn-glow" onclick="loadData()">LADEN</button>
         </div>
         <div class="search-recent" id="searchRecentChips" aria-label="Letzte Stock-IDs"></div>
       </div>
@@ -189,10 +203,10 @@
     <div class="sub-title">Ersatzteile Bestellung</div>
     <div class="info-box schaeden-list" id="infoBestellung">-</div>
     <div class="pz-card-action" id="pzCardAction" style="display:none;">
-      <button type="button" class="btn-pz-open" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
+      <button type="button" class="btn-pz-open btn-glow" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
     </div>
     <div class="wss-card-action" id="wssCardAction">
-      <button type="button" class="btn-wss-open" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
+      <button type="button" class="btn-wss-open btn-glow" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
     </div>
   </div>
 
@@ -208,7 +222,7 @@
       </div>
 
       <div class="workspace-verlauf-action">
-        <button type="button" class="btn btn-verlauf" id="btnVerlauf" onclick="openKommentarVerlauf()" disabled>📜 Verlauf</button>
+        <button type="button" class="btn btn-verlauf btn-glow" id="btnVerlauf" onclick="openKommentarVerlauf()" disabled>📜 Verlauf</button>
       </div>
 
       <div class="workspace-panel">
@@ -219,7 +233,7 @@
           <span class="shelf-pill" id="currentShelfLabel">Aktuell: -</span>
         </div>
         <div class="shelf-dd-wrap" id="shelfDdWrap">
-          <button type="button" class="shelf-dd-trigger" id="shelfDdTrigger" aria-haspopup="listbox" aria-expanded="false">
+          <button type="button" class="shelf-dd-trigger btn-glow" id="shelfDdTrigger" aria-haspopup="listbox" aria-expanded="false">
             <span class="shelf-dd-trigger-text" id="shelfDdTriggerText">Lade Regale…</span>
             <span class="shelf-dd-chevron">▼</span>
           </button>
@@ -228,7 +242,7 @@
           </div>
           <select id="shelfSelect" class="shelf-dd-native"><option value="">Lade Regale...</option></select>
         </div>
-        <button type="button" class="regal-scan-btn" id="regalScanBtn" onclick="openRegalScan()">📷 Regal scannen</button>
+        <button type="button" class="regal-scan-btn btn-glow" id="regalScanBtn" onclick="openRegalScan()">📷 Regal scannen</button>
         <div class="b2a1-kandidat-badge-wrap" id="b2a1KandidatBadgeWrap">
           <div class="b2a1-kandidat-badge" id="b2a1KandidatBadge">B2A1 Kandidat</div>
           <div class="b2a1-kandidat-hint" id="b2a1KandidatHint">Bitte in Carol gegen kontrollieren ob Auto B2A1 ist!</div>
@@ -238,7 +252,7 @@
 
     <div class="workspace-merge-action">
       <div style="color:var(--foreground-muted);font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
-      <button class="btn btn-yellow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
+      <button class="btn btn-yellow btn-glow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
     </div>
   </div>
 
@@ -268,31 +282,35 @@
           </div>
           <div class="dymo-field dymo-field--model">
             <div class="field-label">DYMO Modell</div>
-            <select id="dymoModelSelect">
-              <option value="auto">Auto</option>
-              <option value="550">550</option>
-              <option value="450">450</option>
-            </select>
+            <div class="select-glow">
+              <select id="dymoModelSelect">
+                <option value="auto">Auto</option>
+                <option value="550">550</option>
+                <option value="450">450</option>
+              </select>
+            </div>
           </div>
           <div class="dymo-field dymo-field--qty">
             <div class="field-label">Stückzahl</div>
             <div class="qty-stepper qty-stepper--dymo">
-              <button type="button" class="qty-btn" onclick="stepQty('dymoCount',-1)">−</button>
+              <button type="button" class="qty-btn btn-glow" onclick="stepQty('dymoCount',-1)">−</button>
               <input type="number" id="dymoCount" placeholder="Menge" value="1" min="0">
-              <button type="button" class="qty-btn" onclick="stepQty('dymoCount',1)">+</button>
+              <button type="button" class="qty-btn btn-glow" onclick="stepQty('dymoCount',1)">+</button>
             </div>
           </div>
         </div>
         <div class="dymo-printer-row">
           <div class="dymo-field dymo-field--printer">
             <div class="field-label">DYMO Drucker</div>
-            <select id="dymoPrinterSelect">
-              <option value="">DYMO Connect wird geladen…</option>
-            </select>
+            <div class="select-glow">
+              <select id="dymoPrinterSelect">
+                <option value="">DYMO Connect wird geladen…</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="dymo-print-wrap">
-          <button type="button" class="btn btn-blue" onclick="printDymo()">🖨️ Drucken</button>
+          <button type="button" class="btn btn-blue btn-glow" onclick="printDymo()">🖨️ Drucken</button>
         </div>
       </div>
 
@@ -301,9 +319,11 @@
         <div class="dymo-fields">
           <div class="dymo-field">
             <div class="field-label">Drucker für Werkstattauftrag</div>
-            <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(234,88,12,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
-              <option value="">Bridge nicht verbunden</option>
-            </select>
+            <div class="select-glow">
+              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(234,88,12,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+                <option value="">Bridge nicht verbunden</option>
+              </select>
+            </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;">
             <span id="bridgeStatusDot" style="width:10px;height:10px;border-radius:50%;background:#f85149;display:inline-block;"></span>
@@ -328,7 +348,7 @@
       </div>
 
       <div class="tools-panel secondary">
-        <button class="btn btn-carol" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
+        <button class="btn btn-carol btn-glow" id="btnCarol" onclick="fireCarol()" disabled>🚀 AUFTRAG BEENDEN & CAROL STARTEN</button>
       </div>
     </div>
   </div>
@@ -568,7 +588,7 @@
       <div class="reifen-scan-panel" id="reifenScanPanel" style="display:none;"></div>
       <div class="reifen-batch" id="reifenBatchPanel" style="display:none;">
         <div class="reifen-batch-head">
-          <span class="reifen-batch-title">📦 Sammel-Scan <span id="reifenBatchCount">(0)</span></span>
+          <span class="reifen-batch-title">📦 <span id="reifenBatchTitleLabel">Sammel-Liste</span> <span id="reifenBatchCount">(0)</span></span>
           <button type="button" class="reifen-batch-clear" onclick="clearReifenBatch()">Liste leeren</button>
         </div>
         <div class="reifen-batch-list" id="reifenBatchList"></div>
@@ -671,6 +691,17 @@
     </div>
     <div class="verlauf-stock" id="kommentarVerlaufStock"></div>
     <div class="verlauf-list" id="kommentarVerlaufList"></div>
+  </div>
+</div>
+
+<div class="reifen-confirm" id="wmsShortcutsModal">
+  <div class="reifen-confirm-dialog verlauf-dialog">
+    <div class="verlauf-header">
+      <div class="verlauf-title">⌨️ Shortcuts</div>
+      <button type="button" class="reifen-close" onclick="closeWmsShortcutsModal()">Schließen</button>
+    </div>
+    <div class="verlauf-stock">Damit du nicht immer alles zusammenklicken musst.</div>
+    <div class="verlauf-list" id="wmsShortcutsList"></div>
   </div>
 </div>
 
