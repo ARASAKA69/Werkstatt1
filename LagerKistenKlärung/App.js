@@ -561,8 +561,8 @@ function readChecksMap_() {
     if (last < 2) return map;
     var data = sh.getRange(2, 1, last, 11).getValues();
     for (var i = 0; i < data.length; i++) {
-      var cellKey = String(data[i][0] || '').trim();
-      if (!cellKey) continue;
+      var stockId = normalizeStockId_(data[i][1]);
+      if (!stockId) continue;
       var ch = emptyChecks_();
       ch.carol = String(data[i][2]) === '1' || data[i][2] === true || data[i][2] === 1;
       ch.carolBy = String(data[i][3] || '').trim();
@@ -574,21 +574,21 @@ function readChecksMap_() {
       ch.mailBy = String(data[i][9] || '').trim();
       ch.mailAt = String(data[i][10] || '').trim();
       countChecks_(ch);
-      map[cellKey] = ch;
+      map[stockId] = ch;
     }
   } catch (e) {}
   return map;
 }
 
-function pruneChecks_(activeCellKeys) {
+function pruneChecks_(activeStockIds) {
   try {
     var sh = getChecksSheet_();
     var last = sh.getLastRow();
     if (last < 2) return;
-    var data = sh.getRange(2, 1, last, 1).getValues();
+    var data = sh.getRange(2, 1, last, 2).getValues();
     for (var i = data.length - 1; i >= 0; i--) {
-      var ck = String(data[i][0] || '').trim();
-      if (!ck || !activeCellKeys[ck]) sh.deleteRow(i + 2);
+      var sid = normalizeStockId_(data[i][1]);
+      if (!sid || !activeStockIds[sid]) sh.deleteRow(i + 2);
     }
   } catch (e) {}
 }
@@ -630,29 +630,16 @@ function readAllComments_() {
   return list;
 }
 
-function commentsForStock_(all, stockId, cellKey) {
+function commentsForStock_(all, stockId) {
   stockId = normalizeStockId_(stockId);
-  cellKey = String(cellKey || '');
   var out = [];
   for (var i = 0; i < all.length; i++) {
-    var c = all[i];
-    if (c.stockId === stockId) {
-      out.push(c);
-      continue;
-    }
-    if (cellKey && c.cellKey === cellKey) out.push(c);
+    if (all[i].stockId === stockId) out.push(all[i]);
   }
-  var seen = {};
-  var uniq = [];
-  for (var u = 0; u < out.length; u++) {
-    if (seen[out[u].id]) continue;
-    seen[out[u].id] = true;
-    uniq.push(out[u]);
-  }
-  uniq.sort(function(a, b) {
+  out.sort(function(a, b) {
     return String(b.createdAt).localeCompare(String(a.createdAt));
   });
-  return uniq;
+  return out;
 }
 
 function primaryFromComments_(comments) {
@@ -664,21 +651,85 @@ function primaryFromComments_(comments) {
   return comments[0];
 }
 
-function pruneToolNotes_(activeCellKeys, activeStockIds) {
+function pruneToolNotes_(activeStockIds) {
   try {
     var sh = getNotesSheet_();
     var last = sh.getLastRow();
     if (last < 2) return;
     var data = sh.getRange(2, 1, last, 3).getValues();
+    var staleCells = {};
     for (var i = data.length - 1; i >= 0; i--) {
       var sid = normalizeStockId_(data[i][1]);
+      if (sid && activeStockIds[sid]) continue;
       var ck = String(data[i][2] || '').trim();
-      var keep = false;
-      if (ck && activeCellKeys[ck]) keep = true;
-      if (sid && activeStockIds[sid]) keep = true;
-      if (!keep) sh.deleteRow(i + 2);
+      if (ck) staleCells[ck] = true;
+      sh.deleteRow(i + 2);
+    }
+    var keys = Object.keys(staleCells);
+    if (keys.length && SYNC_STATUS_COLOR_TO_SHEET) {
+      var stillUsed = {};
+      var remaining = readAllComments_();
+      for (var r = 0; r < remaining.length; r++) {
+        if (remaining[r].cellKey) stillUsed[remaining[r].cellKey] = true;
+      }
+      for (var k = 0; k < keys.length; k++) {
+        if (stillUsed[keys[k]]) continue;
+        var pos = parseCellKey_(keys[k]);
+        if (!pos) continue;
+        try { getLagerSheet_().getRange(pos.row, pos.col).setBackground(null); } catch (eBg) {}
+      }
     }
   } catch (e) {}
+}
+
+function syncStockPositions_(stockCellMap) {
+  var moved = [];
+  var seen = {};
+  try {
+    var sh = getNotesSheet_();
+    var last = sh.getLastRow();
+    if (last >= 2) {
+      var data = sh.getRange(2, 1, last, 3).getValues();
+      for (var i = 0; i < data.length; i++) {
+        var sid = normalizeStockId_(data[i][1]);
+        var oldCk = String(data[i][2] || '').trim();
+        var newCk = stockCellMap[sid];
+        if (!sid || !newCk || !oldCk || oldCk === newCk) continue;
+        sh.getRange(i + 2, 3).setValue(newCk);
+        if (!seen[sid]) {
+          seen[sid] = true;
+          moved.push({ stockId: sid, oldCellKey: oldCk, newCellKey: newCk });
+        }
+      }
+    }
+  } catch (e) {}
+  try {
+    var csh = getChecksSheet_();
+    var clast = csh.getLastRow();
+    if (clast >= 2) {
+      var cdata = csh.getRange(2, 1, clast, 2).getValues();
+      for (var j = 0; j < cdata.length; j++) {
+        var csid = normalizeStockId_(cdata[j][1]);
+        var coldCk = String(cdata[j][0] || '').trim();
+        var cnewCk = stockCellMap[csid];
+        if (!csid || !cnewCk || !coldCk || coldCk === cnewCk) continue;
+        csh.getRange(j + 2, 1).setValue(cnewCk);
+      }
+    }
+  } catch (e2) {}
+  if (moved.length && SYNC_STATUS_COLOR_TO_SHEET) {
+    var allComments = readAllComments_();
+    for (var m = 0; m < moved.length; m++) {
+      var mv = moved[m];
+      var oldPos = parseCellKey_(mv.oldCellKey);
+      if (oldPos) {
+        try { getLagerSheet_().getRange(oldPos.row, oldPos.col).setBackground(null); } catch (eBg) {}
+      }
+      var comments = commentsForStock_(allComments, mv.stockId);
+      var primary = primaryFromComments_(comments);
+      syncSheetColor_(mv.newCellKey, primary ? primary.color : 'none');
+    }
+  }
 }
 
 function isCacheStale_(cache) {
@@ -768,7 +819,7 @@ function ensureCacheTrigger_() {
   for (var i = 0; i < triggers.length; i++) {
     if (triggers[i].getHandlerFunction() === 'rebuildKlärungCache') return;
   }
-  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(1).create();
 }
 
 function installCacheTrigger() {
@@ -778,7 +829,7 @@ function installCacheTrigger() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(10).create();
+  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(1).create();
   var res = rebuildKlärungCache();
   SpreadsheetApp.getUi().alert('Cache-Trigger aktiv.\n' + (res.items ? res.items.length : 0) + ' Kisten aus LAGER.');
 }
@@ -861,23 +912,28 @@ function rebuildKlärungCache() {
   var builtAtMs = Date.now();
   var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
   var grid = parseLagerGrid_();
+
+  var stockCellMap = {};
+  for (var s = 0; s < grid.items.length; s++) {
+    stockCellMap[grid.items[s].stockId] = grid.items[s].cellKey;
+  }
+  syncStockPositions_(stockCellMap);
+
   var allComments = readAllComments_();
   var checksMap = readChecksMap_();
   var refurbMap = buildRefurbMap_();
   var nbMap = buildNachbestellMap_();
   var items = [];
   var details = {};
-  var activeCells = {};
   var activeStocks = {};
 
   for (var i = 0; i < grid.items.length; i++) {
     var g = grid.items[i];
     var stockId = g.stockId;
     var cellKey = g.cellKey;
-    activeCells[cellKey] = true;
     activeStocks[stockId] = true;
 
-    var comments = commentsForStock_(allComments, stockId, cellKey);
+    var comments = commentsForStock_(allComments, stockId);
     var primary = primaryFromComments_(comments);
     var toolStatus = primary ? colorLabel_(primary.color) : '';
     var sheetStatus = statusFromSheetKat_(g.sheetKategorie);
@@ -887,7 +943,7 @@ function rebuildKlärungCache() {
     var yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
     var refurb = refurbMap[stockId] || { found: false };
     var nbs = nbMap[stockId] || [];
-    var checks = countChecks_(checksMap[cellKey] ? JSON.parse(JSON.stringify(checksMap[cellKey])) : emptyChecks_());
+    var checks = countChecks_(checksMap[stockId] ? JSON.parse(JSON.stringify(checksMap[stockId])) : emptyChecks_());
 
     var kisten = {
       row: g.sheetRow,
@@ -941,8 +997,8 @@ function rebuildKlärungCache() {
     };
   }
 
-  pruneToolNotes_(activeCells, activeStocks);
-  pruneChecks_(activeCells);
+  pruneToolNotes_(activeStocks);
+  pruneChecks_(activeStocks);
 
   var payload = {
     builtAt: builtAt,
@@ -1119,21 +1175,17 @@ function filterItems_(items, filter) {
 function applyLiveCommentsToItems_(items) {
   try {
     var all = readAllComments_();
-    var byCell = {};
     var byStock = {};
     for (var i = 0; i < all.length; i++) {
       var c = all[i];
-      if (c.cellKey) {
-        if (!byCell[c.cellKey]) byCell[c.cellKey] = [];
-        byCell[c.cellKey].push(c);
-      }
       if (!byStock[c.stockId]) byStock[c.stockId] = [];
       byStock[c.stockId].push(c);
     }
     for (var j = 0; j < items.length; j++) {
       var it = items[j];
-      var comments = byCell[it.cellKey] || byStock[it.stockId] || [];
-      comments = commentsForStock_(comments, it.stockId, it.cellKey);
+      var comments = (byStock[it.stockId] || []).slice().sort(function(a, b) {
+        return String(b.createdAt).localeCompare(String(a.createdAt));
+      });
       var primary = primaryFromComments_(comments);
       var sheetStatus = statusFromSheetKat_(it.sheetKategorie || '');
       if (primary) {
@@ -1382,7 +1434,7 @@ function refreshCellInCache_(cellKey, stockId) {
       return;
     }
     var all = readAllComments_();
-    var comments = commentsForStock_(all, stockId, cellKey);
+    var comments = commentsForStock_(all, stockId);
     var primary = primaryFromComments_(comments);
     var liveKat = readLiveSheetKat_(cellKey);
     var toolStatus = primary ? colorLabel_(primary.color) : '';
@@ -1529,7 +1581,7 @@ function editStockComment(commentId, text, color) {
       sh.getRange(row, 4).setValue(nextColor);
       sh.getRange(row, 5).setValue(text);
       SpreadsheetApp.flush();
-      var left = commentsForStock_(readAllComments_(), stockId, cellKey);
+      var left = commentsForStock_(readAllComments_(), stockId);
       var primary = primaryFromComments_(left);
       syncSheetColor_(cellKey, primary ? primary.color : '');
       SpreadsheetApp.flush();
@@ -1584,7 +1636,7 @@ function deleteStockComment(commentId) {
       var cellKey = String(data[i][2] || '').trim();
       sh.deleteRow(i + 2);
       SpreadsheetApp.flush();
-      var left = commentsForStock_(readAllComments_(), stockId, cellKey);
+      var left = commentsForStock_(readAllComments_(), stockId);
       var primary = primaryFromComments_(left);
       syncSheetColor_(cellKey, primary ? primary.color : '');
       SpreadsheetApp.flush();
@@ -1599,7 +1651,7 @@ function deleteStockComment(commentId) {
 
 function getStockComments(cellKey, stockId) {
   try {
-    var comments = commentsForStock_(readAllComments_(), stockId, cellKey);
+    var comments = commentsForStock_(readAllComments_(), stockId);
     return { success: true, comments: comments };
   } catch (err) {
     return { success: false, message: String(err.message || err), comments: [] };
@@ -1621,7 +1673,7 @@ function setCheckStep(cellKey, stockId, step, checked) {
     if (last >= 2) {
       var keys = sh.getRange(2, 1, last, 11).getValues();
       for (var i = 0; i < keys.length; i++) {
-        if (String(keys[i][0] || '').trim() !== cellKey) continue;
+        if (normalizeStockId_(keys[i][1]) !== stockId) continue;
         hit = i + 2;
         row.carol = String(keys[i][2]) === '1' || keys[i][2] === true || keys[i][2] === 1;
         row.carolBy = String(keys[i][3] || '');
@@ -1656,18 +1708,27 @@ function setCheckStep(cellKey, stockId, step, checked) {
 
     try {
       var cache = readCache_();
-      if (cache && cache.details && cache.details[cellKey]) {
-        cache.details[cellKey].checks = row;
-        if (cache.details[cellKey].kisten) cache.details[cellKey].kisten.checks = row;
-        cache.details[cellKey].rev = Date.now();
-        for (var j = 0; j < cache.items.length; j++) {
-          if (cache.items[j].cellKey !== cellKey) continue;
-          cache.items[j].checksDone = row.done;
-          cache.items[j].checksTotal = CHECK_TOTAL;
-          cache.items[j].done = row.done >= CHECK_TOTAL;
-          break;
+      if (cache && cache.details) {
+        var d = cache.details[cellKey] && cache.details[cellKey].stockId === stockId ? cache.details[cellKey] : null;
+        if (!d) {
+          var dkeys = Object.keys(cache.details);
+          for (var dk = 0; dk < dkeys.length; dk++) {
+            if (cache.details[dkeys[dk]].stockId === stockId) { d = cache.details[dkeys[dk]]; break; }
+          }
         }
-        writeCachePayload_(cache);
+        if (d) {
+          d.checks = row;
+          if (d.kisten) d.kisten.checks = row;
+          d.rev = Date.now();
+          for (var j = 0; j < cache.items.length; j++) {
+            if (cache.items[j].stockId !== stockId) continue;
+            cache.items[j].checksDone = row.done;
+            cache.items[j].checksTotal = CHECK_TOTAL;
+            cache.items[j].done = row.done >= CHECK_TOTAL;
+            break;
+          }
+          writeCachePayload_(cache);
+        }
       }
     } catch (e2) {}
 
