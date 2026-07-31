@@ -19,6 +19,7 @@
   var reifenExpectedSizeRaw = "";
   var reifenExpectedSizes = [];
   var reifenCurrentDelivered = "";
+  var reifenActiveSizeCanon = "";
   var reifenSkipQtyCheck = false;
   var reifenBatch = { date: "", items: [] };
   var pendingReifenSizeSearch = "";
@@ -3504,6 +3505,7 @@
     reifenExpectedSizeRaw = "";
     reifenExpectedSizes = [];
     reifenCurrentDelivered = "";
+    reifenActiveSizeCanon = "";
     setReifenActionState(false);
     hideReifenInfo();
     closeReifenAutocomplete();
@@ -4289,14 +4291,22 @@
     try { localStorage.setItem('arasaka_reifen_batch', JSON.stringify(reifenBatch)); } catch (e) {}
   }
 
-  function findReifenBatchItem(stockId, tab) {
+  function findReifenBatchItem(stockId, tab, sizeCanon) {
     if (!reifenBatch || !reifenBatch.items) return null;
     var sid = normalizeStockIdJs(stockId);
+    var filterBySize = sizeCanon !== undefined && sizeCanon !== null;
+    var fallback = null;
     for (var i = 0; i < reifenBatch.items.length; i++) {
       var it = reifenBatch.items[i];
-      if (normalizeStockIdJs(it.stockId) === sid && (!tab || it.tab === tab)) return it;
+      if (normalizeStockIdJs(it.stockId) !== sid) continue;
+      if (tab && it.tab !== tab) continue;
+      if (filterBySize) {
+        if ((it.sizeCanon || "") === sizeCanon) return it;
+        continue;
+      }
+      if (!fallback) fallback = it;
     }
-    return null;
+    return fallback;
   }
 
   function normalizeReifenMengeExpected(val) {
@@ -4314,7 +4324,7 @@
 
   function upsertReifenBatchItem(data) {
     if (!reifenBatch || !reifenBatch.items) loadReifenBatch();
-    var item = findReifenBatchItem(data.stockId, data.tab);
+    var item = findReifenBatchItem(data.stockId, data.tab, data.sizeCanon);
     if (item) {
       if (data.groesseRaw && !item.groesseRaw) item.groesseRaw = data.groesseRaw;
       if (data.sizeCanon && !item.sizeCanon) item.sizeCanon = data.sizeCanon;
@@ -4347,26 +4357,28 @@
     return item;
   }
 
-  function removeReifenBatchItem(stockId, tab) {
+  function removeReifenBatchItem(stockId, tab, sizeCanon) {
     if (!reifenBatch || !reifenBatch.items) return;
     var sid = normalizeStockIdJs(stockId);
+    var filterBySize = sizeCanon !== undefined && sizeCanon !== null;
     reifenBatch.items = reifenBatch.items.filter(function(it) {
-      return !(normalizeStockIdJs(it.stockId) === sid && (!tab || it.tab === tab));
+      var matches = normalizeStockIdJs(it.stockId) === sid && (!tab || it.tab === tab) && (!filterBySize || (it.sizeCanon || "") === sizeCanon);
+      return !matches;
     });
-    if (normalizeStockIdJs(currentVerifiedReifenStock) === sid && (!tab || currentReifenTab === tab)) {
+    if (normalizeStockIdJs(currentVerifiedReifenStock) === sid && (!tab || currentReifenTab === tab) && (!filterBySize || reifenActiveSizeCanon === sizeCanon)) {
       clearReifenScanInputForNext();
     }
     saveReifenBatch();
     renderReifenBatchList();
   }
 
-  function removeReifenBatchItemFromList(stockId, tab, ev) {
+  function removeReifenBatchItemFromList(stockId, tab, sizeCanon, ev) {
     if (ev) {
       ev.preventDefault();
       ev.stopPropagation();
     }
     if (!window.confirm("'" + stockId + "' aus Sammel-Scan entfernen?")) return;
-    removeReifenBatchItem(stockId, tab);
+    removeReifenBatchItem(stockId, tab, sizeCanon);
     setReifenStatus("'" + stockId + "' aus Sammel-Scan entfernt.", "#8b949e");
   }
 
@@ -4440,18 +4452,18 @@
         pkSpan.textContent = pk;
         btn.appendChild(pkSpan);
       }
-      (function(stockId, tab) {
-        btn.addEventListener('click', function() { workDownReifenBatchItem(stockId, tab); });
-      })(it.stockId, it.tab);
+      (function(stockId, tab, sizeCanon) {
+        btn.addEventListener('click', function() { workDownReifenBatchItem(stockId, tab, sizeCanon); });
+      })(it.stockId, it.tab, it.sizeCanon);
       var delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'reifen-batch-del';
       delBtn.title = 'Entfernen';
       delBtn.setAttribute('aria-label', 'Entfernen');
       delBtn.textContent = '×';
-      (function(stockId, tab) {
-        delBtn.addEventListener('click', function(ev) { removeReifenBatchItemFromList(stockId, tab, ev); });
-      })(it.stockId, it.tab);
+      (function(stockId, tab, sizeCanon) {
+        delBtn.addEventListener('click', function(ev) { removeReifenBatchItemFromList(stockId, tab, sizeCanon, ev); });
+      })(it.stockId, it.tab, it.sizeCanon);
       row.appendChild(btn);
       row.appendChild(delBtn);
       list.appendChild(row);
@@ -4459,7 +4471,7 @@
     panel.style.display = 'flex';
   }
 
-  function applyReifenSelection(tab, stockId, groesseRaw, deliveredSize) {
+  function applyReifenSelection(tab, stockId, groesseRaw, deliveredSize, sizeCanon) {
     var select = document.getElementById('reifenTabSelect');
     if (select) {
       var hasOption = false;
@@ -4486,16 +4498,17 @@
       var lbl = reifenTireLabel(rows[i].groesse, rows[i].lastindex, rows[i].gwindex);
       if (lbl && labels.indexOf(lbl) === -1) labels.push(lbl);
     }
-    reifenExpectedSizeRaw = labels.length ? labels.join('   /   ') : (groesseRaw || "");
-    reifenExpectedSize = reifenExpectedSizes.length ? reifenExpectedSizes[0] : canonicalTireSize(groesseRaw);
+    reifenActiveSizeCanon = sizeCanon || canonicalTireSize(groesseRaw) || (reifenExpectedSizes.length ? reifenExpectedSizes[0] : "");
+    reifenExpectedSizeRaw = groesseRaw || (labels.length ? labels.join('   /   ') : "");
+    reifenExpectedSize = reifenActiveSizeCanon;
     reifenCurrentDelivered = deliveredSize || "";
     setReifenActionState(true);
     hideReifenScanChoices();
     renderReifenScanPanel();
   }
 
-  function workDownReifenBatchItem(stockId, tab) {
-    var item = findReifenBatchItem(stockId, tab);
+  function workDownReifenBatchItem(stockId, tab, sizeCanon) {
+    var item = findReifenBatchItem(stockId, tab, sizeCanon);
     if (!item) return;
     if (!reifenTyresComplete(item)) {
       var expected = normalizeReifenMengeExpected(item.mengeExpected);
@@ -4504,7 +4517,7 @@
       reifenStockInput.focus();
       return;
     }
-    applyReifenSelection(item.tab, item.stockId, item.groesseRaw, item.deliveredSize || '');
+    applyReifenSelection(item.tab, item.stockId, item.groesseRaw, item.deliveredSize || '', item.sizeCanon);
     setReifenStatus("Bearbeite '" + item.stockId + "' aus Sammel-Scan. DA / FEHLT drücken.", "#3FA0DB");
   }
 
@@ -4579,6 +4592,7 @@
     reifenExpectedSizeRaw = "";
     reifenExpectedSizes = [];
     reifenCurrentDelivered = "";
+    reifenActiveSizeCanon = "";
     setReifenActionState(false);
     hideReifenInfo();
     renderReifenScanPanel();
@@ -4608,7 +4622,8 @@
     if (!stockId) { setReifenStatus("❌ Bitte eine Stock-ID scannen.", "#f85149"); clearReifenScanInputForNext(); return; }
     var res = findReifenStockAcrossTabs(stockId);
     if (res.unbooked.length === 1) {
-      selectReifenMatch(res.unbooked[0].tab, stockId, res.unbooked[0].entry, true);
+      var scanTarget = pickReifenScanTargetEntry(res.unbooked[0].entries, res.unbooked[0].tab, stockId) || res.unbooked[0].entry;
+      selectReifenMatch(res.unbooked[0].tab, stockId, scanTarget, true);
     } else if (res.unbooked.length > 1) {
       renderReifenScanChoices(stockId, res.unbooked);
       setReifenStatus("⚠️ '" + stockId + "' in mehreren Blättern offen – bitte wählen.", "#F27420");
@@ -4631,16 +4646,17 @@
     var lastindex = entry && entry.lastindex ? String(entry.lastindex) : "";
     var gwindex = entry && entry.gwindex ? String(entry.gwindex) : "";
     var mengeExpected = entry && entry.menge !== undefined ? entry.menge : 0;
+    var sizeCanon = canonicalTireSize(groesseRaw);
     if (useBatch) {
-      var existing = findReifenBatchItem(stockId, tab);
+      var existing = findReifenBatchItem(stockId, tab, sizeCanon);
       if (existing && reifenTyresComplete(existing)) {
-        setReifenStatus("ℹ️ '" + stockId + "' ist bereits in der Liste (" + normalizeReifenMengeExpected(existing.mengeExpected) + "/" + normalizeReifenMengeExpected(existing.mengeExpected) + "). In der Liste antippen zum Abarbeiten.", "#8b949e");
+        setReifenStatus("ℹ️ '" + stockId + "' (" + reifenTireLabel(groesseRaw, lastindex, gwindex) + ") ist bereits in der Liste (" + normalizeReifenMengeExpected(existing.mengeExpected) + "/" + normalizeReifenMengeExpected(existing.mengeExpected) + "). In der Liste antippen zum Abarbeiten.", "#8b949e");
         clearReifenScanInputForNext();
         return;
       }
       var item = upsertReifenBatchItem({
         stockId: stockId, tab: tab, groesseRaw: groesseRaw, lastindex: lastindex, gwindex: gwindex,
-        sizeCanon: canonicalTireSize(groesseRaw), mengeExpected: mengeExpected,
+        sizeCanon: sizeCanon, mengeExpected: mengeExpected,
         incrementTyre: !fullComplete, fullComplete: !!fullComplete, source: reifenMode
       });
       var expected = normalizeReifenMengeExpected(item.mengeExpected);
@@ -4655,13 +4671,24 @@
       clearReifenScanInputForNext();
       return;
     }
-    applyReifenSelection(tab, stockId, groesseRaw, "");
+    applyReifenSelection(tab, stockId, groesseRaw, "", sizeCanon);
     setReifenStatus("✅ '" + stockId + "' gefunden in '" + tab + "'. Bitte Status auswählen.", "#56d364");
     reifenStockInput.focus();
   }
 
   function selectReifenScanMatch(tab, stockId, entry) {
     selectReifenMatch(tab, stockId, entry, true);
+  }
+
+  function pickReifenScanTargetEntry(entries, tab, stockId) {
+    if (!entries || !entries.length) return null;
+    for (var i = 0; i < entries.length; i++) {
+      var e = entries[i];
+      var sizeCanon = canonicalTireSize(e.groesse);
+      var existing = findReifenBatchItem(stockId, tab, sizeCanon);
+      if (!existing || !reifenTyresComplete(existing)) return e;
+    }
+    return entries[0];
   }
 
   function renderReifenScanChoices(stockId, list) {
@@ -4674,9 +4701,12 @@
       btn.type = 'button';
       btn.className = 'reifen-scan-choice-btn';
       btn.textContent = list[i].tab;
-      (function(tab, entry) {
-        btn.addEventListener('click', function() { selectReifenMatch(tab, stockId, entry, true, reifenMode !== 'scan'); });
-      })(list[i].tab, list[i].entry);
+      (function(tab, entries) {
+        btn.addEventListener('click', function() {
+          var target = pickReifenScanTargetEntry(entries, tab, stockId) || entries[0];
+          selectReifenMatch(tab, stockId, target, true, reifenMode !== 'scan');
+        });
+      })(list[i].tab, list[i].entries || [list[i].entry]);
       box.appendChild(btn);
     }
     box.style.display = 'flex';
@@ -4688,23 +4718,40 @@
   }
 
   function handleReifenQrScan(qr) {
-    reifenCurrentDelivered = qr.size || reifenCurrentDelivered;
     if (!currentVerifiedReifenStock) {
+      reifenCurrentDelivered = qr.size || reifenCurrentDelivered;
       setReifenStatus("ℹ️ Erst Stock-ID (Barcode) scannen, dann QR (QR: " + (qr.size || '?') + ").", "#F27420");
       renderReifenScanPanel();
       reifenStockInput.focus();
       return;
     }
-    var item = findReifenBatchItem(currentVerifiedReifenStock, currentReifenTab);
+    var expectedList = reifenExpectedSizes.length ? reifenExpectedSizes : (reifenExpectedSize ? [reifenExpectedSize] : []);
+    var targetSizeCanon = (qr.sizeCanon && expectedList.indexOf(qr.sizeCanon) !== -1) ? qr.sizeCanon : reifenActiveSizeCanon;
+    var item = findReifenBatchItem(currentVerifiedReifenStock, currentReifenTab, targetSizeCanon);
     if (!item) {
       var rows = reifenUnbookedRowsForStock(currentVerifiedReifenStock, currentReifenTab);
-      var entry = rows.length ? rows[0] : null;
+      var entry = null;
+      if (targetSizeCanon) {
+        for (var r = 0; r < rows.length; r++) {
+          if (canonicalTireSize(rows[r].groesse) === targetSizeCanon) { entry = rows[r]; break; }
+        }
+      }
+      if (!entry) entry = rows.length ? rows[0] : null;
       item = upsertReifenBatchItem({
         stockId: currentVerifiedReifenStock, tab: currentReifenTab,
-        groesseRaw: reifenExpectedSizeRaw, sizeCanon: reifenExpectedSize,
-        mengeExpected: entry && entry.menge !== undefined ? entry.menge : 2
+        groesseRaw: entry ? reifenTireLabel(entry.groesse, entry.lastindex, entry.gwindex) : reifenExpectedSizeRaw,
+        sizeCanon: entry ? canonicalTireSize(entry.groesse) : (targetSizeCanon || reifenExpectedSize),
+        lastindex: entry ? entry.lastindex : "", gwindex: entry ? entry.gwindex : "",
+        mengeExpected: entry && entry.menge !== undefined ? entry.menge : 2,
+        source: reifenMode
       });
     }
+    if (item.sizeCanon && item.sizeCanon !== reifenActiveSizeCanon) {
+      reifenActiveSizeCanon = item.sizeCanon;
+      reifenExpectedSize = item.sizeCanon;
+      reifenExpectedSizeRaw = item.groesseRaw || reifenExpectedSizeRaw;
+    }
+    reifenCurrentDelivered = qr.size || reifenCurrentDelivered;
     if (qr.paketTotal) item.paketTotal = Math.max(item.paketTotal || 0, qr.paketTotal);
     if (qr.paketIndex) {
       item.packetsSeen = item.packetsSeen || [];
@@ -4714,7 +4761,6 @@
     if (qr.size) item.deliveredSize = qr.size;
     var msgs = [];
     var warn = false;
-    var expectedList = reifenExpectedSizes.length ? reifenExpectedSizes : (reifenExpectedSize ? [reifenExpectedSize] : []);
     if (qr.sizeCanon && expectedList.length) {
       item.sizeMismatch = (expectedList.indexOf(qr.sizeCanon) === -1);
       if (item.sizeMismatch) { warn = true; msgs.push("⚠️ Größe weicht ab! Geliefert " + qr.sizeCanon + " ≠ erwartet " + expectedList.join(" / ")); }
@@ -4737,7 +4783,7 @@
   function renderReifenScanPanel() {
     var panel = document.getElementById('reifenScanPanel');
     if (!panel) return;
-    var item = currentVerifiedReifenStock ? findReifenBatchItem(currentVerifiedReifenStock, currentReifenTab) : null;
+    var item = currentVerifiedReifenStock ? findReifenBatchItem(currentVerifiedReifenStock, currentReifenTab, reifenActiveSizeCanon) : null;
     var html = '';
     if (reifenCurrentDelivered) {
       var mismatchCls = (item && item.sizeMismatch) ? ' is-warn' : (reifenExpectedSize ? ' is-ok' : '');
@@ -4769,7 +4815,7 @@
   }
 
   function reifenTyreCountStatusForStock(stockId) {
-    var item = findReifenBatchItem(stockId, currentReifenTab) || findReifenBatchItem(stockId, null);
+    var item = findReifenBatchItem(stockId, currentReifenTab, reifenActiveSizeCanon) || findReifenBatchItem(stockId, currentReifenTab) || findReifenBatchItem(stockId, null);
     if (!item) return null;
     return {
       count: parseInt(item.tyresScanned, 10) || 0,
@@ -4778,7 +4824,7 @@
   }
 
   function reifenPacketStatusForStock(stockId) {
-    var item = findReifenBatchItem(stockId, currentReifenTab) || findReifenBatchItem(stockId, null);
+    var item = findReifenBatchItem(stockId, currentReifenTab, reifenActiveSizeCanon) || findReifenBatchItem(stockId, currentReifenTab) || findReifenBatchItem(stockId, null);
     if (!item || !item.paketTotal) return null;
     return { count: (item.packetsSeen || []).length, total: item.paketTotal };
   }
@@ -4869,7 +4915,8 @@
     if(!stockId) return setReifenStatus("❌ Bitte eine Stock-ID eingeben.", "#f85149");
     var res = findReifenStockAcrossTabs(stockId);
     if (res.unbooked.length === 1) {
-      selectReifenMatch(res.unbooked[0].tab, stockId, res.unbooked[0].entry, true, true);
+      var scanTarget = pickReifenScanTargetEntry(res.unbooked[0].entries, res.unbooked[0].tab, stockId) || res.unbooked[0].entry;
+      selectReifenMatch(res.unbooked[0].tab, stockId, scanTarget, true, true);
     } else if (res.unbooked.length > 1) {
       renderReifenScanChoices(stockId, res.unbooked);
       setReifenStatus("⚠️ '" + stockId + "' in mehreren Blättern offen – bitte wählen.", "#F27420");
@@ -4909,57 +4956,72 @@
         return;
       }
     }
+    var activeSizeCanon = reifenActiveSizeCanon;
+    var activeItem = findReifenBatchItem(stockId, tab, activeSizeCanon) || findReifenBatchItem(stockId, tab);
+    var sizeHint = (activeItem && activeItem.groesseRaw) ? activeItem.groesseRaw : (reifenExpectedSizeRaw || reifenCurrentDelivered || "");
     setReifenActionState(false);
     setReifenStatus((isDelivered ? "Buche Reifen als DA…" : "Buche Reifen als FEHLT…"), "#F27420", true);
     google.script.run
       .withSuccessHandler(function(res) {
-        if(!res.success) {
-          setReifenStatus("❌ " + res.message, "#f85149");
-          return;
-        }
-        currentReifenResult = res;
-        showReifenInfo(res);
-        var finalMessage = "✅ " + res.message;
-        var bit = findReifenBatchItem(res.stockId || stockId, tab);
-        if (bit) {
+        try {
+          if(!res.success) {
+            setReifenStatus("❌ " + res.message, "#f85149");
+            setReifenActionState(true);
+            return;
+          }
+          currentReifenResult = res;
+          showReifenInfo(res);
+          var finalMessage = "✅ " + res.message;
+          var bookedSizeCanon = canonicalTireSize(res.tireInfo) || activeSizeCanon;
+          var bit = findReifenBatchItem(res.stockId || stockId, tab, bookedSizeCanon) || activeItem;
+          var bitSource = bit ? bit.source : reifenMode;
+          if (bit) removeReifenBatchItem(res.stockId || stockId, tab, bit.sizeCanon);
           if (res.remainingUnbooked && res.remainingUnbooked > 0) {
-            bit.groesseRaw = res.remainingSize || "";
-            bit.lastindex = res.remainingLast || "";
-            bit.gwindex = res.remainingGw || "";
-            bit.sizeCanon = canonicalTireSize(res.remainingSize || "");
-            bit.deliveredSize = "";
-            bit.sizeMismatch = false;
-            bit.paketTotal = 0;
-            bit.packetsSeen = [];
-            bit.mengeExpected = normalizeReifenMengeExpected(res.remainingMenge || res.menge || bit.mengeExpected);
-            bit.tyresScanned = (bit.source === 'lieferschein') ? bit.mengeExpected : 0;
-            saveReifenBatch();
-            renderReifenBatchList();
+            var remainingSizeCanon = canonicalTireSize(res.remainingSize || "");
+            var preExisting = findReifenBatchItem(res.stockId || stockId, tab, remainingSizeCanon);
+            var remainingItem = upsertReifenBatchItem({
+              stockId: res.stockId || stockId, tab: tab,
+              groesseRaw: res.remainingSize || "", lastindex: res.remainingLast || "", gwindex: res.remainingGw || "",
+              sizeCanon: remainingSizeCanon,
+              mengeExpected: normalizeReifenMengeExpected(res.remainingMenge || res.menge),
+              source: bitSource
+            });
+            if (!preExisting) {
+              remainingItem.tyresScanned = (remainingItem.source === 'lieferschein') ? remainingItem.mengeExpected : 0;
+              remainingItem.deliveredSize = "";
+              remainingItem.sizeMismatch = false;
+              remainingItem.paketTotal = 0;
+              remainingItem.packetsSeen = [];
+              saveReifenBatch();
+              renderReifenBatchList();
+            }
             finalMessage += " ⚠️ Noch " + res.remainingUnbooked + " weitere Position für " + (res.stockId || stockId) + (res.remainingSize ? " (" + reifenTireLabel(res.remainingSize, res.remainingLast, res.remainingGw) + ")" : "") + ".";
-          } else {
-            removeReifenBatchItem(res.stockId || stockId, tab);
           }
-        }
-        if(isDelivered) {
-          var printResult = printReifenDymoLabels(res.stockId, res.tireInfo, res.menge, res.regal || '');
-          if(printResult.success) {
-            finalMessage += " DYMO Druck gesendet.";
+          if(isDelivered) {
+            var printResult = printReifenDymoLabels(res.stockId, res.tireInfo, res.menge, res.regal || '');
+            if(printResult.success) {
+              finalMessage += " DYMO Druck gesendet.";
+            } else {
+              finalMessage += " DYMO Fehler: " + printResult.message;
+            }
+            document.getElementById('reifenConfirmModal').classList.add('open');
           } else {
-            finalMessage += " DYMO Fehler: " + printResult.message;
+            reifenStockInput.value = "";
+            reifenStockInput.focus();
           }
-          document.getElementById('reifenConfirmModal').classList.add('open');
-        } else {
-          reifenStockInput.value = "";
-          reifenStockInput.focus();
+          setReifenStatus(finalMessage, "#56d364");
+          loadRefurbishmentCache(true);
+          refreshReifenAfterMutation();
+        } catch (ex) {
+          setReifenStatus("❌ Fehler nach Buchung: " + (ex && ex.message ? ex.message : String(ex)), "#f85149");
+          setReifenActionState(true);
         }
-        setReifenStatus(finalMessage, "#56d364");
-        loadRefurbishmentCache(true);
-        refreshReifenAfterMutation();
       })
       .withFailureHandler(function(err) {
-        setReifenStatus("❌ Systemfehler: " + (err.message || String(err)), "#f85149");
+        setReifenStatus("❌ Systemfehler: " + (err && err.message ? err.message : String(err)), "#f85149");
+        setReifenActionState(true);
       })
-      .processReifenStock(tab, stockId, isDelivered, reifenMode === 'scan' ? (reifenCurrentDelivered || "") : "");
+      .processReifenStock(tab, stockId, isDelivered, sizeHint);
   }
 
   function copyReifenValue(element) {
