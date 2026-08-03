@@ -1,5 +1,5 @@
 var CONFIG = {
-  senderEmail: 'francesco.berger@auto1.com',
+  senderEmail: 'info@rv-seng.de',
   recipientEmail: 'francesco.berger@auto1.com',
   recipientEmail2: '',
   stockIdCol: 1,
@@ -243,25 +243,31 @@ function findLatestLieferscheinMessage_(stockId) {
   var query = 'from:(' + CONFIG.senderEmail + ') "' + stockId + '" has:attachment';
   var threads = GmailApp.search(query, 0, 10);
   var stockIdUpper = String(stockId).toUpperCase();
-  var latestAny = null;
-  var latestSubjectMatch = null;
+  var senderLower = CONFIG.senderEmail.toLowerCase();
+  var bestSenderMatch = null;
+  var bestSubjectMatch = null;
 
   for (var t = 0; t < threads.length; t++) {
     var messages = threads[t].getMessages();
     for (var m = 0; m < messages.length; m++) {
       var msg = messages[m];
-      if (!latestAny || msg.getDate().getTime() > latestAny.getDate().getTime()) {
-        latestAny = msg;
+      var fromLower = String(msg.getFrom() || '').toLowerCase();
+      if (fromLower.indexOf(senderLower) === -1) continue;
+      if (!findPdfAttachment_(msg)) continue;
+
+      if (!bestSenderMatch || msg.getDate().getTime() > bestSenderMatch.getDate().getTime()) {
+        bestSenderMatch = msg;
       }
+
       var subject = String(msg.getSubject() || '').toUpperCase();
       if (subject.indexOf(stockIdUpper) === -1) continue;
-      if (!latestSubjectMatch || msg.getDate().getTime() > latestSubjectMatch.getDate().getTime()) {
-        latestSubjectMatch = msg;
+      if (!bestSubjectMatch || msg.getDate().getTime() > bestSubjectMatch.getDate().getTime()) {
+        bestSubjectMatch = msg;
       }
     }
   }
 
-  return latestSubjectMatch || latestAny;
+  return bestSubjectMatch || bestSenderMatch;
 }
 
 function findPdfAttachment_(message) {
@@ -429,8 +435,11 @@ function parseAnzahl_(raw) {
 }
 
 function debugGmailAccount() {
-  Logger.log('Effective user: ' + Session.getEffectiveUser().getEmail());
-  Logger.log('Active user: ' + Session.getActiveUser().getEmail());
+  Logger.log('Autorisiertes Konto (effective user): ' + Session.getEffectiveUser().getEmail());
+  Logger.log('Aktives Konto (active user): ' + Session.getActiveUser().getEmail());
+
+  var labelCheck = GmailApp.search('label:"Reifen Seng"', 0, 3);
+  Logger.log('Treffer mit label:"Reifen Seng": ' + labelCheck.length + ' (sollte > 0 sein, wenn dies das richtige Postfach ist)');
 
   var broad = GmailApp.search('from:' + CONFIG.senderEmail, 0, 5);
   Logger.log('Treffer nur nach Sender (' + CONFIG.senderEmail + '): ' + broad.length);
@@ -439,16 +448,33 @@ function debugGmailAccount() {
     var last = msgs[msgs.length - 1];
     Logger.log('Thread ' + i + ': ' + msgs.length + ' Nachricht(en), letzte: "' + last.getSubject() + '" (' + last.getDate() + ')');
   }
+}
 
-  var withStock = GmailApp.search('from:' + CONFIG.senderEmail + ' "AM11142"', 0, 5);
-  Logger.log('Treffer mit StockID-Filter ("AM11142"): ' + withStock.length);
+function debugStockSearch_(stockId) {
+  Logger.log('=== Diagnose fuer ' + stockId + ' ===');
 
-  var withAttachment = GmailApp.search('from:' + CONFIG.senderEmail + ' "AM11142" has:attachment', 0, 5);
-  Logger.log('Treffer mit StockID + has:attachment: ' + withAttachment.length);
+  var idOnly = GmailApp.search('"' + stockId + '" has:attachment', 0, 5);
+  Logger.log('Nur StockID + has:attachment (ohne Sender-Filter): ' + idOnly.length + ' Thread(s)');
+  for (var i = 0; i < idOnly.length; i++) {
+    var msgs = idOnly[i].getMessages();
+    for (var m = 0; m < msgs.length; m++) {
+      Logger.log('  From: "' + msgs[m].getFrom() + '" | Subject: "' + msgs[m].getSubject() + '" | Datum: ' + msgs[m].getDate());
+    }
+  }
+
+  var withSender = GmailApp.search('from:(' + CONFIG.senderEmail + ') "' + stockId + '"', 0, 5);
+  Logger.log('Sender(' + CONFIG.senderEmail + ') + StockID, ohne attachment-Filter: ' + withSender.length + ' Thread(s)');
+
+  var full = GmailApp.search('from:(' + CONFIG.senderEmail + ') "' + stockId + '" has:attachment', 0, 5);
+  Logger.log('Sender + StockID + has:attachment: ' + full.length + ' Thread(s)');
 }
 
 function testExtractionAM11142() {
   testExtraction('AM11142');
+}
+
+function debugStockSearchXU27308() {
+  debugStockSearch_('XU27308');
 }
 
 function testExtraction(stockId) {
