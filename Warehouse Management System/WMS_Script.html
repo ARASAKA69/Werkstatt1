@@ -1164,8 +1164,8 @@
     var kommentar = String(res && res.currentKommentar != null ? res.currentKommentar : "");
     var regal = String(res && res.currentRegal != null ? res.currentRegal : "").trim();
     var sid = normalizeStockIdJs(stockId || currentStock);
-    setBaselines(kommentar, regal);
     if (normalizeStockIdJs(currentStock) === sid) {
+      setBaselines(kommentar, regal);
       setCommentText(kommentar);
       applyShelfUiFromRegal(regal);
     }
@@ -6589,7 +6589,9 @@
       }
       setStatus(res && res.success ? "✅ " + res.message : "❌ " + ((res && res.message) || "Unbekannter Fehler"), res && res.success ? "#56d364" : "#f85149");
       if (res && res.success) {
-        setBaselines(text, expectedRegal);
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          setBaselines(text, expectedRegal);
+        }
         handleVerlaufSaveSuccess(res);
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
@@ -6677,7 +6679,9 @@
         } else if (!regal) {
           savedRegal = expectedRegal;
         }
-        setBaselines(text, savedRegal);
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          setBaselines(text, savedRegal);
+        }
         handleVerlaufSaveSuccess(res);
         patchRefurbCacheKommentarRegal(stockId, text, savedRegal);
         applyLocalSaveUiIfCurrent(stockId, savedRegal);
@@ -6737,7 +6741,9 @@
         return;
       }
       if(res && res.success) {
-        setBaselines(expectedKommentar, regal);
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          setBaselines(expectedKommentar, regal);
+        }
         setStatus("✅ " + res.message, "#56d364");
         document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
         document.getElementById('searchInput').value = currentStock;
@@ -7065,7 +7071,9 @@
           showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg);
           return;
         }
-        setBaselines(text, carolExpectedRegal);
+        if (normalizeStockIdJs(currentStock) === stockId) {
+          setBaselines(text, carolExpectedRegal);
+        }
         handleVerlaufSaveSuccess(res);
         setStatus("🚀 Setze Tagesliste im Hintergrund…", "#9B59B6");
 

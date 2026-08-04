@@ -21,10 +21,16 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.1.9",
+    date: "04.08.2026",
+    notes:
+      "• False Konflikt meldung sollte endlich behoben sein, bescheid geben falls es nochmal passieren sollte am besten mit Screenshot zu mir danke! "
+  },
+  {
     version: "2.1.8",
     date: "31.07.2026",
     notes:
-      "• WSS da / Gummileiste da senden jetzt automatisch eine Chat-Nachricht (StockID -> WSS da / StockID -> Gummileiste da)\n" +
+      "• WSS da / Gummileiste da sendet jetzt automatisch eine Chat-Nachricht (StockID -> WSS da / StockID -> Gummileiste da)\n" +
       "• Gilt für WSS übernehmen, Nachbestellung Vasold und WSS Einbuchen — nur bei tatsächlich neuen Buchungen, keine Duplikate bei erneutem Speichern"
   },
   {
