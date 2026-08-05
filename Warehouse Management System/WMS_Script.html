@@ -448,7 +448,7 @@
     var regal = String(this.value || '').trim();
     if (!isRegalShelfValue(regal)) return;
     if (regal === String(this.dataset.serverRegal || '').trim()) return;
-    saveKommentarUndRegalFlow();
+    saveKommentarUndRegalFlow({ focusSearchAfter: true });
   });
   new MutationObserver(function() {
     syncShelfTriggerFromNative();
@@ -4043,6 +4043,7 @@
   }
 
   function hideWssEbForm(msg) {
+    hideWssEbAlreadyActions();
     document.getElementById('wssEbForm').style.display = 'none';
     var empty = document.getElementById('wssEbFormEmpty');
     empty.style.display = 'flex';
@@ -4249,12 +4250,9 @@
   }
 
   function applyWssEbLookup(res, sid) {
+    hideWssEbAlreadyActions();
     if (!res || !res.success) {
       hideWssEbForm('❌ ' + (res && res.message ? res.message : 'Fehler beim Laden.'));
-      return;
-    }
-    if (!res.found) {
-      hideWssEbForm('❌ Stock-ID nicht in Refurbishment List gefunden.');
       return;
     }
     document.getElementById('wssEbFormEmpty').style.display = 'none';
@@ -4267,40 +4265,91 @@
     setWssEbToggleUi('wss', false, false);
     setWssEbToggleUi('gummi', false, false);
 
-    var hints = [];
+    var pills = [];
+    if (!res.found) {
+      pills.push('<span class="wss-eb-hint-pill wss-eb-hint-pill--info">ℹ️ Nicht in Refurbishment List – Buchung trotzdem möglich</span>');
+    }
     if (res.vasoldRowFound && res.frontscheibeJa) {
       setWssEbToggleUi('wss', true, true);
-      hints.push('WSS bereits „Ja“');
+      pills.push('<span class="wss-eb-hint-pill">✓ ' + escapeHtml('WSS bereits „Ja“') + '</span>');
     }
     if (res.vasoldRowFound && res.gummileisteDa) {
       setWssEbToggleUi('gummi', true, true);
-      hints.push('Gummileiste bereits erfasst');
+      pills.push('<span class="wss-eb-hint-pill">✓ ' + escapeHtml('Gummileiste bereits erfasst') + '</span>');
     }
     var hintsEl = document.getElementById('wssEbHints');
-    hintsEl.innerHTML = hints.map(function(h) { return '<span class="wss-eb-hint-pill">✓ ' + escapeHtml(h) + '</span>'; }).join('');
+    hintsEl.innerHTML = pills.join('');
 
     var st = document.getElementById('wssEbStatus');
     st.textContent = '';
   }
 
+  var wssEbPendingAlready = null;
+
+  function showWssEbAlreadyActions(wssChecked, gummiChecked) {
+    wssEbPendingAlready = { wss: !!wssChecked, gummi: !!gummiChecked };
+    var box = document.getElementById('wssEbAlreadyActions');
+    if (box) box.style.display = 'flex';
+  }
+
+  function hideWssEbAlreadyActions() {
+    wssEbPendingAlready = null;
+    var box = document.getElementById('wssEbAlreadyActions');
+    if (box) box.style.display = 'none';
+  }
+
+  function confirmWssEbAlreadyBooked(sendChat) {
+    var pending = wssEbPendingAlready;
+    hideWssEbAlreadyActions();
+    var st = document.getElementById('wssEbStatus');
+    if (!pending || !wssEbCurrentStock) return;
+    if (!sendChat) {
+      st.textContent = '⏭️ Übersprungen — keine Chat-Nachricht gesendet.';
+      st.style.color = '#9da7b3';
+      return;
+    }
+    var stockAtSubmit = wssEbCurrentStock;
+    st.textContent = 'Sende Chat-Nachricht…';
+    st.style.color = '#F27420';
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          st.textContent = '❌ ' + (res && res.message ? res.message : 'Senden fehlgeschlagen.');
+          st.style.color = '#f85149';
+          return;
+        }
+        st.textContent = '✅ ' + res.message;
+        st.style.color = '#56d364';
+      })
+      .withFailureHandler(function(err) {
+        st.textContent = '❌ ' + ((err && err.message) || String(err));
+        st.style.color = '#f85149';
+      })
+      .forceNotifyWssEinbuchenChat(stockAtSubmit, pending.wss, pending.gummi);
+  }
+
   function submitWssEinbuchen() {
     if (!wssEbCurrentStock) return;
+    hideWssEbAlreadyActions();
     var wssBtn = document.getElementById('wssEbWssToggle');
     var gummiBtn = document.getElementById('wssEbGummiToggle');
-    var wssYes = !!document.getElementById('wssEbWssCheck').checked && !wssBtn.classList.contains('is-locked');
-    var gummiYes = !!document.getElementById('wssEbGummiCheck').checked && !gummiBtn.classList.contains('is-locked');
+    var wssChecked = !!document.getElementById('wssEbWssCheck').checked;
+    var gummiChecked = !!document.getElementById('wssEbGummiCheck').checked;
+    var wssYes = wssChecked && !wssBtn.classList.contains('is-locked');
+    var gummiYes = gummiChecked && !gummiBtn.classList.contains('is-locked');
     var carol = document.getElementById('wssEbCarolInput').value.trim();
     var marke = document.getElementById('wssEbMarkeInput').value.trim();
     var st = document.getElementById('wssEbStatus');
     var btn = document.getElementById('wssEbSubmitBtn');
-    if (!wssYes && !gummiYes) {
+    if (!wssChecked && !gummiChecked) {
       st.textContent = 'Bitte „WSS da“ und/oder „Gummileiste da“ auswählen.';
       st.style.color = '#f85149';
       return;
     }
-    if (!carol || !marke) {
-      st.textContent = !carol && !marke ? 'Carol-Link und Marke & Model fehlen noch.' : (!carol ? 'Carol-Link fehlt noch.' : 'Marke & Model fehlt noch.');
-      st.style.color = '#f85149';
+    if (!wssYes && !gummiYes) {
+      st.textContent = 'ℹ️ Bereits in Vasold eingebucht. Trotzdem Chat-Nachricht senden oder überspringen?';
+      st.style.color = '#D4AF37';
+      showWssEbAlreadyActions(wssChecked, gummiChecked);
       return;
     }
     btn.disabled = true;
@@ -6627,7 +6676,8 @@
     saveKomm();
   });
 
-  function saveKommentarUndRegalFlow() {
+  function saveKommentarUndRegalFlow(opts) {
+    opts = opts || {};
     var text = getCommentText().trim();
     var regal = String(document.getElementById('shelfSelect').value || '').trim();
     var stockId = normalizeStockIdJs(currentStock);
@@ -6653,6 +6703,9 @@
     );
     patchRefurbCacheKommentarRegal(stockId, text, regal);
     applyLocalSaveUiIfCurrent(stockId, regal);
+    if (opts.focusSearchAfter) {
+      focusSearchBar({ select: true, delay: 60 });
+    }
 
     var timerId = setTimeout(function() {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
@@ -6823,6 +6876,15 @@
     var copies = isNaN(raw) ? 1 : Math.min(99, Math.max(1, raw));
     if (countEl) countEl.value = String(copies);
     sendDymoPrint({ copies: copies, stockId: stockId });
+  }
+
+  function printWssEbDymo(copies) {
+    var sid = wssEbCurrentStock;
+    if (!sid) {
+      setStatus('❌ Keine Stock-ID im WSS-Einbuchen-Dialog.', '#f85149');
+      return;
+    }
+    sendDymoPrint({ copies: copies, stockId: sid });
   }
 
   function formatReifenRegalForLabel(raw) {
@@ -7128,6 +7190,7 @@
   var WMS_SHORTCUTS = [
     { keys: ['Strg', 'Y'], where: 'Überall', text: 'Haut dir den Button "Auftrag beenden & Carol starten" raus – genau so, als hättest du wirklich draufgeklickt. Klappt natürlich nur, wenn der Button gerade nicht ausgegraut ist.' },
     { keys: ['Strg', 'R'], where: 'Überall', text: 'Macht dir direkt das Reifen Annahme Fenster auf, ohne dass du erst durchs Menü klicken musst.' },
+    { keys: ['Strg', 'X'], where: 'Überall', text: 'Springt direkt in die Suchleiste und markiert den kompletten Inhalt – einfach lostippen oder scannen und die alte Stock-ID wird ersetzt.' },
     { keys: ['Strg', 'S'], where: 'Kommentarfeld', text: 'Speichert nur den Kommentartext – rührt Tagesliste, Regal oder die Farbe im Sheet nicht an. Reine Textspeicherung, sonst nichts.' },
     { keys: ['Tab'], where: 'Kommentarfeld', text: 'Steht da ein grauer Textvorschlag? Tab drücken und der wird direkt übernommen.' },
     { keys: ['Esc'], where: 'Überall', text: 'Macht das, was gerade offen ist, wieder zu – Menüs, Fenster, Popups, einfach alles.' }
@@ -7170,6 +7233,12 @@
       e.preventDefault();
       e.stopPropagation();
       openReifenModal();
+      return;
+    }
+    if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      e.stopPropagation();
+      focusSearchBar({ select: true, delay: 0 });
     }
   });
 

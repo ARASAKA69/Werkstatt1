@@ -846,6 +846,13 @@
               <div id="wssEbHu" class="wss-modal-hu-value">—</div>
             </div>
           </div>
+          <div class="wss-eb-card">
+            <div class="wss-eb-card-title">DYMO Etiketten</div>
+            <div class="wss-eb-dymo-row">
+              <button type="button" class="reifen-action-btn active-ja wss-eb-dymo-btn" onclick="printWssEbDymo(1)">🖨️ 1x Etikett</button>
+              <button type="button" class="reifen-action-btn active-ja wss-eb-dymo-btn" onclick="printWssEbDymo(2)">🖨️ 2x Etikett</button>
+            </div>
+          </div>
           <div class="wss-eb-toggle-row">
             <button type="button" class="wss-eb-toggle" id="wssEbWssToggle" aria-pressed="false" onclick="toggleWssEbCheck('wss')">
               <input type="checkbox" id="wssEbWssCheck" tabindex="-1">
@@ -860,6 +867,10 @@
           </div>
           <div class="wss-eb-hints" id="wssEbHints"></div>
           <div class="reifen-status" id="wssEbStatus"></div>
+          <div class="wss-eb-already-actions" id="wssEbAlreadyActions" style="display:none;">
+            <button type="button" class="reifen-action-btn active-ja" onclick="confirmWssEbAlreadyBooked(true)">📨 Chat-Nachricht senden</button>
+            <button type="button" class="reifen-action-btn active-nein" onclick="confirmWssEbAlreadyBooked(false)">⏭️ Überspringen</button>
+          </div>
           <div class="reifen-actions" style="margin-top:8px;">
             <button type="button" class="reifen-action-btn active-ja" id="wssEbSubmitBtn" onclick="submitWssEinbuchen()">✅ In Vasold Liste einbuchen</button>
           </div>

@@ -21,6 +21,14 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.0",
+    date: "05.08.2026",
+    notes:
+      "• Auto Focus in die Suchleiste ohne manuelles klicken auf die suchleiste nach einlagern einer Box (Neuer shortcut -> side Menu -> Shortcut\n" +
+      "• WSS Einbuchen fenster, jetzt mit etiketten druck + kein eintrag in Refurbishment kann trotzdem eingebucht werden + Nachricht in WSS eingang Chat\n" +
+      "• Cache von WSS einbuchen beschleunigt, keine endlosen ladezeiten, ging mir am sack.\n"
+  },
+  {
     version: "2.1.9",
     date: "04.08.2026",
     notes:
@@ -1260,20 +1268,20 @@ function getWssEinbuchenLookup(stockId) {
         break;
       }
     }
-    if (refurbRow === -1) {
-      return { success: true, found: false, stockId: stockId };
-    }
 
-    var carol = getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
-    var marke = String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
-    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
-    var huVasold = huVasoldValueFromSchaedenText(wText);
+    var carol = "", marke = "", huVasold = "";
+    if (refurbRow !== -1) {
+      carol = getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
+      marke = String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
+      var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
+      huVasold = huVasoldValueFromSchaedenText(wText);
+    }
 
     var vasold = getVasoldWssSyncState(stockId);
 
     return {
       success: true,
-      found: true,
+      found: refurbRow !== -1,
       stockId: stockId,
       carolUrl: carol,
       markeModel: marke,
@@ -1311,15 +1319,11 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
         break;
       }
     }
-    if (refurbRow === -1) return { success: false, message: "Stock-ID in Refurbisment List nicht gefunden!" };
 
-    var wText = String(sheetRef.getRange(refurbRow, 23).getValue() || "");
-    var carol = carolUrlOpt || getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim();
-    var marke = markeOpt || String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim();
-    if (!carol) return { success: false, message: "Carol-Link fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
-    if (!marke) return { success: false, message: "Marke & Model fehlt oder konnte nicht gelesen werden — bitte aus Carol kopieren und im Dialog eintragen." };
-
-    var huVasold = huVasoldValueFromSchaedenText(wText);
+    var wText = refurbRow !== -1 ? String(sheetRef.getRange(refurbRow, 23).getValue() || "") : "";
+    var carol = carolUrlOpt || (refurbRow !== -1 ? (getSheetCarolUrl_(sheetRef, refurbRow) || String(sheetRef.getRange(refurbRow, 3).getValue() || "").trim()) : "");
+    var marke = markeOpt || (refurbRow !== -1 ? String(sheetRef.getRange(refurbRow, 13).getValue() || "").trim() : "");
+    var huVasold = refurbRow !== -1 ? huVasoldValueFromSchaedenText(wText) : "";
 
     var ssV = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
     var sheetV = ssV.getSheetByName(VASOLD_WSS_TAB);
@@ -1360,13 +1364,13 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
     }
 
     sheetV.getRange(targetRow, 1).setValue(stockId);
-    sheetV.getRange(targetRow, 2).setValue(carol);
-    sheetV.getRange(targetRow, 3).setValue(marke);
-    sheetV.getRange(targetRow, 4).setValue(huVasold);
+    if (carol) sheetV.getRange(targetRow, 2).setValue(carol);
+    if (marke) sheetV.getRange(targetRow, 3).setValue(marke);
+    if (huVasold) sheetV.getRange(targetRow, 4).setValue(huVasold);
     if (needWssWrite) sheetV.getRange(targetRow, 5).setValue("Ja");
     if (needGummiWrite) sheetV.getRange(targetRow, 6).setValue("Vorhanden");
 
-    if (needWssWrite) {
+    if (needWssWrite && refurbRow !== -1) {
       var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
       if (!/wss\s+da\b/i.test(curCom)) {
         var wssCom = curCom ? (curCom + " // WSS da //") : "WSS da //";
@@ -1388,6 +1392,25 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
       row: targetRow,
       message: "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert")
     };
+  } catch (err) {
+    return { success: false, message: "Fehler: " + err.message };
+  }
+}
+
+function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var wssYes = wssSelected === true || wssSelected === "true";
+    var gummiYes = gummiSelected === true || gummiSelected === "true";
+    if (!wssYes && !gummiYes) {
+      return { success: false, message: "Nichts zum Senden ausgewählt." };
+    }
+    notifyWssGummiChat_(stockId, wssYes, gummiYes);
+    var parts = [];
+    if (wssYes) parts.push("WSS Ja");
+    if (gummiYes) parts.push("Gummileiste");
+    return { success: true, message: "Chat-Nachricht gesendet: " + parts.join(", ") + "." };
   } catch (err) {
     return { success: false, message: "Fehler: " + err.message };
   }
