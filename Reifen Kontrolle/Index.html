@@ -1107,44 +1107,34 @@
         var rows = '';
         for (var j = 0; j < items.length; j++) {
           var it = items[j];
-          var infos = [];
-          if (it.mailFound) infos.push('Return-Mail');
-          if (it.carolDone) infos.push('Herausgegeben');
-          if (it.reifenDa) infos.push('Reifen da');
-          else if (it.refurbFound) infos.push('Reifen fehlt');
           var statusClass = keyOf(it.sheetStatus);
-          rows += '<tr>' +
-            '<td class="sid-cell"><span class="sid">' + esc(it.stockId) + '</span><svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></td>' +
-            '<td><span class="st st-' + statusClass + '">' + esc(it.sheetStatus || '—') + '</span></td>' +
-            '<td>' + esc(it.markeModel || '—') + '</td>' +
-            '<td>' + esc(infos.join(', ') || '—') + '</td>' +
-            '</tr>';
+          rows += '<div class="entry">' +
+            '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
+            '<span class="st st-' + statusClass + '">' + esc(it.sheetStatus || '—') + '</span></div>' +
+            '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg>' +
+            '</div>';
         }
         var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Reifen Kontrolle — Druckliste</title>' +
           '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
           '<style>' +
-          'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px}' +
+          '@page{size:A4 portrait;margin:12mm}' +
+          'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;text-align:center}' +
           'h1{font-size:18px;margin:0 0 2px}' +
           '.meta{color:#555;font-size:11px;margin-bottom:14px}' +
-          'table{width:100%;border-collapse:collapse}' +
-          'th,td{border:1px solid #999;padding:5px 8px;text-align:left;vertical-align:middle}' +
-          'th{background:#eee;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}' +
-          'tr:nth-child(even) td{background:#f7f7f7}' +
-          '.sid-cell{white-space:nowrap}' +
-          '.sid{display:block;font-weight:bold;margin-bottom:2px}' +
-          '.bc{display:block;height:34px}' +
-          '.st{display:inline-block;font-weight:bold;padding:1px 8px;border-radius:10px;border:1px solid #999}' +
+          '.entry{width:70mm;margin:0 auto 14px;padding:0;page-break-inside:avoid}' +
+          '.entry-top{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:4px}' +
+          '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
+          '.bc{display:block;height:38px;margin:0 auto}' +
+          '.st{display:inline-block;font-weight:bold;padding:2px 10px;border-radius:10px;border:1px solid #999;white-space:nowrap}' +
           '.st-b2a1{background:#f7c5c5}' +
           '.st-complete{background:#c5f0f7}' +
           '.st-mech{background:#c5d5f7}' +
           '.st-other{background:#fbe3b5}' +
-          'tr{page-break-inside:avoid}' +
-          '@media print{body{margin:10mm}}' +
+          '@media print{body{margin:0}}' +
           '</style></head><body>' +
           '<h1>Reifen Kontrolle</h1>' +
           '<div class="meta">Stand: ' + esc(dateStr) + ' · ' + items.length + ' Stock-IDs · ' + esc(summary) + '</div>' +
-          '<table><thead><tr><th>Stock-ID</th><th>Status</th><th>Fahrzeug</th><th>Info</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody></table>' +
+          rows +
           '<script>window.onload=function(){' +
           'var els=document.querySelectorAll("svg.bc");' +
           'for(var i=0;i<els.length;i++){' +
