@@ -1,0 +1,1274 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reifen Kontrolle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-primary: #0D9488;
+      --color-on-primary: #FFFFFF;
+      --color-secondary: #14B8A6;
+      --color-accent: #3a2419;
+      --color-destructive: #DC2626;
+      --color-ring: #0D9488;
+      --bg-deep: #0a0a0f;
+      --bg-base: #050506;
+      --bg-elevated: #0e1014;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-2: rgba(255, 255, 255, 0.08);
+      --foreground: #EDEDEF;
+      --foreground-muted: #8A8F98;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --accent-glow: rgba(13, 148, 136, 0.22);
+      --warn: #FBBF24;
+      --ok: #34D399;
+      --orange-status: #F59E0B;
+      --yellow-status: #FDE047;
+      --green-status: #34A853;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 999px;
+      --space-xs: 2px;
+      --space-sm: 5px;
+      --space-md: 12px;
+      --space-lg: 16px;
+      --space-xl: 21px;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.28);
+      --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35);
+      --easing: cubic-bezier(0.16, 1, 0.3, 1);
+      --font: "Plus Jakarta Sans", system-ui, sans-serif;
+      --blur: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    html { font-size: 20px; }
+    body {
+      font-family: var(--font);
+      color: var(--foreground);
+      background: linear-gradient(180deg, #0a0a0f 0%, #050506 100%);
+      color-scheme: dark;
+      overflow: hidden;
+    }
+
+    .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .blob {
+      position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.11;
+      animation: drift 18s var(--easing) infinite alternate;
+    }
+    .blob.a { width: 420px; height: 420px; background: #0D9488; top: -80px; left: -60px; }
+    .blob.b { width: 360px; height: 360px; background: #EA580C; bottom: 10%; right: -80px; animation-duration: 22s; animation-delay: -4s; }
+    .blob.c { width: 280px; height: 280px; background: #14B8A6; top: 40%; left: 45%; opacity: 0.07; animation-duration: 26s; }
+    @keyframes drift { from { transform: translate(0, 0); } to { transform: translate(28px, -18px); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .blob { animation: none; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+
+    .app {
+      position: relative; z-index: 1;
+      --side-w: 420px;
+      display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr);
+      height: 100%; min-height: 0;
+      zoom: 1.22;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 34vh) 1fr; zoom: 1.08; --side-w: auto; }
+    }
+
+    .side, .main { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+    .side {
+      position: relative;
+      border-right: 1px solid var(--border);
+      background: rgba(10, 10, 15, 0.72);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      min-width: 0;
+    }
+
+    .glass-bar {
+      border-bottom: 1px solid var(--border);
+      background: rgba(14, 16, 20, 0.65);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+    }
+
+    .top { padding: var(--space-md) var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .brand-row { display: flex; align-items: center; gap: var(--space-md); }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: rgba(13, 148, 136, 0.16);
+      border: 1px solid rgba(13, 148, 136, 0.4);
+      box-shadow: 0 0 18px rgba(13, 148, 136, 0.35);
+      flex-shrink: 0; color: var(--color-secondary);
+    }
+    .brand-mark svg { width: 26px; height: 26px; }
+    .brand-text { min-width: 0; }
+    .brand-text strong { display: block; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-text span {
+      display: block; font-size: 0.65rem; color: var(--foreground-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+    }
+
+    .search-wrap { position: relative; }
+    .search-wrap svg {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      width: 1.1rem; height: 1.1rem; color: var(--foreground-muted); pointer-events: none;
+    }
+    .search {
+      width: 100%; padding: 0.75rem 0.85rem 0.75rem 2.6rem; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 500 1.05rem/1.3 var(--font); outline: none;
+      transition: border-color 200ms var(--easing), box-shadow 200ms var(--easing), background 200ms var(--easing);
+      cursor: text;
+    }
+    .search::placeholder { color: var(--foreground-muted); }
+    .search:hover { background: var(--surface-2); }
+    .search:focus { border-color: var(--color-ring); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28); }
+
+    .filters { display: flex; flex-wrap: wrap; gap: 4px; }
+    .chip {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground-muted);
+      border-radius: var(--radius-pill); padding: 0.4rem 0.55rem; min-height: 1.9rem;
+      font: 600 0.72rem/1 var(--font); letter-spacing: 0.01em; cursor: pointer;
+      transition: background 180ms var(--easing), color 180ms var(--easing), border-color 180ms var(--easing), transform 150ms var(--easing);
+    }
+    .chip:hover { color: var(--foreground); border-color: var(--border-strong); background: var(--surface); }
+    .chip:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
+    .chip:active { transform: scale(0.97); }
+    .chip.active { background: rgba(13, 148, 136, 0.2); border-color: var(--color-primary); color: var(--color-secondary); }
+
+    .meta {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      color: var(--foreground-muted); font-size: 0.9rem; font-weight: 500;
+    }
+    .meta #countLabel { flex: 1; min-width: 0; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+      border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.7rem 1rem; min-height: 3rem;
+      font: 600 1.05rem/1 var(--font); cursor: pointer;
+      transition: background 180ms var(--easing), border-color 180ms var(--easing), opacity 180ms var(--easing), transform 150ms var(--easing), box-shadow 180ms var(--easing);
+    }
+    .btn svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
+    .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+    .btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.primary { background: var(--color-accent); border-color: transparent; color: #fff; box-shadow: 0 0 20px rgba(234, 88, 12, 0.28); }
+    .btn.primary:hover { opacity: 0.92; }
+    .btn.teal { background: rgba(13, 148, 136, 0.18); border-color: var(--color-primary); color: var(--color-secondary); }
+    .btn.ok { background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.4); color: var(--ok); }
+    .btn.ghost { background: transparent; }
+    .btn.icon { width: 52px; padding: 0; color: var(--foreground-muted); }
+
+    .list { overflow: auto; flex: 1; padding: var(--space-md); scrollbar-gutter: stable; }
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+
+    .item {
+      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
+      color: inherit; border-radius: 10px; padding: 8px 10px; cursor: pointer; margin-bottom: 4px;
+      transition: background 160ms var(--easing), border-color 160ms var(--easing), transform 150ms var(--easing);
+    }
+    .item:hover { filter: brightness(1.08); }
+    .item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
+    .item:active { transform: scale(0.985); }
+    .item.active { box-shadow: inset 0 0 0 2px rgba(13, 148, 136, 0.75); }
+    .item.st-ok { background: rgba(0, 255, 0, 0.12); border-color: rgba(0, 255, 0, 0.4); }
+    .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
+    .item.st-complete { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
+    .item.st-mech { background: rgba(74, 134, 232, 0.18); border-color: rgba(74, 134, 232, 0.45); }
+    .item.st-pruefen { background: rgba(255, 255, 0, 0.14); border-color: rgba(255, 255, 0, 0.45); }
+    .item.st-other { background: rgba(255, 153, 0, 0.14); border-color: rgba(255, 153, 0, 0.4); }
+    .item-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; align-items: center; }
+    .sid { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; }
+    .item-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
+
+    .status-pill {
+      display: inline-block; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.01em;
+      padding: 0.15rem 0.4rem; border-radius: 999px; white-space: nowrap; line-height: 1.2;
+      color: #fff; background: rgba(255,255,255,0.12); border: 1px solid transparent;
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    }
+    .status-pill.ok { background: #00ff00; border-color: #00ff00; color: #1a1a1a; }
+    .status-pill.b2a1 { background: #ff0000; border-color: #ff0000; color: #fff; }
+    .status-pill.complete { background: #00ffff; border-color: #00ffff; color: #1a1a1a; }
+    .status-pill.mech { background: #4a86e8; border-color: #4a86e8; color: #fff; }
+    .status-pill.pruefen { background: #ffff00; border-color: #ffff00; color: #1a1a1a; }
+    .status-pill.other { background: #ff9900; border-color: #ff9900; color: #1a1a1a; }
+    .status-pill.none { background: rgba(255,255,255,0.12); border-color: var(--border-strong); color: var(--foreground-muted); }
+    .status-pill.ghosted { opacity: 0.75; }
+
+    .sub {
+      margin-top: 3px; font-size: 0.82rem; color: var(--foreground-muted); font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .sub2 {
+      margin-top: 2px; font-size: 0.78rem; color: var(--foreground-muted);
+      display: flex; flex-wrap: wrap; gap: 2px 10px;
+    }
+    .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
+    .hint.yellow { color: var(--yellow-status); }
+    .hint.green { color: var(--green-status); }
+    .hint.red { color: #f87171; }
+    .hint.cyan { color: #67e8f9; }
+
+    .skel {
+      border-radius: 12px; height: 52px; margin-bottom: 6px;
+      background: linear-gradient(90deg, var(--surface) 25%, var(--surface-2) 50%, var(--surface) 75%);
+      background-size: 200% 100%;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    .main-top {
+      padding: var(--space-md) var(--space-lg);
+      display: flex; flex-wrap: wrap; gap: var(--space-md);
+      align-items: center; justify-content: space-between;
+    }
+    .main-title { min-width: 0; }
+    .sid-row { display: flex; align-items: center; gap: 8px; }
+    .main-title h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+    .main-title span { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--foreground-muted); }
+    .btn-copy {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground-muted);
+      border-radius: 8px; width: 2rem; height: 2rem; display: grid; place-items: center; cursor: pointer;
+      transition: 160ms var(--easing);
+    }
+    .btn-copy:hover:not(:disabled) { color: var(--foreground); border-color: var(--border-strong); background: var(--surface); }
+    .btn-copy:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-copy svg { width: 1rem; height: 1rem; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    .content { flex: 1; min-height: 0; overflow: auto; padding: var(--space-lg); }
+    .content::-webkit-scrollbar { width: 8px; }
+    .content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+
+    .empty { height: 100%; display: grid; place-items: center; }
+    .empty-card {
+      max-width: 420px; text-align: center; padding: var(--space-xl);
+      border: 1px dashed var(--border-strong); border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .empty-card .icon {
+      width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 18px;
+      display: grid; place-items: center; color: var(--color-secondary);
+      background: rgba(13, 148, 136, 0.14); border: 1px solid rgba(13, 148, 136, 0.4);
+    }
+    .empty-card .icon svg { width: 30px; height: 30px; }
+    .empty-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+    .empty-card p { margin: 0; color: var(--foreground-muted); font-size: 0.9rem; line-height: 1.5; }
+
+    #detail { display: none; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: var(--space-md); align-items: start; }
+    .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+    .card {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.6); box-shadow: var(--shadow-md);
+      padding: var(--space-lg);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+      min-width: 0;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; }
+    .section-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .section-head h2 { margin: 0; }
+
+    .verdict {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--surface); margin-bottom: 12px;
+    }
+    .verdict .big-pill {
+      font-size: 1.05rem; font-weight: 800; letter-spacing: 0.02em;
+      padding: 0.45rem 0.95rem; border-radius: 999px; border: 1px solid transparent;
+    }
+    .verdict .big-pill.ok { background: #00ff00; color: #1a1a1a; }
+    .verdict .big-pill.b2a1 { background: #ff0000; color: #fff; }
+    .verdict .big-pill.complete { background: #00ffff; color: #1a1a1a; }
+    .verdict .big-pill.pruefen { background: #ffff00; color: #1a1a1a; }
+    .verdict .big-pill.mech { background: #4a86e8; color: #fff; }
+    .verdict .big-pill.none { background: rgba(255,255,255,0.12); color: var(--foreground-muted); }
+    .verdict .vlabel { font-size: 0.75rem; color: var(--foreground-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    .verdict-col { display: flex; flex-direction: column; gap: 4px; }
+
+    .reasons { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .reasons li {
+      font-size: 0.88rem; color: var(--foreground); line-height: 1.35;
+      padding: 6px 10px; border-radius: 8px; background: var(--surface);
+      border-left: 3px solid var(--border-strong);
+    }
+
+    .status-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sbtn {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground);
+      border-radius: 999px; padding: 0.55rem 0.9rem; min-height: 2.4rem; font: 700 0.85rem/1 var(--font);
+      cursor: pointer; transition: 160ms var(--easing);
+    }
+    .sbtn:hover { filter: brightness(1.15); }
+    .sbtn:active { transform: scale(0.96); }
+    .sbtn.ok { border-color: rgba(0,255,0,0.5); color: #86efac; background: rgba(0,255,0,0.1); }
+    .sbtn.ok.set, .sbtn.ok:hover { background: #00ff00; color: #1a1a1a; }
+    .sbtn.b2a1 { border-color: rgba(255,0,0,0.5); color: #fca5a5; background: rgba(255,0,0,0.1); }
+    .sbtn.b2a1.set, .sbtn.b2a1:hover { background: #ff0000; color: #fff; }
+    .sbtn.complete { border-color: rgba(0,255,255,0.5); color: #a5f3fc; background: rgba(0,255,255,0.08); }
+    .sbtn.complete.set, .sbtn.complete:hover { background: #00ffff; color: #1a1a1a; }
+    .sbtn.mech { border-color: rgba(74,134,232,0.5); color: #93c5fd; background: rgba(74,134,232,0.12); }
+    .sbtn.mech.set, .sbtn.mech:hover { background: #4a86e8; color: #fff; }
+    .sbtn.clear { border-color: var(--border-strong); color: var(--foreground-muted); }
+    .sbtn.clear:hover { background: var(--surface-2); color: var(--foreground); }
+
+    .checklist { display: flex; flex-direction: column; gap: 8px; }
+    .check-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+    }
+    .check-row.state-ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
+    .check-row.state-warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
+    .check-row.state-bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
+    .check-row.state-info { border-left-color: #00ffff; background: rgba(0,255,255,0.06); }
+    .check-ico { width: 1.4rem; height: 1.4rem; flex-shrink: 0; display: grid; place-items: center; margin-top: 1px; }
+    .check-ico svg { width: 1.25rem; height: 1.25rem; }
+    .check-row.state-ok .check-ico { color: #4ade80; }
+    .check-row.state-warn .check-ico { color: #fde047; }
+    .check-row.state-bad .check-ico { color: #f87171; }
+    .check-row.state-info .check-ico { color: #67e8f9; }
+    .check-row.state-none .check-ico { color: var(--foreground-muted); }
+    .check-body { min-width: 0; flex: 1; }
+    .ct { font-weight: 700; font-size: 0.92rem; }
+    .cm { margin-top: 2px; font-size: 0.82rem; color: var(--foreground-muted); line-height: 1.4; word-break: break-word; }
+    .cm a { color: #7dd3fc; text-decoration: none; font-weight: 600; }
+    .cm a:hover { text-decoration: underline; }
+
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .fact { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); min-width: 0; }
+    .fact.wide { grid-column: 1 / -1; }
+    .fk { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--foreground-muted); margin-bottom: 3px; }
+    .fv { font-size: 0.92rem; font-weight: 600; word-break: break-word; }
+    .fv.muted { color: var(--foreground-muted); font-weight: 500; }
+    .fv.green { color: #86efac; }
+    .fv.yellow { color: #fde047; }
+    .fv.red { color: #fca5a5; }
+    .fv.cyan { color: #a5f3fc; }
+
+    .nb-list { display: flex; flex-direction: column; gap: 8px; }
+    .nb-item {
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+    }
+    .nb-item.reifen { border-color: rgba(0,255,0,0.35); border-left-color: #00ff00; background: rgba(0,255,0,0.08); }
+    .nb-item-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .nb-teil { font-weight: 700; font-size: 0.92rem; word-break: break-word; }
+    .nb-meta { font-size: 0.8rem; color: var(--foreground-muted); margin-top: 3px; }
+    .nb-tag {
+      display: inline-block; font-size: 0.65rem; font-weight: 800; letter-spacing: 0.04em;
+      padding: 0.12rem 0.45rem; border-radius: 999px;
+      background: #00ff00; color: #1a1a1a; white-space: nowrap;
+    }
+    .nb-status {
+      display: inline-block; font-size: 0.72rem; font-weight: 700;
+      padding: 0.14rem 0.45rem; border-radius: 999px; white-space: nowrap;
+      background: rgba(255,255,255,0.1); border: 1px solid var(--border-strong); color: var(--foreground);
+    }
+    .nb-empty {
+      text-align: center; color: var(--foreground-muted); font-size: 0.9rem;
+      padding: 1.2rem; border: 1px dashed var(--border); border-radius: 12px;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .toast {
+      position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(8px);
+      background: rgba(14, 16, 20, 0.92); border: 1px solid var(--border-strong);
+      color: var(--foreground); border-radius: 12px; padding: 0.7rem 1.1rem;
+      font-size: 0.92rem; font-weight: 600; box-shadow: var(--shadow-lg);
+      opacity: 0; pointer-events: none; transition: opacity 220ms var(--easing), transform 220ms var(--easing);
+      z-index: 60; max-width: min(90vw, 560px); text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { border-color: rgba(220, 38, 38, 0.55); }
+
+    .modal-layer {
+      position: fixed; inset: 0; z-index: 55; display: none; place-items: center;
+      background: rgba(5, 5, 6, 0.7); backdrop-filter: blur(6px);
+    }
+    .modal-layer.show { display: grid; }
+    .modal {
+      width: min(92vw, 480px); max-height: 84vh; display: flex; flex-direction: column;
+      border: 1px solid var(--border-strong); border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.96); box-shadow: var(--shadow-lg);
+      padding: var(--space-lg);
+    }
+    .modal h2 { margin: 0 0 4px; font-size: 1.05rem; }
+    .modal p { margin: 0 0 12px; font-size: 0.82rem; color: var(--foreground-muted); line-height: 1.4; }
+    .batch-input {
+      width: 100%; padding: 0.7rem 0.85rem; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 600 1.05rem/1.3 var(--font); outline: none;
+      transition: border-color 200ms var(--easing), box-shadow 200ms var(--easing);
+    }
+    .batch-input:focus { border-color: var(--color-ring); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28); }
+    .batch-list {
+      margin: 12px 0; display: flex; flex-wrap: wrap; gap: 6px; overflow: auto;
+      min-height: 3rem; max-height: 34vh; align-content: flex-start;
+      border: 1px dashed var(--border); border-radius: 12px; padding: 8px;
+    }
+    .batch-empty { color: var(--foreground-muted); font-size: 0.82rem; padding: 6px; }
+    .batch-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid rgba(13, 148, 136, 0.5); background: rgba(13, 148, 136, 0.15);
+      color: var(--color-secondary); border-radius: 999px; padding: 0.3rem 0.4rem 0.3rem 0.7rem;
+      font: 700 0.85rem/1 var(--font);
+    }
+    .batch-chip button {
+      border: 0; background: transparent; color: inherit; cursor: pointer;
+      font-size: 0.95rem; font-weight: 800; padding: 0 4px; border-radius: 999px; line-height: 1;
+    }
+    .batch-chip button:hover { color: #fca5a5; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
+    .load-overlay {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+      background: rgba(5, 5, 6, 0.72); backdrop-filter: blur(6px);
+      opacity: 0; pointer-events: none; transition: opacity 200ms var(--easing);
+    }
+    .load-overlay.show { opacity: 1; pointer-events: auto; }
+    .load-card {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      padding: 26px 34px; border-radius: 18px;
+      background: rgba(14, 16, 20, 0.9); border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-lg); font-weight: 600;
+    }
+    .spinner {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 4px solid rgba(13, 148, 136, 0.25); border-top-color: var(--color-secondary);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="blob a"></div>
+    <div class="blob b"></div>
+    <div class="blob c"></div>
+  </div>
+
+  <div class="load-overlay" id="loadOverlay" aria-live="polite" aria-busy="true">
+    <div class="load-card">
+      <div class="spinner" aria-hidden="true"></div>
+      <span id="loadLabel">Lädt…</span>
+    </div>
+  </div>
+
+  <div class="app" id="app">
+    <aside class="side">
+      <div class="top glass-bar">
+        <div class="brand-row">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg>
+          </div>
+          <div class="brand-text">
+            <strong>Reifen Kontrolle</strong>
+            <span>Lager Check</span>
+          </div>
+        </div>
+        <div class="search-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input class="search" id="qSearch" type="search" placeholder="Stock-ID scannen oder suchen…" autocomplete="off" aria-label="Stock-ID scannen oder suchen">
+        </div>
+        <div class="filters" id="filters" role="tablist" aria-label="Filter">
+          <button class="chip active" data-f="alle" type="button">Alle</button>
+          <button class="chip" data-f="ohne" type="button">Ohne Status</button>
+          <button class="chip" data-f="pruefen" type="button">Prüfen</button>
+          <button class="chip" data-f="ok" type="button">OK</button>
+          <button class="chip" data-f="b2a1" type="button">B2A1</button>
+          <button class="chip" data-f="complete" type="button">COMPLETE</button>
+          <button class="chip" data-f="mech" type="button">MECH</button>
+          <button class="chip" data-f="mail" type="button">Return-Mail</button>
+          <button class="chip" data-f="reifenfehlt" type="button">Reifen fehlt</button>
+        </div>
+        <div class="meta">
+          <span id="countLabel">—</span>
+          <span id="cacheLabel" style="font-size:11px;opacity:0.85"></span>
+          <button class="btn icon ghost" id="btnReload" type="button" title="Alles neu prüfen" aria-label="Alles neu prüfen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="list" id="list" aria-label="Stock-ID Liste"></div>
+    </aside>
+
+    <section class="main">
+      <div class="main-top glass-bar">
+        <div class="main-title">
+          <div class="sid-row">
+            <h1 id="detailSid">—</h1>
+            <button type="button" class="btn-copy" id="btnCopySid" title="Stock-ID kopieren" aria-label="Stock-ID kopieren" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <span id="detailSub">Stock-ID scannen oder aus der Liste wählen</span>
+        </div>
+        <div class="actions">
+          <button class="btn" id="btnAddIds" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Stock-IDs
+          </button>
+          <button class="btn" id="btnPrint" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Drucken
+          </button>
+          <button class="btn teal" id="btnCarol" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+            Carol
+          </button>
+          <button class="btn" id="btnGmail" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+            Gmail
+          </button>
+          <button class="btn primary" id="btnRecheck" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+            Neu prüfen
+          </button>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="empty" id="emptyState">
+          <div class="empty-card">
+            <div class="icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/></svg>
+            </div>
+            <h2>Reifen Kontrolle</h2>
+            <p>Stock-ID scannen oder links wählen. Das Tool prüft automatisch Refurbishment, Reifen-Status, Return-to-Auto1 Mails und Nachbestellungen — Ergebnis mit einem Klick ins Sheet.</p>
+          </div>
+        </div>
+        <div id="detail">
+          <div class="grid">
+            <div class="stack">
+              <div class="card">
+                <div class="section-head">
+                  <h2>Ergebnis</h2>
+                  <span class="hint" id="checkedAt"></span>
+                </div>
+                <div class="verdict">
+                  <div class="verdict-col">
+                    <span class="vlabel">Vorschlag</span>
+                    <span class="big-pill none" id="suggestPill">—</span>
+                  </div>
+                  <div class="verdict-col">
+                    <span class="vlabel">Im Sheet</span>
+                    <span class="big-pill none" id="sheetPill">—</span>
+                  </div>
+                </div>
+                <ul class="reasons" id="reasonList"></ul>
+                <div class="status-btns" id="statusBtns">
+                  <button type="button" class="sbtn ok" data-s="OK">OK</button>
+                  <button type="button" class="sbtn complete" data-s="COMPLETE">COMPLETE</button>
+                  <button type="button" class="sbtn b2a1" data-s="B2A1">B2A1</button>
+                  <button type="button" class="sbtn mech" data-s="MECH">MECH</button>
+                  <button type="button" class="sbtn clear" data-s="">Leeren</button>
+                </div>
+              </div>
+
+              <div class="card">
+                <h2>Checks</h2>
+                <div class="checklist" id="checkList"></div>
+              </div>
+            </div>
+
+            <div class="stack">
+              <div class="card">
+                <h2>Fahrzeug</h2>
+                <div class="facts">
+                  <div class="fact"><div class="fk">Marke & Model</div><div class="fv" id="fMarke">—</div></div>
+                  <div class="fact"><div class="fk">Refurb Status</div><div class="fv" id="fStatus">—</div></div>
+                  <div class="fact"><div class="fk">Reifen</div><div class="fv" id="fReifen">—</div></div>
+                  <div class="fact"><div class="fk">Regal</div><div class="fv" id="fRegal">—</div></div>
+                  <div class="fact"><div class="fk">Tagesliste</div><div class="fv" id="fTagesliste">—</div></div>
+                  <div class="fact"><div class="fk">TL Reifen</div><div class="fv" id="fTlReifen">—</div></div>
+                  <div class="fact wide"><div class="fk">Kommentar Bestellung</div><div class="fv" id="fKommBest">—</div></div>
+                  <div class="fact wide"><div class="fk">Kommentar Anlieferung</div><div class="fv" id="fKommAn">—</div></div>
+                  <div class="fact wide"><div class="fk">Schäden</div><div class="fv muted" id="fSchaeden">—</div></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="section-head">
+                  <h2>Nachbestellungen</h2>
+                  <span class="hint" id="nbCountLabel"></span>
+                </div>
+                <div class="nb-list" id="nbList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="modal-layer" id="batchModal" role="dialog" aria-label="Stock-IDs hinzufügen">
+    <div class="modal">
+      <h2>Stock-IDs hinzufügen</h2>
+      <p>Scannen oder eintippen — Enter fügt zur Liste hinzu. Mehrere IDs auf einmal einfügen geht auch (Leerzeichen / Komma getrennt).</p>
+      <input class="batch-input" id="batchInput" type="text" placeholder="Stock-ID scannen…" autocomplete="off">
+      <div class="batch-list" id="batchList"><span class="batch-empty">Noch keine Stock-IDs</span></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="batchCancel" type="button">Abbrechen</button>
+        <button class="btn primary" id="batchSave" type="button" disabled>Alle hinzufügen (0)</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    var state = {
+      filter: 'alle',
+      items: [],
+      selected: null,
+      detail: null,
+      busy: false,
+      cachedAt: '',
+      query: ''
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function toast(msg, err) {
+      var el = $('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (err ? ' err' : '');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(function() { el.className = 'toast'; }, 2800);
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function showLoad(label) {
+      $('loadLabel').textContent = label || 'Lädt…';
+      $('loadOverlay').classList.add('show');
+    }
+    function hideLoad() {
+      $('loadOverlay').classList.remove('show');
+    }
+
+    function run(onOk) {
+      return google.script.run.withFailureHandler(function(err) {
+        hideLoad();
+        state.busy = false;
+        toast(String(err && err.message ? err.message : err), true);
+      }).withSuccessHandler(onOk);
+    }
+
+    function pillClass(key) {
+      if (key === 'ok' || key === 'b2a1' || key === 'complete' || key === 'mech' || key === 'pruefen' || key === 'other') return key;
+      return 'none';
+    }
+
+    function keyOf(status) {
+      var s = String(status || '').trim().toUpperCase();
+      if (s === 'OK') return 'ok';
+      if (s === 'B2A1') return 'b2a1';
+      if (s === 'COMPLETE') return 'complete';
+      if (s === 'MECH') return 'mech';
+      if (s === 'PRÜFEN') return 'pruefen';
+      if (!s) return 'none';
+      return 'other';
+    }
+
+    function renderList() {
+      var box = $('list');
+      var q = state.query.trim().toUpperCase();
+      var items = state.items.filter(function(it) {
+        return !q || it.stockId.indexOf(q) !== -1;
+      });
+      $('countLabel').textContent = items.length + ' / ' + state.items.length + ' Stock-IDs';
+      $('cacheLabel').textContent = state.cachedAt ? ('Cache: ' + state.cachedAt) : '';
+      if (!items.length) {
+        box.innerHTML = '<div class="nb-empty">Keine Treffer' + (q ? (' für „' + esc(q) + '“ — Enter für Live-Check') : '') + '</div>';
+        return;
+      }
+      var html = '';
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        var cls = 'item st-' + pillClass(it.statusKey);
+        if (state.selected === it.stockId) cls += ' active';
+        var hints = [];
+        if (it.mailFound) hints.push('<span class="hint red">Return-Mail</span>');
+        if (it.carolDone) hints.push('<span class="hint cyan">Herausgegeben</span>');
+        if (it.reifenDa) hints.push('<span class="hint green">Reifen da</span>');
+        else if (it.refurbFound) hints.push('<span class="hint yellow">Reifen fehlt</span>');
+        if (it.nbReifenCount) hints.push('<span class="hint green">' + it.nbReifenCount + '× Reifen-NB</span>');
+        if (it.tlFound) {
+          if (it.tlReifen) hints.push('<span class="hint ' + (it.tlReifenGreen ? 'green' : 'yellow') + '">TL Reifen ' + esc(it.tlReifen) + '</span>');
+          else hints.push('<span class="hint yellow">TL ohne Reifen</span>');
+        }
+        if (it.uncached) hints.push('<span class="hint yellow">Noch nicht geprüft</span>');
+        var pills = '';
+        if (it.sheetStatus) pills += '<span class="status-pill ' + pillClass(it.statusKey) + '">' + esc(it.sheetStatus) + '</span>';
+        var showSuggest = it.suggested && it.suggested !== it.sheetStatus &&
+          (!it.sheetStatus || (it.suggested === 'B2A1' && it.sheetStatus !== 'B2A1'));
+        if (showSuggest) {
+          pills += '<span class="status-pill ghosted ' + pillClass(it.suggestedKey) + '">→ ' + esc(it.suggested) + '</span>';
+        }
+        if (!pills) pills = '<span class="status-pill none">offen</span>';
+        html += '<button type="button" class="' + cls + '" data-sid="' + esc(it.stockId) + '">' +
+          '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span>' +
+          '<span class="item-meta">' + pills + '</span></div>' +
+          (it.markeModel ? '<div class="sub">' + esc(it.markeModel) + '</div>' : '') +
+          (hints.length ? '<div class="sub2">' + hints.join('') + '</div>' : '') +
+          '</button>';
+      }
+      box.innerHTML = html;
+      var btns = box.querySelectorAll('.item');
+      for (var b = 0; b < btns.length; b++) {
+        btns[b].addEventListener('click', function() {
+          selectStock(this.getAttribute('data-sid'), false);
+        });
+      }
+    }
+
+    function loadQueue(silent) {
+      if (!silent) {
+        $('list').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+      }
+      run(function(res) {
+        if (!res || !res.success) {
+          if (!silent) toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        state.items = res.items || [];
+        state.cachedAt = res.cachedAt || '';
+        renderList();
+      }).getQueue(state.filter);
+    }
+
+    function checkRow(state_, title, meta) {
+      var icons = {
+        ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+        warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        bad: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        none: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>'
+      };
+      return '<div class="check-row state-' + state_ + '">' +
+        '<span class="check-ico">' + (icons[state_] || icons.none) + '</span>' +
+        '<div class="check-body"><div class="ct">' + title + '</div><div class="cm">' + meta + '</div></div>' +
+        '</div>';
+    }
+
+    function renderDetail(d) {
+      state.detail = d;
+      state.selected = d.stockId;
+      $('emptyState').style.display = 'none';
+      $('detail').style.display = 'block';
+      $('detailSid').textContent = d.stockId;
+      $('btnCopySid').disabled = false;
+      $('btnCarol').disabled = false;
+      $('btnGmail').disabled = false;
+      $('btnRecheck').disabled = false;
+
+      var sub = [];
+      if (d.refurb && d.refurb.found && d.refurb.markeModel) sub.push(d.refurb.markeModel);
+      sub.push(d.fromCache === false ? 'Live geprüft' : 'Aus Cache');
+      if (d.inSheet === false) sub.push('Noch nicht im Sheet — Status-Klick trägt ein');
+      $('detailSub').textContent = sub.join(' · ');
+      $('checkedAt').textContent = d.checkedAt ? ('Geprüft: ' + d.checkedAt) : '';
+
+      var ev = d.evalx || {};
+      var showSuggest = ev.suggested && (!d.sheetStatus || (ev.suggested === 'B2A1' && d.sheetStatus !== 'B2A1'));
+      var sPill = $('suggestPill');
+      sPill.textContent = ev.suggested || '—';
+      sPill.className = 'big-pill ' + pillClass(keyOf(ev.suggested));
+      sPill.parentElement.style.display = showSuggest ? '' : 'none';
+      var shPill = $('sheetPill');
+      shPill.textContent = d.sheetStatus || '—';
+      shPill.className = 'big-pill ' + pillClass(keyOf(d.sheetStatus));
+
+      var reasons = ev.reasons || [];
+      $('reasonList').innerHTML = reasons.length
+        ? reasons.map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('')
+        : '<li>Keine Auffälligkeiten gefunden</li>';
+
+      var sbtns = $('statusBtns').querySelectorAll('.sbtn');
+      for (var s = 0; s < sbtns.length; s++) {
+        sbtns[s].classList.toggle('set', (sbtns[s].getAttribute('data-s') || '') === (d.sheetStatus || '') && !!d.sheetStatus);
+      }
+
+      var r = d.refurb || { found: false };
+      var conf = d.sheetStatus || '';
+      var confirmed = conf === 'COMPLETE' || conf === 'B2A1';
+      var checks = '';
+      if (!r.found) {
+        if (confirmed) {
+          checks += checkRow('ok', 'Refurbishment', 'Nicht mehr in der Refurbishment List — als <b>' + esc(conf) + '</b> bestätigt.');
+        } else {
+          checks += checkRow('info', 'Refurbishment', 'Nicht (mehr) in der Refurbishment List — evtl. Completed. In Carol checken.');
+        }
+      } else if (ev.carolDone) {
+        checks += checkRow(confirmed ? 'ok' : 'info', 'Refurbishment', 'Status: <b>' + esc(r.status || '—') + '</b> — Auftrag wurde herausgegeben.');
+      } else if (ev.teilweise) {
+        checks += checkRow('warn', 'Refurbishment', 'Noch in Refurbishment — Status: <b>' + esc(r.status) + '</b>');
+      } else {
+        checks += checkRow('ok', 'Refurbishment', 'In Refurbishment — Status: <b>' + esc(r.status || 'ohne Status') + '</b>');
+      }
+
+      if (ev.reifenWerkstatt) {
+        checks += checkRow('ok', 'Reifen da (Werkstatt 1)', 'Reifen-Spalte in Refurbishment: <b>Werkstatt 1</b>');
+      } else if (ev.reifenComment) {
+        checks += checkRow('ok', 'Reifen da (Kommentar)', '„Reifen da“ im Kommentar gefunden');
+      } else if (r.found) {
+        checks += checkRow('warn', 'Reifen', 'Kein „Reifen da“ Nachweis — Reifen-Spalte: <b>' + esc(r.reifenStatusRaw || 'leer') + '</b>');
+      } else {
+        checks += checkRow('none', 'Reifen', 'Keine Refurbishment-Daten vorhanden');
+      }
+
+      var m = d.returnMail || { found: false };
+      if (m.found) {
+        checks += checkRow('bad', 'Return to Auto1 (B2A1)',
+          'Mail gefunden: <b>' + esc(m.subject) + '</b><br>' + esc(m.from) + ' · ' + esc(m.date) +
+          (m.permalink ? ' · <a href="' + esc(m.permalink) + '" target="_blank" rel="noopener">Mail öffnen</a>' : ''));
+      } else {
+        checks += checkRow('ok', 'Return to Auto1 (B2A1)',
+          'Keine Return-to-Auto1 Mail gefunden' +
+          (m.message ? ' · ' + esc(m.message) : '') +
+          (d.gmailReturnSearchUrl ? ' · <a href="' + esc(d.gmailReturnSearchUrl) + '" target="_blank" rel="noopener">In Gmail prüfen</a>' : ''));
+      }
+
+      if (confirmed) {
+        checks += checkRow('ok', 'Carol', 'Als <b>' + esc(conf) + '</b> bestätigt — <a href="' + esc(d.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>');
+      } else if (ev.carolDone) {
+        checks += checkRow('info', 'Carol', 'Vermutlich <b>Completed</b> (herausgegeben) — <a href="' + esc(d.carolUrl) + '" target="_blank" rel="noopener">in Carol checken</a>');
+      } else {
+        checks += checkRow('none', 'Carol', 'Completed / Flagged for Return in Carol checken — <a href="' + esc(d.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>');
+      }
+
+      var tlist = d.tagesliste || { found: false, count: 0, entries: [], latest: null };
+      if (tlist.found) {
+        var lt = tlist.latest || {};
+        var when = [lt.datum, lt.schicht].filter(function(x) { return x; }).join(' · ');
+        var extra = tlist.count > 1 ? ' · ' + tlist.count + '× insgesamt' : '';
+        if (lt.reifen) {
+          checks += checkRow(lt.reifenGreen ? 'ok' : 'info', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
+            ' · Reifen: <b>' + esc(lt.reifen) + '</b>' + (lt.reifenGreen ? ' <b>(grün)</b>' : ' (nicht grün)') + extra);
+        } else {
+          checks += checkRow('warn', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
+            ' · <b>kein Reifen-Eintrag (2/4)</b>' + extra);
+        }
+      } else {
+        checks += checkRow('none', 'Tagesliste', 'Nicht auf der Tagesliste gefunden');
+      }
+
+      var nbs = d.nachbestellungen || [];
+      var nbReifen = ev.nbReifenCount || 0;
+      if (!nbs.length) {
+        checks += checkRow('ok', 'Nachbestellungen', 'Keine Bestellungen in Übersicht Nachbestellungen/Exit');
+      } else if (nbReifen) {
+        checks += checkRow(ev.nbReifenOpenCount ? 'warn' : 'ok', 'Nachbestellungen',
+          nbs.length + ' Bestellung(en), davon <b>' + nbReifen + '× Reifen</b>' +
+          (ev.nbReifenOpenCount ? ' — ' + ev.nbReifenOpenCount + ' noch offen' : ' — alle abgeschlossen'));
+      } else {
+        checks += checkRow('info', 'Nachbestellungen', nbs.length + ' Bestellung(en), keine mit Reifen');
+      }
+      $('checkList').innerHTML = checks;
+
+      $('fMarke').textContent = r.markeModel || '—';
+      var fs = $('fStatus');
+      fs.textContent = r.found ? (r.status || '—') : 'nicht gefunden';
+      fs.className = 'fv' + (ev.carolDone ? ' cyan' : (ev.teilweise ? ' yellow' : (r.found ? ' green' : ' red')));
+      var fr = $('fReifen');
+      fr.textContent = ev.reifenDa ? 'Reifen da' : (r.found ? (r.reifenStatusRaw || 'kein Eintrag') : '—');
+      fr.className = 'fv' + (ev.reifenDa ? ' green' : ' yellow');
+      $('fRegal').textContent = r.regal || '—';
+      var ft = $('fTagesliste');
+      if (tlist.found) {
+        var flt = tlist.latest || {};
+        ft.textContent = [flt.datum, flt.schicht].filter(function(x) { return x; }).join(' · ') || 'Ja';
+        ft.className = 'fv green';
+      } else {
+        ft.textContent = 'Nicht gefunden';
+        ft.className = 'fv muted';
+      }
+      var ftr = $('fTlReifen');
+      if (tlist.found && tlist.latest && tlist.latest.reifen) {
+        ftr.textContent = tlist.latest.reifen + (tlist.latest.reifenGreen ? ' (grün)' : '');
+        ftr.className = 'fv' + (tlist.latest.reifenGreen ? ' green' : ' yellow');
+      } else if (tlist.found) {
+        ftr.textContent = 'kein Eintrag';
+        ftr.className = 'fv yellow';
+      } else {
+        ftr.textContent = '—';
+        ftr.className = 'fv muted';
+      }
+      $('fKommBest').textContent = r.kommBestellung || '—';
+      $('fKommAn').textContent = r.kommAnlieferung || '—';
+      $('fSchaeden').textContent = r.schaeden || '—';
+
+      $('nbCountLabel').textContent = nbs.length ? (nbs.length + ' Bestellung(en)') : '';
+      if (!nbs.length) {
+        $('nbList').innerHTML = '<div class="nb-empty">Keine Nachbestellungen für diese Stock-ID</div>';
+      } else {
+        var nbHtml = '';
+        for (var n = 0; n < nbs.length; n++) {
+          var nb = nbs[n];
+          nbHtml += '<div class="nb-item' + (nb.reifen ? ' reifen' : '') + '">' +
+            '<div class="nb-item-top"><span class="nb-teil">' + esc(nb.teil || '—') + '</span>' +
+            (nb.reifen ? '<span class="nb-tag">REIFEN</span>' : '') +
+            (nb.status ? '<span class="nb-status">' + esc(nb.status) + '</span>' : '') +
+            '</div>' +
+            '<div class="nb-meta">' +
+            [nb.date, nb.typ, nb.besteller, nb.regal].filter(function(x) { return x; }).map(esc).join(' · ') +
+            '</div></div>';
+        }
+        $('nbList').innerHTML = nbHtml;
+      }
+
+      renderList();
+    }
+
+    function selectStock(stockId, live) {
+      if (state.busy) return;
+      state.busy = true;
+      showLoad(live ? (stockId + ' wird live geprüft…') : (stockId + ' wird geladen…'));
+      var fn = live ? 'checkStockLive' : 'getStockDetail';
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        renderDetail(res);
+      })[fn](stockId);
+    }
+
+    function setStatus(status) {
+      if (!state.detail || state.busy) return;
+      state.busy = true;
+      showLoad('Status wird gespeichert…');
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Speichern fehlgeschlagen', true);
+          return;
+        }
+        toast(res.message || 'Gespeichert');
+        state.detail.sheetStatus = res.status || '';
+        state.detail.sheetRow = res.sheetRow || state.detail.sheetRow;
+        state.detail.inSheet = true;
+        if (state.detail.evalx && res.status && !(state.detail.evalx.suggested === 'B2A1' && res.status !== 'B2A1')) {
+          state.detail.evalx.suggested = '';
+        }
+        for (var i = 0; i < state.items.length; i++) {
+          if (state.items[i].stockId !== state.detail.stockId) continue;
+          state.items[i].sheetStatus = res.status || '';
+          state.items[i].statusKey = keyOf(res.status);
+          if (res.status && !(state.items[i].suggested === 'B2A1' && res.status !== 'B2A1')) {
+            state.items[i].suggested = '';
+            state.items[i].suggestedKey = 'none';
+          }
+          break;
+        }
+        renderDetail(state.detail);
+        loadQueue(true);
+      }).setSheetStatus(state.detail.stockId, status);
+    }
+
+    function handleScan() {
+      var raw = $('qSearch').value.replace(/\s+/g, '').toUpperCase();
+      if (!raw) return;
+      if (!/^[A-Z]{2}\d{4,8}$/.test(raw)) {
+        toast('Keine gültige Stock-ID: ' + raw, true);
+        return;
+      }
+      var cached = null;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId === raw) { cached = state.items[i]; break; }
+      }
+      $('qSearch').value = '';
+      state.query = '';
+      renderList();
+      selectStock(raw, !cached || cached.uncached);
+    }
+
+    $('qSearch').addEventListener('input', function() {
+      state.query = this.value;
+      renderList();
+    });
+    $('qSearch').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleScan();
+      }
+    });
+
+    $('filters').addEventListener('click', function(e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      var chips = this.querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+      chip.classList.add('active');
+      state.filter = chip.getAttribute('data-f');
+      loadQueue();
+    });
+
+    $('btnReload').addEventListener('click', function() {
+      if (state.busy) return;
+      state.busy = true;
+      showLoad('Alle Stock-IDs werden neu geprüft…');
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (res && res.success) {
+          toast('Neu geprüft: ' + res.count + ' Stock-IDs');
+          loadQueue();
+          if (state.selected) selectStock(state.selected, false);
+        } else {
+          toast((res && res.message) || 'Rebuild fehlgeschlagen', true);
+        }
+      }).forceRebuildCache();
+    });
+
+    $('btnRecheck').addEventListener('click', function() {
+      if (state.selected) selectStock(state.selected, true);
+    });
+
+    $('btnCarol').addEventListener('click', function() {
+      if (state.detail && state.detail.carolUrl) window.open(state.detail.carolUrl, '_blank');
+    });
+
+    $('btnGmail').addEventListener('click', function() {
+      if (state.detail && state.detail.gmailSearchUrl) window.open(state.detail.gmailSearchUrl, '_blank');
+    });
+
+    $('btnCopySid').addEventListener('click', function() {
+      if (!state.selected) return;
+      var sid = state.selected;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sid).then(function() {
+          toast('Stock-ID kopiert: ' + sid);
+        }, function() {
+          toast('Kopieren fehlgeschlagen', true);
+        });
+      }
+    });
+
+    $('statusBtns').addEventListener('click', function(e) {
+      var btn = e.target.closest('.sbtn');
+      if (!btn) return;
+      setStatus(btn.getAttribute('data-s') || '');
+    });
+
+    function printList() {
+      if (state.busy) return;
+      state.busy = true;
+      showLoad('Druckliste wird erstellt…');
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        var items = (res.items || []).filter(function(it) {
+          return (it.sheetStatus || '') !== 'OK';
+        });
+        if (!items.length) {
+          toast('Nichts zu drucken — alle Stock-IDs sind OK');
+          return;
+        }
+        var counts = {};
+        for (var i = 0; i < items.length; i++) {
+          var k = items[i].sheetStatus || 'OFFEN';
+          counts[k] = (counts[k] || 0) + 1;
+        }
+        var summary = Object.keys(counts).sort().map(function(k) {
+          return k + ': ' + counts[k];
+        }).join(' · ');
+        var now = new Date();
+        var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
+          ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+        var rows = '';
+        for (var j = 0; j < items.length; j++) {
+          var it = items[j];
+          var infos = [];
+          if (it.mailFound) infos.push('Return-Mail');
+          if (it.carolDone) infos.push('Herausgegeben');
+          if (it.reifenDa) infos.push('Reifen da');
+          else if (it.refurbFound) infos.push('Reifen fehlt');
+          var statusClass = keyOf(it.sheetStatus);
+          rows += '<tr>' +
+            '<td class="sid-cell"><span class="sid">' + esc(it.stockId) + '</span><svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></td>' +
+            '<td><span class="st st-' + statusClass + '">' + esc(it.sheetStatus || '—') + '</span></td>' +
+            '<td>' + esc(it.markeModel || '—') + '</td>' +
+            '<td>' + esc(infos.join(', ') || '—') + '</td>' +
+            '</tr>';
+        }
+        var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Reifen Kontrolle — Druckliste</title>' +
+          '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
+          '<style>' +
+          'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px}' +
+          'h1{font-size:18px;margin:0 0 2px}' +
+          '.meta{color:#555;font-size:11px;margin-bottom:14px}' +
+          'table{width:100%;border-collapse:collapse}' +
+          'th,td{border:1px solid #999;padding:5px 8px;text-align:left;vertical-align:middle}' +
+          'th{background:#eee;font-size:11px;text-transform:uppercase;letter-spacing:0.04em}' +
+          'tr:nth-child(even) td{background:#f7f7f7}' +
+          '.sid-cell{white-space:nowrap}' +
+          '.sid{display:block;font-weight:bold;margin-bottom:2px}' +
+          '.bc{display:block;height:34px}' +
+          '.st{display:inline-block;font-weight:bold;padding:1px 8px;border-radius:10px;border:1px solid #999}' +
+          '.st-b2a1{background:#f7c5c5}' +
+          '.st-complete{background:#c5f0f7}' +
+          '.st-mech{background:#c5d5f7}' +
+          '.st-other{background:#fbe3b5}' +
+          'tr{page-break-inside:avoid}' +
+          '@media print{body{margin:10mm}}' +
+          '</style></head><body>' +
+          '<h1>Reifen Kontrolle</h1>' +
+          '<div class="meta">Stand: ' + esc(dateStr) + ' · ' + items.length + ' Stock-IDs · ' + esc(summary) + '</div>' +
+          '<table><thead><tr><th>Stock-ID</th><th>Status</th><th>Fahrzeug</th><th>Info</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table>' +
+          '<script>window.onload=function(){' +
+          'var els=document.querySelectorAll("svg.bc");' +
+          'for(var i=0;i<els.length;i++){' +
+          'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:32,width:1.5,displayValue:false,margin:0});}catch(e){}' +
+          '}' +
+          'setTimeout(function(){window.print();},250);' +
+          '};<\/script>' +
+          '</body></html>';
+        var win = window.open('', '_blank');
+        if (!win) {
+          toast('Popup blockiert — bitte Popups erlauben', true);
+          return;
+        }
+        win.document.open();
+        win.document.write(doc);
+        win.document.close();
+        win.focus();
+      }).getQueue('alle');
+    }
+
+    $('btnPrint').addEventListener('click', printList);
+
+    var batch = [];
+
+    function renderBatch() {
+      var box = $('batchList');
+      if (!batch.length) {
+        box.innerHTML = '<span class="batch-empty">Noch keine Stock-IDs</span>';
+      } else {
+        box.innerHTML = batch.map(function(sid) {
+          return '<span class="batch-chip">' + esc(sid) + '<button type="button" data-rm="' + esc(sid) + '" title="Entfernen">×</button></span>';
+        }).join('');
+      }
+      var save = $('batchSave');
+      save.textContent = 'Alle hinzufügen (' + batch.length + ')';
+      save.disabled = !batch.length;
+    }
+
+    function openBatch() {
+      batch = [];
+      renderBatch();
+      $('batchInput').value = '';
+      $('batchModal').classList.add('show');
+      setTimeout(function() { $('batchInput').focus(); }, 50);
+    }
+
+    function closeBatch() {
+      $('batchModal').classList.remove('show');
+      $('qSearch').focus();
+    }
+
+    function batchAddFromInput() {
+      var parts = $('batchInput').value.split(/[\s,;]+/);
+      var bad = [];
+      for (var i = 0; i < parts.length; i++) {
+        var sid = parts[i].replace(/\s+/g, '').toUpperCase();
+        if (!sid) continue;
+        if (!/^[A-Z]{2}\d{4,8}$/.test(sid)) {
+          bad.push(sid);
+          continue;
+        }
+        if (batch.indexOf(sid) === -1) batch.push(sid);
+      }
+      $('batchInput').value = '';
+      renderBatch();
+      if (bad.length) toast('Ungültig: ' + bad.join(', '), true);
+    }
+
+    $('btnAddIds').addEventListener('click', openBatch);
+    $('batchCancel').addEventListener('click', closeBatch);
+    $('batchModal').addEventListener('click', function(e) {
+      if (e.target === this) closeBatch();
+    });
+    $('batchInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        batchAddFromInput();
+      }
+      if (e.key === 'Escape') closeBatch();
+    });
+    $('batchList').addEventListener('click', function(e) {
+      var btn = e.target.closest('button[data-rm]');
+      if (!btn) return;
+      var sid = btn.getAttribute('data-rm');
+      batch = batch.filter(function(x) { return x !== sid; });
+      renderBatch();
+      $('batchInput').focus();
+    });
+    $('batchSave').addEventListener('click', function() {
+      if ($('batchInput').value.trim()) batchAddFromInput();
+      if (!batch.length || state.busy) return;
+      state.busy = true;
+      showLoad(batch.length + ' Stock-IDs werden hinzugefügt…');
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Hinzufügen fehlgeschlagen', true);
+          return;
+        }
+        toast(res.message || 'Hinzugefügt');
+        closeBatch();
+        loadQueue();
+      }).addStockIds(batch);
+    });
+
+    document.addEventListener('keydown', function(e) {
+      if (e.target === $('qSearch') || e.target === $('batchInput')) return;
+      if ($('batchModal').classList.contains('show')) {
+        if (e.key === 'Escape') closeBatch();
+        return;
+      }
+      if (e.key === '/' || (e.key.length === 1 && /[a-z0-9]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        $('qSearch').focus();
+        if (e.key === '/') e.preventDefault();
+      }
+    });
+
+    setInterval(function() {
+      if (!state.busy) loadQueue(true);
+    }, 90000);
+
+    loadQueue();
+    $('qSearch').focus();
+  </script>
+</body>
+</html>
