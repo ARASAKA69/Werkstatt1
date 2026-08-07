@@ -540,19 +540,28 @@
       overflow: auto; border-radius: 20px;
       background: rgba(14, 16, 20, 0.96); border: 1px solid var(--border-strong);
       box-shadow: var(--shadow-lg); padding: 22px 24px 20px;
+      box-sizing: border-box; max-width: 100%;
     }
     .inv-head {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
       margin-bottom: 14px;
     }
     .inv-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }
-    .inv-head p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.85rem; }
+    .inv-head p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.85rem; overflow-wrap: anywhere; }
     .inv-progress {
       margin-bottom: 16px;
+      min-width: 0;
     }
     .inv-progress-meta {
-      display: flex; justify-content: space-between; gap: 8px;
+      display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
       font-size: 0.8rem; font-weight: 700; color: var(--foreground-muted); margin-bottom: 6px;
+      min-width: 0;
+    }
+    .inv-progress-meta > span {
+      min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .inv-progress-meta > span:last-child {
+      flex: 1; text-align: right;
     }
     .inv-bar {
       height: 10px; border-radius: 999px; background: rgba(255,255,255,0.1); overflow: hidden;
@@ -564,8 +573,9 @@
     }
     .inv-sid {
       font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px;
+      overflow-wrap: anywhere;
     }
-    .inv-car { color: var(--foreground-muted); font-weight: 600; margin-bottom: 14px; }
+    .inv-car { color: var(--foreground-muted); font-weight: 600; margin-bottom: 14px; overflow-wrap: anywhere; }
     .inv-checks {
       display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
     }
@@ -573,14 +583,14 @@
       display: flex; gap: 10px; align-items: flex-start;
       border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
       background: var(--surface); border-left: 4px solid var(--border-strong);
-      font-size: 0.88rem;
+      font-size: 0.88rem; min-width: 0;
     }
     .inv-check.ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
     .inv-check.warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
     .inv-check.bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
     .inv-check.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
-    .inv-check .ik { font-weight: 800; min-width: 7.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
-    .inv-check .iv { font-weight: 600; line-height: 1.35; }
+    .inv-check .ik { font-weight: 800; flex: 0 0 auto; min-width: 6.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .inv-check .iv { font-weight: 600; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
     .inv-actions {
       display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
     }
@@ -1661,7 +1671,6 @@
       else rows.push({ cls: 'ok', k: 'B2A1 Mail', v: 'Keine Return-Mail' });
       if (r.found) {
         rows.push({ cls: r.herausgegeben || ev.carolDone ? 'info' : 'ok', k: 'Refurb', v: (r.status || '—') + (r.markeModel ? ' · ' + r.markeModel : '') });
-        rows.push({ cls: r.reifenDa || it.reifenDa ? 'ok' : 'warn', k: 'Reifen da', v: (r.reifen || it.reifenLabel || '—') });
       } else {
         rows.push({ cls: 'warn', k: 'Refurb', v: 'Nicht in Refurbishment List' });
       }
@@ -1681,25 +1690,39 @@
       return rows;
     }
 
-    function countStatus(status) {
-      var n = 0;
-      for (var i = 0; i < state.items.length; i++) {
-        if (state.items[i].sheetStatus === status) n++;
-      }
-      return n;
+    function inventurRecount() {
+      var inv = state.inventur;
+      if (!inv) return { OK: 0, COMPLETE: 0, B2A1: 0, MECH: 0, SKIP: 0, set: 0 };
+      var c = { OK: 0, COMPLETE: 0, B2A1: 0, MECH: 0, SKIP: 0, set: 0 };
+      var results = inv.results || {};
+      Object.keys(results).forEach(function(sid) {
+        var v = results[sid];
+        if (v === 'SKIP') c.SKIP++;
+        else if (c[v] != null) { c[v]++; c.set++; }
+      });
+      inv.counts = c;
+      return c;
+    }
+
+    function inventurMark(sid, outcome) {
+      var inv = state.inventur;
+      if (!inv) return;
+      if (!inv.results) inv.results = {};
+      inv.results[sid] = outcome;
+      inventurRecount();
     }
 
     function renderInventur() {
       var inv = state.inventur;
       var box = $('invBody');
       if (!inv) { box.innerHTML = ''; return; }
+      var c = inventurRecount();
       if (inv.done || inv.index >= inv.queue.length) {
         inv.done = true;
-        var c = inv.counts;
         box.innerHTML =
           '<div class="inv-done">' +
           '<h3>Inventur fertig</h3>' +
-          '<p>' + inv.queue.length + ' Positionen durchgearbeitet · jetzt Listen drucken falls nötig</p>' +
+          '<p>' + inv.queue.length + ' Positionen durchgearbeitet · Liste drucken falls nötig</p>' +
           '<div class="inv-stats">' +
           '<div class="inv-stat ok"><div class="n">' + c.OK + '</div><div class="l">OK</div></div>' +
           '<div class="inv-stat complete"><div class="n">' + c.COMPLETE + '</div><div class="l">COMPLETE</div></div>' +
@@ -1708,11 +1731,9 @@
           '<div class="inv-stat skip"><div class="n">' + c.SKIP + '</div><div class="l">Übersprungen</div></div>' +
           '</div>' +
           '<div class="inv-print-row">' +
-          '<button type="button" class="btn" data-inv-print="B2A1">B2A1 drucken</button>' +
-          '<button type="button" class="btn" data-inv-print="COMPLETE">COMPLETE drucken</button>' +
-          '<button type="button" class="btn" data-inv-print="MECH">MECH drucken</button>' +
+          '<button type="button" class="btn primary" id="invPrintAll">Liste drucken</button>' +
           '</div>' +
-          '<button type="button" class="btn primary" id="invFinishClose">Fertig & schließen</button>' +
+          '<button type="button" class="btn ghost" id="invFinishClose">Fertig & schließen</button>' +
           '</div>';
         return;
       }
@@ -1724,13 +1745,17 @@
         return '<div class="inv-check ' + h.cls + '"><div class="ik">' + esc(h.k) + '</div><div class="iv">' + esc(h.v) + '</div></div>';
       }).join('');
       var car = (d && d.refurb && d.refurb.markeModel) || it.markeModel || '—';
+      var currentMark = (inv.results && inv.results[it.stockId]) || '';
       box.innerHTML =
         '<div class="inv-progress">' +
-        '<div class="inv-progress-meta"><span>' + (inv.index + 1) + ' / ' + inv.queue.length + '</span><span>' +
-        (inv.counts.OK + inv.counts.COMPLETE + inv.counts.B2A1 + inv.counts.MECH) + ' gesetzt · ' + inv.counts.SKIP + ' übersprungen</span></div>' +
+        '<div class="inv-progress-meta"><span>' + (inv.index + 1) + ' / ' + inv.queue.length + '</span><span title="' +
+        c.set + ' gesetzt · ' + c.SKIP + ' übersprungen">' +
+        c.set + ' gesetzt · ' + c.SKIP + ' übersprungen</span></div>' +
         '<div class="inv-bar"><i style="width:' + pct + '%"></i></div></div>' +
         '<div class="inv-sid">' + esc(it.stockId) + '</div>' +
-        '<div class="inv-car">' + esc(car) + (d && d.uncached ? ' · noch nicht vollständig geprüft' : '') + '</div>' +
+        '<div class="inv-car">' + esc(car) +
+        (currentMark ? ' · zuletzt: ' + esc(currentMark) : '') +
+        (d && d.uncached ? ' · noch nicht vollständig geprüft' : '') + '</div>' +
         '<div class="inv-checks">' + checksHtml + '</div>' +
         '<div class="inv-actions" id="invStatusBtns">' +
         '<button type="button" class="sbtn ok" data-s="OK">OK</button>' +
@@ -1768,7 +1793,7 @@
       if (!inv || inv.done || inv.index >= inv.queue.length) return;
       var it = inv.queue[inv.index];
       inventurSaveStatus(it.stockId, status);
-      if (inv.counts[status] != null) inv.counts[status]++;
+      inventurMark(it.stockId, status);
       toast(status + ' — ' + it.stockId);
       inventurAdvance();
     }
@@ -1776,7 +1801,8 @@
     function inventurSkip() {
       var inv = state.inventur;
       if (!inv || inv.done || inv.index >= inv.queue.length) return;
-      inv.counts.SKIP++;
+      var it = inv.queue[inv.index];
+      inventurMark(it.stockId, 'SKIP');
       inventurAdvance();
     }
 
@@ -1832,7 +1858,8 @@
           queue: queue.slice(),
           index: 0,
           done: false,
-          counts: { OK: 0, COMPLETE: 0, B2A1: 0, MECH: 0, SKIP: 0 }
+          results: {},
+          counts: { OK: 0, COMPLETE: 0, B2A1: 0, MECH: 0, SKIP: 0, set: 0 }
         };
         $('invSub').textContent = queue.length + ' ohne Status — nacheinander abarbeiten';
         $('invLayer').classList.add('show');
@@ -1856,19 +1883,20 @@
       closeInventur();
     });
     $('invBody').addEventListener('click', function(e) {
-      var printBtn = e.target.closest('[data-inv-print]');
-      if (printBtn) {
-        var st = printBtn.getAttribute('data-inv-print');
-        showLoad(st + '-Liste wird erstellt…');
+      if (e.target.id === 'invPrintAll') {
+        showLoad('Druckliste wird erstellt…');
         run(function(res) {
           hideLoad();
           if (!res || !res.success) {
             toast((res && res.message) || 'Laden fehlgeschlagen', true);
             return;
           }
-          var list = (res.items || []).filter(function(it) { return it.sheetStatus === st; });
-          printStockItems(list, 'Inventur — ' + st);
-        }).getQueue(st.toLowerCase() === 'b2a1' ? 'b2a1' : st.toLowerCase());
+          var list = (res.items || []).filter(function(it) {
+            var st = it.sheetStatus || '';
+            return st === 'B2A1' || st === 'COMPLETE' || st === 'MECH';
+          });
+          printStockItems(list, 'Inventur — B2A1 / COMPLETE / MECH');
+        }).getQueue('alle');
         return;
       }
       if (e.target.id === 'invFinishClose') { closeInventur(); return; }
