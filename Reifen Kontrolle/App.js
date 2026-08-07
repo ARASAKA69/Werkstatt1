@@ -194,6 +194,39 @@ function getCacheSheet_() {
   return sh;
 }
 
+function dedupeReifenSheet_() {
+  var removed = 0;
+  try {
+    var sheet = getReifenSheet_();
+    var last = sheet.getLastRow();
+    if (last < 3) return 0;
+    var data = sheet.getRange(2, 1, last - 1, 2).getDisplayValues();
+    var first = {};
+    var toDelete = [];
+    for (var i = 0; i < data.length; i++) {
+      var sid = normalizeStockId_(data[i][0]);
+      if (!sid || !looksLikeStockId_(sid)) continue;
+      var status = normalizeSheetStatus_(data[i][1]);
+      if (!first[sid]) {
+        first[sid] = { row: i + 2, status: status };
+        continue;
+      }
+      if (!first[sid].status && status) {
+        first[sid].status = status;
+        sheet.getRange(first[sid].row, 2).setValue(status);
+        try { sheet.getRange(first[sid].row, 2).setFontWeight('bold').setHorizontalAlignment('center'); } catch (eFmt) {}
+      }
+      toDelete.push(i + 2);
+    }
+    for (var d = toDelete.length - 1; d >= 0; d--) {
+      sheet.deleteRow(toDelete[d]);
+      removed++;
+    }
+    if (removed) SpreadsheetApp.flush();
+  } catch (e) {}
+  return removed;
+}
+
 function readReifenList_() {
   var sheet = getReifenSheet_();
   var last = sheet.getLastRow();
@@ -354,6 +387,12 @@ function isGreenColor_(hex) {
   return g >= 110 && g > r + 25 && g > b + 25;
 }
 
+function tageslisteUrl_(row) {
+  var u = 'https://docs.google.com/spreadsheets/d/' + TAGESLISTE_SHEET_ID + '/edit#gid=' + TAGESLISTE_GID;
+  if (row) u += '&range=E' + row;
+  return u;
+}
+
 function getTageslisteSheet_() {
   var ss = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
   var sh = ss.getSheetByName(TAGESLISTE_TAB);
@@ -384,7 +423,8 @@ function buildTageslisteMap_() {
         datum: String(data[i][TL_DATUM_COL - 1] || '').trim(),
         schicht: String(data[i][TL_SCHICHT_COL - 1] || '').trim(),
         reifen: reifen,
-        reifenGreen: !!reifen && isGreenColor_(bgs[i][0])
+        reifenGreen: !!reifen && isGreenColor_(bgs[i][0]),
+        url: tageslisteUrl_(i + 1)
       };
       if (!map[sid]) map[sid] = [];
       map[sid].push(entry);
@@ -536,7 +576,7 @@ function buildDetail_(entry, refurbMap, nbMap, tlMap, withMail) {
     sheetStatus: entry.sheetStatus || '',
     refurb: refurb,
     nachbestellungen: nbs,
-    tagesliste: { found: tl.length > 0, count: tl.length, entries: tl, latest: tl.length ? tl[0] : null },
+    tagesliste: { found: tl.length > 0, count: tl.length, entries: tl, latest: tl.length ? tl[0] : null, url: tl.length ? tl[0].url : '' },
     returnMail: returnMail,
     evalx: evalRes,
     carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
@@ -568,6 +608,7 @@ function itemFromDetail_(d) {
     tlReifen: (d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.reifen) || '',
     tlReifenGreen: !!(d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.reifenGreen),
     tlDatum: (d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.datum) || '',
+    tlUrl: (d.tagesliste && d.tagesliste.url) || '',
     mismatch: !!(d.sheetStatus && d.evalx.suggested === 'B2A1' && d.sheetStatus !== 'B2A1')
   };
 }
@@ -575,6 +616,7 @@ function itemFromDetail_(d) {
 function rebuildReifenCache() {
   var builtAtMs = Date.now();
   var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
+  dedupeReifenSheet_();
   var list = readReifenList_();
   var refurbMap = buildRefurbMap_();
   var nbMap = buildNachbestellMap_();
@@ -703,7 +745,7 @@ function filterItems_(items, filter) {
   return out;
 }
 
-function getQueue(filter) {
+function getQueue(filter, includeDetails) {
   try {
     var cache = readCache_();
     if (!cache || !cache.items) cache = rebuildReifenCache();
@@ -750,17 +792,38 @@ function getQueue(filter) {
         tlReifen: '',
         tlReifenGreen: false,
         tlDatum: '',
+        tlUrl: '',
         mismatch: false,
         uncached: true
       });
     }
     items.sort(function(a, b) { return (a.sheetRow || 0) - (b.sheetRow || 0); });
-    return {
+    var out = {
       success: true,
       items: filterItems_(items, filter),
       total: items.length,
-      cachedAt: cache.builtAt || ''
+      cachedAt: cache.builtAt || '',
+      cachedAtMs: Number(cache.builtAtMs) || 0
     };
+    if (includeDetails && cache.details) {
+      var details = {};
+      var dkeys = Object.keys(cache.details);
+      for (var di = 0; di < dkeys.length; di++) {
+        var det = cache.details[dkeys[di]];
+        var dlv = liveMap[dkeys[di]];
+        if (!dlv) continue;
+        det.sheetStatus = dlv.sheetStatus;
+        det.sheetRow = dlv.sheetRow;
+        det.inSheet = true;
+        if (det.evalx && dlv.sheetStatus && !(det.evalx.suggested === 'B2A1' && dlv.sheetStatus !== 'B2A1')) {
+          det.evalx.suggested = '';
+        }
+        det.cachedAt = cache.builtAt || '';
+        details[dkeys[di]] = det;
+      }
+      out.details = details;
+    }
+    return out;
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [] };
   }

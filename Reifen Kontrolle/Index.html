@@ -215,8 +215,18 @@
     }
     .sub2 {
       margin-top: 2px; font-size: 0.78rem; color: var(--foreground-muted);
-      display: flex; flex-wrap: wrap; gap: 2px 10px;
+      display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: center;
     }
+    .tl-jump {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; font-weight: 700; color: #7dd3fc;
+      border: 1px solid rgba(125, 211, 252, 0.35); border-radius: 999px;
+      padding: 0.1rem 0.5rem; cursor: pointer;
+      background: rgba(125, 211, 252, 0.08);
+      transition: 160ms var(--easing);
+    }
+    .tl-jump:hover { background: rgba(125, 211, 252, 0.2); color: #bae6fd; }
+    .tl-jump svg { width: 0.75rem; height: 0.75rem; }
     .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
     .hint.yellow { color: var(--yellow-status); }
     .hint.green { color: var(--green-status); }
@@ -634,10 +644,13 @@
     var state = {
       filter: 'alle',
       items: [],
+      details: {},
       selected: null,
       detail: null,
       busy: false,
       cachedAt: '',
+      cachedAtMs: 0,
+      detailSourceMs: 0,
       query: ''
     };
 
@@ -715,6 +728,10 @@
         if (it.tlFound) {
           if (it.tlReifen) hints.push('<span class="hint ' + (it.tlReifenGreen ? 'green' : 'yellow') + '">TL Reifen ' + esc(it.tlReifen) + '</span>');
           else hints.push('<span class="hint yellow">TL ohne Reifen</span>');
+          if (it.tlUrl) {
+            hints.push('<span class="tl-jump" data-tl="' + esc(it.tlUrl) + '" title="In Tagesliste öffnen">Tagesliste' +
+              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>');
+          }
         }
         if (it.uncached) hints.push('<span class="hint yellow">Noch nicht geprüft</span>');
         var pills = '';
@@ -735,7 +752,13 @@
       box.innerHTML = html;
       var btns = box.querySelectorAll('.item');
       for (var b = 0; b < btns.length; b++) {
-        btns[b].addEventListener('click', function() {
+        btns[b].addEventListener('click', function(e) {
+          var jump = e.target.closest('[data-tl]');
+          if (jump) {
+            e.stopPropagation();
+            window.open(jump.getAttribute('data-tl'), '_blank');
+            return;
+          }
           selectStock(this.getAttribute('data-sid'), false);
         });
       }
@@ -752,8 +775,16 @@
         }
         state.items = res.items || [];
         state.cachedAt = res.cachedAt || '';
+        state.cachedAtMs = res.cachedAtMs || 0;
+        if (res.details) state.details = res.details;
         renderList();
-      }).getQueue(state.filter);
+        if (silent && state.selected && !state.busy &&
+            state.details[state.selected] &&
+            state.cachedAtMs > (state.detailSourceMs || 0)) {
+          state.detailSourceMs = state.cachedAtMs;
+          renderDetail(state.details[state.selected]);
+        }
+      }).getQueue(state.filter, true);
     }
 
     function checkRow(state_, title, meta) {
@@ -773,6 +804,7 @@
     function renderDetail(d) {
       state.detail = d;
       state.selected = d.stockId;
+      state.details[d.stockId] = d;
       $('emptyState').style.display = 'none';
       $('detail').style.display = 'block';
       $('detailSid').textContent = d.stockId;
@@ -861,14 +893,15 @@
         var lt = tlist.latest || {};
         var when = [lt.datum, lt.schicht].filter(function(x) { return x; }).join(' · ');
         var extra = tlist.count > 1 ? ' · ' + tlist.count + '× insgesamt' : '';
+        var tlLink = tlist.url ? ' · <a href="' + esc(tlist.url) + '" target="_blank" rel="noopener">In Tagesliste öffnen</a>' : '';
         if (lt.reifen) {
           checks += checkRow(lt.reifenGreen ? 'ok' : 'info', 'Tagesliste',
             'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
-            ' · Reifen: <b>' + esc(lt.reifen) + '</b>' + (lt.reifenGreen ? ' <b>(grün)</b>' : ' (nicht grün)') + extra);
+            ' · Reifen: <b>' + esc(lt.reifen) + '</b>' + (lt.reifenGreen ? ' <b>(grün)</b>' : ' (nicht grün)') + extra + tlLink);
         } else {
           checks += checkRow('warn', 'Tagesliste',
             'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
-            ' · <b>kein Reifen-Eintrag (2/4)</b>' + extra);
+            ' · <b>kein Reifen-Eintrag (2/4)</b>' + extra + tlLink);
         }
       } else {
         checks += checkRow('none', 'Tagesliste', 'Nicht auf der Tagesliste gefunden');
@@ -942,6 +975,11 @@
     }
 
     function selectStock(stockId, live) {
+      if (!live && state.details[stockId]) {
+        state.detailSourceMs = state.cachedAtMs || Date.now();
+        renderDetail(state.details[stockId]);
+        return;
+      }
       if (state.busy) return;
       state.busy = true;
       showLoad(live ? (stockId + ' wird live geprüft…') : (stockId + ' wird geladen…'));
@@ -953,41 +991,50 @@
           toast((res && res.message) || 'Laden fehlgeschlagen', true);
           return;
         }
+        state.details[res.stockId] = res;
+        state.detailSourceMs = Date.now();
         renderDetail(res);
       })[fn](stockId);
     }
 
     function setStatus(status) {
-      if (!state.detail || state.busy) return;
-      state.busy = true;
-      showLoad('Status wird gespeichert…');
-      run(function(res) {
-        state.busy = false;
-        hideLoad();
+      if (!state.detail) return;
+      var d = state.detail;
+      var sid = d.stockId;
+      d.sheetStatus = status || '';
+      d.inSheet = true;
+      if (d.evalx && status && !(d.evalx.suggested === 'B2A1' && status !== 'B2A1')) {
+        d.evalx.suggested = '';
+      }
+      var found = false;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId !== sid) continue;
+        found = true;
+        state.items[i].sheetStatus = status || '';
+        state.items[i].statusKey = keyOf(status);
+        if (status && !(state.items[i].suggested === 'B2A1' && status !== 'B2A1')) {
+          state.items[i].suggested = '';
+          state.items[i].suggestedKey = 'none';
+        }
+        break;
+      }
+      state.detailSourceMs = Date.now();
+      if (state.selected === sid) renderDetail(d);
+      else renderList();
+      toast(status ? (status + ' — ' + sid + ' wird gespeichert…') : ('Status von ' + sid + ' wird entfernt…'));
+      google.script.run.withFailureHandler(function(err) {
+        toast('Speichern fehlgeschlagen: ' + String(err && err.message ? err.message : err), true);
+        loadQueue(true);
+      }).withSuccessHandler(function(res) {
         if (!res || !res.success) {
           toast((res && res.message) || 'Speichern fehlgeschlagen', true);
+          loadQueue(true);
           return;
         }
         toast(res.message || 'Gespeichert');
-        state.detail.sheetStatus = res.status || '';
-        state.detail.sheetRow = res.sheetRow || state.detail.sheetRow;
-        state.detail.inSheet = true;
-        if (state.detail.evalx && res.status && !(state.detail.evalx.suggested === 'B2A1' && res.status !== 'B2A1')) {
-          state.detail.evalx.suggested = '';
-        }
-        for (var i = 0; i < state.items.length; i++) {
-          if (state.items[i].stockId !== state.detail.stockId) continue;
-          state.items[i].sheetStatus = res.status || '';
-          state.items[i].statusKey = keyOf(res.status);
-          if (res.status && !(state.items[i].suggested === 'B2A1' && res.status !== 'B2A1')) {
-            state.items[i].suggested = '';
-            state.items[i].suggestedKey = 'none';
-          }
-          break;
-        }
-        renderDetail(state.detail);
-        loadQueue(true);
-      }).setSheetStatus(state.detail.stockId, status);
+        if (res.sheetRow) d.sheetRow = res.sheetRow;
+        if (!found) loadQueue(true);
+      }).setSheetStatus(sid, status);
     }
 
     function handleScan() {
@@ -1255,7 +1302,7 @@
 
     setInterval(function() {
       if (!state.busy) loadQueue(true);
-    }, 90000);
+    }, 120000);
 
     loadQueue();
     $('qSearch').focus();
