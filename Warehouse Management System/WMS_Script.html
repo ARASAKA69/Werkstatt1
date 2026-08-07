@@ -112,8 +112,13 @@
   var BRIDGE_DOWNLOAD_PS1 = 'https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/Warehouse%20Management%20System/arasaka-print-bridge.ps1';
   var BRIDGE_DOWNLOAD_BAT = 'https://raw.githubusercontent.com/ARASAKA69/Werkstatt1/refs/heads/main/Warehouse%20Management%20System/arasaka-print-bridge.bat';
   var LAGER_KISTEN_KLAERUNG_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbxw1Uz9cwh7Y3w5weaZ5wURxIlLaVS2wWa0BbfJ7AFnv0j5082SREKR7ylOpp7K4Lvl9Q/exec';
+  var REIFEN_KONTROLLE_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
   function openLagerKistenKlaerung() {
     var w = window.open(LAGER_KISTEN_KLAERUNG_URL, '_blank', 'noopener,noreferrer');
+    if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
+  }
+  function openReifenKontrolle() {
+    var w = window.open(REIFEN_KONTROLLE_URL, '_blank', 'noopener,noreferrer');
     if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
   }
   function downloadBridgeFile(url, filename) {
@@ -4590,6 +4595,7 @@
       statusEl.style.color = '#56d364';
       var finalMessage = '✅ ' + res.message;
       printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge, res.regal || '');
+      if (res.reifenKontrolleAdded) finalMessage += ' → Reifen Kontrolle.';
       statusEl.innerText = finalMessage;
       showReifenInfo(res);
       loadRefurbishmentCache(true);
@@ -5396,6 +5402,7 @@
             } else {
               finalMessage += " DYMO Fehler: " + printResult.message;
             }
+            if (res.reifenKontrolleAdded) finalMessage += " → Reifen Kontrolle.";
             document.getElementById('reifenConfirmModal').classList.add('open');
           } else {
             reifenStockInput.value = "";

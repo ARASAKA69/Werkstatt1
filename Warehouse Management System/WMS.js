@@ -1,5 +1,7 @@
 const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo/edit?gid=1453769469#gid=1453769469";
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
+const REIFEN_KONTROLLE_SHEET_ID = "1dlmZuWfJ3xiJ-LCtNYioVdTTtDN1nrR78p63mDwW18M";
+const REIFEN_KONTROLLE_TAB = "Reifen Kontrolle";
 const NACHBESTELL_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 const NACHBESTELL_TAB = "Nachbestellung";
 const NACHBESTELL_GID = 130741593;
@@ -20,6 +22,13 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
+  {
+    version: "2.2.1",
+    date: "07.08.2026",
+    notes:
+      "• Reifen Annahme JA-Buchung (Lieferschein / Scan / Paketdienst) schreibt die Stock-ID jetzt automatisch ins Reifen Kontrolle Sheet — kein manuelles eintippen mehr später im HUD\n" +
+      "• Reifen Kontrolle im Sidebar-Menü unter Reifen mit drin, öffnet im neuen Tab wie Lager Kisten Klärung\n"
+  },
   {
     version: "2.2.0",
     date: "05.08.2026",
@@ -861,6 +870,29 @@ function formatReifenRegalLabel(val) {
     return "";
   }
 
+function appendStockIdToReifenKontrolle_(stockId) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return { added: false, skipped: true };
+    var ss = SpreadsheetApp.openById(REIFEN_KONTROLLE_SHEET_ID);
+    var sheet = ss.getSheetByName(REIFEN_KONTROLLE_TAB);
+    if (!sheet) return { added: false, skipped: true, message: "Tab fehlt" };
+    var last = sheet.getLastRow();
+    if (last >= 2) {
+      var data = sheet.getRange(2, 1, last, 1).getDisplayValues();
+      for (var i = 0; i < data.length; i++) {
+        if (normalizeStockId(data[i][0]) === stockId) {
+          return { added: false, skipped: true, already: true };
+        }
+      }
+    }
+    sheet.appendRow([stockId, ""]);
+    return { added: true, skipped: false };
+  } catch (err) {
+    return { added: false, skipped: true, message: String(err && err.message ? err.message : err) };
+  }
+}
+
 function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketdienst) {
     try {
       stockId = normalizeStockId(stockId);
@@ -953,6 +985,10 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
       }
 
       SpreadsheetApp.flush();
+      var kontrolle = { added: false };
+      if (isDelivered) {
+        kontrolle = appendStockIdToReifenKontrolle_(stockId);
+      }
       return {
         success: true,
         message: hemauMsg,
@@ -965,7 +1001,9 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
         remainingSize: remainingNext ? remainingNext.groesse : "",
         remainingLast: remainingNext ? remainingNext.lastindex : "",
         remainingGw: remainingNext ? remainingNext.gwindex : "",
-        remainingMenge: remainingNext ? (parseInt(remainingNext.menge, 10) || 2) : 0
+        remainingMenge: remainingNext ? (parseInt(remainingNext.menge, 10) || 2) : 0,
+        reifenKontrolleAdded: !!(kontrolle && kontrolle.added),
+        reifenKontrolleSkipped: !!(kontrolle && kontrolle.skipped)
       };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message };
