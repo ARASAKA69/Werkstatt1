@@ -19,7 +19,7 @@ var CACHE_CHUNK = 48000;
 var HOT_CACHE_PREFIX = 'reifen_v1_';
 var HOT_CACHE_CHUNK = 90000;
 var HOT_CACHE_TTL_SEC = 300;
-var WEB_APP_URL = 'HIER_WEB_APP_URL_EINTRAGEN';
+var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
 
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('Index')
@@ -521,9 +521,11 @@ function evaluateStock_(stockId, refurb, nbs, returnMail, sheetStatus, tl) {
     var tlLatest = tl[0];
     var tlTxt = 'War auf Tagesliste' + (tlLatest.datum ? ' am ' + tlLatest.datum : '') + (tlLatest.schicht ? ' (' + tlLatest.schicht + ')' : '');
     if (tlLatest.reifen) {
-      tlTxt += ' — Reifen: ' + tlLatest.reifen + (tlLatest.reifenGreen ? ' (grün)' : '');
+      tlTxt += tlLatest.reifenGreen
+        ? ' — Reifen gestellt (grün) · Wert: ' + tlLatest.reifen
+        : ' — Reifen nicht gestellt (nicht grün) · Wert: ' + tlLatest.reifen;
     } else {
-      tlTxt += ' — kein Reifen-Eintrag (2/4)';
+      tlTxt += ' — nicht gestellt — kein Reifen-Eintrag (2/4)';
     }
     reasons.push(tlTxt);
   }
@@ -936,6 +938,78 @@ function setSheetStatus(stockId, status) {
     return { success: true, message: (status ? status : 'Status entfernt') + ' — ' + stockId + ' gespeichert', status: status, sheetRow: row };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
+  }
+}
+
+function deleteStockId(stockId) {
+  var res = deleteStockIds([stockId]);
+  if (!res || !res.success) return res;
+  if (!res.deleted) return { success: false, message: stockId + ' nicht im Sheet gefunden' };
+  return { success: true, message: stockId + ' aus Sheet gelöscht', deleted: res.deleted };
+}
+
+function deleteStockIds(ids) {
+  try {
+    var raw = [];
+    if (Object.prototype.toString.call(ids) === '[object Array]') raw = ids;
+    else raw = String(ids || '').split(/[\s,;]+/);
+    var want = {};
+    var order = [];
+    for (var r = 0; r < raw.length; r++) {
+      var sid = normalizeStockId_(raw[r]);
+      if (!sid || want[sid]) continue;
+      want[sid] = true;
+      order.push(sid);
+    }
+    if (!order.length) return { success: false, message: 'Keine Stock-IDs', deleted: 0, ids: [] };
+    var sheet = getReifenSheet_();
+    var last = sheet.getLastRow();
+    var deletedRows = 0;
+    var removed = {};
+    if (last >= 2) {
+      var data = sheet.getRange(2, 1, last - 1, 1).getDisplayValues();
+      for (var i = data.length - 1; i >= 0; i--) {
+        var cur = normalizeStockId_(data[i][0]);
+        if (cur && want[cur]) {
+          sheet.deleteRow(i + 2);
+          deletedRows++;
+          removed[cur] = true;
+        }
+      }
+    }
+    if (deletedRows) SpreadsheetApp.flush();
+    try {
+      var cache = readCache_();
+      if (cache) {
+        var changed = false;
+        for (var k = 0; k < order.length; k++) {
+          var id = order[k];
+          if (cache.details && cache.details[id]) {
+            delete cache.details[id];
+            changed = true;
+          }
+        }
+        if (cache.items) {
+          for (var j = cache.items.length - 1; j >= 0; j--) {
+            if (want[cache.items[j].stockId]) {
+              cache.items.splice(j, 1);
+              changed = true;
+            }
+          }
+        }
+        if (changed) writeCachePayload_(cache);
+      }
+    } catch (e2) {}
+    var gone = order.filter(function(id) { return !!removed[id]; });
+    return {
+      success: true,
+      message: gone.length + ' Stock-ID' + (gone.length === 1 ? '' : 's') + ' gelöscht',
+      deleted: gone.length,
+      ids: gone,
+      missing: order.filter(function(id) { return !removed[id]; })
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), deleted: 0, ids: [] };
   }
 }
 
