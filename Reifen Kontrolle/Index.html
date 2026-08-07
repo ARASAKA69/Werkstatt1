@@ -528,6 +528,94 @@
       animation: spin 0.9s linear infinite; margin: 0 auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .inv-layer {
+      position: fixed; inset: 0; z-index: 60; display: none;
+      background: rgba(5, 5, 6, 0.82); backdrop-filter: blur(10px);
+      padding: 16px; overflow: auto;
+    }
+    .inv-layer.show { display: grid; place-items: center; }
+    .inv-panel {
+      width: min(720px, 100%); max-height: calc(100vh - 32px);
+      overflow: auto; border-radius: 20px;
+      background: rgba(14, 16, 20, 0.96); border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-lg); padding: 22px 24px 20px;
+    }
+    .inv-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .inv-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }
+    .inv-head p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.85rem; }
+    .inv-progress {
+      margin-bottom: 16px;
+    }
+    .inv-progress-meta {
+      display: flex; justify-content: space-between; gap: 8px;
+      font-size: 0.8rem; font-weight: 700; color: var(--foreground-muted); margin-bottom: 6px;
+    }
+    .inv-bar {
+      height: 10px; border-radius: 999px; background: rgba(255,255,255,0.1); overflow: hidden;
+    }
+    .inv-bar > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--color-secondary), #5eead4);
+      transition: width 280ms var(--easing);
+    }
+    .inv-sid {
+      font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px;
+    }
+    .inv-car { color: var(--foreground-muted); font-weight: 600; margin-bottom: 14px; }
+    .inv-checks {
+      display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px;
+    }
+    .inv-check {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+      font-size: 0.88rem;
+    }
+    .inv-check.ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
+    .inv-check.warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
+    .inv-check.bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
+    .inv-check.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
+    .inv-check .ik { font-weight: 800; min-width: 7.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .inv-check .iv { font-weight: 600; line-height: 1.35; }
+    .inv-actions {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px;
+    }
+    .inv-actions .sbtn { min-width: 5.5rem; }
+    .inv-nav {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center;
+      border-top: 1px solid var(--border); padding-top: 14px; margin-top: 4px;
+    }
+    .inv-nav-left, .inv-nav-right { display: flex; flex-wrap: wrap; gap: 8px; }
+    .inv-keys {
+      font-size: 0.75rem; color: var(--foreground-muted); margin-top: 10px;
+    }
+    .inv-done {
+      text-align: center; padding: 12px 0 4px;
+    }
+    .inv-done h3 { margin: 0 0 8px; font-size: 1.35rem; }
+    .inv-done p { margin: 0 0 18px; color: var(--foreground-muted); }
+    .inv-stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+      margin-bottom: 18px;
+    }
+    .inv-stat {
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px;
+      background: var(--surface);
+    }
+    .inv-stat .n { font-size: 1.5rem; font-weight: 800; }
+    .inv-stat .l { font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .inv-stat.ok .n { color: #86efac; }
+    .inv-stat.b2a1 .n { color: #fca5a5; }
+    .inv-stat.complete .n { color: #a5f3fc; }
+    .inv-stat.mech .n { color: #93c5fd; }
+    .inv-stat.skip .n { color: var(--foreground-muted); }
+    .inv-print-row {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px;
+    }
   </style>
 </head>
 <body>
@@ -610,6 +698,10 @@
           <button class="btn" id="btnAddIds" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Stock-IDs
+          </button>
+          <button class="btn teal" id="btnInventur" type="button" title="Monatliche Inventur">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
+            Inventur
           </button>
           <button class="btn" id="btnPrint" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
@@ -718,6 +810,20 @@
       </div>
     </div>
   </div>
+
+  <div class="inv-layer" id="invLayer" role="dialog" aria-label="Monatliche Inventur">
+    <div class="inv-panel">
+      <div class="inv-head">
+        <div>
+          <h2>Monatliche Inventur</h2>
+          <p id="invSub">Alle Stock-IDs ohne Status — eine nach der anderen.</p>
+        </div>
+        <button type="button" class="btn ghost" id="invClose">Schließen</button>
+      </div>
+      <div id="invBody"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -732,7 +838,8 @@
       cachedAtMs: 0,
       detailSourceMs: 0,
       query: '',
-      picked: {}
+      picked: {},
+      inventur: null
     };
 
     function $(id) { return document.getElementById(id); }
@@ -1421,6 +1528,74 @@
     });
     $('btnBatchDelete').addEventListener('click', batchDeleteSelected);
 
+    function printStockItems(items, title) {
+      items = items || [];
+      if (!items.length) {
+        toast('Nichts zu drucken', true);
+        return;
+      }
+      var counts = {};
+      for (var i = 0; i < items.length; i++) {
+        var k = items[i].sheetStatus || 'OFFEN';
+        counts[k] = (counts[k] || 0) + 1;
+      }
+      var summary = Object.keys(counts).sort().map(function(k) {
+        return k + ': ' + counts[k];
+      }).join(' · ');
+      var now = new Date();
+      var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
+        ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+      var rows = '';
+      for (var j = 0; j < items.length; j++) {
+        var it = items[j];
+        var statusClass = keyOf(it.sheetStatus);
+        rows += '<div class="entry">' +
+          '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
+          '<span class="st st-' + statusClass + '">' + esc(it.sheetStatus || '—') + '</span></div>' +
+          '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg>' +
+          '</div>';
+      }
+      var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>' + esc(title || 'Reifen Kontrolle') + '</title>' +
+        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
+        '<style>' +
+        '@page{size:A4 portrait;margin:12mm}' +
+        'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;text-align:center}' +
+        'h1{font-size:18px;margin:0 0 2px}' +
+        '.meta{color:#555;font-size:11px;margin-bottom:14px}' +
+        '.entry{width:70mm;margin:0 auto 14px;padding:0;page-break-inside:avoid}' +
+        '.entry-top{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:4px}' +
+        '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
+        '.bc{display:block;height:38px;margin:0 auto}' +
+        '.st{display:inline-block;font-weight:bold;padding:2px 10px;border-radius:10px;border:1px solid #999;white-space:nowrap}' +
+        '.st-b2a1{background:#f7c5c5}' +
+        '.st-complete{background:#c5f0f7}' +
+        '.st-mech{background:#c5d5f7}' +
+        '.st-ok{background:#c5f7c5}' +
+        '.st-other{background:#fbe3b5}' +
+        '@media print{body{margin:0}}' +
+        '</style></head><body>' +
+        '<h1>' + esc(title || 'Reifen Kontrolle') + '</h1>' +
+        '<div class="meta">Stand: ' + esc(dateStr) + ' · ' + items.length + ' Stock-IDs · ' + esc(summary) + '</div>' +
+        rows +
+        '<script>window.onload=function(){' +
+        'var els=document.querySelectorAll("svg.bc");' +
+        'for(var i=0;i<els.length;i++){' +
+        'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:32,width:1.5,displayValue:false,margin:0});}catch(e){}' +
+        '}' +
+        'setTimeout(function(){window.print();},250);' +
+        '};<\/script>' +
+        '</body></html>';
+      var win = window.open('', '_blank');
+      if (!win) {
+        toast('Popup blockiert — bitte Popups erlauben', true);
+        return;
+      }
+      win.document.open();
+      win.document.write(doc);
+      win.document.close();
+      win.focus();
+    }
+
     function printList() {
       if (state.busy) return;
       state.busy = true;
@@ -1439,67 +1614,300 @@
           toast('Nichts zu drucken — alle Stock-IDs sind OK');
           return;
         }
-        var counts = {};
-        for (var i = 0; i < items.length; i++) {
-          var k = items[i].sheetStatus || 'OFFEN';
-          counts[k] = (counts[k] || 0) + 1;
-        }
-        var summary = Object.keys(counts).sort().map(function(k) {
-          return k + ': ' + counts[k];
-        }).join(' · ');
-        var now = new Date();
-        var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
-          ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
-        var rows = '';
-        for (var j = 0; j < items.length; j++) {
-          var it = items[j];
-          var statusClass = keyOf(it.sheetStatus);
-          rows += '<div class="entry">' +
-            '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
-            '<span class="st st-' + statusClass + '">' + esc(it.sheetStatus || '—') + '</span></div>' +
-            '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg>' +
-            '</div>';
-        }
-        var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Reifen Kontrolle — Druckliste</title>' +
-          '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
-          '<style>' +
-          '@page{size:A4 portrait;margin:12mm}' +
-          'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;text-align:center}' +
-          'h1{font-size:18px;margin:0 0 2px}' +
-          '.meta{color:#555;font-size:11px;margin-bottom:14px}' +
-          '.entry{width:70mm;margin:0 auto 14px;padding:0;page-break-inside:avoid}' +
-          '.entry-top{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:4px}' +
-          '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
-          '.bc{display:block;height:38px;margin:0 auto}' +
-          '.st{display:inline-block;font-weight:bold;padding:2px 10px;border-radius:10px;border:1px solid #999;white-space:nowrap}' +
-          '.st-b2a1{background:#f7c5c5}' +
-          '.st-complete{background:#c5f0f7}' +
-          '.st-mech{background:#c5d5f7}' +
-          '.st-other{background:#fbe3b5}' +
-          '@media print{body{margin:0}}' +
-          '</style></head><body>' +
-          '<h1>Reifen Kontrolle</h1>' +
-          '<div class="meta">Stand: ' + esc(dateStr) + ' · ' + items.length + ' Stock-IDs · ' + esc(summary) + '</div>' +
-          rows +
-          '<script>window.onload=function(){' +
-          'var els=document.querySelectorAll("svg.bc");' +
-          'for(var i=0;i<els.length;i++){' +
-          'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:32,width:1.5,displayValue:false,margin:0});}catch(e){}' +
-          '}' +
-          'setTimeout(function(){window.print();},250);' +
-          '};<\/script>' +
-          '</body></html>';
-        var win = window.open('', '_blank');
-        if (!win) {
-          toast('Popup blockiert — bitte Popups erlauben', true);
-          return;
-        }
-        win.document.open();
-        win.document.write(doc);
-        win.document.close();
-        win.focus();
+        printStockItems(items, 'Reifen Kontrolle');
       }).getQueue('alle');
     }
+
+    function inventurOpenItems() {
+      return state.items.filter(function(it) { return !it.sheetStatus; });
+    }
+
+    function inventurApplyLocal(sid, status) {
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId !== sid) continue;
+        state.items[i].sheetStatus = status || '';
+        state.items[i].statusKey = keyOf(status);
+        state.items[i].suggested = '';
+        state.items[i].suggestedKey = 'none';
+        break;
+      }
+      if (state.details[sid]) {
+        state.details[sid].sheetStatus = status || '';
+        if (state.details[sid].evalx) state.details[sid].evalx.suggested = '';
+      }
+      if (state.detail && state.detail.stockId === sid) {
+        state.detail.sheetStatus = status || '';
+        if (state.detail.evalx) state.detail.evalx.suggested = '';
+      }
+    }
+
+    function inventurSaveStatus(sid, status) {
+      inventurApplyLocal(sid, status);
+      google.script.run.withFailureHandler(function(err) {
+        toast('Speichern fehlgeschlagen: ' + String(err && err.message ? err.message : err), true);
+      }).withSuccessHandler(function(res) {
+        if (!res || !res.success) toast((res && res.message) || 'Speichern fehlgeschlagen', true);
+      }).setSheetStatus(sid, status);
+    }
+
+    function inventurHintRows(it, d) {
+      var rows = [];
+      var r = (d && d.refurb) || {};
+      var ev = (d && d.evalx) || {};
+      var m = (d && d.returnMail) || {};
+      var tl = (d && d.tagesliste) || {};
+      var lt = tl.latest || {};
+      if (it.mailFound || m.found) rows.push({ cls: 'bad', k: 'B2A1 Mail', v: m.subject || 'Return-to-Auto1 Mail gefunden' });
+      else rows.push({ cls: 'ok', k: 'B2A1 Mail', v: 'Keine Return-Mail' });
+      if (r.found) {
+        rows.push({ cls: r.herausgegeben || ev.carolDone ? 'info' : 'ok', k: 'Refurb', v: (r.status || '—') + (r.markeModel ? ' · ' + r.markeModel : '') });
+        rows.push({ cls: r.reifenDa || it.reifenDa ? 'ok' : 'warn', k: 'Reifen da', v: (r.reifen || it.reifenLabel || '—') });
+      } else {
+        rows.push({ cls: 'warn', k: 'Refurb', v: 'Nicht in Refurbishment List' });
+      }
+      if (tl.found) {
+        if (lt.reifenGreen) rows.push({ cls: 'ok', k: 'Tagesliste', v: 'gestellt · ' + (lt.reifen || '') + (lt.datum ? ' · ' + lt.datum : '') });
+        else if (lt.reifen) rows.push({ cls: 'warn', k: 'Tagesliste', v: 'nicht gestellt · ' + lt.reifen + (lt.datum ? ' · ' + lt.datum : '') });
+        else rows.push({ cls: 'warn', k: 'Tagesliste', v: 'Eintrag ohne Reifen-Wert' });
+      } else {
+        rows.push({ cls: 'info', k: 'Tagesliste', v: 'Kein Eintrag' });
+      }
+      var nbCnt = it.nbReifenCount || ev.nbReifenCount || 0;
+      if (nbCnt) {
+        var nbo = it.nbReifenOpenCount || ev.nbReifenOpenCount || 0;
+        rows.push({ cls: nbo ? 'warn' : 'ok', k: 'Nachbestellung', v: nbCnt + '× Reifen' + (nbo ? ' (' + nbo + ' offen)' : '') });
+      }
+      if (ev.suggested) rows.push({ cls: 'info', k: 'Vorschlag', v: ev.suggested });
+      return rows;
+    }
+
+    function countStatus(status) {
+      var n = 0;
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].sheetStatus === status) n++;
+      }
+      return n;
+    }
+
+    function renderInventur() {
+      var inv = state.inventur;
+      var box = $('invBody');
+      if (!inv) { box.innerHTML = ''; return; }
+      if (inv.done || inv.index >= inv.queue.length) {
+        inv.done = true;
+        var c = inv.counts;
+        box.innerHTML =
+          '<div class="inv-done">' +
+          '<h3>Inventur fertig</h3>' +
+          '<p>' + inv.queue.length + ' Positionen durchgearbeitet · jetzt Listen drucken falls nötig</p>' +
+          '<div class="inv-stats">' +
+          '<div class="inv-stat ok"><div class="n">' + c.OK + '</div><div class="l">OK</div></div>' +
+          '<div class="inv-stat complete"><div class="n">' + c.COMPLETE + '</div><div class="l">COMPLETE</div></div>' +
+          '<div class="inv-stat b2a1"><div class="n">' + c.B2A1 + '</div><div class="l">B2A1</div></div>' +
+          '<div class="inv-stat mech"><div class="n">' + c.MECH + '</div><div class="l">MECH</div></div>' +
+          '<div class="inv-stat skip"><div class="n">' + c.SKIP + '</div><div class="l">Übersprungen</div></div>' +
+          '</div>' +
+          '<div class="inv-print-row">' +
+          '<button type="button" class="btn" data-inv-print="B2A1">B2A1 drucken</button>' +
+          '<button type="button" class="btn" data-inv-print="COMPLETE">COMPLETE drucken</button>' +
+          '<button type="button" class="btn" data-inv-print="MECH">MECH drucken</button>' +
+          '</div>' +
+          '<button type="button" class="btn primary" id="invFinishClose">Fertig & schließen</button>' +
+          '</div>';
+        return;
+      }
+      var it = inv.queue[inv.index];
+      var d = state.details[it.stockId] || null;
+      var pct = Math.round((inv.index / Math.max(inv.queue.length, 1)) * 100);
+      var hints = inventurHintRows(it, d);
+      var checksHtml = hints.map(function(h) {
+        return '<div class="inv-check ' + h.cls + '"><div class="ik">' + esc(h.k) + '</div><div class="iv">' + esc(h.v) + '</div></div>';
+      }).join('');
+      var car = (d && d.refurb && d.refurb.markeModel) || it.markeModel || '—';
+      box.innerHTML =
+        '<div class="inv-progress">' +
+        '<div class="inv-progress-meta"><span>' + (inv.index + 1) + ' / ' + inv.queue.length + '</span><span>' +
+        (inv.counts.OK + inv.counts.COMPLETE + inv.counts.B2A1 + inv.counts.MECH) + ' gesetzt · ' + inv.counts.SKIP + ' übersprungen</span></div>' +
+        '<div class="inv-bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '<div class="inv-sid">' + esc(it.stockId) + '</div>' +
+        '<div class="inv-car">' + esc(car) + (d && d.uncached ? ' · noch nicht vollständig geprüft' : '') + '</div>' +
+        '<div class="inv-checks">' + checksHtml + '</div>' +
+        '<div class="inv-actions" id="invStatusBtns">' +
+        '<button type="button" class="sbtn ok" data-s="OK">OK</button>' +
+        '<button type="button" class="sbtn complete" data-s="COMPLETE">COMPLETE</button>' +
+        '<button type="button" class="sbtn b2a1" data-s="B2A1">B2A1</button>' +
+        '<button type="button" class="sbtn mech" data-s="MECH">MECH</button>' +
+        '</div>' +
+        '<div class="inv-nav">' +
+        '<div class="inv-nav-left">' +
+        '<button type="button" class="btn ghost" id="invPrev"' + (inv.index === 0 ? ' disabled' : '') + '>Zurück</button>' +
+        '<button type="button" class="btn ghost" id="invSkip">Überspringen</button>' +
+        '</div>' +
+        '<div class="inv-nav-right">' +
+        '<button type="button" class="btn" id="invCarol">Carol</button>' +
+        '<button type="button" class="btn" id="invGmail">Gmail</button>' +
+        '<button type="button" class="btn teal" id="invLive">Neu prüfen</button>' +
+        '</div></div>' +
+        '<div class="inv-keys">Tasten: 1 OK · 2 COMPLETE · 3 B2A1 · 4 MECH · S überspringen · ← →</div>';
+    }
+
+    function inventurAdvance() {
+      var inv = state.inventur;
+      if (!inv || inv.done) return;
+      inv.index++;
+      if (inv.index >= inv.queue.length) {
+        inv.done = true;
+        renderList();
+      }
+      renderInventur();
+      loadInventurDetailIfNeeded();
+    }
+
+    function inventurSet(status) {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      var it = inv.queue[inv.index];
+      inventurSaveStatus(it.stockId, status);
+      if (inv.counts[status] != null) inv.counts[status]++;
+      toast(status + ' — ' + it.stockId);
+      inventurAdvance();
+    }
+
+    function inventurSkip() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      inv.counts.SKIP++;
+      inventurAdvance();
+    }
+
+    function inventurPrev() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index <= 0) return;
+      inv.index--;
+      renderInventur();
+      loadInventurDetailIfNeeded();
+    }
+
+    function loadInventurDetailIfNeeded() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      var sid = inv.queue[inv.index].stockId;
+      if (state.details[sid] && !state.details[sid].uncached) {
+        renderInventur();
+        return;
+      }
+      google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+        if (!res || !res.success) return;
+        state.details[res.stockId] = res;
+        if (state.inventur && !state.inventur.done &&
+            state.inventur.queue[state.inventur.index] &&
+            state.inventur.queue[state.inventur.index].stockId === res.stockId) {
+          renderInventur();
+        }
+      }).getStockDetail(sid);
+    }
+
+    function openInventur() {
+      if (state.busy) return;
+      state.busy = true;
+      showLoad('Inventur wird vorbereitet…');
+      run(function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        if (res.details) {
+          Object.keys(res.details).forEach(function(sid) {
+            state.details[sid] = res.details[sid];
+          });
+        }
+        var queue = (res.items || []).filter(function(it) { return !it.sheetStatus; });
+        if (!queue.length) {
+          toast('Keine offenen Stock-IDs ohne Status — Inventur fertig');
+          return;
+        }
+        state.inventur = {
+          queue: queue.slice(),
+          index: 0,
+          done: false,
+          counts: { OK: 0, COMPLETE: 0, B2A1: 0, MECH: 0, SKIP: 0 }
+        };
+        $('invSub').textContent = queue.length + ' ohne Status — nacheinander abarbeiten';
+        $('invLayer').classList.add('show');
+        renderInventur();
+        loadInventurDetailIfNeeded();
+      }).getQueue('ohne', true);
+    }
+
+    function closeInventur() {
+      $('invLayer').classList.remove('show');
+      state.inventur = null;
+      renderList();
+      if (state.selected && state.details[state.selected]) renderDetail(state.details[state.selected]);
+    }
+
+    $('btnInventur').addEventListener('click', openInventur);
+    $('invClose').addEventListener('click', function() {
+      if (state.inventur && !state.inventur.done) {
+        if (!confirm('Inventur schließen? Fortschritt der gesetzten Status bleibt gespeichert.')) return;
+      }
+      closeInventur();
+    });
+    $('invBody').addEventListener('click', function(e) {
+      var printBtn = e.target.closest('[data-inv-print]');
+      if (printBtn) {
+        var st = printBtn.getAttribute('data-inv-print');
+        showLoad(st + '-Liste wird erstellt…');
+        run(function(res) {
+          hideLoad();
+          if (!res || !res.success) {
+            toast((res && res.message) || 'Laden fehlgeschlagen', true);
+            return;
+          }
+          var list = (res.items || []).filter(function(it) { return it.sheetStatus === st; });
+          printStockItems(list, 'Inventur — ' + st);
+        }).getQueue(st.toLowerCase() === 'b2a1' ? 'b2a1' : st.toLowerCase());
+        return;
+      }
+      if (e.target.id === 'invFinishClose') { closeInventur(); return; }
+      var sbtn = e.target.closest('#invStatusBtns .sbtn');
+      if (sbtn) { inventurSet(sbtn.getAttribute('data-s') || ''); return; }
+      if (e.target.id === 'invSkip') inventurSkip();
+      if (e.target.id === 'invPrev') inventurPrev();
+      if (e.target.id === 'invCarol') {
+        var inv = state.inventur;
+        if (!inv || inv.done) return;
+        var sid = inv.queue[inv.index].stockId;
+        var d = state.details[sid];
+        if (d && d.carolUrl) window.open(d.carolUrl, '_blank');
+      }
+      if (e.target.id === 'invGmail') {
+        var inv2 = state.inventur;
+        if (!inv2 || inv2.done) return;
+        var sid2 = inv2.queue[inv2.index].stockId;
+        var d2 = state.details[sid2];
+        if (d2 && d2.gmailSearchUrl) window.open(d2.gmailSearchUrl, '_blank');
+      }
+      if (e.target.id === 'invLive') {
+        var inv3 = state.inventur;
+        if (!inv3 || inv3.done) return;
+        var sid3 = inv3.queue[inv3.index].stockId;
+        toast(sid3 + ' wird live geprüft…');
+        google.script.run.withFailureHandler(function(err) {
+          toast(String(err && err.message ? err.message : err), true);
+        }).withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            toast((res && res.message) || 'Prüfung fehlgeschlagen', true);
+            return;
+          }
+          state.details[res.stockId] = res;
+          renderInventur();
+          toast('Aktualisiert: ' + res.stockId);
+        }).checkStockLive(sid3);
+      }
+    });
 
     $('btnPrint').addEventListener('click', printList);
 
@@ -1589,6 +1997,24 @@
 
     document.addEventListener('keydown', function(e) {
       if (e.target === $('qSearch') || e.target === $('batchInput')) return;
+      if ($('invLayer').classList.contains('show') && state.inventur) {
+        if (state.inventur.done) {
+          if (e.key === 'Escape') closeInventur();
+          return;
+        }
+        if (e.key === 'Escape') {
+          if (confirm('Inventur schließen? Fortschritt der gesetzten Status bleibt gespeichert.')) closeInventur();
+          return;
+        }
+        if (e.key === '1') { e.preventDefault(); inventurSet('OK'); }
+        else if (e.key === '2') { e.preventDefault(); inventurSet('COMPLETE'); }
+        else if (e.key === '3') { e.preventDefault(); inventurSet('B2A1'); }
+        else if (e.key === '4') { e.preventDefault(); inventurSet('MECH'); }
+        else if (e.key === 's' || e.key === 'S') { e.preventDefault(); inventurSkip(); }
+        else if (e.key === 'ArrowLeft') { e.preventDefault(); inventurPrev(); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); inventurSkip(); }
+        return;
+      }
       if ($('batchModal').classList.contains('show')) {
         if (e.key === 'Escape') closeBatch();
         return;
@@ -1600,7 +2026,7 @@
     });
 
     setInterval(function() {
-      if (!state.busy) loadQueue(true);
+      if (!state.busy && !(state.inventur && $('invLayer').classList.contains('show'))) loadQueue(true);
     }, 120000);
 
     loadQueue();
