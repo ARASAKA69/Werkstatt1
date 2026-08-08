@@ -2,7 +2,7 @@ var HUD_WA_SHEET_ID = "1i_3360NECjPHsd687Uts4i3xmD4h67xu--PMazmKlw0";
 var HUD_WA_INPUT_TAB = "Input";
 var HUD_WA_REP_TAB = "Reparaturauftrag";
 var HUD_NB_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
-var HUD_NB_TAB = "Nachbestellung";
+var HUD_NB_TAB = "Input Exit";
 var HUD_DRIVE_FOLDER_ID = "1yEwrUVpS2nDA9qL3ht0p_XF7S0M-RGH2";
 var HUD_CAROL_BASE = "https://carol.autohero.com/en-GB/refurbishment?rsv=";
 var HUD_PETRONAS_URL = "https://de.pli-petronas.com/de/schmierstoffe";
@@ -132,7 +132,6 @@ function getOpenMappen() {
       var stockId = hudNormalizeStockId_(row[cols.stockId - 1]);
       if (!stockId) continue;
       var art = cols.art ? String(row[cols.art - 1] || "").trim() : "";
-      if (art.toLowerCase().indexOf("exit") === -1) continue;
       if (hudIsChecked_(row[cols.mappe - 1])) continue;
       if (!byStock[stockId]) {
         byStock[stockId] = {
@@ -286,8 +285,6 @@ function hudMarkMappeErstellt_(stockId) {
   for (var i = 0; i < data.length; i++) {
     var sid = hudNormalizeStockId_(data[i][cols.stockId - 1]);
     if (sid !== stockId) continue;
-    var art = cols.art ? String(data[i][cols.art - 1] || "").trim().toLowerCase() : "";
-    if (art.indexOf("exit") === -1) continue;
     if (hudIsChecked_(data[i][cols.mappe - 1])) continue;
     sheet.getRange(layout.dataStartRow + i, cols.mappe).setValue(true);
     marked++;
