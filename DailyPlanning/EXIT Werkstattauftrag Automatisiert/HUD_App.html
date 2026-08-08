@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<base target="_top">
+<style>
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --bg3: #1c2330;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #9da7b3;
+  --accent: #f97316;
+  --accent2: #ffa94d;
+  --green: #56d364;
+  --red: #f85149;
+  --blue: #58a6ff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  min-height: 100vh;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: linear-gradient(180deg, #161b22, #10141a);
+  border-bottom: 1px solid var(--border);
+}
+.topbar h1 {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.topbar h1 span { color: var(--accent); }
+.badge {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.spacer { flex: 1; }
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.btn:hover { border-color: var(--accent); box-shadow: 0 0 8px rgba(249,115,22,.35); }
+.btn:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+.btn-accent { background: var(--accent); border-color: var(--accent); color: #10141a; }
+.btn-accent:hover { background: var(--accent2); }
+.btn-ghost { background: transparent; }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color .15s, transform .1s, box-shadow .15s;
+}
+.card:hover { border-color: var(--accent); box-shadow: 0 0 12px rgba(249,115,22,.25); transform: translateY(-2px); }
+.card .sid { font-size: 18px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
+.card .meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.card ul { margin: 10px 0 0 0; list-style: none; }
+.card li {
+  font-size: 13px;
+  padding: 4px 0;
+  border-top: 1px dashed #262d38;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card li .st { color: var(--muted); font-size: 11px; white-space: nowrap; }
+.empty { text-align: center; color: var(--muted); padding: 60px 0; font-size: 15px; }
+.section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.section h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.detail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.detail-head .sid { font-size: 24px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
+label.fld { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+input[type=text], input[type=number], select, textarea {
+  width: 100%;
+  background: #0b0f14;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 11px;
+  font-size: 14px;
+  outline: none;
+}
+input:focus, select:focus { border-color: var(--accent); }
+input.ok { border-color: var(--green); }
+input.err { border-color: var(--red); }
+.chk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 14px; }
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+}
+.chk:hover { background: var(--bg3); }
+.chk input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.chk.on { background: rgba(249,115,22,.12); }
+.free-lines input { margin-bottom: 6px; }
+.oil-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(88,166,255,.1);
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 13px;
+  color: var(--blue);
+}
+.oil-pill.missing { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.08); }
+.footer-bar {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(0deg, #10141a 70%, transparent);
+  padding: 14px 0 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.msg { font-size: 13px; }
+.msg.ok { color: var(--green); }
+.msg.err { color: var(--red); }
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5,8,12,.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--accent);
+  border-radius: 14px;
+  padding: 22px;
+  width: min(440px, 92vw);
+  box-shadow: 0 0 40px rgba(249,115,22,.25);
+}
+.modal h2 { font-size: 16px; margin-bottom: 4px; }
+.modal p { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+.modal .row { margin-bottom: 12px; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px; }
+.spin {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: sp .7s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+.busy-box { text-align: center; }
+.busy-box .spin { width: 42px; height: 42px; border-width: 3px; margin-bottom: 14px; }
+.busy-box div { font-size: 14px; color: var(--muted); }
+.hidden { display: none !important; }
+.linkbtns { display: flex; gap: 8px; flex-wrap: wrap; }
+a.btn { text-decoration: none; display: inline-block; }
+.carol-hint { font-size: 11px; color: var(--green); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>EXIT <span>Werkstattmappe</span> HUD</h1>
+  <span class="badge" id="countBadge">lädt…</span>
+  <div class="spacer"></div>
+  <button class="btn btn-sm" id="btnRefresh">&#x21bb; Aktualisieren</button>
+</div>
+
+<div class="wrap">
+  <div id="viewList">
+    <div class="empty" id="listEmpty"><span class="spin"></span> Lade offene Werkstattmappen…</div>
+    <div class="cards" id="cardsWrap"></div>
+  </div>
+
+  <div id="viewDetail" class="hidden">
+    <div class="detail-head">
+      <button class="btn btn-sm btn-ghost" id="btnBack">&larr; Zurück</button>
+      <span class="sid" id="dSid"></span>
+      <div class="spacer"></div>
+      <div class="linkbtns">
+        <a class="btn btn-sm" id="btnCarol" target="_blank" rel="noopener">Carol öffnen</a>
+        <a class="btn btn-sm" id="btnPetronas" target="_blank" rel="noopener">Petronas Ölsuche</a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Nachbestellungen (Gründe)</h3>
+      <ul id="dGruende" style="list-style:none;font-size:13px;"></ul>
+    </div>
+
+    <div class="section">
+      <h3>Fahrzeugdaten (aus Carol)</h3>
+      <div class="grid2">
+        <div>
+          <label class="fld">Modell</label>
+          <input type="text" id="inModell" placeholder="z.B. Fiat Tipo 1.4 Turbo" autocomplete="off">
+          <div class="carol-hint hidden" id="hintModell">automatisch aus Carol übernommen</div>
+        </div>
+        <div>
+          <label class="fld">VIN / Fahrgestellnummer</label>
+          <input type="text" id="inVin" placeholder="z.B. ZFA35600006P24964" autocomplete="off">
+          <div class="carol-hint hidden" id="hintVin">automatisch aus Carol übernommen</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Arbeiten <button class="btn btn-sm btn-accent" id="btnService" style="margin-left:10px;">+ Service Paket</button></h3>
+      <div class="chk-grid" id="workGrid"></div>
+      <div id="oilStatusWrap" style="margin-top:12px;" class="hidden">
+        <span class="oil-pill missing" id="oilPill">Öl fehlt — bitte auswählen</span>
+        <button class="btn btn-sm" id="btnOilEdit" style="margin-left:8px;">Öl wählen</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>Zusatzarbeiten</h3>
+      <div class="chk-grid" id="dGrid"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="section">
+        <h3>Sonstige Mechanik (Freitext)</h3>
+        <div class="free-lines" id="freeMechWrap"></div>
+      </div>
+      <div class="section">
+        <h3>Sonstige- u. OE-Teile (Freitext)</h3>
+        <div class="free-lines" id="freePartsWrap"></div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <button class="btn btn-accent" id="btnCreate">Erstellen, Speichern &amp; Drucken</button>
+      <span class="msg" id="createMsg"></span>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="oilOverlay">
+  <div class="modal">
+    <h2>Motoröl auswählen</h2>
+    <p>Motorölwechsel ist ausgewählt — Öl und Füllmenge sind Pflicht. Öl bitte manuell über Petronas / Fahrzeugschein (HSN/TSN) prüfen.</p>
+    <div class="row">
+      <label class="fld">Öl</label>
+      <select id="oilSelect"></select>
+    </div>
+    <div class="row">
+      <label class="fld">Füllmenge (Liter)</label>
+      <input type="text" id="oilLiters" placeholder="z.B. 4,3" inputmode="decimal">
+    </div>
+    <div class="row">
+      <a class="btn btn-sm" id="modalPetronas" target="_blank" rel="noopener">Petronas Ölsuche öffnen</a>
+    </div>
+    <div class="modal-actions">
+      <button class="btn" id="oilCancel">Abbrechen</button>
+      <button class="btn btn-accent" id="oilOk">Übernehmen</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="busyOverlay">
+  <div class="busy-box">
+    <span class="spin"></span>
+    <div id="busyText">Erstelle Werkstattmappe…</div>
+  </div>
+</div>
+
+<script>
+var BRIDGE_URL = "http://localhost:9150";
+var state = {
+  entries: [],
+  meta: null,
+  petronasUrl: "https://de.pli-petronas.com/de/schmierstoffe",
+  current: null,
+  workSel: {},
+  dSel: {},
+  oilRow: 0,
+  oilLabel: "",
+  liters: "",
+  oilRequiredRows: []
+};
+
+function $(id) { return document.getElementById(id); }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function loadAll() {
+  $("countBadge").textContent = "lädt…";
+  $("listEmpty").classList.remove("hidden");
+  $("listEmpty").innerHTML = '<span class="spin"></span> Lade offene Werkstattmappen…';
+  $("cardsWrap").innerHTML = "";
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      $("listEmpty").innerHTML = '<span class="msg err">Fehler: ' + esc(res && res.message || "Unbekannt") + "</span>";
+      $("countBadge").textContent = "Fehler";
+      return;
+    }
+    state.entries = res.entries || [];
+    if (res.petronasUrl) state.petronasUrl = res.petronasUrl;
+    renderList();
+  }).withFailureHandler(function(err) {
+    $("listEmpty").innerHTML = '<span class="msg err">Fehler: ' + esc(err.message || err) + "</span>";
+    $("countBadge").textContent = "Fehler";
+  }).getOpenMappen();
+
+  if (!state.meta) {
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        state.meta = res;
+        computeOilRequiredRows();
+      }
+    }).getInputMeta();
+  }
+}
+
+function computeOilRequiredRows() {
+  state.oilRequiredRows = [];
+  if (!state.meta) return;
+  for (var i = 0; i < state.meta.workItems.length; i++) {
+    var l = state.meta.workItems[i].label.toLowerCase();
+    if (l.indexOf("motorölwechsel") !== -1 || l.indexOf("motoroelwechsel") !== -1) {
+      state.oilRequiredRows.push(state.meta.workItems[i].row);
+    }
+  }
+}
+
+function serviceRows() {
+  var rows = [];
+  if (!state.meta) return rows;
+  for (var i = 0; i < state.meta.workItems.length; i++) {
+    var it = state.meta.workItems[i];
+    var l = it.label.toLowerCase();
+    if (l.indexOf("motorölwechsel") !== -1 || l.indexOf("motoroelwechsel") !== -1) rows.push(it.row);
+    else if (l.indexOf("innenraum filter") !== -1 || l.indexOf("innenraumfilter") !== -1) rows.push(it.row);
+    else if (l.indexOf("luftfilter (motor)") !== -1) rows.push(it.row);
+  }
+  return rows;
+}
+
+function renderList() {
+  var wrap = $("cardsWrap");
+  wrap.innerHTML = "";
+  $("countBadge").textContent = state.entries.length + " offen";
+  if (!state.entries.length) {
+    $("listEmpty").classList.remove("hidden");
+    $("listEmpty").innerHTML = "Keine offenen Werkstattmappen — alles erledigt.";
+    return;
+  }
+  $("listEmpty").classList.add("hidden");
+  state.entries.forEach(function(ent, idx) {
+    var lis = ent.rows.map(function(r) {
+      return "<li><span>" + esc(r.grund || "—") + "</span><span class='st'>" + esc(r.status || "") + "</span></li>";
+    }).join("");
+    var who = [];
+    ent.rows.forEach(function(r) { if (r.bearbeiter && who.indexOf(r.bearbeiter) === -1) who.push(r.bearbeiter); });
+    var card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = "<div class='sid'>" + esc(ent.stockId) + "</div>"
+      + "<div class='meta'>" + ent.rows.length + " Nachbestellung(en)" + (who.length ? " · " + esc(who.join(", ")) : "") + "</div>"
+      + "<ul>" + lis + "</ul>";
+    card.addEventListener("click", function() { openDetail(idx); });
+    wrap.appendChild(card);
+  });
+}
+
+function openDetail(idx) {
+  var ent = state.entries[idx];
+  if (!ent) return;
+  state.current = ent;
+  state.workSel = {};
+  state.dSel = {};
+  state.oilRow = 0;
+  state.oilLabel = "";
+  state.liters = "";
+  $("dSid").textContent = ent.stockId;
+  $("btnCarol").href = ent.carolUrl;
+  $("btnPetronas").href = state.petronasUrl;
+  $("modalPetronas").href = state.petronasUrl;
+  $("dGruende").innerHTML = ent.rows.map(function(r) {
+    return "<li style='padding:4px 0;border-bottom:1px dashed #262d38;'>" + esc(r.grund || "—")
+      + " <span style='color:var(--muted);font-size:11px;'>" + esc(r.status || "") + (r.bearbeiter ? " · " + esc(r.bearbeiter) : "") + "</span></li>";
+  }).join("");
+  $("inModell").value = ent.carolModell || "";
+  $("inVin").value = ent.carolVin || "";
+  $("hintModell").classList.toggle("hidden", !ent.carolModell);
+  $("hintVin").classList.toggle("hidden", !ent.carolVin);
+  $("createMsg").textContent = "";
+  $("createMsg").className = "msg";
+  renderChecklists();
+  updateOilStatus();
+  $("viewList").classList.add("hidden");
+  $("viewDetail").classList.remove("hidden");
+  window.scrollTo(0, 0);
+  pollCarol(ent.stockId);
+}
+
+function pollCarol(stockId) {
+  if (!state.current || state.current.stockId !== stockId) return;
+  if ($("inModell").value && $("inVin").value) return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (!state.current || state.current.stockId !== stockId) return;
+    if (res && res.found) {
+      if (res.modell && !$("inModell").value) {
+        $("inModell").value = res.modell;
+        $("hintModell").classList.remove("hidden");
+      }
+      if (res.vin && !$("inVin").value) {
+        $("inVin").value = res.vin;
+        $("hintVin").classList.remove("hidden");
+      }
+    }
+  }).getCarolData(stockId);
+}
+
+function renderChecklists() {
+  if (!state.meta) {
+    $("workGrid").innerHTML = '<span class="msg">Lade Vorlagen… bitte kurz warten.</span>';
+    $("dGrid").innerHTML = "";
+    google.script.run.withSuccessHandler(function(res) {
+      if (res && res.success) {
+        state.meta = res;
+        computeOilRequiredRows();
+        renderChecklists();
+      }
+    }).getInputMeta();
+    return;
+  }
+  renderWorkGrid();
+  renderDGrid();
+  renderFreeLines("freeMechWrap", "fm");
+  renderFreeLines("freePartsWrap", "fp");
+}
+
+function renderWorkGrid() {
+  var wg = $("workGrid");
+  wg.innerHTML = "";
+  state.meta.workItems.forEach(function(it) {
+    wg.appendChild(makeChk(it, state.workSel, onWorkToggle));
+  });
+}
+
+function renderDGrid() {
+  var dg = $("dGrid");
+  dg.innerHTML = "";
+  state.meta.dItems.forEach(function(it) {
+    dg.appendChild(makeChk(it, state.dSel, null));
+  });
+}
+
+function makeChk(item, selMap, onToggle) {
+  var lab = document.createElement("label");
+  lab.className = "chk" + (selMap[item.row] ? " on" : "");
+  var cb = document.createElement("input");
+  cb.type = "checkbox";
+  cb.checked = !!selMap[item.row];
+  cb.addEventListener("change", function() {
+    if (cb.checked) selMap[item.row] = true;
+    else delete selMap[item.row];
+    lab.classList.toggle("on", cb.checked);
+    if (onToggle) onToggle(item, cb.checked);
+  });
+  var span = document.createElement("span");
+  span.textContent = item.label;
+  lab.appendChild(cb);
+  lab.appendChild(span);
+  return lab;
+}
+
+function onWorkToggle(item, checked) {
+  if (state.oilRequiredRows.indexOf(item.row) !== -1) {
+    if (checked && !state.oilRow) openOilModal();
+    updateOilStatus();
+  }
+}
+
+function oilRequired() {
+  for (var i = 0; i < state.oilRequiredRows.length; i++) {
+    if (state.workSel[state.oilRequiredRows[i]]) return true;
+  }
+  return false;
+}
+
+function oilComplete() {
+  if (!state.oilRow) return false;
+  var mitgeliefert = state.oilLabel.toLowerCase().indexOf("mitgeliefert") !== -1;
+  if (mitgeliefert) return true;
+  var num = parseFloat(String(state.liters).replace(",", "."));
+  return !isNaN(num) && num > 0;
+}
+
+function updateOilStatus() {
+  var wrap = $("oilStatusWrap");
+  var pill = $("oilPill");
+  if (!oilRequired()) {
+    wrap.classList.add("hidden");
+    return;
+  }
+  wrap.classList.remove("hidden");
+  if (oilComplete()) {
+    pill.className = "oil-pill";
+    var litTxt = state.oilLabel.toLowerCase().indexOf("mitgeliefert") !== -1 && !state.liters
+      ? "" : " · " + state.liters + " L";
+    pill.textContent = state.oilLabel + litTxt;
+  } else {
+    pill.className = "oil-pill missing";
+    pill.textContent = "Öl fehlt — bitte auswählen";
+  }
+}
+
+function openOilModal() {
+  if (!state.meta) return;
+  var sel = $("oilSelect");
+  sel.innerHTML = '<option value="">— Öl wählen —</option>';
+  state.meta.oils.forEach(function(o) {
+    var opt = document.createElement("option");
+    opt.value = o.row;
+    opt.textContent = (o.nr ? o.nr + " · " : "") + o.label;
+    sel.appendChild(opt);
+  });
+  sel.value = state.oilRow || "";
+  $("oilLiters").value = state.liters || "";
+  $("oilOverlay").classList.remove("hidden");
+}
+
+function closeOilModal() {
+  $("oilOverlay").classList.add("hidden");
+}
+
+function renderFreeLines(wrapId, prefix) {
+  var wrap = $(wrapId);
+  wrap.innerHTML = "";
+  for (var i = 0; i < 5; i++) {
+    var inp = document.createElement("input");
+    inp.type = "text";
+    inp.id = prefix + i;
+    inp.placeholder = "Zeile " + (i + 1);
+    inp.autocomplete = "off";
+    wrap.appendChild(inp);
+  }
+}
+
+function collectFree(prefix) {
+  var out = [];
+  for (var i = 0; i < 5; i++) {
+    var el = $(prefix + i);
+    out.push(el ? el.value.trim() : "");
+  }
+  return out;
+}
+
+function setMsg(text, cls) {
+  var el = $("createMsg");
+  el.textContent = text;
+  el.className = "msg" + (cls ? " " + cls : "");
+}
+
+function validate() {
+  var modell = $("inModell").value.trim();
+  var vin = $("inVin").value.trim();
+  $("inModell").className = modell ? "ok" : "err";
+  $("inVin").className = vin ? "ok" : "err";
+  if (!modell || !vin) {
+    setMsg("Modell und VIN sind Pflicht — aus Carol kopieren.", "err");
+    return null;
+  }
+  var workRows = Object.keys(state.workSel).map(Number);
+  var dRows = Object.keys(state.dSel).map(Number);
+  var freeMech = collectFree("fm");
+  var freeParts = collectFree("fp");
+  var hasFree = freeMech.some(function(v) { return v; }) || freeParts.some(function(v) { return v; });
+  if (!workRows.length && !dRows.length && !hasFree) {
+    setMsg("Keine Arbeiten ausgewählt.", "err");
+    return null;
+  }
+  if (oilRequired() && !oilComplete()) {
+    setMsg("Öl + Füllmenge fehlen.", "err");
+    openOilModal();
+    return null;
+  }
+  return {
+    stockId: state.current.stockId,
+    modell: modell,
+    vin: vin,
+    workRows: workRows,
+    dRows: dRows,
+    freeMech: freeMech,
+    freeParts: freeParts,
+    oilRow: oilRequired() ? state.oilRow : (state.oilRow || 0),
+    liters: state.liters
+  };
+}
+
+function createMappe() {
+  var payload = validate();
+  if (!payload) return;
+  $("btnCreate").disabled = true;
+  $("busyText").textContent = "Erstelle Werkstattmappe für " + payload.stockId + "…";
+  $("busyOverlay").classList.remove("hidden");
+  google.script.run.withSuccessHandler(function(res) {
+    $("btnCreate").disabled = false;
+    $("busyOverlay").classList.add("hidden");
+    if (!res || !res.success) {
+      setMsg((res && res.message) || "Fehler beim Erstellen.", "err");
+      return;
+    }
+    setMsg(res.message || "Erstellt!", "ok");
+    printPdf(res);
+    removeCurrentEntry();
+  }).withFailureHandler(function(err) {
+    $("btnCreate").disabled = false;
+    $("busyOverlay").classList.add("hidden");
+    setMsg("Fehler: " + (err.message || err), "err");
+  }).createMappe(payload);
+}
+
+function printPdf(res) {
+  if (!res.printB64) {
+    if (res.pdfUrl) window.open(res.pdfUrl, "_blank");
+    return;
+  }
+  setMsg("Drucke Werkstattauftrag…", "");
+  fetch(BRIDGE_URL + "/print-b64", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ b64: res.printB64, copies: 1 })
+  }).then(function(r) {
+    return r.json().then(function(data) {
+      if (!r.ok || !data.success) throw new Error((data && data.error) || "Bridge-Fehler");
+      return data;
+    });
+  }).then(function() {
+    setMsg("Werkstattauftrag gedruckt & gespeichert!", "ok");
+  }).catch(function() {
+    setMsg("Print-Bridge nicht erreichbar — PDF wird geöffnet.", "err");
+    if (res.pdfUrl) {
+      window.open(res.pdfUrl, "_blank");
+    } else {
+      var w = window.open("", "_blank");
+      if (w) {
+        w.document.write("<iframe src='data:application/pdf;base64," + res.printB64 + "' style='width:100%;height:100vh;border:0'></iframe>");
+      }
+    }
+  });
+}
+
+function removeCurrentEntry() {
+  if (!state.current) return;
+  var sid = state.current.stockId;
+  state.entries = state.entries.filter(function(e) { return e.stockId !== sid; });
+  setTimeout(function() {
+    backToList();
+  }, 1800);
+}
+
+function backToList() {
+  state.current = null;
+  $("viewDetail").classList.add("hidden");
+  $("viewList").classList.remove("hidden");
+  renderList();
+}
+
+$("btnRefresh").addEventListener("click", loadAll);
+$("btnBack").addEventListener("click", backToList);
+$("btnCreate").addEventListener("click", createMappe);
+$("btnOilEdit").addEventListener("click", openOilModal);
+$("oilCancel").addEventListener("click", closeOilModal);
+$("oilOk").addEventListener("click", function() {
+  var sel = $("oilSelect");
+  var row = parseInt(sel.value, 10) || 0;
+  var lit = $("oilLiters").value.trim();
+  if (!row) {
+    sel.style.borderColor = "var(--red)";
+    return;
+  }
+  var label = "";
+  state.meta.oils.forEach(function(o) { if (o.row === row) label = o.label; });
+  var mitgeliefert = label.toLowerCase().indexOf("mitgeliefert") !== -1;
+  var num = parseFloat(lit.replace(",", "."));
+  if (!mitgeliefert && (isNaN(num) || num <= 0)) {
+    $("oilLiters").className = "err";
+    return;
+  }
+  state.oilRow = row;
+  state.oilLabel = label;
+  state.liters = lit;
+  $("oilLiters").className = "";
+  sel.style.borderColor = "";
+  closeOilModal();
+  updateOilStatus();
+});
+$("btnService").addEventListener("click", function() {
+  if (!state.meta) return;
+  serviceRows().forEach(function(r) { state.workSel[r] = true; });
+  renderWorkGrid();
+  if (oilRequired() && !state.oilRow) openOilModal();
+  updateOilStatus();
+});
+
+loadAll();
+</script>
+</body>
+</html>
