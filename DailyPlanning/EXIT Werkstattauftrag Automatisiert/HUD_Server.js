@@ -38,7 +38,7 @@ function hudIsExcludedGrund_(grund) {
   return hasInspection;
 }
 
-var HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbw-f8igKkOObQAwYAKk00U2PPHs10VhOxOC2QyplnbcsFW5sg0PS6OgXAmTvje7OHK-Jw/exec";
+var HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
 
 function authorizeScopes() {
   var out = [];
@@ -389,7 +389,7 @@ function hudApplyOilToReparaturauftrag_(ss) {
   var contentRange = inputSheet.getRange("C29:C41").getValues();
   var values = [];
   for (var i = 0; i < xRange.length; i++) {
-    if (xRange[i][0] === "x") values.push(contentRange[i][0]);
+    if (String(xRange[i][0]).toLowerCase().trim() === "x") values.push(contentRange[i][0]);
   }
   outputSheet.getRange("G9:G12").clearContent().clearFormat();
   var startIndex = Math.floor((4 - values.length) / 2);
@@ -411,7 +411,12 @@ function hudNormLabel_(v) {
 
 function hudClearBodySummariesOnSheet_(sheet) {
   if (!sheet) return;
-  var values = sheet.getDataRange().getValues();
+  var values;
+  try {
+    values = sheet.getRange("W1:X120").getValues();
+  } catch (e) {
+    return;
+  }
   var keys = [
     "spaltmass einstellen", "spaltmaß einstellen",
     "ganzes bauteil lackieren", "beilackieren",
@@ -420,16 +425,12 @@ function hudClearBodySummariesOnSheet_(sheet) {
     "polieren gesamtes fahrzeug"
   ];
   for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var n = hudNormLabel_(values[r][c]);
-      if (!n) continue;
-      for (var k = 0; k < keys.length; k++) {
-        if (n.indexOf(keys[k]) === -1) continue;
-        if (c + 1 < values[r].length) {
-          try { sheet.getRange(r + 1, c + 2).clearContent(); } catch (e) {}
-        }
-        break;
-      }
+    var n = hudNormLabel_(values[r][0]);
+    if (!n) continue;
+    for (var k = 0; k < keys.length; k++) {
+      if (n.indexOf(keys[k]) === -1) continue;
+      try { sheet.getRange(r + 1, 24).clearContent(); } catch (e2) {}
+      break;
     }
   }
 }
@@ -444,26 +445,25 @@ function hudWriteBodySummariesOnSheet_(sheet, byAction) {
     5: ["bauteil reparieren"],
     6: ["bauteil polieren", "polieren gesamtes fahrzeug"]
   };
-  var values = sheet.getDataRange().getValues();
+  var values;
+  try {
+    values = sheet.getRange("W1:X120").getValues();
+  } catch (e) {
+    return;
+  }
   for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var raw = String(values[r][c] || "");
-      var n = hudNormLabel_(raw);
-      if (!n) continue;
-      for (var an = 1; an <= 6; an++) {
-        var keys = labelMap[an];
-        var hit = false;
-        for (var k = 0; k < keys.length; k++) {
-          if (n.indexOf(keys[k]) !== -1) { hit = true; break; }
-        }
-        if (!hit) continue;
-        var parts = byAction[an] || [];
-        if (!parts.length) continue;
-        var text = parts.join(", ");
-        var targetCol = c + 2;
-        if (c + 1 >= values[r].length) targetCol = c + 1;
-        sheet.getRange(r + 1, targetCol).setValue(text);
+    var n = hudNormLabel_(values[r][0]);
+    if (!n) continue;
+    for (var an = 1; an <= 6; an++) {
+      var keys = labelMap[an];
+      var hit = false;
+      for (var k = 0; k < keys.length; k++) {
+        if (n.indexOf(keys[k]) !== -1) { hit = true; break; }
       }
+      if (!hit) continue;
+      var parts = byAction[an] || [];
+      if (!parts.length) continue;
+      sheet.getRange(r + 1, 24).setValue(parts.join(", "));
     }
   }
 }
@@ -471,9 +471,10 @@ function hudWriteBodySummariesOnSheet_(sheet, byAction) {
 function hudApplyBodyWorks_(ss, bodyWorks) {
   var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
   var repSheet = ss.getSheetByName(HUD_WA_REP_TAB);
+  if (!bodyWorks || !bodyWorks.length) return { byAction: {}, lines: [] };
+
   hudClearBodySummariesOnSheet_(inputSheet);
   hudClearBodySummariesOnSheet_(repSheet);
-  if (!bodyWorks || !bodyWorks.length) return { byAction: {}, lines: [] };
 
   var byAction = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
   var actionNames = {
@@ -545,8 +546,22 @@ function hudCollectAllPrintLines_(inputSheet, byAction, extraLines) {
   function add(line) {
     line = String(line || "").trim();
     if (!line) return;
-    if (lines.indexOf(line) !== -1) return;
     if (line.indexOf("#N/A") !== -1 || line.indexOf("#NV") !== -1) return;
+    var base = line.replace(/\s*\([^)]*\)\s*$/, "").trim();
+    for (var i = 0; i < lines.length; i++) {
+      var existing = lines[i];
+      if (existing === line) return;
+      var existingBase = existing.replace(/\s*\([^)]*\)\s*$/, "").trim();
+      if (existingBase === base) {
+        if (line.length > existing.length) lines[i] = line;
+        return;
+      }
+      if (existing.indexOf(line) === 0) return;
+      if (line.indexOf(existing) === 0) {
+        lines[i] = line;
+        return;
+      }
+    }
     lines.push(line);
   }
 
@@ -637,31 +652,6 @@ function hudCategoryForLine_(line) {
   return "Mechanik";
 }
 
-function hudSetExactColValue_(sheet, row, col, value) {
-  try {
-    var cell = sheet.getRange(row, col);
-    var merges = cell.getMergedRanges();
-    var target = cell;
-    if (merges && merges.length) {
-      var m = merges[0];
-      if (m.getRow() === row && m.getColumn() === col) target = m;
-      else if (col >= 3 && m.getRow() === row && m.getColumn() >= 3) target = m;
-      else if (col <= 2 && m.getRow() === row && m.getColumn() <= 2) target = m;
-    }
-    if (value === "" || value === null || value === undefined) target.clearContent();
-    else target.setValue(String(value));
-    return true;
-  } catch (e) {
-    try {
-      if (value === "" || value === null || value === undefined) sheet.getRange(row, col).clearContent();
-      else sheet.getRange(row, col).setValue(String(value));
-      return true;
-    } catch (e2) {
-      return false;
-    }
-  }
-}
-
 function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
   hudCleanupPdfTemps_(ss);
   var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
@@ -671,19 +661,14 @@ function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
   var lines = hudCollectAllPrintLines_(inputSheet, byAction, extraLines);
   var startRow = 14;
   var endRow = 39;
-  var catCol = 1;
-  var textCol = 3;
-  var saved = [];
+  var num = endRow - startRow + 1;
 
-  for (var r = 13; r <= endRow; r++) {
-    for (var c = 1; c <= 9; c++) {
-      try {
-        var cell = sheet.getRange(r, c);
-        var fml = cell.getFormula();
-        if (fml) {
-          saved.push({ row: r, col: c, formula: fml, value: cell.getValue() });
-        }
-      } catch (eSave) {}
+  var formBlock = sheet.getRange("A13:I39");
+  var forms = formBlock.getFormulas();
+  var saved = [];
+  for (var r = 0; r < forms.length; r++) {
+    for (var c = 0; c < forms[r].length; c++) {
+      if (forms[r][c]) saved.push({ row: 13 + r, col: 1 + c, formula: forms[r][c], value: "" });
     }
   }
 
@@ -695,41 +680,52 @@ function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
       try { sheet.getRange(saved[s].row, saved[s].col).clearContent(); } catch (eClr) {}
     }
   }
-  SpreadsheetApp.flush();
-  Utilities.sleep(1200);
 
-  for (var cr = startRow; cr <= endRow; cr++) {
-    hudSetExactColValue_(sheet, cr, catCol, "");
-    hudSetExactColValue_(sheet, cr, textCol, "");
+  var catVals = [];
+  var textVals = [];
+  for (var i = 0; i < num; i++) {
+    if (i < lines.length) {
+      catVals.push([hudCategoryForLine_(lines[i])]);
+      textVals.push([String(lines[i])]);
+    } else {
+      catVals.push([""]);
+      textVals.push([""]);
+    }
   }
-  SpreadsheetApp.flush();
 
-  for (var i = 0; i < lines.length && (startRow + i) <= endRow; i++) {
-    var row = startRow + i;
-    hudSetExactColValue_(sheet, row, catCol, hudCategoryForLine_(lines[i]));
-    hudSetExactColValue_(sheet, row, textCol, lines[i]);
+  try { sheet.getRange("A14:B39").clearContent(); } catch (eAB) {
+    for (var r1 = startRow; r1 <= endRow; r1++) {
+      try { sheet.getRange(r1, 1).clearContent(); } catch (eA) {}
+      try { sheet.getRange(r1, 2).clearContent(); } catch (eB) {}
+    }
   }
-  SpreadsheetApp.flush();
-  Utilities.sleep(1500);
+  try { sheet.getRange("C14:C39").clearContent(); } catch (eC) {
+    for (var r2 = startRow; r2 <= endRow; r2++) {
+      try { sheet.getRange(r2, 3).clearContent(); } catch (eC2) {}
+    }
+  }
 
-  var wrote = String(sheet.getRange(startRow, textCol).getDisplayValue() || "").trim();
+  try { sheet.getRange(startRow, 1, num, 1).setValues(catVals); } catch (eCat) {
+    try { sheet.getRange(startRow, 2, num, 1).setValues(catVals); } catch (eCat2) {}
+  }
+  sheet.getRange(startRow, 3, num, 1).setValues(textVals);
+  SpreadsheetApp.flush();
+
+  var wrote = String(sheet.getRange("C14").getDisplayValue() || "").trim();
   if (lines.length && (!wrote || wrote.indexOf("#N/A") !== -1)) {
-    for (var j = 0; j < lines.length && (startRow + j) <= endRow; j++) {
-      try {
-        sheet.getRange(startRow + j, catCol).setValue(hudCategoryForLine_(lines[j]));
-        sheet.getRange(startRow + j, textCol).setValue(String(lines[j]));
-      } catch (e3) {}
+    for (var j = 0; j < lines.length; j++) {
+      try { sheet.getRange(startRow + j, 2).setValue(hudCategoryForLine_(lines[j])); } catch (eJ1) {}
+      try { sheet.getRange(startRow + j, 3).setValue(String(lines[j])); } catch (eJ2) {}
     }
     SpreadsheetApp.flush();
-    Utilities.sleep(1000);
-    wrote = String(sheet.getRange(startRow, textCol).getDisplayValue() || "").trim();
+    wrote = String(sheet.getRange("C14").getDisplayValue() || "").trim();
   }
 
   return {
     saved: saved,
     lines: lines,
     wrote: wrote,
-    anchor: { row: startRow, col: textCol },
+    anchor: { row: startRow, col: 3 },
     tmpName: ""
   };
 }
@@ -737,17 +733,10 @@ function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
 function hudClearRepWorkArea_(sheet) {
   if (!sheet) return;
   for (var r = 14; r <= 39; r++) {
-    for (var c = 1; c <= 9; c++) {
-      try {
-        var cell = sheet.getRange(r, c);
-        var merges = cell.getMergedRanges();
-        if (merges && merges.length) {
-          if (merges[0].getRow() !== r || merges[0].getColumn() !== c) continue;
-          merges[0].clearContent();
-        } else {
-          cell.clearContent();
-        }
-      } catch (e) {}
+    try { sheet.getRange(r, 1, 1, 9).clearContent(); } catch (e1) {
+      for (var c = 1; c <= 9; c++) {
+        try { sheet.getRange(r, c).clearContent(); } catch (e2) {}
+      }
     }
   }
   try { sheet.getRange("G9:G12").clearContent(); } catch (eOil) {}
@@ -757,13 +746,10 @@ function hudRestoreRepNa_(ss, saved) {
   if (!saved || !saved.length) return;
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!sheet) return;
-  for (var i = saved.length - 1; i >= 0; i--) {
+  for (var i = 0; i < saved.length; i++) {
     var s = saved[i];
     try {
-      var cell = sheet.getRange(s.row, s.col);
-      if (s.formula) cell.setFormula(s.formula);
-      else if (s.value !== "" && s.value !== null && s.value !== undefined) cell.setValue(s.value);
-      else cell.clearContent();
+      if (s.formula) sheet.getRange(s.row, s.col).setFormula(s.formula);
     } catch (eR) {}
   }
 }
@@ -771,13 +757,11 @@ function hudRestoreRepNa_(ss, saved) {
 function hudResetReparaturauftrag_(ss) {
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!sheet) return;
+  var forms = sheet.getRange("A13:I39").getFormulas();
   var saved = [];
-  for (var r = 13; r <= 39; r++) {
-    for (var c = 1; c <= 9; c++) {
-      try {
-        var fml = sheet.getRange(r, c).getFormula();
-        if (fml) saved.push({ row: r, col: c, formula: fml, value: "" });
-      } catch (eS) {}
+  for (var r = 0; r < forms.length; r++) {
+    for (var c = 0; c < forms[r].length; c++) {
+      if (forms[r][c]) saved.push({ row: 13 + r, col: 1 + c, formula: forms[r][c], value: "" });
     }
   }
   hudClearRepWorkArea_(sheet);
@@ -952,16 +936,22 @@ function createMappe(payload) {
     if (getriebe) inputSheet.getRange("B7").setValue(getriebe);
     if (km) inputSheet.getRange("B8").setValue(km);
 
+    var workMarks = inputSheet.getRange("B10:B28").getValues();
     for (var i = 0; i < workRows.length; i++) {
       var r = parseInt(workRows[i], 10);
-      if (r >= 10 && r <= 28 && r !== 13) inputSheet.getRange(r, 2).setValue("x");
+      if (r >= 10 && r <= 28 && r !== 13) workMarks[r - 10][0] = "x";
     }
+    inputSheet.getRange("B10:B28").setValues(workMarks);
     if (litersNum > 0) inputSheet.getRange("B13").setValue(litersNum);
     if (oilRow >= 29 && oilRow <= 41) inputSheet.getRange(oilRow, 2).setValue("x");
 
-    for (var d = 0; d < dRows.length; d++) {
-      var dr = parseInt(dRows[d], 10);
-      if (dr >= 2 && dr <= 41) inputSheet.getRange(dr, 5).setValue("x");
+    if (dRows.length) {
+      var dMarks = inputSheet.getRange("E2:E41").getValues();
+      for (var d = 0; d < dRows.length; d++) {
+        var dr = parseInt(dRows[d], 10);
+        if (dr >= 2 && dr <= 41) dMarks[dr - 2][0] = "x";
+      }
+      inputSheet.getRange("E2:E41").setValues(dMarks);
     }
     for (var m = 0; m < freeMech.length && m < 5; m++) {
       var txtM = String(freeMech[m] || "").trim();
@@ -983,23 +973,32 @@ function createMappe(payload) {
       inputSheet.getRange("B43").setValue("x");
     }
 
+    var oilName = "";
+    var litersDisp = "";
+    if (oilRow >= 29 && oilRow <= 41) {
+      oilName = String(inputSheet.getRange(oilRow, 1).getValue() || "").trim();
+      if (litersNum > 0) litersDisp = String(payload.liters || liters).replace(".", ",");
+    }
     hudApplyOilToReparaturauftrag_(ss);
-    SpreadsheetApp.flush();
-    Utilities.sleep(2000);
-    SpreadsheetApp.flush();
 
+    var aLabels = inputSheet.getRange("A10:A28").getValues();
+    var dLabels = inputSheet.getRange("D2:D41").getValues();
     var extraLines = [];
     for (var wi = 0; wi < workRows.length; wi++) {
       var wrn = parseInt(workRows[wi], 10);
       if (wrn >= 10 && wrn <= 28 && wrn !== 13) {
-        var wl = String(inputSheet.getRange(wrn, 1).getValue() || "").trim();
-        if (wl) extraLines.push(wl);
+        var wl = String(aLabels[wrn - 10][0] || "").trim();
+        if (!wl) continue;
+        if (oilName && wl.toLowerCase().indexOf("motorölwechsel") !== -1) {
+          wl = wl + " (" + oilName + (litersDisp ? ", " + litersDisp + " L" : "") + ")";
+        }
+        extraLines.push(wl);
       }
     }
     for (var di = 0; di < dRows.length; di++) {
       var drn = parseInt(dRows[di], 10);
       if (drn >= 2 && drn <= 41) {
-        var dl = String(inputSheet.getRange(drn, 4).getValue() || "").trim();
+        var dl = String(dLabels[drn - 2][0] || "").trim();
         if (dl) extraLines.push(dl);
       }
     }
@@ -1014,6 +1013,14 @@ function createMappe(payload) {
     if (bodyResult && bodyResult.lines) {
       for (var bi = 0; bi < bodyResult.lines.length; bi++) extraLines.push(bodyResult.lines[bi]);
     }
+    if (oilName) {
+      var oilLine = "Öl: " + oilName + (litersDisp ? " · " + litersDisp + " L" : "");
+      var hasOilInLines = false;
+      for (var oi = 0; oi < extraLines.length; oi++) {
+        if (String(extraLines[oi]).indexOf(oilName) !== -1) { hasOilInLines = true; break; }
+      }
+      if (!hasOilInLines) extraLines.push(oilLine);
+    }
 
     var mat = hudMaterializeRepForPdf_(ss, (bodyResult && bodyResult.byAction) || {}, extraLines);
     if (!mat.lines || !mat.lines.length) {
@@ -1024,8 +1031,7 @@ function createMappe(payload) {
       return { success: false, message: "Keine Positionen für das PDF gefunden (Auswahl leer übernommen)." };
     }
     SpreadsheetApp.flush();
-    Utilities.sleep(2000);
-    SpreadsheetApp.flush();
+    Utilities.sleep(700);
 
     var wroteOk = String((mat && mat.wrote) || "").trim();
     if (!wroteOk) {
@@ -1073,7 +1079,6 @@ function createMappe(payload) {
 
     try {
       hudResetInput_(inputSheet);
-      hudResetReparaturauftrag_(ss);
       SpreadsheetApp.flush();
     } catch (resetErr) {}
 
