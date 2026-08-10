@@ -347,7 +347,7 @@ a.btn { text-decoration: none; display: inline-block; }
 </head>
 <body>
 <div class="topbar">
-  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;14</span></h1>
+  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;15</span></h1>
   <span class="badge" id="countBadge">lädt…</span>
   <div class="searchwrap" id="searchWrap">
     <input type="text" id="searchInput" placeholder="Suche StockID, Grund, Bearbeiter…" autocomplete="off">
@@ -1466,18 +1466,6 @@ function validate() {
     return null;
   }
   $("nachDatum").className = "";
-  state.bodyWorks.forEach(function(b) {
-    var line = b.label + (b.actionLabels && b.actionLabels.length ? ": " + b.actionLabels.join(", ") : "");
-    var exists = freeMech.some(function(v) { return v && v.toLowerCase().indexOf(String(b.label || "").toLowerCase()) !== -1; });
-    if (exists) return;
-    for (var fi = 0; fi < freeMech.length; fi++) {
-      if (!freeMech[fi]) { freeMech[fi] = line; break; }
-    }
-  });
-  for (var fmi = 0; fmi < freeMech.length; fmi++) {
-    var fmel = $("fm" + fmi);
-    if (fmel) fmel.value = freeMech[fmi] || "";
-  }
   var sel = selectedOrders();
   return {
     stockId: state.current.stockId,
@@ -1491,7 +1479,9 @@ function validate() {
     dRows: dRows,
     freeMech: freeMech,
     freeParts: freeParts,
-    bodyWorks: state.bodyWorks.map(function(b) { return { side: b.side, row: b.row, actions: b.actions }; }),
+    bodyWorks: state.bodyWorks.map(function(b) {
+      return { side: b.side, row: b.row, actions: b.actions, label: b.label || "" };
+    }),
     nach: nach,
     nachDatum: nachDatum,
     oilRow: oilRequired() ? state.oilRow : (state.oilRow || 0),

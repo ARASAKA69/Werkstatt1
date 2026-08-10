@@ -379,6 +379,7 @@ function hudResetInput_(sheet) {
   sheet.getRange("H2:H45").clearContent();
   sheet.getRange("J2:O45").clearContent();
   sheet.getRange("Q2:V45").clearContent();
+  try { hudClearBodySummariesOnSheet_(sheet); } catch (e) {}
 }
 
 function hudApplyOilToReparaturauftrag_(ss) {
@@ -400,6 +401,103 @@ function hudApplyOilToReparaturauftrag_(ss) {
     cell.setHorizontalAlignment("center");
     cell.setVerticalAlignment("middle");
   }
+}
+
+function hudNormLabel_(v) {
+  return String(v || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/\s+/g, " ").trim();
+}
+
+function hudClearBodySummariesOnSheet_(sheet) {
+  if (!sheet) return;
+  var values = sheet.getDataRange().getValues();
+  var keys = [
+    "spaltmass einstellen", "spaltmaß einstellen",
+    "ganzes bauteil lackieren", "beilackieren",
+    "bauteil reparieren", "bauteil polieren",
+    "delle druecken", "delle drücken",
+    "polieren gesamtes fahrzeug"
+  ];
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var n = hudNormLabel_(values[r][c]);
+      if (!n) continue;
+      for (var k = 0; k < keys.length; k++) {
+        if (n.indexOf(keys[k]) === -1) continue;
+        if (c + 1 < values[r].length) {
+          try { sheet.getRange(r + 1, c + 2).clearContent(); } catch (e) {}
+        }
+        break;
+      }
+    }
+  }
+}
+
+function hudWriteBodySummariesOnSheet_(sheet, byAction) {
+  if (!sheet) return;
+  var labelMap = {
+    1: ["ganzes bauteil lackieren"],
+    2: ["beilackieren"],
+    3: ["delle druecken", "delle drücken"],
+    4: ["spaltmass einstellen", "spaltmaß einstellen"],
+    5: ["bauteil reparieren"],
+    6: ["bauteil polieren", "polieren gesamtes fahrzeug"]
+  };
+  var values = sheet.getDataRange().getValues();
+  for (var r = 0; r < values.length; r++) {
+    for (var c = 0; c < values[r].length; c++) {
+      var raw = String(values[r][c] || "");
+      var n = hudNormLabel_(raw);
+      if (!n) continue;
+      for (var an = 1; an <= 6; an++) {
+        var keys = labelMap[an];
+        var hit = false;
+        for (var k = 0; k < keys.length; k++) {
+          if (n.indexOf(keys[k]) !== -1) { hit = true; break; }
+        }
+        if (!hit) continue;
+        var parts = byAction[an] || [];
+        if (!parts.length) continue;
+        var text = parts.join(", ");
+        if (/:\s*$/.test(raw) || n.indexOf(keys[0]) === 0) {
+          sheet.getRange(r + 1, c + 2).setValue(text);
+        } else if (n.indexOf(":") !== -1) {
+          sheet.getRange(r + 1, c + 1).setValue(raw.replace(/:\s*.*$/, ": ") + text);
+        } else {
+          sheet.getRange(r + 1, c + 2).setValue(text);
+        }
+      }
+    }
+  }
+}
+
+function hudApplyBodyWorks_(ss, bodyWorks) {
+  var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
+  var repSheet = ss.getSheetByName(HUD_WA_REP_TAB);
+  hudClearBodySummariesOnSheet_(inputSheet);
+  hudClearBodySummariesOnSheet_(repSheet);
+  if (!bodyWorks || !bodyWorks.length) return;
+
+  var byAction = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  for (var b = 0; b < bodyWorks.length; b++) {
+    var bw = bodyWorks[b] || {};
+    var bRow = parseInt(bw.row, 10);
+    var bSide = parseInt(bw.side, 10);
+    if (!(bRow >= 2 && bRow <= 42)) continue;
+    var partCol = bSide === 2 ? 16 : 9;
+    var label = String(bw.label || "").trim();
+    if (!label && inputSheet) label = String(inputSheet.getRange(bRow, partCol).getValue() || "").trim();
+    var acts = bw.actions || [];
+    for (var ac = 0; ac < acts.length; ac++) {
+      var an = parseInt(acts[ac], 10);
+      if (!(an >= 1 && an <= 6)) continue;
+      inputSheet.getRange(bRow, partCol + an).setValue("x");
+      if (label && byAction[an].indexOf(label) === -1) byAction[an].push(label);
+    }
+  }
+  hudWriteBodySummariesOnSheet_(inputSheet, byAction);
+  hudWriteBodySummariesOnSheet_(repSheet, byAction);
 }
 
 function hudResolveDriveFolder_() {
@@ -588,18 +686,7 @@ function createMappe(payload) {
       if (txtP) inputSheet.getRange(32 + p, 4).setValue(txtP);
     }
 
-    for (var b = 0; b < bodyWorks.length; b++) {
-      var bw = bodyWorks[b] || {};
-      var bRow = parseInt(bw.row, 10);
-      var bSide = parseInt(bw.side, 10);
-      if (!(bRow >= 2 && bRow <= 42)) continue;
-      var baseCol = bSide === 2 ? 16 : 9;
-      var acts = bw.actions || [];
-      for (var ac = 0; ac < acts.length; ac++) {
-        var an = parseInt(acts[ac], 10);
-        if (an >= 1 && an <= 6) inputSheet.getRange(bRow, baseCol + an).setValue("x");
-      }
-    }
+    hudApplyBodyWorks_(ss, bodyWorks);
 
     var nach = String(payload.nach || "").toLowerCase();
     var nachDatum = String(payload.nachDatum || "").trim();
@@ -642,6 +729,7 @@ function createMappe(payload) {
 
     try {
       hudResetInput_(inputSheet);
+      hudClearBodySummariesOnSheet_(ss.getSheetByName(HUD_WA_REP_TAB));
       SpreadsheetApp.flush();
     } catch (resetErr) {}
 
