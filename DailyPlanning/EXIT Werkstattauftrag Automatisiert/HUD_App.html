@@ -30,33 +30,74 @@ body {
   z-index: 50;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px 18px;
+  gap: 14px;
+  padding: 14px 22px;
   background: linear-gradient(180deg, #161b22, #10141a);
   border-bottom: 1px solid var(--border);
 }
 .topbar h1 {
-  font-size: 17px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
 .topbar h1 span { color: var(--accent); }
+.topbar h1 .ver { color: var(--muted); font-size: 11px; font-weight: 400; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; margin-left: 7px; vertical-align: middle; }
 .badge {
   background: var(--bg3);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 3px 12px;
-  font-size: 12px;
+  padding: 4px 14px;
+  font-size: 13px;
   color: var(--muted);
+  white-space: nowrap;
 }
+.searchwrap {
+  position: relative;
+  margin-left: 14px;
+  flex: 0 1 420px;
+  min-width: 180px;
+}
+.searchwrap input {
+  width: 100%;
+  background: #0b0f14;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 9px 32px 9px 16px;
+  font-size: 14px;
+  outline: none;
+}
+.searchwrap input:focus { border-color: var(--accent); box-shadow: 0 0 8px rgba(249,115,22,.25); }
+.search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: none;
+}
+.searchwrap.has-val .search-clear { display: block; }
+.sync-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #30363d;
+  transition: background .2s, box-shadow .2s;
+}
+.sync-dot.active { background: var(--green); box-shadow: 0 0 8px var(--green); }
 .spacer { flex: 1; }
 .btn {
   background: var(--bg3);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 8px;
-  padding: 8px 14px;
-  font-size: 13px;
+  padding: 9px 16px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   transition: border-color .15s, box-shadow .15s, background .15s;
@@ -66,78 +107,169 @@ body {
 .btn-accent { background: var(--accent); border-color: var(--accent); color: #10141a; }
 .btn-accent:hover { background: var(--accent2); }
 .btn-ghost { background: transparent; }
-.btn-sm { padding: 5px 10px; font-size: 12px; }
-.wrap { max-width: 1100px; margin: 0 auto; padding: 18px; }
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.btn-sm { padding: 6px 12px; font-size: 13px; }
+.wrap { max-width: 1720px; margin: 0 auto; padding: 22px 26px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); gap: 18px; }
 .card {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 14px 16px;
+  padding: 16px 18px;
   cursor: pointer;
   transition: border-color .15s, transform .1s, box-shadow .15s;
+  display: flex;
+  flex-direction: column;
 }
 .card:hover { border-color: var(--accent); box-shadow: 0 0 12px rgba(249,115,22,.25); transform: translateY(-2px); }
-.card .sid { font-size: 18px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
-.card .meta { margin-top: 4px; font-size: 12px; color: var(--muted); }
-.card ul { margin: 10px 0 0 0; list-style: none; }
+.card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.card .sid { font-size: 23px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
+.card .cnt {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 11px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.card .meta { margin-top: 5px; font-size: 13px; color: var(--muted); }
+.card ul { margin: 12px 0 0 0; list-style: none; }
 .card li {
-  font-size: 13px;
-  padding: 4px 0;
+  padding: 9px 0;
   border-top: 1px dashed #262d38;
+}
+.card .li-top {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
+  font-size: 14.5px;
 }
-.card li .st { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.empty { text-align: center; color: var(--muted); padding: 60px 0; font-size: 15px; }
+.card .li-grund { font-weight: 600; }
+.card li .st { color: var(--muted); font-size: 12px; white-space: nowrap; padding-top: 2px; }
+.card .li-meta { margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+.card .li-meta .eid { color: var(--blue); }
+.card .li-meta .dat { color: var(--accent2); }
+.empty { text-align: center; color: var(--muted); padding: 60px 0; font-size: 16px; }
 .section {
   background: var(--bg2);
   border: 1px solid var(--border);
   border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 14px;
+  padding: 18px;
+  margin-bottom: 16px;
 }
 .section h3 {
-  font-size: 13px;
+  font-size: 14px;
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--muted);
   margin-bottom: 12px;
 }
-.detail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-.detail-head .sid { font-size: 24px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.section-head h3 { margin-bottom: 0; }
+#dGruende { list-style: none; }
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 6px;
+  border-top: 1px dashed #262d38;
+  font-size: 14.5px;
+}
+.order-row:first-child { border-top: 0; }
+.order-pick { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; }
+.order-pick input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+.order-meta { color: var(--muted); font-size: 12.5px; }
+.order-meta .eid { color: var(--blue); }
+.order-meta .dat { color: var(--accent2); }
+.order-done-btn { background: transparent; border-color: var(--border); color: var(--muted); white-space: nowrap; }
+.order-done-btn:hover { border-color: var(--green); color: var(--green); background: rgba(86,211,100,.08); box-shadow: none; }
+.order-done-btn.is-done { border-color: var(--green); color: var(--green); background: rgba(86,211,100,.1); }
+.order-row.done { background: rgba(86,211,100,.1); border-radius: 7px; }
+.order-row.done .order-pick b { color: var(--green); text-decoration: line-through; }
+.detail-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.detail-head .sid { font-size: 28px; font-weight: 800; color: var(--accent2); letter-spacing: 1px; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 700px) { .grid2 { grid-template-columns: 1fr; } }
-label.fld { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.detail-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px; align-items: start; }
+@media (max-width: 1180px) { .detail-cols { grid-template-columns: 1fr; } }
+.nach-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.nach-row input[type=date] { width: auto; }
+.bw-form { display: flex; flex-direction: column; gap: 10px; }
+.bw-list { list-style: none; margin-top: 12px; }
+.bw-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 14px;
+  background: var(--bg3);
+}
+.bw-list .bw-acts { color: var(--muted); font-size: 12.5px; }
+.bw-del { background: transparent; border: 0; color: var(--red); cursor: pointer; font-size: 18px; line-height: 1; }
+label.fld { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
 input[type=text], input[type=number], select, textarea {
   width: 100%;
   background: #0b0f14;
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 8px;
-  padding: 9px 11px;
-  font-size: 14px;
+  padding: 10px 12px;
+  font-size: 15px;
   outline: none;
 }
 input:focus, select:focus { border-color: var(--accent); }
 input.ok { border-color: var(--green); }
 input.err { border-color: var(--red); }
-.chk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 14px; }
+.chk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 4px 14px; }
 .chk {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 9px;
+  padding: 7px 9px;
   border-radius: 7px;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   user-select: none;
 }
 .chk:hover { background: var(--bg3); }
-.chk input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.chk input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
 .chk.on { background: rgba(249,115,22,.12); }
+.chk.auto { background: rgba(86,211,100,.14); border: 1px solid rgba(86,211,100,.45); }
+.chk.auto.on { background: rgba(86,211,100,.2); }
+.chk.auto::after {
+  content: "auto";
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  color: var(--green);
+  text-transform: uppercase;
+}
+.auto-banner {
+  background: rgba(86,211,100,.08);
+  border: 1px solid rgba(86,211,100,.35);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 13.5px;
+}
+.auto-banner.hidden { display: none; }
+.auto-banner b { color: var(--green); }
+.auto-banner .need { color: var(--accent2); }
+.auto-banner .miss { color: var(--muted); margin-top: 6px; }
+.auto-banner ul { margin: 6px 0 0 18px; }
 .free-lines input { margin-bottom: 6px; }
+.free-lines input.auto-free { border-color: var(--green); background: rgba(86,211,100,.06); }
 .oil-pill {
   display: inline-flex;
   align-items: center;
@@ -150,14 +282,12 @@ input.err { border-color: var(--red); }
   color: var(--blue);
 }
 .oil-pill.missing { border-color: var(--red); color: var(--red); background: rgba(248,81,73,.08); }
-.footer-bar {
-  position: sticky;
-  bottom: 0;
-  background: linear-gradient(0deg, #10141a 70%, transparent);
-  padding: 14px 0 10px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.top-msg {
+  max-width: 280px;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .msg { font-size: 13px; }
 .msg.ok { color: var(--green); }
@@ -196,6 +326,18 @@ input.err { border-color: var(--red); }
 @keyframes sp { to { transform: rotate(360deg); } }
 .busy-box { text-align: center; }
 .busy-box .spin { width: 42px; height: 42px; border-width: 3px; margin-bottom: 14px; }
+.spin--xs { width: 13px; height: 13px; border-width: 2px; }
+.done-modal { width: min(460px, 94vw); text-align: left; }
+.done-modal h2 { color: var(--green); }
+.done-sub { font-size: 13px; color: var(--muted); margin: 4px 0 14px; }
+.done-list { list-style: none; margin: 0 0 4px; }
+.done-list li { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 14px; border-top: 1px solid var(--border); }
+.done-list li:first-child { border-top: 0; }
+.done-list li.hidden { display: none; }
+.done-ico { width: 20px; height: 20px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.done-ico.ok { background: rgba(86,211,100,.15); color: var(--green); }
+.done-ico.err { background: rgba(248,81,73,.15); color: var(--red); }
+.done-ico.wait { background: transparent; }
 .busy-box div { font-size: 14px; color: var(--muted); }
 .hidden { display: none !important; }
 .linkbtns { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -205,9 +347,16 @@ a.btn { text-decoration: none; display: inline-block; }
 </head>
 <body>
 <div class="topbar">
-  <h1>EXIT <span>Werkstattmappe</span> HUD</h1>
+  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;14</span></h1>
   <span class="badge" id="countBadge">lädt…</span>
+  <div class="searchwrap" id="searchWrap">
+    <input type="text" id="searchInput" placeholder="Suche StockID, Grund, Bearbeiter…" autocomplete="off">
+    <button class="search-clear" id="searchClear" title="Leeren">&times;</button>
+  </div>
   <div class="spacer"></div>
+  <span class="msg top-msg" id="createMsg"></span>
+  <button class="btn btn-accent hidden" id="btnCreate">Erstellen, Speichern &amp; Drucken</button>
+  <span class="sync-dot" id="syncDot" title="Auto-Aktualisierung aktiv"></span>
   <button class="btn btn-sm" id="btnRefresh">&#x21bb; Aktualisieren</button>
 </div>
 
@@ -228,56 +377,98 @@ a.btn { text-decoration: none; display: inline-block; }
       </div>
     </div>
 
-    <div class="section">
-      <h3>Nachbestellungen (Gründe)</h3>
-      <ul id="dGruende" style="list-style:none;font-size:13px;"></ul>
-    </div>
-
-    <div class="section">
-      <h3>Fahrzeugdaten (aus Carol)</h3>
-      <div class="grid2">
-        <div>
-          <label class="fld">Modell</label>
-          <input type="text" id="inModell" placeholder="z.B. Fiat Tipo 1.4 Turbo" autocomplete="off">
-          <div class="carol-hint hidden" id="hintModell">automatisch aus Carol übernommen</div>
+    <div class="detail-cols">
+      <div>
+        <div class="section">
+          <h3>Nachbestellungen (Gründe)</h3>
+          <ul id="dGruende" style="list-style:none;font-size:13px;"></ul>
         </div>
-        <div>
-          <label class="fld">VIN / Fahrgestellnummer</label>
-          <input type="text" id="inVin" placeholder="z.B. ZFA35600006P24964" autocomplete="off">
-          <div class="carol-hint hidden" id="hintVin">automatisch aus Carol übernommen</div>
+
+        <div class="auto-banner hidden" id="autoBanner"></div>
+
+        <div class="section">
+          <div class="section-head">
+            <h3>Fahrzeugdaten (aus Carol)</h3>
+            <button class="btn btn-sm btn-accent" id="btnAutofill" type="button">Autofill Starten</button>
+          </div>
+          <div class="grid2">
+            <div>
+              <label class="fld">Modell</label>
+              <input type="text" id="inModell" placeholder="z.B. Fiat Tipo 1.4 Turbo" autocomplete="off">
+              <div class="carol-hint hidden" id="hintModell">automatisch aus Carol übernommen</div>
+            </div>
+            <div>
+              <label class="fld">VIN / Fahrgestellnummer</label>
+              <input type="text" id="inVin" placeholder="z.B. ZFA35600006P24964" autocomplete="off">
+              <div class="carol-hint hidden" id="hintVin">automatisch aus Carol übernommen</div>
+            </div>
+            <div>
+              <label class="fld">Erstzulassung (optional)</label>
+              <input type="text" id="inErstzulassung" placeholder="z.B. 03/2019" autocomplete="off">
+            </div>
+            <div>
+              <label class="fld">KBA Nr. (optional)</label>
+              <input type="text" id="inKba" placeholder="z.B. 0603/BUY" autocomplete="off">
+            </div>
+            <div>
+              <label class="fld">Getriebe (optional)</label>
+              <input type="text" id="inGetriebe" placeholder="z.B. Manuell / Automatik" autocomplete="off">
+            </div>
+            <div>
+              <label class="fld">KM-Stand (optional)</label>
+              <input type="text" id="inKm" placeholder="z.B. 87500" autocomplete="off">
+            </div>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Arbeiten <button class="btn btn-sm btn-accent" id="btnService" style="margin-left:10px;">+ Service Paket</button></h3>
+          <div class="chk-grid" id="workGrid"></div>
+          <div id="oilStatusWrap" style="margin-top:12px;" class="hidden">
+            <span class="oil-pill missing" id="oilPill">Öl fehlt — bitte auswählen</span>
+            <button class="btn btn-sm" id="btnOilEdit" style="margin-left:8px;">Öl wählen</button>
+          </div>
+        </div>
+
+        <div class="section">
+          <h3>Nachuntersuchung</h3>
+          <div class="nach-row">
+            <label class="chk"><input type="radio" name="nachRadio" id="nachNein" value="nein"><span>Nein</span></label>
+            <label class="chk"><input type="radio" name="nachRadio" id="nachJa" value="ja"><span>Ja, bis</span></label>
+            <input type="date" id="nachDatum" disabled>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="section">
+          <h3>Zusatzarbeiten</h3>
+          <div class="chk-grid" id="dGrid"></div>
+        </div>
+
+        <div class="section">
+          <h3>Karosserie &amp; Lack / Smart Repair</h3>
+          <div class="bw-form">
+            <select id="bwPart"><option value="">— Bauteil wählen —</option></select>
+            <div class="chk-grid" id="bwActions"></div>
+            <div><button class="btn btn-sm" id="bwAdd">+ Bauteil hinzufügen</button></div>
+          </div>
+          <ul class="bw-list" id="bwList"></ul>
+        </div>
+
+        <div class="grid2">
+          <div class="section">
+            <h3>Sonstige Mechanik (Freitext)</h3>
+            <div class="free-lines" id="freeMechWrap"></div>
+          </div>
+          <div class="section">
+            <h3>Sonstige- u. OE-Teile (Freitext)</h3>
+            <div class="free-lines" id="freePartsWrap"></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="section">
-      <h3>Arbeiten <button class="btn btn-sm btn-accent" id="btnService" style="margin-left:10px;">+ Service Paket</button></h3>
-      <div class="chk-grid" id="workGrid"></div>
-      <div id="oilStatusWrap" style="margin-top:12px;" class="hidden">
-        <span class="oil-pill missing" id="oilPill">Öl fehlt — bitte auswählen</span>
-        <button class="btn btn-sm" id="btnOilEdit" style="margin-left:8px;">Öl wählen</button>
-      </div>
-    </div>
-
-    <div class="section">
-      <h3>Zusatzarbeiten</h3>
-      <div class="chk-grid" id="dGrid"></div>
-    </div>
-
-    <div class="grid2">
-      <div class="section">
-        <h3>Sonstige Mechanik (Freitext)</h3>
-        <div class="free-lines" id="freeMechWrap"></div>
-      </div>
-      <div class="section">
-        <h3>Sonstige- u. OE-Teile (Freitext)</h3>
-        <div class="free-lines" id="freePartsWrap"></div>
-      </div>
-    </div>
-
-    <div class="footer-bar">
-      <button class="btn btn-accent" id="btnCreate">Erstellen, Speichern &amp; Drucken</button>
-      <span class="msg" id="createMsg"></span>
-    </div>
   </div>
 </div>
 
@@ -310,6 +501,22 @@ a.btn { text-decoration: none; display: inline-block; }
   </div>
 </div>
 
+<div class="overlay hidden" id="doneOverlay">
+  <div class="modal done-modal">
+    <h2 id="doneTitle">Werkstattauftrag fertig</h2>
+    <div class="done-sub" id="doneSub"></div>
+    <ul class="done-list">
+      <li id="doneCreate"><span class="done-ico ok">&#10003;</span><span>Werkstattauftrag erstellt</span></li>
+      <li id="donePrint"><span class="done-ico wait" id="donePrintIco"><span class="spin spin--xs"></span></span><span id="donePrintTxt">An Drucker gesendet…</span></li>
+      <li id="doneDrive"><span class="done-ico" id="doneDriveIco"></span><span id="doneDriveTxt"></span></li>
+      <li id="doneNb"><span class="done-ico ok">&#10003;</span><span id="doneNbTxt"></span></li>
+    </ul>
+    <div class="modal-actions">
+      <button class="btn btn-accent" id="doneClose">Weiter</button>
+    </div>
+  </div>
+</div>
+
 <script>
 var BRIDGE_URL = "http://localhost:9150";
 var state = {
@@ -322,8 +529,20 @@ var state = {
   oilRow: 0,
   oilLabel: "",
   liters: "",
-  oilRequiredRows: []
+  oilRequiredRows: [],
+  pollTimer: null,
+  sig: "",
+  search: "",
+  syncTimer: null,
+  orderSel: {},
+  doneRemaining: 0,
+  bodyWorks: [],
+  autoWork: {},
+  autoD: {},
+  autoFree: [],
+  autoNotes: []
 };
+var SYNC_INTERVAL_MS = 120000;
 
 function $(id) { return document.getElementById(id); }
 
@@ -333,7 +552,7 @@ function esc(s) {
   });
 }
 
-function loadAll() {
+function loadAll(force) {
   $("countBadge").textContent = "lädt…";
   $("listEmpty").classList.remove("hidden");
   $("listEmpty").innerHTML = '<span class="spin"></span> Lade offene Werkstattmappen…';
@@ -345,12 +564,13 @@ function loadAll() {
       return;
     }
     state.entries = res.entries || [];
+    state.sig = res.sig || "";
     if (res.petronasUrl) state.petronasUrl = res.petronasUrl;
     renderList();
   }).withFailureHandler(function(err) {
     $("listEmpty").innerHTML = '<span class="msg err">Fehler: ' + esc(err.message || err) + "</span>";
     $("countBadge").textContent = "Fehler";
-  }).getOpenMappen();
+  }).getOpenMappen(!!force);
 
   if (!state.meta) {
     google.script.run.withSuccessHandler(function(res) {
@@ -360,6 +580,30 @@ function loadAll() {
       }
     }).getInputMeta();
   }
+}
+
+function backgroundRefresh() {
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) return;
+    flashSync();
+    var newSig = res.sig || "";
+    if (newSig === state.sig) return;
+    state.entries = res.entries || [];
+    state.sig = newSig;
+    if (!state.current) renderList();
+  }).withFailureHandler(function() {}).getOpenMappen(true);
+}
+
+function flashSync() {
+  var dot = $("syncDot");
+  if (!dot) return;
+  dot.classList.add("active");
+  setTimeout(function() { dot.classList.remove("active"); }, 900);
+}
+
+function startSync() {
+  if (state.syncTimer) clearInterval(state.syncTimer);
+  state.syncTimer = setInterval(backgroundRefresh, SYNC_INTERVAL_MS);
 }
 
 function computeOilRequiredRows() {
@@ -386,34 +630,425 @@ function serviceRows() {
   return rows;
 }
 
+function normTxt(s) {
+  return String(s || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function expandOrderText(s) {
+  var n = " " + normTxt(s) + " ";
+  n = n.replace(/\bwss\b/g, " windschutzscheibe ");
+  n = n.replace(/\bern\b/g, " ersetzen ");
+  n = n.replace(/\bv\s*bremse\b/g, " bremse ");
+  n = n.replace(/\bvbremse\b/g, " bremse ");
+  n = n.replace(/\bh\s*bremse\b/g, " bremse ");
+  n = n.replace(/\bhbremse\b/g, " bremse ");
+  n = n.replace(/\bbremse\s*va\b/g, " bremse vorne ");
+  n = n.replace(/\bbremse\s*ha\b/g, " bremse hinten ");
+  n = n.replace(/\bre\b/g, " rechts ");
+  n = n.replace(/\bli\b/g, " links ");
+  n = n.replace(/\bvl\b/g, " vorne links ");
+  n = n.replace(/\bvr\b/g, " vorne rechts ");
+  n = n.replace(/\bhl\b/g, " hinten links ");
+  n = n.replace(/\bhr\b/g, " hinten rechts ");
+  n = n.replace(/\bva\b/g, " vorne ");
+  n = n.replace(/\bha\b/g, " hinten ");
+  n = n.replace(/\bvorderachse\b/g, " vorne ");
+  n = n.replace(/\bhinterachse\b/g, " hinten ");
+  n = n.replace(/\bspiegelgehaeuse\b/g, " aussenspiegelgehaeuse ");
+  n = n.replace(/\bspiegel gehaeuse\b/g, " aussenspiegelgehaeuse ");
+  n = n.replace(/\bgrill\b/g, " kuehlergrill ");
+  n = n.replace(/\bkuhlergrill\b/g, " kuehlergrill ");
+  return n.replace(/\s+/g, " ").trim();
+}
+
+function hasWord(hay, word) {
+  return new RegExp("\\b" + String(word).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(hay || "");
+}
+
+function hasAllWords(hay, words) {
+  for (var i = 0; i < words.length; i++) {
+    if (!hasWord(hay, words[i])) return false;
+  }
+  return true;
+}
+
+function hasPhrase(hay, phrase) {
+  return (" " + hay + " ").indexOf(" " + normTxt(phrase) + " ") !== -1;
+}
+
+function selectedOrderSegments() {
+  var out = [];
+  if (!state.current) return out;
+  state.current.rows.forEach(function(r, i) {
+    if (r._done) return;
+    if (state.orderSel[i] === false) return;
+    var g = String(r.grund || "").trim();
+    if (!g) return;
+    String(g).split(/\/\/|;|\n/).forEach(function(part) {
+      var p = part.trim();
+      if (p) out.push(p);
+    });
+  });
+  return out;
+}
+
+function isInspectionOnlySeg(text) {
+  var tokens = normTxt(text).split(" ").filter(Boolean);
+  if (!tokens.length) return false;
+  var inspection = { hu: 1, tuev: 1, tuv: 1, hauptuntersuchung: 1 };
+  var connectors = { und: 1, u: 1, oder: 1 };
+  var hasInspection = false;
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i];
+    if (inspection[t]) { hasInspection = true; continue; }
+    if (connectors[t]) continue;
+    return false;
+  }
+  return hasInspection;
+}
+
+function findItemByTokens(items, tokens) {
+  if (!items || !tokens || !tokens.length) return null;
+  for (var i = 0; i < items.length; i++) {
+    var n = normTxt(items[i].label);
+    var ok = true;
+    for (var t = 0; t < tokens.length; t++) {
+      if (!hasWord(n, tokens[t]) && n.indexOf(tokens[t]) === -1) { ok = false; break; }
+    }
+    if (ok) return items[i];
+  }
+  return null;
+}
+
+function markAutoWork(item) {
+  if (!item) return;
+  state.workSel[item.row] = true;
+  state.autoWork[item.row] = item.label;
+}
+
+function markAutoD(item) {
+  if (!item) return;
+  state.dSel[item.row] = true;
+  state.autoD[item.row] = item.label;
+}
+
+function applyServiceAuto() {
+  serviceRows().forEach(function(r) {
+    var item = null;
+    state.meta.workItems.forEach(function(it) { if (it.row === r) item = it; });
+    markAutoWork(item);
+  });
+}
+
+function addAutoBody(part, actionNrs) {
+  if (!part || !actionNrs || !actionNrs.length) return;
+  var actionLabels = [];
+  (state.meta.actions || []).forEach(function(a) {
+    if (actionNrs.indexOf(a.nr) !== -1) actionLabels.push(a.label);
+  });
+  var exists = -1;
+  for (var i = 0; i < state.bodyWorks.length; i++) {
+    if (state.bodyWorks[i].side === part.side && state.bodyWorks[i].row === part.row) { exists = i; break; }
+  }
+  var item = { side: part.side, row: part.row, label: part.label, actions: actionNrs.slice(), actionLabels: actionLabels, auto: true };
+  if (exists >= 0) state.bodyWorks[exists] = item;
+  else state.bodyWorks.push(item);
+}
+
+function bodyActionsFromText(seg) {
+  var acts = [];
+  if (hasWord(seg, "beilackieren") || hasPhrase(seg, "beilack")) acts.push(2);
+  else if (hasWord(seg, "lackieren") || hasWord(seg, "lackierung") || hasWord(seg, "lack")) acts.push(1);
+  if (hasWord(seg, "delle")) acts.push(3);
+  if (hasWord(seg, "polieren") || hasWord(seg, "polierung")) acts.push(6);
+  if (hasPhrase(seg, "spaltmass") || hasWord(seg, "spaltmass")) acts.push(4);
+  if (hasWord(seg, "ersetzen") || hasWord(seg, "gebrochen") || hasWord(seg, "defekt") || hasWord(seg, "reparatur") || hasWord(seg, "spot")) {
+    if (acts.indexOf(5) === -1 && acts.indexOf(1) === -1 && acts.indexOf(2) === -1) acts.push(5);
+  }
+  if (!acts.length && (hasWord(seg, "ersetzen") || hasWord(seg, "erneuern"))) acts.push(5);
+  return acts;
+}
+
+function matchBodyPartInSeg(seg) {
+  var parts = state.meta.parts || [];
+  var best = null;
+  var bestScore = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var p = parts[i];
+    var pn = normTxt(p.label);
+    if (pn.length < 4) continue;
+    var score = 0;
+    if (hasPhrase(seg, pn) || seg.indexOf(pn) !== -1) score = pn.length + 10;
+    else {
+      var words = pn.split(" ").filter(function(w) { return w.length >= 4; });
+      var hit = 0;
+      words.forEach(function(w) { if (hasWord(seg, w) || seg.indexOf(w) !== -1) hit++; });
+      if (words.length && hit === words.length) score = hit * 4;
+      else if (hit >= 2) score = hit * 2;
+    }
+    if (hasWord(seg, "rechts") && hasWord(pn, "rechts")) score += 3;
+    if (hasWord(seg, "links") && hasWord(pn, "links")) score += 3;
+    if (hasWord(seg, "vorne") && hasWord(pn, "vorne")) score += 2;
+    if (hasWord(seg, "hinten") && hasWord(pn, "hinten")) score += 2;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return bestScore >= 6 ? best : null;
+}
+
+function suggestFromOrders() {
+  state.autoWork = {};
+  state.autoD = {};
+  state.autoFree = [];
+  state.autoNotes = [];
+  state.bodyWorks = (state.bodyWorks || []).filter(function(b) { return !b.auto; });
+  if (!state.meta) return;
+
+  var segments = selectedOrderSegments();
+  if (!segments.length) {
+    renderAutoBanner();
+    return;
+  }
+  var expanded = segments.map(expandOrderText);
+  var joined = expanded.join(" | ");
+  var matchedSeg = {};
+
+  segments.forEach(function(t, i) {
+    if (isInspectionOnlySeg(t)) matchedSeg[i] = 1;
+  });
+
+  if (hasWord(joined, "service") || hasPhrase(joined, "service paket") || hasWord(joined, "oelservice")) {
+    applyServiceAuto();
+    state.autoNotes.push("Service Paket");
+    expanded.forEach(function(t, i) { if (hasWord(t, "service") || hasWord(t, "oelservice")) matchedSeg[i] = 1; });
+  }
+
+  var rules = [
+    { kind: "d", tokens: ["batterie", "ersetzen"], words: ["batterie", "battery", "napa"] },
+    { kind: "d", tokens: ["batterie", "laden"], all: ["batterie", "laden"] },
+    { kind: "work", tokens: ["zuendkerzen"], words: ["zuendkerzen"] },
+    { kind: "work", tokens: ["innenraum"], words: ["innenraumfilter", "pollenfilter", "kabinenfilter"] },
+    { kind: "work", tokens: ["luftfilter", "motor"], words: ["luftfilter"] },
+    { kind: "work", tokens: ["luftfilter", "hochvolt"], words: ["hochvolt"] },
+    { kind: "work", tokens: ["kraftstofffilter"], words: ["kraftstofffilter"] },
+    { kind: "work", tokens: ["bremsfluessigkeit"], words: ["bremsfluessigkeit"] },
+    { kind: "work", tokens: ["kuehlfluessigkeit"], words: ["kuehlfluessigkeit", "kuehlmittel", "coolant"] },
+    { kind: "work", tokens: ["getriebeoel"], words: ["getriebeoel"] },
+    { kind: "work", tokens: ["haldex"], words: ["haldex"] },
+    { kind: "work", tokens: ["differenz"], words: ["differenzial", "differential"] },
+    { kind: "work", tokens: ["keilriemen"], words: ["keilriemen"] },
+    { kind: "work", tokens: ["zahnriemen"], words: ["zahnriemen"] },
+    { kind: "work", tokens: ["schluesselbatterie"], words: ["schluesselbatterie"] },
+    { kind: "work", tokens: ["schiebe"], words: ["schiebedach", "panoramadach"] },
+    { kind: "work", tokens: ["inspektion"], words: ["inspektion"] },
+    { kind: "work", tokens: ["wartung"], words: ["wartung"] },
+    { kind: "d", tokens: ["radsatz"], words: ["radsatz", "raederwechsel", "raderwechsel"] },
+    { kind: "d", tokens: ["bremsscheiben", "vorne"], all: ["bremse", "vorne"] },
+    { kind: "d", tokens: ["bremsscheiben", "hinten"], all: ["bremse", "hinten"] },
+    { kind: "d", tokens: ["klima"], words: ["klima", "klimaservice", "klimaanlage"] },
+    { kind: "d", tokens: ["antenne"], words: ["antenne"] },
+    { kind: "d", tokens: ["ozon"], words: ["ozon"] },
+    { kind: "d", tokens: ["diagnose"], words: ["diagnose"] },
+    { kind: "d", tokens: ["oelverlust"], words: ["oelverlust"] },
+    { kind: "d", tokens: ["fehlerspeicher"], words: ["fehlerspeicher"] },
+    { kind: "d", tokens: ["scheibenwischer", "links"], all: ["scheibenwischer", "links"] },
+    { kind: "d", tokens: ["scheibenwischer", "rechts"], all: ["scheibenwischer", "rechts"] },
+    { kind: "d", tokens: ["heckwischer"], words: ["heckwischer"] },
+    { kind: "d", tokens: ["marderschutz"], words: ["marderschutz"] },
+    { kind: "d", tokens: ["windschutzscheibe"], words: ["windschutzscheibe", "frontscheibe"] },
+    { kind: "d", tokens: ["smart", "repair"], all: ["smart", "repair"] },
+    { kind: "d", tokens: ["motorhaubendaempfer"], words: ["motorhaubendaempfer", "haubendaempfer"] }
+  ];
+
+  rules.forEach(function(rule) {
+    var hit = false;
+    if (rule.all && hasAllWords(joined, rule.all)) hit = true;
+    if (!hit && rule.words) {
+      for (var w = 0; w < rule.words.length; w++) {
+        if (hasWord(joined, rule.words[w])) { hit = true; break; }
+      }
+    }
+    if (!hit) return;
+    if (rule.tokens[0] === "batterie" && rule.tokens[1] === "laden" && hasWord(joined, "ersetzen")) return;
+    if (rule.tokens[0] === "batterie" && rule.tokens[1] === "ersetzen" && hasWord(joined, "laden") && !hasWord(joined, "ersetzen") && !hasWord(joined, "battery") && !hasWord(joined, "napa")) return;
+    var item = findItemByTokens(rule.kind === "work" ? state.meta.workItems : state.meta.dItems, rule.tokens);
+    if (!item) item = findItemByTokens(rule.kind === "work" ? state.meta.workItems : state.meta.dItems, [rule.tokens[0]]);
+    if (!item) return;
+    if (rule.kind === "work") markAutoWork(item); else markAutoD(item);
+    expanded.forEach(function(t, i) {
+      var ok = false;
+      if (rule.all && hasAllWords(t, rule.all)) ok = true;
+      if (!ok && rule.words) {
+        for (var w2 = 0; w2 < rule.words.length; w2++) {
+          if (hasWord(t, rule.words[w2])) { ok = true; break; }
+        }
+      }
+      if (ok) matchedSeg[i] = 1;
+    });
+  });
+
+  if (hasWord(joined, "reifen") || hasWord(joined, "tyre") || hasWord(joined, "tire")) {
+    var tirePos = [
+      { tokens: ["reifen", "vorne", "rechts"], keys: ["vorne", "rechts"] },
+      { tokens: ["reifen", "vorne", "links"], keys: ["vorne", "links"] },
+      { tokens: ["reifen", "hinten", "rechts"], keys: ["hinten", "rechts"] },
+      { tokens: ["reifen", "hinten", "links"], keys: ["hinten", "links"] }
+    ];
+    var tireHit = 0;
+    tirePos.forEach(function(tp) {
+      if (!hasAllWords(joined, tp.keys)) return;
+      var it = findItemByTokens(state.meta.dItems, tp.tokens);
+      if (!it) return;
+      markAutoD(it);
+      tireHit++;
+      expanded.forEach(function(t, i) { if (hasWord(t, "reifen") && hasAllWords(t, tp.keys)) matchedSeg[i] = 1; });
+    });
+    if (!tireHit) {
+      var rad = findItemByTokens(state.meta.dItems, ["radsatz"]);
+      if (rad) markAutoD(rad);
+      else state.autoNotes.push("Reifen erkannt — Position bitte manuell wählen");
+      expanded.forEach(function(t, i) { if (hasWord(t, "reifen")) matchedSeg[i] = 1; });
+    }
+  }
+
+  expanded.forEach(function(seg, i) {
+    var part = matchBodyPartInSeg(seg);
+    if (!part) return;
+    var acts = bodyActionsFromText(seg);
+    if (!acts.length) acts = [5];
+    addAutoBody(part, acts);
+    matchedSeg[i] = 1;
+  });
+
+  expanded.forEach(function(t, i) {
+    if (matchedSeg[i]) return;
+    var genericHit = false;
+    state.meta.workItems.forEach(function(it) {
+      var key = normTxt(it.label).replace(/\b(ersetzen|wechseln|inkl filterersatz|inkl)\b/g, " ").replace(/\s+/g, " ").trim();
+      var words = key.split(" ").filter(function(w) { return w.length >= 5; });
+      if (words.length && hasAllWords(t, words)) { markAutoWork(it); genericHit = true; }
+      else if (key.length >= 8 && hasPhrase(t, key)) { markAutoWork(it); genericHit = true; }
+    });
+    state.meta.dItems.forEach(function(it) {
+      var key = normTxt(it.label).replace(/\b(ersetzen|erneuern|pruefen|und)\b/g, " ").replace(/\s+/g, " ").trim();
+      if (hasWord(key, "reifen")) return;
+      var words = key.split(" ").filter(function(w) { return w.length >= 5; });
+      if (words.length && hasAllWords(t, words)) { markAutoD(it); genericHit = true; }
+      else if (key.length >= 8 && hasPhrase(t, key)) { markAutoD(it); genericHit = true; }
+    });
+    if (genericHit) matchedSeg[i] = 1;
+  });
+
+  segments.forEach(function(t, i) {
+    if (!matchedSeg[i]) state.autoFree.push(t);
+  });
+
+  if (Object.keys(state.autoWork).length || Object.keys(state.autoD).length || state.bodyWorks.some(function(b) { return b.auto; })) {
+    if (oilRequired()) state.autoNotes.push("Öl + Liter noch manuell wählen");
+  }
+  renderAutoBanner();
+}
+
+function renderAutoBanner() {
+  var el = $("autoBanner");
+  if (!el) return;
+  var added = [];
+  Object.keys(state.autoWork).forEach(function(k) { added.push(state.autoWork[k]); });
+  Object.keys(state.autoD).forEach(function(k) { added.push(state.autoD[k]); });
+  state.bodyWorks.forEach(function(b) { if (b.auto) added.push(b.label + " (" + b.actionLabels.join(", ") + ")"); });
+  if (!added.length && !state.autoFree.length && !state.autoNotes.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  var html = "";
+  if (added.length) {
+    html += "<b>Automatisch übernommen</b> — bitte kurz kontrollieren:<ul>";
+    added.forEach(function(a) { html += "<li>" + esc(a) + "</li>"; });
+    html += "</ul>";
+  } else {
+    html += "<b>Keine sichere Zuordnung</b> aus dem Auftragstext.";
+  }
+  var needs = state.autoNotes.filter(function(n) { return n.indexOf("Öl") !== -1 || n.indexOf("manuell") !== -1 || n.indexOf("Reifen") !== -1; });
+  if (needs.length) {
+    html += "<div class='need'>Noch prüfen / manuell: " + esc(needs.join(" · ")) + "</div>";
+  }
+  if (state.autoFree.length) {
+    html += "<div class='miss'>Nicht erkannt → Freitext vorausgefüllt:<ul>";
+    state.autoFree.forEach(function(t) { html += "<li>" + esc(t) + "</li>"; });
+    html += "</ul></div>";
+  }
+  el.innerHTML = html;
+  el.classList.remove("hidden");
+}
+
+function applyAutoFreeLines() {
+  for (var i = 0; i < 5; i++) {
+    var el = $("fm" + i);
+    if (!el) continue;
+    el.value = state.autoFree[i] || "";
+    el.classList.toggle("auto-free", !!state.autoFree[i]);
+  }
+}
+
+function entryMatchesSearch(ent, term) {
+  if (!term) return true;
+  if (ent.stockId.toLowerCase().indexOf(term) !== -1) return true;
+  for (var i = 0; i < ent.rows.length; i++) {
+    var r = ent.rows[i];
+    if ((r.grund || "").toLowerCase().indexOf(term) !== -1) return true;
+    if ((r.bearbeiter || "").toLowerCase().indexOf(term) !== -1) return true;
+    if ((r.status || "").toLowerCase().indexOf(term) !== -1) return true;
+    if ((r.art || "").toLowerCase().indexOf(term) !== -1) return true;
+    if ((r.entryId || "").toLowerCase().indexOf(term) !== -1) return true;
+    if ((r.datum || "").toLowerCase().indexOf(term) !== -1) return true;
+  }
+  return false;
+}
+
 function renderList() {
   var wrap = $("cardsWrap");
   wrap.innerHTML = "";
-  $("countBadge").textContent = state.entries.length + " offen";
+  var term = (state.search || "").toLowerCase().trim();
+  var shown = state.entries.filter(function(ent) { return entryMatchesSearch(ent, term); });
+  $("countBadge").textContent = term
+    ? (shown.length + " / " + state.entries.length + " offen")
+    : (state.entries.length + " offen");
   if (!state.entries.length) {
     $("listEmpty").classList.remove("hidden");
     $("listEmpty").innerHTML = "Keine offenen Werkstattmappen — alles erledigt.";
     return;
   }
+  if (!shown.length) {
+    $("listEmpty").classList.remove("hidden");
+    $("listEmpty").innerHTML = "Keine Treffer für \u201e" + esc(state.search) + "\u201c.";
+    return;
+  }
   $("listEmpty").classList.add("hidden");
-  state.entries.forEach(function(ent, idx) {
+  shown.forEach(function(ent) {
     var lis = ent.rows.map(function(r) {
-      return "<li><span>" + esc(r.grund || "—") + "</span><span class='st'>" + esc(r.status || "") + "</span></li>";
+      var meta = [];
+      if (r.entryId) meta.push("<span class='eid'>ID " + esc(r.entryId) + "</span>");
+      if (r.datum) meta.push("<span class='dat'>" + esc(r.datum) + "</span>");
+      if (r.bearbeiter) meta.push(esc(r.bearbeiter));
+      return "<li>"
+        + "<div class='li-top'><span class='li-grund'>" + esc(r.grund || "—") + "</span>"
+        + "<span class='st'>" + esc(r.status || "") + "</span></div>"
+        + (meta.length ? "<div class='li-meta'>" + meta.join(" &middot; ") + "</div>" : "")
+        + "</li>";
     }).join("");
-    var who = [];
-    ent.rows.forEach(function(r) { if (r.bearbeiter && who.indexOf(r.bearbeiter) === -1) who.push(r.bearbeiter); });
     var card = document.createElement("div");
     card.className = "card";
-    card.innerHTML = "<div class='sid'>" + esc(ent.stockId) + "</div>"
-      + "<div class='meta'>" + ent.rows.length + " Nachbestellung(en)" + (who.length ? " · " + esc(who.join(", ")) : "") + "</div>"
+    card.innerHTML = "<div class='card-head'><span class='sid'>" + esc(ent.stockId) + "</span>"
+      + "<span class='cnt'>" + ent.rows.length + (ent.rows.length === 1 ? " Auftrag" : " Aufträge") + "</span></div>"
       + "<ul>" + lis + "</ul>";
-    card.addEventListener("click", function() { openDetail(idx); });
+    card.addEventListener("click", function() { openDetail(ent); });
     wrap.appendChild(card);
   });
 }
 
-function openDetail(idx) {
-  var ent = state.entries[idx];
+function openDetail(ent) {
   if (!ent) return;
   state.current = ent;
   state.workSel = {};
@@ -421,41 +1056,165 @@ function openDetail(idx) {
   state.oilRow = 0;
   state.oilLabel = "";
   state.liters = "";
+  state.orderSel = {};
+  state.bodyWorks = [];
+  state.autoWork = {};
+  state.autoD = {};
+  state.autoFree = [];
+  state.autoNotes = [];
+  ent.rows.forEach(function(r, i) { state.orderSel[i] = true; });
+  $("inErstzulassung").value = "";
+  $("inKba").value = "";
+  $("inGetriebe").value = "";
+  $("inKm").value = "";
+  $("nachNein").checked = false;
+  $("nachJa").checked = false;
+  $("nachDatum").value = "";
+  $("nachDatum").disabled = true;
   $("dSid").textContent = ent.stockId;
-  $("btnCarol").href = ent.carolUrl;
+  $("btnCarol").href = carolAutofillUrl(ent.stockId, ent.carolUrl);
   $("btnPetronas").href = state.petronasUrl;
   $("modalPetronas").href = state.petronasUrl;
-  $("dGruende").innerHTML = ent.rows.map(function(r) {
-    return "<li style='padding:4px 0;border-bottom:1px dashed #262d38;'>" + esc(r.grund || "—")
-      + " <span style='color:var(--muted);font-size:11px;'>" + esc(r.status || "") + (r.bearbeiter ? " · " + esc(r.bearbeiter) : "") + "</span></li>";
-  }).join("");
+  renderGruende();
   $("inModell").value = ent.carolModell || "";
   $("inVin").value = ent.carolVin || "";
   $("hintModell").classList.toggle("hidden", !ent.carolModell);
   $("hintVin").classList.toggle("hidden", !ent.carolVin);
   $("createMsg").textContent = "";
-  $("createMsg").className = "msg";
+  $("createMsg").className = "msg top-msg";
+  $("btnCreate").classList.remove("hidden");
   renderChecklists();
-  updateOilStatus();
   $("viewList").classList.add("hidden");
   $("viewDetail").classList.remove("hidden");
   window.scrollTo(0, 0);
-  pollCarol(ent.stockId);
+  startCarolPoll(ent.stockId);
 }
 
-function pollCarol(stockId) {
+function renderGruende() {
+  var ent = state.current;
+  var wrap = $("dGruende");
+  wrap.innerHTML = "";
+  if (!ent) return;
+  var multi = ent.rows.length > 1;
+  ent.rows.forEach(function(r, i) {
+    var li = document.createElement("li");
+    li.className = "order-row" + (r._done ? " done" : "");
+    var left = document.createElement("label");
+    left.className = "order-pick";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = state.orderSel[i] !== false;
+    cb.disabled = !!r._done;
+    cb.addEventListener("change", function() { state.orderSel[i] = cb.checked; });
+    var metaParts = [];
+    if (r.entryId) metaParts.push("<span class='eid'>ID " + esc(r.entryId) + "</span>");
+    if (r.datum) metaParts.push("<span class='dat'>" + esc(r.datum) + "</span>");
+    if (r.status) metaParts.push(esc(r.status));
+    if (r.bearbeiter) metaParts.push(esc(r.bearbeiter));
+    var txt = document.createElement("span");
+    txt.innerHTML = "<b>" + esc(r.grund || "—") + "</b>"
+      + (metaParts.length ? " <span class='order-meta'>" + metaParts.join(" &middot; ") + "</span>" : "");
+    left.appendChild(cb);
+    left.appendChild(txt);
+    li.appendChild(left);
+    if (multi) {
+      var btn = document.createElement("button");
+      btn.className = "btn btn-sm order-done-btn" + (r._done ? " is-done" : "");
+      btn.textContent = r._done ? "✓" : "Erledigt";
+      btn.title = r._done ? "erledigt" : "Als erledigt markieren";
+      btn.disabled = !!r._done;
+      btn.addEventListener("click", function(ev) {
+        ev.stopPropagation();
+        markOrderDone(i, btn);
+      });
+      li.appendChild(btn);
+    }
+    wrap.appendChild(li);
+  });
+}
+
+function selectedOrders() {
+  var ent = state.current;
+  var entryIds = [];
+  var sheetRows = [];
+  if (!ent) return { entryIds: entryIds, sheetRows: sheetRows };
+  ent.rows.forEach(function(r, i) {
+    if (r._done) return;
+    if (state.orderSel[i] === false) return;
+    if (r.entryId) entryIds.push(r.entryId);
+    if (r.sheetRow) sheetRows.push(r.sheetRow);
+  });
+  return { entryIds: entryIds, sheetRows: sheetRows };
+}
+
+function markOrderDone(idx, btn) {
+  var ent = state.current;
+  if (!ent) return;
+  var r = ent.rows[idx];
+  if (!r || r._done) return;
+  if (btn) { btn.disabled = true; btn.textContent = "…"; }
+  google.script.run.withSuccessHandler(function(res) {
+    if (!res || !res.success) {
+      if (btn) { btn.disabled = false; btn.textContent = "Erledigt"; }
+      setMsg((res && res.message) || "Konnte nicht markiert werden", "err");
+      return;
+    }
+    r._done = true;
+    state.orderSel[idx] = false;
+    renderGruende();
+    var remaining = ent.rows.filter(function(x) { return !x._done; }).length;
+    if (remaining === 0) {
+      state.entries = state.entries.filter(function(e) { return e.stockId !== ent.stockId; });
+      state.sig = "";
+      setMsg("Alle Aufträge erledigt.", "ok");
+      setTimeout(backToList, 1200);
+    }
+  }).withFailureHandler(function(err) {
+    if (btn) { btn.disabled = false; btn.textContent = "Erledigt"; }
+    setMsg("Fehler: " + (err.message || err), "err");
+  }).markOrdersDone(ent.stockId, r.entryId ? [r.entryId] : [], r.sheetRow ? [r.sheetRow] : []);
+}
+
+function stopCarolPoll() {
+  if (state.pollTimer) {
+    clearInterval(state.pollTimer);
+    state.pollTimer = null;
+  }
+}
+
+function startCarolPoll(stockId) {
+  stopCarolPoll();
+  pollCarolOnce(stockId);
+  state.pollTimer = setInterval(function() {
+    if (!state.current || state.current.stockId !== stockId) { stopCarolPoll(); return; }
+    if ($("inModell").value && $("inVin").value) { stopCarolPoll(); return; }
+    pollCarolOnce(stockId);
+  }, 2500);
+}
+
+function pollCarolOnce(stockId) {
   if (!state.current || state.current.stockId !== stockId) return;
-  if ($("inModell").value && $("inVin").value) return;
+  if ($("inModell").value && $("inVin").value) {
+    stopCarolPoll();
+    if (($("createMsg").textContent || "").indexOf("Autofill") !== -1) setMsg("");
+    return;
+  }
   google.script.run.withSuccessHandler(function(res) {
     if (!state.current || state.current.stockId !== stockId) return;
     if (res && res.found) {
       if (res.modell && !$("inModell").value) {
         $("inModell").value = res.modell;
+        $("inModell").className = "ok";
         $("hintModell").classList.remove("hidden");
       }
       if (res.vin && !$("inVin").value) {
         $("inVin").value = res.vin;
+        $("inVin").className = "ok";
         $("hintVin").classList.remove("hidden");
+      }
+      if ($("inModell").value && $("inVin").value) {
+        stopCarolPoll();
+        if (($("createMsg").textContent || "").indexOf("Autofill") !== -1) setMsg("");
       }
     }
   }).getCarolData(stockId);
@@ -476,15 +1235,82 @@ function renderChecklists() {
   }
   renderWorkGrid();
   renderDGrid();
+  renderBodyWork();
   renderFreeLines("freeMechWrap", "fm");
   renderFreeLines("freePartsWrap", "fp");
+  suggestFromOrders();
+  renderWorkGrid();
+  renderDGrid();
+  renderBwList();
+  applyAutoFreeLines();
+  updateOilStatus();
+  if (oilRequired() && !state.oilRow) openOilModal();
+}
+
+function renderBodyWork() {
+  var sel = $("bwPart");
+  sel.innerHTML = '<option value="">— Bauteil wählen —</option>';
+  (state.meta.parts || []).forEach(function(p) {
+    var opt = document.createElement("option");
+    opt.value = p.side + ":" + p.row;
+    opt.textContent = p.label;
+    sel.appendChild(opt);
+  });
+  var ag = $("bwActions");
+  ag.innerHTML = "";
+  (state.meta.actions || []).forEach(function(a) {
+    var lab = document.createElement("label");
+    lab.className = "chk";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = a.nr;
+    cb.addEventListener("change", function() { lab.classList.toggle("on", cb.checked); });
+    var sp = document.createElement("span");
+    sp.textContent = a.label;
+    lab.appendChild(cb);
+    lab.appendChild(sp);
+    ag.appendChild(lab);
+  });
+  renderBwList();
+}
+
+function resetBwForm() {
+  $("bwPart").value = "";
+  $("bwActions").querySelectorAll("input").forEach(function(cb) {
+    cb.checked = false;
+    cb.parentNode.classList.remove("on");
+  });
+}
+
+function renderBwList() {
+  var ul = $("bwList");
+  ul.innerHTML = "";
+  state.bodyWorks.forEach(function(bw, i) {
+    var li = document.createElement("li");
+    if (bw.auto) li.style.borderColor = "rgba(86,211,100,.55)";
+    var span = document.createElement("span");
+    span.innerHTML = "<b>" + esc(bw.label) + "</b> <span class='bw-acts'>" + esc(bw.actionLabels.join(", "))
+      + (bw.auto ? " · auto" : "") + "</span>";
+    var del = document.createElement("button");
+    del.className = "bw-del";
+    del.innerHTML = "&times;";
+    del.title = "Entfernen";
+    del.addEventListener("click", function() {
+      state.bodyWorks.splice(i, 1);
+      renderBwList();
+      renderAutoBanner();
+    });
+    li.appendChild(span);
+    li.appendChild(del);
+    ul.appendChild(li);
+  });
 }
 
 function renderWorkGrid() {
   var wg = $("workGrid");
   wg.innerHTML = "";
   state.meta.workItems.forEach(function(it) {
-    wg.appendChild(makeChk(it, state.workSel, onWorkToggle));
+    wg.appendChild(makeChk(it, state.workSel, state.autoWork, onWorkToggle));
   });
 }
 
@@ -492,21 +1318,27 @@ function renderDGrid() {
   var dg = $("dGrid");
   dg.innerHTML = "";
   state.meta.dItems.forEach(function(it) {
-    dg.appendChild(makeChk(it, state.dSel, null));
+    dg.appendChild(makeChk(it, state.dSel, state.autoD, null));
   });
 }
 
-function makeChk(item, selMap, onToggle) {
+function makeChk(item, selMap, autoMap, onToggle) {
   var lab = document.createElement("label");
-  lab.className = "chk" + (selMap[item.row] ? " on" : "");
+  var isAuto = !!(autoMap && autoMap[item.row]);
+  lab.className = "chk" + (selMap[item.row] ? " on" : "") + (isAuto ? " auto" : "");
   var cb = document.createElement("input");
   cb.type = "checkbox";
   cb.checked = !!selMap[item.row];
   cb.addEventListener("change", function() {
     if (cb.checked) selMap[item.row] = true;
-    else delete selMap[item.row];
+    else {
+      delete selMap[item.row];
+      if (autoMap) delete autoMap[item.row];
+    }
     lab.classList.toggle("on", cb.checked);
+    lab.classList.toggle("auto", !!(autoMap && autoMap[item.row]));
     if (onToggle) onToggle(item, cb.checked);
+    renderAutoBanner();
   });
   var span = document.createElement("span");
   span.textContent = item.label;
@@ -600,7 +1432,7 @@ function collectFree(prefix) {
 function setMsg(text, cls) {
   var el = $("createMsg");
   el.textContent = text;
-  el.className = "msg" + (cls ? " " + cls : "");
+  el.className = "msg top-msg" + (cls ? " " + cls : "");
 }
 
 function validate() {
@@ -617,7 +1449,7 @@ function validate() {
   var freeMech = collectFree("fm");
   var freeParts = collectFree("fp");
   var hasFree = freeMech.some(function(v) { return v; }) || freeParts.some(function(v) { return v; });
-  if (!workRows.length && !dRows.length && !hasFree) {
+  if (!workRows.length && !dRows.length && !hasFree && !state.bodyWorks.length) {
     setMsg("Keine Arbeiten ausgewählt.", "err");
     return null;
   }
@@ -626,17 +1458,53 @@ function validate() {
     openOilModal();
     return null;
   }
+  var nach = $("nachJa").checked ? "ja" : ($("nachNein").checked ? "nein" : "");
+  var nachDatum = deDate($("nachDatum").value);
+  if (nach === "ja" && !nachDatum) {
+    $("nachDatum").className = "err";
+    setMsg("Nachuntersuchung: Datum fehlt.", "err");
+    return null;
+  }
+  $("nachDatum").className = "";
+  state.bodyWorks.forEach(function(b) {
+    var line = b.label + (b.actionLabels && b.actionLabels.length ? ": " + b.actionLabels.join(", ") : "");
+    var exists = freeMech.some(function(v) { return v && v.toLowerCase().indexOf(String(b.label || "").toLowerCase()) !== -1; });
+    if (exists) return;
+    for (var fi = 0; fi < freeMech.length; fi++) {
+      if (!freeMech[fi]) { freeMech[fi] = line; break; }
+    }
+  });
+  for (var fmi = 0; fmi < freeMech.length; fmi++) {
+    var fmel = $("fm" + fmi);
+    if (fmel) fmel.value = freeMech[fmi] || "";
+  }
+  var sel = selectedOrders();
   return {
     stockId: state.current.stockId,
     modell: modell,
     vin: vin,
+    erstzulassung: $("inErstzulassung").value.trim(),
+    kba: $("inKba").value.trim(),
+    getriebe: $("inGetriebe").value.trim(),
+    km: $("inKm").value.trim(),
     workRows: workRows,
     dRows: dRows,
     freeMech: freeMech,
     freeParts: freeParts,
+    bodyWorks: state.bodyWorks.map(function(b) { return { side: b.side, row: b.row, actions: b.actions }; }),
+    nach: nach,
+    nachDatum: nachDatum,
     oilRow: oilRequired() ? state.oilRow : (state.oilRow || 0),
-    liters: state.liters
+    liters: state.liters,
+    entryIds: sel.entryIds,
+    sheetRows: sel.sheetRows
   };
+}
+
+function deDate(iso) {
+  if (!iso) return "";
+  var p = iso.split("-");
+  return p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : iso;
 }
 
 function createMappe() {
@@ -652,9 +1520,9 @@ function createMappe() {
       setMsg((res && res.message) || "Fehler beim Erstellen.", "err");
       return;
     }
-    setMsg(res.message || "Erstellt!", "ok");
+    var remaining = markSelectedOrdersDone();
+    showDoneModal(res, remaining);
     printPdf(res);
-    removeCurrentEntry();
   }).withFailureHandler(function(err) {
     $("btnCreate").disabled = false;
     $("busyOverlay").classList.add("hidden");
@@ -662,12 +1530,47 @@ function createMappe() {
   }).createMappe(payload);
 }
 
+function setDonePrint(state2, text) {
+  var ico = $("donePrintIco");
+  var txt = $("donePrintTxt");
+  if (txt) txt.textContent = text;
+  if (!ico) return;
+  if (state2 === "ok") { ico.className = "done-ico ok"; ico.innerHTML = "&#10003;"; }
+  else if (state2 === "err") { ico.className = "done-ico err"; ico.innerHTML = "&#33;"; }
+  else { ico.className = "done-ico wait"; ico.innerHTML = '<span class="spin spin--xs"></span>'; }
+}
+
+function showDoneModal(res, remaining) {
+  $("doneSub").textContent = res.stockId + (res.modell ? " · " + res.modell : "");
+  $("doneCreate").querySelector("span:last-child").textContent =
+    "Werkstattauftrag erstellt" + (res.markedRows ? " · " + res.markedRows + " Auftrag(e) abgehakt" : "");
+  setDonePrint("wait", "An Drucker gesendet…");
+  var driveIco = $("doneDriveIco");
+  var driveTxt = $("doneDriveTxt");
+  if (res.driveSaved) {
+    driveIco.className = "done-ico ok"; driveIco.innerHTML = "&#10003;";
+    driveTxt.textContent = "In Drive gespeichert: " + res.fileName;
+  } else {
+    driveIco.className = "done-ico err"; driveIco.innerHTML = "&#33;";
+    driveTxt.textContent = "Nicht in Drive gespeichert" + (res.driveError ? " (" + res.driveError + ")" : "");
+  }
+  var nbLi = $("doneNb");
+  if (remaining > 0) {
+    nbLi.classList.remove("hidden");
+    $("doneNbTxt").textContent = remaining + " weitere(r) Auftrag/Aufträge für " + res.stockId + " noch offen";
+  } else {
+    nbLi.classList.add("hidden");
+  }
+  state.doneRemaining = remaining;
+  $("doneOverlay").classList.remove("hidden");
+}
+
 function printPdf(res) {
   if (!res.printB64) {
+    setDonePrint("err", "Kein Druckdokument erhalten");
     if (res.pdfUrl) window.open(res.pdfUrl, "_blank");
     return;
   }
-  setMsg("Drucke Werkstattauftrag…", "");
   fetch(BRIDGE_URL + "/print-b64", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -678,9 +1581,9 @@ function printPdf(res) {
       return data;
     });
   }).then(function() {
-    setMsg("Werkstattauftrag gedruckt & gespeichert!", "ok");
+    setDonePrint("ok", "Gedruckt");
   }).catch(function() {
-    setMsg("Print-Bridge nicht erreichbar — PDF wird geöffnet.", "err");
+    setDonePrint("err", "Drucker nicht erreichbar — PDF geöffnet");
     if (res.pdfUrl) {
       window.open(res.pdfUrl, "_blank");
     } else {
@@ -692,25 +1595,100 @@ function printPdf(res) {
   });
 }
 
-function removeCurrentEntry() {
-  if (!state.current) return;
-  var sid = state.current.stockId;
-  state.entries = state.entries.filter(function(e) { return e.stockId !== sid; });
-  setTimeout(function() {
+function markSelectedOrdersDone() {
+  var ent = state.current;
+  if (!ent) return 0;
+  ent.rows.forEach(function(r, i) {
+    if (!r._done && state.orderSel[i] !== false) r._done = true;
+  });
+  var remaining = ent.rows.filter(function(r) { return !r._done; }).length;
+  state.sig = "";
+  if (remaining === 0) {
+    state.entries = state.entries.filter(function(e) { return e.stockId !== ent.stockId; });
+  }
+  return remaining;
+}
+
+function closeDoneModal() {
+  $("doneOverlay").classList.add("hidden");
+  var remaining = state.doneRemaining || 0;
+  if (remaining > 0 && state.current) {
+    state.workSel = {};
+    state.dSel = {};
+    state.oilRow = 0;
+    state.oilLabel = "";
+    state.liters = "";
+    state.bodyWorks = [];
+    state.autoWork = {};
+    state.autoD = {};
+    state.autoFree = [];
+    state.autoNotes = [];
+    $("nachNein").checked = false;
+    $("nachJa").checked = false;
+    $("nachDatum").value = "";
+    $("nachDatum").disabled = true;
+    ["fm", "fp"].forEach(function(pre) {
+      for (var i = 0; i < 5; i++) { var el = $(pre + i); if (el) el.value = ""; }
+    });
+    renderGruende();
+    renderChecklists();
+    setMsg(remaining + " weitere(r) Auftrag/Aufträge offen — nächsten wählen.", "ok");
+    window.scrollTo(0, 0);
+  } else {
     backToList();
-  }, 1800);
+  }
 }
 
 function backToList() {
+  stopCarolPoll();
   state.current = null;
+  var ab = $("autoBanner");
+  if (ab) { ab.classList.add("hidden"); ab.innerHTML = ""; }
+  $("btnCreate").classList.add("hidden");
+  $("createMsg").textContent = "";
+  $("createMsg").className = "msg top-msg";
   $("viewDetail").classList.add("hidden");
   $("viewList").classList.remove("hidden");
   renderList();
 }
 
-$("btnRefresh").addEventListener("click", loadAll);
+$("btnRefresh").addEventListener("click", function() { loadAll(true); });
 $("btnBack").addEventListener("click", backToList);
+function carolAutofillUrl(stockId, carolUrl) {
+  var sid = String(stockId || "").trim();
+  var base = carolUrl || ("https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(sid));
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "wm_autofill=1";
+}
+
+function startCarolAutofill() {
+  if (!state.current || !state.current.stockId) return;
+  var sid = state.current.stockId;
+  var url = carolAutofillUrl(sid, state.current.carolUrl);
+  window.open(url, "_blank", "noopener");
+  startCarolPoll(sid);
+  if ($("inModell").value && $("inVin").value) setMsg("");
+  else setMsg("Carol Autofill gestartet — warte auf Modell/VIN…", "ok");
+}
+
+$("btnAutofill").addEventListener("click", startCarolAutofill);
+$("btnCarol").addEventListener("click", function(ev) {
+  ev.preventDefault();
+  startCarolAutofill();
+});
+$("searchInput").addEventListener("input", function() {
+  state.search = this.value;
+  $("searchWrap").classList.toggle("has-val", !!this.value);
+  if (!state.current) renderList();
+});
+$("searchClear").addEventListener("click", function() {
+  $("searchInput").value = "";
+  state.search = "";
+  $("searchWrap").classList.remove("has-val");
+  $("searchInput").focus();
+  if (!state.current) renderList();
+});
 $("btnCreate").addEventListener("click", createMappe);
+$("doneClose").addEventListener("click", closeDoneModal);
 $("btnOilEdit").addEventListener("click", openOilModal);
 $("oilCancel").addEventListener("click", closeOilModal);
 $("oilOk").addEventListener("click", function() {
@@ -737,6 +1715,14 @@ $("oilOk").addEventListener("click", function() {
   closeOilModal();
   updateOilStatus();
 });
+function oilModalEnter(ev) {
+  if (ev.key === "Enter") {
+    ev.preventDefault();
+    $("oilOk").click();
+  }
+}
+$("oilLiters").addEventListener("keydown", oilModalEnter);
+$("oilSelect").addEventListener("keydown", oilModalEnter);
 $("btnService").addEventListener("click", function() {
   if (!state.meta) return;
   serviceRows().forEach(function(r) { state.workSel[r] = true; });
@@ -744,8 +1730,54 @@ $("btnService").addEventListener("click", function() {
   if (oilRequired() && !state.oilRow) openOilModal();
   updateOilStatus();
 });
+$("nachJa").addEventListener("change", function() {
+  $("nachDatum").disabled = !$("nachJa").checked;
+  if ($("nachJa").checked) $("nachDatum").focus();
+});
+$("nachNein").addEventListener("change", function() {
+  $("nachDatum").disabled = true;
+  $("nachDatum").value = "";
+  $("nachDatum").className = "";
+});
+$("bwAdd").addEventListener("click", function() {
+  if (!state.meta) return;
+  var val = $("bwPart").value;
+  if (!val) { $("bwPart").style.borderColor = "var(--red)"; return; }
+  $("bwPart").style.borderColor = "";
+  var parts = val.split(":");
+  var side = parseInt(parts[0], 10);
+  var row = parseInt(parts[1], 10);
+  var label = "";
+  (state.meta.parts || []).forEach(function(p) {
+    if (p.side === side && p.row === row) label = p.label;
+  });
+  var actions = [];
+  var actionLabels = [];
+  $("bwActions").querySelectorAll("input:checked").forEach(function(cb) {
+    var nr = parseInt(cb.value, 10);
+    actions.push(nr);
+    (state.meta.actions || []).forEach(function(a) {
+      if (a.nr === nr) actionLabels.push(a.label);
+    });
+  });
+  if (!actions.length) {
+    setMsg("Bitte mindestens eine Aktion für das Bauteil wählen.", "err");
+    return;
+  }
+  var existing = -1;
+  for (var i = 0; i < state.bodyWorks.length; i++) {
+    if (state.bodyWorks[i].side === side && state.bodyWorks[i].row === row) { existing = i; break; }
+  }
+  var item = { side: side, row: row, label: label, actions: actions, actionLabels: actionLabels };
+  if (existing >= 0) state.bodyWorks[existing] = item;
+  else state.bodyWorks.push(item);
+  resetBwForm();
+  renderBwList();
+  setMsg("");
+});
 
-loadAll();
+loadAll(false);
+startSync();
 </script>
 </body>
 </html>

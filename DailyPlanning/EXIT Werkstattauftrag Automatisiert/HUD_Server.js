@@ -4,6 +4,7 @@ var HUD_WA_REP_TAB = "Reparaturauftrag";
 var HUD_NB_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 var HUD_NB_TAB = "Input Exit";
 var HUD_DRIVE_FOLDER_ID = "1yEwrUVpS2nDA9qL3ht0p_XF7S0M-RGH2";
+var HUD_DRIVE_FOLDER_NAME = "EXIT Werkstattaufträge";
 var HUD_CAROL_BASE = "https://carol.autohero.com/en-GB/refurbishment?rsv=";
 var HUD_PETRONAS_URL = "https://de.pli-petronas.com/de/schmierstoffe";
 var HUD_CAROL_CACHE_PREFIX = "carol_data_";
@@ -15,8 +16,69 @@ var HUD_NB_ALIASES = {
   art: ["art der nachbestellung", "art", "typ"],
   bearbeiter: ["bearbeiter"],
   status: ["status"],
-  mappe: ["werkstattmappe erstellt", "werkstattmappe"]
+  mappe: ["werkstattmappe erstellt", "werkstattmappe"],
+  entryId: ["entryid", "entry id", "entry_id", "eintrag id", "eintragid"],
+  datum: ["datum", "bestelldatum", "datum der bestellung", "bestellt am", "erstellt am", "eingetragen am", "date", "timestamp", "zeitstempel"]
 };
+
+var HUD_INSPECTION_TOKENS = { "tüv": 1, "tuv": 1, "tuev": 1, "hu": 1, "hauptuntersuchung": 1 };
+var HUD_CONNECTOR_TOKENS = { "und": 1, "u": 1, "oder": 1 };
+
+function hudIsExcludedGrund_(grund) {
+  var s = String(grund || "").toLowerCase();
+  var tokens = s.split(/[^a-zäöüß]+/);
+  var hasInspection = false;
+  for (var i = 0; i < tokens.length; i++) {
+    var t = tokens[i];
+    if (!t) continue;
+    if (HUD_INSPECTION_TOKENS[t]) { hasInspection = true; continue; }
+    if (HUD_CONNECTOR_TOKENS[t]) continue;
+    return false;
+  }
+  return hasInspection;
+}
+
+var HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbw-f8igKkOObQAwYAKk00U2PPHs10VhOxOC2QyplnbcsFW5sg0PS6OgXAmTvje7OHK-Jw/exec";
+
+function authorizeScopes() {
+  var out = [];
+  try {
+    var resp = UrlFetchApp.fetch("https://www.googleapis.com/discovery/v1/apis?preferred=true", { muteHttpExceptions: true });
+    out.push("UrlFetch: HTTP " + resp.getResponseCode());
+  } catch (e) { out.push("UrlFetch Fehler: " + e.message); }
+  try {
+    var folder = hudResolveDriveFolder_();
+    out.push("Drive-Ordner: " + folder.getName() + " (" + folder.getId() + ")");
+  } catch (e2) { out.push("Drive Fehler: " + e2.message); }
+  try {
+    out.push("Token: " + (ScriptApp.getOAuthToken() ? "ok" : "leer"));
+  } catch (e3) { out.push("Token Fehler: " + e3.message); }
+  Logger.log(out.join(" | "));
+  return out.join(" | ");
+}
+
+function onOpen() {
+  try {
+    SpreadsheetApp.getUi()
+      .createMenu("EXIT HUD")
+      .addItem("EXIT HUD öffnen", "openExitHud")
+      .addToUi();
+  } catch (e) {}
+}
+
+function openExitHud() {
+  var html = HtmlService.createHtmlOutput(
+    '<html><body style="font-family:Segoe UI,sans-serif;padding:14px;">'
+    + '<p>EXIT HUD wird geöffnet…</p>'
+    + '<p>Falls sich kein Tab öffnet: <a href="' + HUD_WEB_APP_URL + '" target="_blank" rel="noopener">hier klicken</a>.</p>'
+    + '<script>'
+    + 'window.open("' + HUD_WEB_APP_URL + '","_blank");'
+    + 'google.script.host.close();'
+    + '</script>'
+    + '</body></html>'
+  ).setWidth(320).setHeight(140);
+  SpreadsheetApp.getUi().showModalDialog(html, "EXIT HUD");
+}
 
 function doGet(e) {
   var t = HtmlService.createTemplateFromFile("HUD_App");
@@ -115,24 +177,36 @@ function hudIsChecked_(v) {
   return s === "true" || s === "wahr" || s === "x" || s === "ja";
 }
 
-function getOpenMappen() {
-  try {
-    var sheet = SpreadsheetApp.openById(HUD_NB_SHEET_ID).getSheetByName(HUD_NB_TAB);
-    if (!sheet) return { success: false, message: "Tab '" + HUD_NB_TAB + "' nicht gefunden", entries: [] };
-    var layout = hudGetNbLayout_(sheet);
-    var lastRow = sheet.getLastRow();
-    if (lastRow < layout.dataStartRow) return { success: true, entries: [] };
+function hudFormatDate_(v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v.getTime())) {
+    return Utilities.formatDate(v, "Europe/Berlin", "dd.MM.yyyy");
+  }
+  return String(v).trim();
+}
+
+var HUD_OPEN_CACHE_KEY = "open_mappen_base_v3";
+var HUD_OPEN_CACHE_SECONDS = 600;
+
+function hudBuildOpenMappen_() {
+  var sheet = SpreadsheetApp.openById(HUD_NB_SHEET_ID).getSheetByName(HUD_NB_TAB);
+  if (!sheet) throw new Error("Tab '" + HUD_NB_TAB + "' nicht gefunden");
+  var layout = hudGetNbLayout_(sheet);
+  var lastRow = sheet.getLastRow();
+  var order = [];
+  var byStock = {};
+  if (lastRow >= layout.dataStartRow) {
     var numRows = lastRow - layout.dataStartRow + 1;
     var data = sheet.getRange(layout.dataStartRow, 1, numRows, layout.lastCol).getValues();
     var cols = layout.cols;
-    var byStock = {};
-    var order = [];
     for (var i = 0; i < data.length; i++) {
       var row = data[i];
       var stockId = hudNormalizeStockId_(row[cols.stockId - 1]);
       if (!stockId) continue;
-      var art = cols.art ? String(row[cols.art - 1] || "").trim() : "";
       if (hudIsChecked_(row[cols.mappe - 1])) continue;
+      var grund = cols.grund ? String(row[cols.grund - 1] || "").trim() : "";
+      if (hudIsExcludedGrund_(grund)) continue;
+      var art = cols.art ? String(row[cols.art - 1] || "").trim() : "";
       if (!byStock[stockId]) {
         byStock[stockId] = {
           stockId: stockId,
@@ -143,34 +217,93 @@ function getOpenMappen() {
       }
       byStock[stockId].rows.push({
         sheetRow: layout.dataStartRow + i,
-        grund: cols.grund ? String(row[cols.grund - 1] || "").trim() : "",
+        entryId: cols.entryId ? String(row[cols.entryId - 1] || "").trim() : "",
+        grund: grund,
         art: art,
         bearbeiter: cols.bearbeiter ? String(row[cols.bearbeiter - 1] || "").trim() : "",
-        status: cols.status ? String(row[cols.status - 1] || "").trim() : ""
+        status: cols.status ? String(row[cols.status - 1] || "").trim() : "",
+        datum: cols.datum ? hudFormatDate_(row[cols.datum - 1]) : ""
       });
     }
-    var cache = CacheService.getScriptCache();
-    var entries = [];
-    for (var o = 0; o < order.length; o++) {
-      var ent = byStock[order[o]];
-      var cached = cache.get(HUD_CAROL_CACHE_PREFIX + ent.stockId);
-      if (cached) {
-        try {
-          var cd = JSON.parse(cached);
-          ent.carolModell = cd.modell || "";
-          ent.carolVin = cd.vin || "";
-        } catch (e2) {}
-      }
-      entries.push(ent);
+  }
+  var entries = [];
+  for (var o = 0; o < order.length; o++) entries.push(byStock[order[o]]);
+  return entries;
+}
+
+function hudApplyCarol_(entries) {
+  var cache = CacheService.getScriptCache();
+  for (var o = 0; o < entries.length; o++) {
+    var ent = entries[o];
+    var cached = cache.get(HUD_CAROL_CACHE_PREFIX + ent.stockId);
+    if (cached) {
+      try {
+        var cd = JSON.parse(cached);
+        ent.carolModell = cd.modell || "";
+        ent.carolVin = cd.vin || "";
+      } catch (e2) {}
+    } else {
+      ent.carolModell = "";
+      ent.carolVin = "";
     }
-    return { success: true, entries: entries, petronasUrl: HUD_PETRONAS_URL };
+  }
+  return entries;
+}
+
+function hudSignature_(entries) {
+  var parts = [];
+  for (var i = 0; i < entries.length; i++) {
+    parts.push(entries[i].stockId + ":" + entries[i].rows.length);
+  }
+  return parts.join("|");
+}
+
+function hudInvalidateOpenCache_() {
+  try { CacheService.getScriptCache().remove(HUD_OPEN_CACHE_KEY); } catch (e) {}
+}
+
+function getOpenMappen(force) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var entries = null;
+    var fromCache = false;
+    if (!force) {
+      var raw = cache.get(HUD_OPEN_CACHE_KEY);
+      if (raw) {
+        try { entries = JSON.parse(raw); fromCache = true; } catch (e) { entries = null; }
+      }
+    }
+    if (!entries) {
+      entries = hudBuildOpenMappen_();
+      try { cache.put(HUD_OPEN_CACHE_KEY, JSON.stringify(entries), HUD_OPEN_CACHE_SECONDS); } catch (ePut) {}
+    }
+    hudApplyCarol_(entries);
+    return {
+      success: true,
+      entries: entries,
+      petronasUrl: HUD_PETRONAS_URL,
+      fromCache: fromCache,
+      sig: hudSignature_(entries)
+    };
   } catch (err) {
     return { success: false, message: String(err.message || err), entries: [] };
   }
 }
 
+var HUD_META_CACHE_KEY = "input_meta_v3";
+var HUD_META_CACHE_SECONDS = 1800;
+
 function getInputMeta() {
   try {
+    var cache = CacheService.getScriptCache();
+    var rawMeta = cache.get(HUD_META_CACHE_KEY);
+    if (rawMeta) {
+      try {
+        var parsed = JSON.parse(rawMeta);
+        parsed.fromCache = true;
+        return parsed;
+      } catch (eMeta) {}
+    }
     var sheet = SpreadsheetApp.openById(HUD_WA_SHEET_ID).getSheetByName(HUD_WA_INPUT_TAB);
     if (!sheet) return { success: false, message: "Tab '" + HUD_WA_INPUT_TAB + "' nicht gefunden" };
     var aVals = sheet.getRange("A10:A41").getValues();
@@ -198,7 +331,28 @@ function getInputMeta() {
       if (dLabel.toLowerCase().indexOf("sonstige") === 0) continue;
       dItems.push({ row: dRow, label: dLabel });
     }
-    return { success: true, workItems: workItems, oils: oils, dItems: dItems };
+    var actVals = sheet.getRange("F2:G7").getValues();
+    var actions = [];
+    for (var a = 0; a < actVals.length; a++) {
+      var aNr = parseInt(actVals[a][0], 10);
+      var aLabel = String(actVals[a][1] || "").trim();
+      if (aNr >= 1 && aNr <= 6 && aLabel) actions.push({ nr: aNr, label: aLabel });
+    }
+    var parts = [];
+    var p1Vals = sheet.getRange("I2:I42").getValues();
+    for (var p1 = 0; p1 < p1Vals.length; p1++) {
+      var p1Label = String(p1Vals[p1][0] || "").trim();
+      if (p1Label) parts.push({ side: 1, row: 2 + p1, label: p1Label });
+    }
+    var p2Vals = sheet.getRange("P2:P42").getValues();
+    for (var p2 = 0; p2 < p2Vals.length; p2++) {
+      var p2Label = String(p2Vals[p2][0] || "").trim();
+      if (p2Label) parts.push({ side: 2, row: 2 + p2, label: p2Label });
+    }
+    parts.sort(function(x, y) { return x.label.localeCompare(y.label, "de"); });
+    var metaOut = { success: true, workItems: workItems, oils: oils, dItems: dItems, actions: actions, parts: parts };
+    try { cache.put(HUD_META_CACHE_KEY, JSON.stringify(metaOut), HUD_META_CACHE_SECONDS); } catch (ePutMeta) {}
+    return metaOut;
   } catch (err) {
     return { success: false, message: String(err.message || err) };
   }
@@ -248,6 +402,16 @@ function hudApplyOilToReparaturauftrag_(ss) {
   }
 }
 
+function hudResolveDriveFolder_() {
+  try { PropertiesService.getScriptProperties().deleteProperty("HUD_DRIVE_FOLDER_ID_RESOLVED"); } catch (e0) {}
+  try {
+    return DriveApp.getFolderById(HUD_DRIVE_FOLDER_ID);
+  } catch (e) {
+    throw new Error("Kein Zugriff auf Ordner \"" + HUD_DRIVE_FOLDER_NAME + "\" (" + HUD_DRIVE_FOLDER_ID + "). " +
+      "Der Ordner muss von ersatzteile.hemau@autohero.com für dein Konto als Bearbeiter freigegeben sein.");
+  }
+}
+
 function hudExportRepPdf_(ss) {
   var repSheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!repSheet) return { success: false, message: "Tab '" + HUD_WA_REP_TAB + "' nicht gefunden" };
@@ -272,7 +436,7 @@ function hudExportRepPdf_(ss) {
   return { success: true, blob: blob, bytes: bytes };
 }
 
-function hudMarkMappeErstellt_(stockId) {
+function hudMarkMappeErstellt_(stockId, entryIds, sheetRows) {
   var sheet = SpreadsheetApp.openById(HUD_NB_SHEET_ID).getSheetByName(HUD_NB_TAB);
   if (!sheet) return 0;
   var layout = hudGetNbLayout_(sheet);
@@ -281,15 +445,64 @@ function hudMarkMappeErstellt_(stockId) {
   var numRows = lastRow - layout.dataStartRow + 1;
   var data = sheet.getRange(layout.dataStartRow, 1, numRows, layout.lastCol).getValues();
   var cols = layout.cols;
+
+  var idSet = {};
+  var haveIds = false;
+  if (entryIds && entryIds.length) {
+    for (var e = 0; e < entryIds.length; e++) {
+      var idv = String(entryIds[e] || "").trim();
+      if (idv) { idSet[idv] = 1; haveIds = true; }
+    }
+  }
+  var rowSet = {};
+  var haveRows = false;
+  if (sheetRows && sheetRows.length) {
+    for (var s = 0; s < sheetRows.length; s++) {
+      var rv = parseInt(sheetRows[s], 10);
+      if (rv > 0) { rowSet[rv] = 1; haveRows = true; }
+    }
+  }
+  var selective = haveIds || haveRows;
+
   var marked = 0;
   for (var i = 0; i < data.length; i++) {
     var sid = hudNormalizeStockId_(data[i][cols.stockId - 1]);
     if (sid !== stockId) continue;
     if (hudIsChecked_(data[i][cols.mappe - 1])) continue;
-    sheet.getRange(layout.dataStartRow + i, cols.mappe).setValue(true);
+    var sheetRow = layout.dataStartRow + i;
+    if (selective) {
+      var rowEntryId = cols.entryId ? String(data[i][cols.entryId - 1] || "").trim() : "";
+      var matchId = haveIds && rowEntryId && idSet[rowEntryId] === 1;
+      var matchRow = haveRows && rowSet[sheetRow] === 1;
+      if (!matchId && !matchRow) continue;
+    } else {
+      if (hudIsExcludedGrund_(cols.grund ? data[i][cols.grund - 1] : "")) continue;
+    }
+    sheet.getRange(sheetRow, cols.mappe).setValue(true);
     marked++;
   }
   return marked;
+}
+
+function markOrdersDone(stockId, entryIds, sheetRows) {
+  var lock = LockService.getScriptLock();
+  var gotLock = false;
+  try {
+    gotLock = lock.tryLock(30000);
+    if (!gotLock) return { success: false, message: "Gerade beschäftigt – bitte kurz erneut versuchen" };
+    stockId = hudNormalizeStockId_(stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    if ((!entryIds || !entryIds.length) && (!sheetRows || !sheetRows.length)) {
+      return { success: false, message: "Keine Auftrags-ID übergeben" };
+    }
+    var marked = hudMarkMappeErstellt_(stockId, entryIds, sheetRows);
+    if (marked > 0) hudInvalidateOpenCache_();
+    return { success: marked > 0, marked: marked, message: marked > 0 ? (marked + " Auftrag(e) erledigt") : "Nichts markiert (evtl. schon erledigt)" };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  } finally {
+    if (gotLock) { try { lock.releaseLock(); } catch (e) {} }
+  }
 }
 
 function createMappe(payload) {
@@ -311,11 +524,12 @@ function createMappe(payload) {
     var dRows = payload.dRows || [];
     var freeMech = payload.freeMech || [];
     var freeParts = payload.freeParts || [];
+    var bodyWorks = payload.bodyWorks || [];
     var oilRow = parseInt(payload.oilRow, 10) || 0;
     var liters = String(payload.liters || "").replace(",", ".").trim();
     var litersNum = liters ? parseFloat(liters) : 0;
 
-    if (!workRows.length && !dRows.length && !freeMech.length && !freeParts.length) {
+    if (!workRows.length && !dRows.length && !freeMech.length && !freeParts.length && !bodyWorks.length) {
       return { success: false, message: "Keine Arbeiten ausgewählt" };
     }
 
@@ -345,6 +559,14 @@ function createMappe(payload) {
     inputSheet.getRange("B2").setValue(stockId);
     inputSheet.getRange("B3").setValue(modell);
     inputSheet.getRange("B4").setValue(vin);
+    var erstzulassung = String(payload.erstzulassung || "").trim();
+    var kba = String(payload.kba || "").trim();
+    var getriebe = String(payload.getriebe || "").trim();
+    var km = String(payload.km || "").trim();
+    if (erstzulassung) inputSheet.getRange("B5").setValue(erstzulassung);
+    if (kba) inputSheet.getRange("B6").setValue(kba);
+    if (getriebe) inputSheet.getRange("B7").setValue(getriebe);
+    if (km) inputSheet.getRange("B8").setValue(km);
 
     for (var i = 0; i < workRows.length; i++) {
       var r = parseInt(workRows[i], 10);
@@ -366,9 +588,32 @@ function createMappe(payload) {
       if (txtP) inputSheet.getRange(32 + p, 4).setValue(txtP);
     }
 
+    for (var b = 0; b < bodyWorks.length; b++) {
+      var bw = bodyWorks[b] || {};
+      var bRow = parseInt(bw.row, 10);
+      var bSide = parseInt(bw.side, 10);
+      if (!(bRow >= 2 && bRow <= 42)) continue;
+      var baseCol = bSide === 2 ? 16 : 9;
+      var acts = bw.actions || [];
+      for (var ac = 0; ac < acts.length; ac++) {
+        var an = parseInt(acts[ac], 10);
+        if (an >= 1 && an <= 6) inputSheet.getRange(bRow, baseCol + an).setValue("x");
+      }
+    }
+
+    var nach = String(payload.nach || "").toLowerCase();
+    var nachDatum = String(payload.nachDatum || "").trim();
+    if (nach === "ja") {
+      inputSheet.getRange("B44").setValue("x");
+      if (nachDatum) inputSheet.getRange("B45").setValue(nachDatum);
+    } else if (nach === "nein") {
+      inputSheet.getRange("B43").setValue("x");
+    }
+
     hudApplyOilToReparaturauftrag_(ss);
     SpreadsheetApp.flush();
-    Utilities.sleep(1500);
+    Utilities.sleep(2500);
+    SpreadsheetApp.flush();
 
     var pdf = hudExportRepPdf_(ss);
     if (!pdf.success) return { success: false, message: pdf.message };
@@ -376,35 +621,42 @@ function createMappe(payload) {
     var fileName = stockId + " Werkstattauftrag EXIT.pdf";
     var pdfUrl = "";
     var driveMsg = "";
+    var driveSaved = false;
     try {
-      var folder = DriveApp.getFolderById(HUD_DRIVE_FOLDER_ID);
+      var folder = hudResolveDriveFolder_();
       var file = folder.createFile(pdf.blob.setName(fileName));
       pdfUrl = file.getUrl();
+      driveSaved = true;
     } catch (driveErr) {
-      driveMsg = "Drive-Ablage fehlgeschlagen: " + String(driveErr.message || driveErr);
+      driveMsg = String(driveErr.message || driveErr);
     }
 
     var marked = 0;
     var nbMsg = "";
     try {
-      marked = hudMarkMappeErstellt_(stockId);
+      marked = hudMarkMappeErstellt_(stockId, payload.entryIds || [], payload.sheetRows || []);
+      if (marked > 0) hudInvalidateOpenCache_();
     } catch (nbErr) {
-      nbMsg = "Nachbestellung-Checkbox fehlgeschlagen: " + String(nbErr.message || nbErr);
+      nbMsg = String(nbErr.message || nbErr);
     }
 
-    var msgs = ["Werkstattmappe für " + stockId + " erstellt"];
-    if (pdfUrl) msgs.push("PDF in Drive gespeichert");
-    if (driveMsg) msgs.push(driveMsg);
-    if (marked > 0) msgs.push(marked + " Nachbestellung(en) abgehakt");
-    if (nbMsg) msgs.push(nbMsg);
+    try {
+      hudResetInput_(inputSheet);
+      SpreadsheetApp.flush();
+    } catch (resetErr) {}
 
     return {
       success: true,
-      message: msgs.join(" | "),
+      stockId: stockId,
+      modell: modell,
+      vin: vin,
       printB64: Utilities.base64Encode(pdf.bytes),
+      driveSaved: driveSaved,
+      driveError: driveMsg,
       pdfUrl: pdfUrl,
       fileName: fileName,
-      markedRows: marked
+      markedRows: marked,
+      nbError: nbMsg
     };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
