@@ -734,6 +734,25 @@ function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
   };
 }
 
+function hudClearRepWorkArea_(sheet) {
+  if (!sheet) return;
+  for (var r = 14; r <= 39; r++) {
+    for (var c = 1; c <= 9; c++) {
+      try {
+        var cell = sheet.getRange(r, c);
+        var merges = cell.getMergedRanges();
+        if (merges && merges.length) {
+          if (merges[0].getRow() !== r || merges[0].getColumn() !== c) continue;
+          merges[0].clearContent();
+        } else {
+          cell.clearContent();
+        }
+      } catch (e) {}
+    }
+  }
+  try { sheet.getRange("G9:G12").clearContent(); } catch (eOil) {}
+}
+
 function hudRestoreRepNa_(ss, saved) {
   if (!saved || !saved.length) return;
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
@@ -747,6 +766,23 @@ function hudRestoreRepNa_(ss, saved) {
       else cell.clearContent();
     } catch (eR) {}
   }
+}
+
+function hudResetReparaturauftrag_(ss) {
+  var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
+  if (!sheet) return;
+  var saved = [];
+  for (var r = 13; r <= 39; r++) {
+    for (var c = 1; c <= 9; c++) {
+      try {
+        var fml = sheet.getRange(r, c).getFormula();
+        if (fml) saved.push({ row: r, col: c, formula: fml, value: "" });
+      } catch (eS) {}
+    }
+  }
+  hudClearRepWorkArea_(sheet);
+  hudRestoreRepNa_(ss, saved);
+  try { hudClearBodySummariesOnSheet_(sheet); } catch (eB) {}
 }
 
 function hudResolveDriveFolder_() {
@@ -981,7 +1017,10 @@ function createMappe(payload) {
 
     var mat = hudMaterializeRepForPdf_(ss, (bodyResult && bodyResult.byAction) || {}, extraLines);
     if (!mat.lines || !mat.lines.length) {
-      try { hudRestoreRepNa_(ss, mat.saved || []); } catch (eEmpty) {}
+      try {
+        hudClearRepWorkArea_(ss.getSheetByName(HUD_WA_REP_TAB));
+        hudRestoreRepNa_(ss, mat.saved || []);
+      } catch (eEmpty) {}
       return { success: false, message: "Keine Positionen für das PDF gefunden (Auswahl leer übernommen)." };
     }
     SpreadsheetApp.flush();
@@ -990,7 +1029,10 @@ function createMappe(payload) {
 
     var wroteOk = String((mat && mat.wrote) || "").trim();
     if (!wroteOk) {
-      try { hudRestoreRepNa_(ss, mat.saved || []); } catch (eWrite) {}
+      try {
+        hudClearRepWorkArea_(ss.getSheetByName(HUD_WA_REP_TAB));
+        hudRestoreRepNa_(ss, mat.saved || []);
+      } catch (eWrite) {}
       var where = mat && mat.anchor ? (" @" + mat.anchor.row + "/" + mat.anchor.col) : "";
       return {
         success: false,
@@ -1000,7 +1042,10 @@ function createMappe(payload) {
     }
 
     var pdf = hudExportRepPdf_(ss);
-    try { hudRestoreRepNa_(ss, mat.saved || []); } catch (restoreErr) {}
+    try {
+      hudClearRepWorkArea_(ss.getSheetByName(HUD_WA_REP_TAB));
+      hudRestoreRepNa_(ss, mat.saved || []);
+    } catch (restoreErr) {}
     try { hudCleanupPdfTemps_(ss); } catch (cleanupErr) {}
     if (!pdf.success) return { success: false, message: pdf.message };
 
@@ -1028,7 +1073,7 @@ function createMappe(payload) {
 
     try {
       hudResetInput_(inputSheet);
-      hudClearBodySummariesOnSheet_(ss.getSheetByName(HUD_WA_REP_TAB));
+      hudResetReparaturauftrag_(ss);
       SpreadsheetApp.flush();
     } catch (resetErr) {}
 
