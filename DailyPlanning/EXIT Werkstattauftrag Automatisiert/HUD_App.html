@@ -347,7 +347,7 @@ a.btn { text-decoration: none; display: inline-block; }
 </head>
 <body>
 <div class="topbar">
-  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;18</span></h1>
+  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;21</span></h1>
   <span class="badge" id="countBadge">lädt…</span>
   <div class="searchwrap" id="searchWrap">
     <input type="text" id="searchInput" placeholder="Suche StockID, Grund, Bearbeiter…" autocomplete="off">
@@ -1534,6 +1534,13 @@ function showDoneModal(res, remaining) {
   $("doneSub").textContent = res.stockId + (res.modell ? " · " + res.modell : "");
   $("doneCreate").querySelector("span:last-child").textContent =
     "Werkstattauftrag erstellt" + (res.markedRows ? " · " + res.markedRows + " Auftrag(e) abgehakt" : "");
+  if (res.printLines && res.printLines.length) {
+    $("doneCreate").querySelector("span:last-child").textContent +=
+      " · " + res.printLines.length + " Position(en) im PDF";
+  } else if (res.printLines && !res.printLines.length) {
+    $("doneCreate").querySelector("span:last-child").textContent +=
+      " · Warnung: keine Positionen für PDF gefunden";
+  }
   setDonePrint("wait", "An Drucker gesendet…");
   var driveIco = $("doneDriveIco");
   var driveTxt = $("doneDriveTxt");

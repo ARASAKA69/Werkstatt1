@@ -534,7 +534,13 @@ function hudAppendBodyToFreitext_(inputSheet, lines) {
   }
 }
 
-function hudCollectAllPrintLines_(inputSheet, byAction) {
+function hudIsMark_(v) {
+  if (v === true) return true;
+  var s = String(v == null ? "" : v).toLowerCase().trim();
+  return s === "x" || s === "true" || s === "wahr" || s === "ja";
+}
+
+function hudCollectAllPrintLines_(inputSheet, byAction, extraLines) {
   var lines = [];
   function add(line) {
     line = String(line || "").trim();
@@ -544,11 +550,15 @@ function hudCollectAllPrintLines_(inputSheet, byAction) {
     lines.push(line);
   }
 
+  if (extraLines && extraLines.length) {
+    for (var e = 0; e < extraLines.length; e++) add(extraLines[e]);
+  }
+
   var ab = inputSheet.getRange("A10:B28").getValues();
   for (var i = 0; i < ab.length; i++) {
     var rowNum = 10 + i;
     if (rowNum === 13) continue;
-    if (String(ab[i][1] || "").toLowerCase() === "x") add(ab[i][0]);
+    if (hudIsMark_(ab[i][1])) add(ab[i][0]);
   }
 
   var de = inputSheet.getRange("D2:E41").getValues();
@@ -557,7 +567,7 @@ function hudCollectAllPrintLines_(inputSheet, byAction) {
     if ((dRow >= 24 && dRow <= 28) || (dRow >= 32 && dRow <= 36)) continue;
     var dLabel = String(de[d][0] || "").trim();
     if (!dLabel || dLabel.toLowerCase().indexOf("sonstige") === 0) continue;
-    if (String(de[d][1] || "").toLowerCase() === "x") add(dLabel);
+    if (hudIsMark_(de[d][1])) add(dLabel);
   }
 
   var fm = inputSheet.getRange("D24:D28").getValues();
@@ -591,7 +601,7 @@ function hudCollectAllPrintLines_(inputSheet, byAction) {
       if (right && right.indexOf("#N/A") === -1) {
         if (/:\s*$/.test(left)) add(left.replace(/:\s*$/, ": ") + right);
         else if (left.indexOf(":") !== -1 && left.indexOf(right) !== -1) add(left);
-        else if (left.indexOf(":") !== -1) add(left.split(":")[0] + ": " + right);
+        else if (left.indexOf(":") !== -1) add(left.split(":")[0].trim() + ": " + right);
         else add(left + ": " + right);
       } else if (left.indexOf(":") !== -1 && !/:\s*$/.test(left) && left.indexOf("#N/A") === -1) {
         add(left);
@@ -608,36 +618,78 @@ function hudCollectAllPrintLines_(inputSheet, byAction) {
   return lines;
 }
 
-function hudMaterializeRepForPdf_(ss, byAction) {
+function hudFindMechanikAnchor_(sheet) {
+  var grid = sheet.getRange("A1:F55").getDisplayValues();
+  for (var r = 0; r < grid.length; r++) {
+    for (var c = 0; c < grid[r].length; c++) {
+      var t = String(grid[r][c] || "").toLowerCase().trim();
+      if (t === "mechanik" || t.indexOf("mechanik") === 0) {
+        return { row: r + 2, col: 2, labelCol: c + 1 };
+      }
+    }
+  }
+  return { row: 14, col: 2, labelCol: 1 };
+}
+
+function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
   var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
-  if (!sheet || !inputSheet) return [];
+  if (!sheet || !inputSheet) return { saved: [], lines: [] };
 
-  var lines = hudCollectAllPrintLines_(inputSheet, byAction);
+  var lines = hudCollectAllPrintLines_(inputSheet, byAction, extraLines);
   var saved = [];
-  var startRow = 14;
-  var endRow = 39;
-  var startCol = 2;
-  var endCol = 3;
-
-  for (var r = startRow; r <= endRow; r++) {
-    for (var c = startCol; c <= endCol; c++) {
-      var cell = sheet.getRange(r, c);
+  var anchor = hudFindMechanikAnchor_(sheet);
+  var startRow = Math.max(2, anchor.row);
+  var writeCol = 2;
+  var endRow = Math.min(sheet.getMaxRows(), startRow + 35);
+  var clearCol = 2;
+  var numCols = 2;
+  var scanTop = Math.max(1, startRow - 3);
+  var scanRows = endRow - scanTop + 1;
+  var block = sheet.getRange(scanTop, clearCol, scanRows, numCols);
+  var vals = block.getValues();
+  var forms = block.getFormulas();
+  for (var r = 0; r < vals.length; r++) {
+    for (var c = 0; c < vals[r].length; c++) {
       saved.push({
-        row: r,
-        col: c,
-        formula: cell.getFormula() || "",
-        value: cell.getValue()
+        row: scanTop + r,
+        col: clearCol + c,
+        formula: forms[r][c] || "",
+        value: vals[r][c]
       });
     }
   }
-  sheet.getRange(startRow, startCol, endRow - startRow + 1, endCol - startCol + 1).clearContent();
 
-  for (var i = 0; i < lines.length && (startRow + i) <= endRow; i++) {
-    sheet.getRange(startRow + i, startCol).setValue(lines[i]);
+  for (var fr = 0; fr < forms.length; fr++) {
+    for (var fc = 0; fc < forms[fr].length; fc++) {
+      var fml = String(forms[fr][fc] || "").toUpperCase();
+      if (fml.indexOf("FILTER") !== -1 || fml.indexOf("SORT") !== -1 || fml.indexOf("UNIQUE") !== -1 || fml.indexOf("QUERY") !== -1) {
+        sheet.getRange(scanTop + fr, clearCol + fc).clearContent();
+      }
+    }
+  }
+  sheet.getRange(startRow, clearCol, endRow - startRow + 1, numCols).clearContent();
+
+  if (lines.length) {
+    var out = [];
+    for (var i = 0; i < lines.length; i++) out.push([String(lines[i])]);
+    var maxWrite = Math.min(lines.length, endRow - startRow + 1);
+    sheet.getRange(startRow, writeCol, maxWrite, 1).setValues(out.slice(0, maxWrite));
   }
 
-  return saved;
+  SpreadsheetApp.flush();
+  Utilities.sleep(800);
+  var check = String(sheet.getRange(startRow, writeCol).getDisplayValue() || "").trim();
+  if (lines.length && !check) {
+    for (var j = 0; j < lines.length && (startRow + j) <= endRow; j++) {
+      sheet.getRange(startRow + j, writeCol).setValue(String(lines[j]));
+    }
+    SpreadsheetApp.flush();
+    Utilities.sleep(500);
+    check = String(sheet.getRange(startRow, writeCol).getDisplayValue() || "").trim();
+  }
+
+  return { saved: saved, lines: lines, anchor: { row: startRow, col: writeCol }, wrote: check };
 }
 
 function hudRestoreRepNa_(ss, saved) {
@@ -852,16 +904,53 @@ function createMappe(payload) {
 
     hudApplyOilToReparaturauftrag_(ss);
     SpreadsheetApp.flush();
-    Utilities.sleep(3000);
-    SpreadsheetApp.flush();
-
-    var patched = hudMaterializeRepForPdf_(ss, (bodyResult && bodyResult.byAction) || {});
-    SpreadsheetApp.flush();
     Utilities.sleep(2000);
     SpreadsheetApp.flush();
 
+    var extraLines = [];
+    for (var wi = 0; wi < workRows.length; wi++) {
+      var wrn = parseInt(workRows[wi], 10);
+      if (wrn >= 10 && wrn <= 28 && wrn !== 13) {
+        var wl = String(inputSheet.getRange(wrn, 1).getValue() || "").trim();
+        if (wl) extraLines.push(wl);
+      }
+    }
+    for (var di = 0; di < dRows.length; di++) {
+      var drn = parseInt(dRows[di], 10);
+      if (drn >= 2 && drn <= 41) {
+        var dl = String(inputSheet.getRange(drn, 4).getValue() || "").trim();
+        if (dl) extraLines.push(dl);
+      }
+    }
+    for (var mi = 0; mi < freeMech.length; mi++) {
+      var mtv = String(freeMech[mi] || "").trim();
+      if (mtv) extraLines.push(mtv);
+    }
+    for (var pi = 0; pi < freeParts.length; pi++) {
+      var ptv = String(freeParts[pi] || "").trim();
+      if (ptv) extraLines.push(ptv);
+    }
+    if (bodyResult && bodyResult.lines) {
+      for (var bi = 0; bi < bodyResult.lines.length; bi++) extraLines.push(bodyResult.lines[bi]);
+    }
+
+    var mat = hudMaterializeRepForPdf_(ss, (bodyResult && bodyResult.byAction) || {}, extraLines);
+    if (!mat.lines || !mat.lines.length) {
+      try { hudRestoreRepNa_(ss, mat.saved || []); } catch (eEmpty) {}
+      return { success: false, message: "Keine Positionen für das PDF gefunden (Auswahl leer übernommen)." };
+    }
+    SpreadsheetApp.flush();
+    Utilities.sleep(3000);
+    SpreadsheetApp.flush();
+
+    var wroteOk = String((mat && mat.wrote) || "").trim();
+    if (!wroteOk) {
+      try { hudRestoreRepNa_(ss, mat.saved || []); } catch (eWrite) {}
+      return { success: false, message: "PDF-Positionen konnten nicht geschrieben werden." };
+    }
+
     var pdf = hudExportRepPdf_(ss);
-    try { hudRestoreRepNa_(ss, patched); } catch (restoreErr) {}
+    try { hudRestoreRepNa_(ss, mat.saved || []); } catch (restoreErr) {}
     if (!pdf.success) return { success: false, message: pdf.message };
 
     var fileName = stockId + " Werkstattauftrag EXIT.pdf";
@@ -903,7 +992,9 @@ function createMappe(payload) {
       pdfUrl: pdfUrl,
       fileName: fileName,
       markedRows: marked,
-      nbError: nbMsg
+      nbError: nbMsg,
+      printLines: (mat && mat.lines) || [],
+      printAnchor: mat && mat.anchor ? (mat.anchor.row + ":" + mat.anchor.col) : ""
     };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
