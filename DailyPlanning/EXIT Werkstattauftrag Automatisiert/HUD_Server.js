@@ -631,65 +631,104 @@ function hudFindMechanikAnchor_(sheet) {
   return { row: 14, col: 2, labelCol: 1 };
 }
 
+function hudSaveRange_(sheet, a1) {
+  var block = sheet.getRange(a1);
+  var vals = block.getValues();
+  var forms = block.getFormulas();
+  var saved = [];
+  var base = block.getRow();
+  var baseCol = block.getColumn();
+  for (var r = 0; r < vals.length; r++) {
+    for (var c = 0; c < vals[r].length; c++) {
+      saved.push({
+        row: base + r,
+        col: baseCol + c,
+        formula: forms[r][c] || "",
+        value: vals[r][c]
+      });
+    }
+  }
+  return saved;
+}
+
+function hudClearFilterFormulas_(sheet, a1) {
+  var block = sheet.getRange(a1);
+  var forms = block.getFormulas();
+  var base = block.getRow();
+  var baseCol = block.getColumn();
+  for (var r = 0; r < forms.length; r++) {
+    for (var c = 0; c < forms[r].length; c++) {
+      var fml = String(forms[r][c] || "").toUpperCase();
+      if (!fml) continue;
+      if (fml.indexOf("FILTER") !== -1 || fml.indexOf("SORT") !== -1 ||
+          fml.indexOf("UNIQUE") !== -1 || fml.indexOf("QUERY") !== -1 ||
+          fml.indexOf("TOROW") !== -1 || fml.indexOf("TOCOL") !== -1) {
+        sheet.getRange(base + r, baseCol + c).clearContent();
+      }
+    }
+  }
+}
+
+function hudWriteLinesToCol_(sheet, startRow, col, lines) {
+  if (!lines || !lines.length) return "";
+  var maxWrite = Math.min(lines.length, 40);
+  var out = [];
+  for (var i = 0; i < maxWrite; i++) out.push([String(lines[i])]);
+  var endRow = startRow + maxWrite - 1;
+  var colLetter = String.fromCharCode(64 + col);
+  sheet.getRange(colLetter + startRow + ":" + colLetter + endRow).clearContent();
+  sheet.getRange(colLetter + startRow + ":" + colLetter + endRow).setValues(out);
+  SpreadsheetApp.flush();
+  Utilities.sleep(600);
+  return String(sheet.getRange(colLetter + startRow).getDisplayValue() || "").trim();
+}
+
 function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
   var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!sheet || !inputSheet) return { saved: [], lines: [] };
 
   var lines = hudCollectAllPrintLines_(inputSheet, byAction, extraLines);
-  var saved = [];
   var anchor = hudFindMechanikAnchor_(sheet);
   var startRow = Math.max(2, anchor.row);
-  var writeCol = 2;
   var endRow = Math.min(sheet.getMaxRows(), startRow + 35);
-  var clearCol = 2;
-  var numCols = 2;
-  var scanTop = Math.max(1, startRow - 3);
-  var scanRows = endRow - scanTop + 1;
-  var block = sheet.getRange(scanTop, clearCol, scanRows, numCols);
-  var vals = block.getValues();
-  var forms = block.getFormulas();
-  for (var r = 0; r < vals.length; r++) {
-    for (var c = 0; c < vals[r].length; c++) {
-      saved.push({
-        row: scanTop + r,
-        col: clearCol + c,
-        formula: forms[r][c] || "",
-        value: vals[r][c]
-      });
-    }
-  }
 
-  for (var fr = 0; fr < forms.length; fr++) {
-    for (var fc = 0; fc < forms[fr].length; fc++) {
-      var fml = String(forms[fr][fc] || "").toUpperCase();
-      if (fml.indexOf("FILTER") !== -1 || fml.indexOf("SORT") !== -1 || fml.indexOf("UNIQUE") !== -1 || fml.indexOf("QUERY") !== -1) {
-        sheet.getRange(scanTop + fr, clearCol + fc).clearContent();
+  var saved = [];
+  saved = saved.concat(hudSaveRange_(sheet, "A" + Math.max(1, startRow - 5) + ":D" + endRow));
+
+  hudClearFilterFormulas_(sheet, "A" + Math.max(1, startRow - 5) + ":D" + endRow);
+  sheet.getRange("B" + startRow + ":C" + endRow).clearContent();
+  try { sheet.getRange("B" + startRow + ":D" + endRow).breakApart(); } catch (eBreak) {}
+  SpreadsheetApp.flush();
+  Utilities.sleep(1500);
+
+  var wrote = "";
+  var writeCol = 2;
+  var tryCols = [2, 3, 1];
+  for (var t = 0; t < tryCols.length; t++) {
+    sheet.getRange("B" + startRow + ":C" + endRow).clearContent();
+    if (tryCols[t] === 1) {
+      for (var ar = startRow; ar <= endRow; ar++) {
+        var cell = sheet.getRange(ar, 1);
+        var label = String(cell.getDisplayValue() || "").toLowerCase().trim();
+        if (label === "mechanik" || label.indexOf("mechanik") === 0) continue;
+        if (cell.getFormula()) continue;
+        cell.clearContent();
       }
     }
-  }
-  sheet.getRange(startRow, clearCol, endRow - startRow + 1, numCols).clearContent();
-
-  if (lines.length) {
-    var out = [];
-    for (var i = 0; i < lines.length; i++) out.push([String(lines[i])]);
-    var maxWrite = Math.min(lines.length, endRow - startRow + 1);
-    sheet.getRange(startRow, writeCol, maxWrite, 1).setValues(out.slice(0, maxWrite));
-  }
-
-  SpreadsheetApp.flush();
-  Utilities.sleep(800);
-  var check = String(sheet.getRange(startRow, writeCol).getDisplayValue() || "").trim();
-  if (lines.length && !check) {
-    for (var j = 0; j < lines.length && (startRow + j) <= endRow; j++) {
-      sheet.getRange(startRow + j, writeCol).setValue(String(lines[j]));
+    wrote = hudWriteLinesToCol_(sheet, startRow, tryCols[t], lines);
+    if (wrote) {
+      writeCol = tryCols[t];
+      break;
     }
-    SpreadsheetApp.flush();
-    Utilities.sleep(500);
-    check = String(sheet.getRange(startRow, writeCol).getDisplayValue() || "").trim();
   }
 
-  return { saved: saved, lines: lines, anchor: { row: startRow, col: writeCol }, wrote: check };
+  return {
+    saved: saved,
+    lines: lines,
+    anchor: { row: startRow, col: writeCol },
+    wrote: wrote
+  };
 }
 
 function hudRestoreRepNa_(ss, saved) {
@@ -946,7 +985,12 @@ function createMappe(payload) {
     var wroteOk = String((mat && mat.wrote) || "").trim();
     if (!wroteOk) {
       try { hudRestoreRepNa_(ss, mat.saved || []); } catch (eWrite) {}
-      return { success: false, message: "PDF-Positionen konnten nicht geschrieben werden." };
+      var where = mat && mat.anchor ? (" @" + mat.anchor.row + "/" + mat.anchor.col) : "";
+      return {
+        success: false,
+        message: "PDF-Positionen konnten nicht geschrieben werden" + where +
+          " · " + ((mat && mat.lines && mat.lines.length) || 0) + " Zeilen bereit"
+      };
     }
 
     var pdf = hudExportRepPdf_(ss);
