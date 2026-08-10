@@ -618,116 +618,119 @@ function hudCollectAllPrintLines_(inputSheet, byAction, extraLines) {
   return lines;
 }
 
-function hudFindMechanikAnchor_(sheet) {
-  var grid = sheet.getRange("A1:F55").getDisplayValues();
-  for (var r = 0; r < grid.length; r++) {
-    for (var c = 0; c < grid[r].length; c++) {
-      var t = String(grid[r][c] || "").toLowerCase().trim();
-      if (t === "mechanik" || t.indexOf("mechanik") === 0) {
-        return { row: r + 2, col: 2, labelCol: c + 1 };
-      }
-    }
-  }
-  return { row: 14, col: 2, labelCol: 1 };
-}
-
-function hudSaveRange_(sheet, a1) {
-  var block = sheet.getRange(a1);
-  var vals = block.getValues();
-  var forms = block.getFormulas();
-  var saved = [];
-  var base = block.getRow();
-  var baseCol = block.getColumn();
-  for (var r = 0; r < vals.length; r++) {
-    for (var c = 0; c < vals[r].length; c++) {
-      saved.push({
-        row: base + r,
-        col: baseCol + c,
-        formula: forms[r][c] || "",
-        value: vals[r][c]
-      });
-    }
-  }
-  return saved;
-}
-
-function hudClearFilterFormulas_(sheet, a1) {
-  var block = sheet.getRange(a1);
-  var forms = block.getFormulas();
-  var base = block.getRow();
-  var baseCol = block.getColumn();
-  for (var r = 0; r < forms.length; r++) {
-    for (var c = 0; c < forms[r].length; c++) {
-      var fml = String(forms[r][c] || "").toUpperCase();
-      if (!fml) continue;
-      if (fml.indexOf("FILTER") !== -1 || fml.indexOf("SORT") !== -1 ||
-          fml.indexOf("UNIQUE") !== -1 || fml.indexOf("QUERY") !== -1 ||
-          fml.indexOf("TOROW") !== -1 || fml.indexOf("TOCOL") !== -1) {
-        sheet.getRange(base + r, baseCol + c).clearContent();
-      }
+function hudCleanupPdfTemps_(ss) {
+  var sheets = ss.getSheets();
+  for (var i = sheets.length - 1; i >= 0; i--) {
+    var nm = String(sheets[i].getName() || "");
+    if (nm === "_HUD_PDF_TMP" || nm.indexOf("Copy of Reparaturauftrag") === 0 || nm.indexOf("Kopie von Reparaturauftrag") === 0) {
+      try { ss.deleteSheet(sheets[i]); } catch (e) {}
     }
   }
 }
 
-function hudWriteLinesToCol_(sheet, startRow, col, lines) {
-  if (!lines || !lines.length) return "";
-  var maxWrite = Math.min(lines.length, 40);
-  var out = [];
-  for (var i = 0; i < maxWrite; i++) out.push([String(lines[i])]);
-  var endRow = startRow + maxWrite - 1;
-  var colLetter = String.fromCharCode(64 + col);
-  sheet.getRange(colLetter + startRow + ":" + colLetter + endRow).clearContent();
-  sheet.getRange(colLetter + startRow + ":" + colLetter + endRow).setValues(out);
-  SpreadsheetApp.flush();
-  Utilities.sleep(600);
-  return String(sheet.getRange(colLetter + startRow).getDisplayValue() || "").trim();
+function hudCategoryForLine_(line) {
+  var s = String(line || "").toLowerCase();
+  if (s.indexOf("delle") !== -1) return "Delle";
+  if (s.indexOf("lack") !== -1 || s.indexOf("beilack") !== -1 || s.indexOf("polier") !== -1) return "Lack";
+  if (s.indexOf("spaltmaß") !== -1 || s.indexOf("spaltmass") !== -1) return "Lack";
+  if (s.indexOf("bauteil reparieren") !== -1 || s.indexOf("ganzes bauteil") !== -1) return "Lack";
+  return "Mechanik";
+}
+
+function hudSetExactColValue_(sheet, row, col, value) {
+  try {
+    var cell = sheet.getRange(row, col);
+    var merges = cell.getMergedRanges();
+    var target = cell;
+    if (merges && merges.length) {
+      var m = merges[0];
+      if (m.getRow() === row && m.getColumn() === col) target = m;
+      else if (col >= 3 && m.getRow() === row && m.getColumn() >= 3) target = m;
+      else if (col <= 2 && m.getRow() === row && m.getColumn() <= 2) target = m;
+    }
+    if (value === "" || value === null || value === undefined) target.clearContent();
+    else target.setValue(String(value));
+    return true;
+  } catch (e) {
+    try {
+      if (value === "" || value === null || value === undefined) sheet.getRange(row, col).clearContent();
+      else sheet.getRange(row, col).setValue(String(value));
+      return true;
+    } catch (e2) {
+      return false;
+    }
+  }
 }
 
 function hudMaterializeRepForPdf_(ss, byAction, extraLines) {
+  hudCleanupPdfTemps_(ss);
   var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
-  if (!sheet || !inputSheet) return { saved: [], lines: [] };
+  if (!sheet || !inputSheet) return { saved: [], lines: [], wrote: "" };
 
   var lines = hudCollectAllPrintLines_(inputSheet, byAction, extraLines);
-  var anchor = hudFindMechanikAnchor_(sheet);
-  var startRow = Math.max(2, anchor.row);
-  var endRow = Math.min(sheet.getMaxRows(), startRow + 35);
-
+  var startRow = 14;
+  var endRow = 39;
+  var catCol = 1;
+  var textCol = 3;
   var saved = [];
-  saved = saved.concat(hudSaveRange_(sheet, "A" + Math.max(1, startRow - 5) + ":D" + endRow));
 
-  hudClearFilterFormulas_(sheet, "A" + Math.max(1, startRow - 5) + ":D" + endRow);
-  sheet.getRange("B" + startRow + ":C" + endRow).clearContent();
-  try { sheet.getRange("B" + startRow + ":D" + endRow).breakApart(); } catch (eBreak) {}
+  for (var r = 13; r <= endRow; r++) {
+    for (var c = 1; c <= 9; c++) {
+      try {
+        var cell = sheet.getRange(r, c);
+        var fml = cell.getFormula();
+        if (fml) {
+          saved.push({ row: r, col: c, formula: fml, value: cell.getValue() });
+        }
+      } catch (eSave) {}
+    }
+  }
+
+  for (var s = 0; s < saved.length; s++) {
+    var up = String(saved[s].formula || "").toUpperCase();
+    if (up.indexOf("FILTER") !== -1 || up.indexOf("SORT") !== -1 ||
+        up.indexOf("UNIQUE") !== -1 || up.indexOf("QUERY") !== -1 ||
+        up.indexOf("TOROW") !== -1 || up.indexOf("TOCOL") !== -1) {
+      try { sheet.getRange(saved[s].row, saved[s].col).clearContent(); } catch (eClr) {}
+    }
+  }
+  SpreadsheetApp.flush();
+  Utilities.sleep(1200);
+
+  for (var cr = startRow; cr <= endRow; cr++) {
+    hudSetExactColValue_(sheet, cr, catCol, "");
+    hudSetExactColValue_(sheet, cr, textCol, "");
+  }
+  SpreadsheetApp.flush();
+
+  for (var i = 0; i < lines.length && (startRow + i) <= endRow; i++) {
+    var row = startRow + i;
+    hudSetExactColValue_(sheet, row, catCol, hudCategoryForLine_(lines[i]));
+    hudSetExactColValue_(sheet, row, textCol, lines[i]);
+  }
   SpreadsheetApp.flush();
   Utilities.sleep(1500);
 
-  var wrote = "";
-  var writeCol = 2;
-  var tryCols = [2, 3, 1];
-  for (var t = 0; t < tryCols.length; t++) {
-    sheet.getRange("B" + startRow + ":C" + endRow).clearContent();
-    if (tryCols[t] === 1) {
-      for (var ar = startRow; ar <= endRow; ar++) {
-        var cell = sheet.getRange(ar, 1);
-        var label = String(cell.getDisplayValue() || "").toLowerCase().trim();
-        if (label === "mechanik" || label.indexOf("mechanik") === 0) continue;
-        if (cell.getFormula()) continue;
-        cell.clearContent();
-      }
+  var wrote = String(sheet.getRange(startRow, textCol).getDisplayValue() || "").trim();
+  if (lines.length && (!wrote || wrote.indexOf("#N/A") !== -1)) {
+    for (var j = 0; j < lines.length && (startRow + j) <= endRow; j++) {
+      try {
+        sheet.getRange(startRow + j, catCol).setValue(hudCategoryForLine_(lines[j]));
+        sheet.getRange(startRow + j, textCol).setValue(String(lines[j]));
+      } catch (e3) {}
     }
-    wrote = hudWriteLinesToCol_(sheet, startRow, tryCols[t], lines);
-    if (wrote) {
-      writeCol = tryCols[t];
-      break;
-    }
+    SpreadsheetApp.flush();
+    Utilities.sleep(1000);
+    wrote = String(sheet.getRange(startRow, textCol).getDisplayValue() || "").trim();
   }
 
   return {
     saved: saved,
     lines: lines,
-    anchor: { row: startRow, col: writeCol },
-    wrote: wrote
+    wrote: wrote,
+    anchor: { row: startRow, col: textCol },
+    tmpName: ""
   };
 }
 
@@ -737,10 +740,12 @@ function hudRestoreRepNa_(ss, saved) {
   if (!sheet) return;
   for (var i = saved.length - 1; i >= 0; i--) {
     var s = saved[i];
-    var cell = sheet.getRange(s.row, s.col);
-    if (s.formula) cell.setFormula(s.formula);
-    else if (s.value !== "" && s.value !== null && s.value !== undefined) cell.setValue(s.value);
-    else cell.clearContent();
+    try {
+      var cell = sheet.getRange(s.row, s.col);
+      if (s.formula) cell.setFormula(s.formula);
+      else if (s.value !== "" && s.value !== null && s.value !== undefined) cell.setValue(s.value);
+      else cell.clearContent();
+    } catch (eR) {}
   }
 }
 
@@ -757,6 +762,7 @@ function hudResolveDriveFolder_() {
 function hudExportRepPdf_(ss) {
   var repSheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!repSheet) return { success: false, message: "Tab '" + HUD_WA_REP_TAB + "' nicht gefunden" };
+  try { repSheet.showSheet(); } catch (eShow) {}
   var exportUrl = "https://docs.google.com/spreadsheets/d/" + HUD_WA_SHEET_ID + "/export?exportFormat=pdf&format=pdf"
     + "&gid=" + repSheet.getSheetId()
     + "&portrait=true&size=A4&fitw=true&gridlines=false"
@@ -979,7 +985,7 @@ function createMappe(payload) {
       return { success: false, message: "Keine Positionen für das PDF gefunden (Auswahl leer übernommen)." };
     }
     SpreadsheetApp.flush();
-    Utilities.sleep(3000);
+    Utilities.sleep(2000);
     SpreadsheetApp.flush();
 
     var wroteOk = String((mat && mat.wrote) || "").trim();
@@ -995,6 +1001,7 @@ function createMappe(payload) {
 
     var pdf = hudExportRepPdf_(ss);
     try { hudRestoreRepNa_(ss, mat.saved || []); } catch (restoreErr) {}
+    try { hudCleanupPdfTemps_(ss); } catch (cleanupErr) {}
     if (!pdf.success) return { success: false, message: pdf.message };
 
     var fileName = stockId + " Werkstattauftrag EXIT.pdf";
