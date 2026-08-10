@@ -460,13 +460,9 @@ function hudWriteBodySummariesOnSheet_(sheet, byAction) {
         var parts = byAction[an] || [];
         if (!parts.length) continue;
         var text = parts.join(", ");
-        if (/:\s*$/.test(raw) || n.indexOf(keys[0]) === 0) {
-          sheet.getRange(r + 1, c + 2).setValue(text);
-        } else if (n.indexOf(":") !== -1) {
-          sheet.getRange(r + 1, c + 1).setValue(raw.replace(/:\s*.*$/, ": ") + text);
-        } else {
-          sheet.getRange(r + 1, c + 2).setValue(text);
-        }
+        var targetCol = c + 2;
+        if (c + 1 >= values[r].length) targetCol = c + 1;
+        sheet.getRange(r + 1, targetCol).setValue(text);
       }
     }
   }
@@ -538,34 +534,37 @@ function hudAppendBodyToFreitext_(inputSheet, lines) {
   }
 }
 
-function hudPatchRepNaForPdf_(ss, byAction) {
-  var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
-  if (!sheet) return [];
-  var range = sheet.getDataRange();
-  var values = range.getDisplayValues();
-  var formulas = range.getFormulas();
-  var saved = [];
-  var naRows = {};
-  var workCol = 0;
-
-  for (var r = 0; r < values.length; r++) {
-    for (var c = 0; c < values[r].length; c++) {
-      var shown = String(values[r][c] || "");
-      if (shown.indexOf("#N/A") === -1 && shown.indexOf("#NV") === -1) continue;
-      saved.push({
-        row: r + 1,
-        col: c + 1,
-        formula: formulas[r][c] || "",
-        value: values[r][c]
-      });
-      sheet.getRange(r + 1, c + 1).setValue("");
-      naRows[r + 1] = 1;
-      if (c + 1 > workCol) workCol = c + 1;
-    }
+function hudCollectAllPrintLines_(inputSheet, byAction) {
+  var lines = [];
+  function add(line) {
+    line = String(line || "").trim();
+    if (!line) return;
+    if (lines.indexOf(line) !== -1) return;
+    if (line.indexOf("#N/A") !== -1 || line.indexOf("#NV") !== -1) return;
+    lines.push(line);
   }
 
-  if (!workCol) workCol = 3;
-  var lines = [];
+  var ab = inputSheet.getRange("A10:B28").getValues();
+  for (var i = 0; i < ab.length; i++) {
+    var rowNum = 10 + i;
+    if (rowNum === 13) continue;
+    if (String(ab[i][1] || "").toLowerCase() === "x") add(ab[i][0]);
+  }
+
+  var de = inputSheet.getRange("D2:E41").getValues();
+  for (var d = 0; d < de.length; d++) {
+    var dRow = 2 + d;
+    if ((dRow >= 24 && dRow <= 28) || (dRow >= 32 && dRow <= 36)) continue;
+    var dLabel = String(de[d][0] || "").trim();
+    if (!dLabel || dLabel.toLowerCase().indexOf("sonstige") === 0) continue;
+    if (String(de[d][1] || "").toLowerCase() === "x") add(dLabel);
+  }
+
+  var fm = inputSheet.getRange("D24:D28").getValues();
+  for (var f = 0; f < fm.length; f++) add(fm[f][0]);
+  var fp = inputSheet.getRange("D32:D36").getValues();
+  for (var p = 0; p < fp.length; p++) add(fp[p][0]);
+
   var actionNames = {
     1: "ganzes Bauteil lackieren",
     2: "Beilackieren",
@@ -577,34 +576,67 @@ function hudPatchRepNaForPdf_(ss, byAction) {
   if (byAction) {
     for (var an = 1; an <= 6; an++) {
       var parts = byAction[an] || [];
-      if (!parts.length) continue;
-      lines.push(actionNames[an] + ": " + parts.join(", "));
+      if (parts.length) add(actionNames[an] + ": " + parts.join(", "));
     }
   }
 
+  try {
+    var sum = inputSheet.getRange("W80:X110").getDisplayValues();
+    for (var s = 0; s < sum.length; s++) {
+      var left = String(sum[s][0] || "").trim();
+      var right = String(sum[s][1] || "").trim();
+      var ln = hudNormLabel_(left);
+      if (!ln) continue;
+      if (ln.indexOf("nachuntersuchung") !== -1) continue;
+      if (right && right.indexOf("#N/A") === -1) {
+        if (/:\s*$/.test(left)) add(left.replace(/:\s*$/, ": ") + right);
+        else if (left.indexOf(":") !== -1 && left.indexOf(right) !== -1) add(left);
+        else if (left.indexOf(":") !== -1) add(left.split(":")[0] + ": " + right);
+        else add(left + ": " + right);
+      } else if (left.indexOf(":") !== -1 && !/:\s*$/.test(left) && left.indexOf("#N/A") === -1) {
+        add(left);
+      }
+    }
+  } catch (eSum) {}
+
+  if (hudIsChecked_(inputSheet.getRange("B43").getValue())) add("Nachuntersuchung nein");
+  if (hudIsChecked_(inputSheet.getRange("B44").getValue())) {
+    var nd = String(inputSheet.getRange("B45").getValue() || "").trim();
+    add(nd ? ("Nachuntersuchung bis " + nd) : "Nachuntersuchung ja");
+  }
+
+  return lines;
+}
+
+function hudMaterializeRepForPdf_(ss, byAction) {
+  var inputSheet = ss.getSheetByName(HUD_WA_INPUT_TAB);
+  var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
+  if (!sheet || !inputSheet) return [];
+
+  var lines = hudCollectAllPrintLines_(inputSheet, byAction);
+  var saved = [];
   var startRow = 14;
-  var rowKeys = Object.keys(naRows);
-  if (rowKeys.length) {
-    startRow = parseInt(rowKeys.sort(function(a, b) { return a - b; })[0], 10);
-  }
+  var endRow = 39;
+  var startCol = 2;
+  var endCol = 3;
 
-  for (var i = 0; i < lines.length; i++) {
-    var row = startRow + i;
-    var cell = sheet.getRange(row, workCol);
-    var already = false;
-    for (var s = 0; s < saved.length; s++) {
-      if (saved[s].row === row && saved[s].col === workCol) { already = true; break; }
-    }
-    if (!already) {
+  for (var r = startRow; r <= endRow; r++) {
+    for (var c = startCol; c <= endCol; c++) {
+      var cell = sheet.getRange(r, c);
       saved.push({
-        row: row,
-        col: workCol,
+        row: r,
+        col: c,
         formula: cell.getFormula() || "",
         value: cell.getValue()
       });
     }
-    cell.setValue(lines[i]);
   }
+  sheet.getRange(startRow, startCol, endRow - startRow + 1, endCol - startCol + 1).clearContent();
+
+  for (var i = 0; i < lines.length && (startRow + i) <= endRow; i++) {
+    sheet.getRange(startRow + i, startCol).setValue(lines[i]);
+  }
+
   return saved;
 }
 
@@ -612,10 +644,11 @@ function hudRestoreRepNa_(ss, saved) {
   if (!saved || !saved.length) return;
   var sheet = ss.getSheetByName(HUD_WA_REP_TAB);
   if (!sheet) return;
-  for (var i = 0; i < saved.length; i++) {
+  for (var i = saved.length - 1; i >= 0; i--) {
     var s = saved[i];
     var cell = sheet.getRange(s.row, s.col);
     if (s.formula) cell.setFormula(s.formula);
+    else if (s.value !== "" && s.value !== null && s.value !== undefined) cell.setValue(s.value);
     else cell.clearContent();
   }
 }
@@ -819,10 +852,12 @@ function createMappe(payload) {
 
     hudApplyOilToReparaturauftrag_(ss);
     SpreadsheetApp.flush();
-    Utilities.sleep(2500);
+    Utilities.sleep(3000);
     SpreadsheetApp.flush();
 
-    var patched = hudPatchRepNaForPdf_(ss, (bodyResult && bodyResult.byAction) || {});
+    var patched = hudMaterializeRepForPdf_(ss, (bodyResult && bodyResult.byAction) || {});
+    SpreadsheetApp.flush();
+    Utilities.sleep(2000);
     SpreadsheetApp.flush();
 
     var pdf = hudExportRepPdf_(ss);
