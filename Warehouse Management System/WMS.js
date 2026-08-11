@@ -3129,6 +3129,7 @@ function nachbestellungTypShouldPrintWerkstattauftrag(typ) {
   if (!t) return false;
   if (t.indexOf("exit") !== -1) return false;
   if (t.indexOf("erstbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
+  if (t.indexOf("nachbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
   if (t.indexOf("mechanik") !== -1 && t.indexOf("nachbestellung") !== -1) return true;
   if (t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return true;
   return false;
@@ -3347,9 +3348,6 @@ function prepareWerkstattauftragPrint(stockId, beschreibung, strictDesc) {
 
 function requestWerkstattauftragPrint(stockId, beschreibung, typ) {
     try {
-      if (!nachbestellungTypShouldPrintWerkstattauftrag(typ)) {
-        return { success: false, message: "Für diesen Typ kein Werkstattauftrag" };
-      }
       var prep = buildWerkstattauftragPrint_(stockId, beschreibung, true);
       if (prep.success) return prep;
       var relaxed = buildWerkstattauftragPrint_(stockId, beschreibung, false);
