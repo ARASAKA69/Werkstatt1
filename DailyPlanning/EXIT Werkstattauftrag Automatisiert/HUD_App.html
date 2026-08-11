@@ -343,6 +343,31 @@ input.err { border-color: var(--red); }
 .linkbtns { display: flex; gap: 8px; flex-wrap: wrap; }
 a.btn { text-decoration: none; display: inline-block; }
 .carol-hint { font-size: 11px; color: var(--green); margin-top: 4px; }
+.carol-status {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  display: none;
+  align-items: center;
+  gap: 8px;
+}
+.carol-status.show { display: inline-flex; }
+.carol-status.loading {
+  background: rgba(88, 166, 255, 0.12);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.35);
+}
+.carol-status.ok {
+  background: rgba(86, 211, 100, 0.12);
+  color: var(--green);
+  border: 1px solid rgba(86, 211, 100, 0.35);
+}
+.carol-status.err {
+  background: rgba(248, 81, 73, 0.12);
+  color: var(--red);
+  border: 1px solid rgba(248, 81, 73, 0.35);
+}
 .deny-box {
   max-width: 520px;
   margin: 80px auto;
@@ -409,7 +434,7 @@ a.btn { text-decoration: none; display: inline-block; }
   </div>
 </div>
 <div class="topbar">
-  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-11&middot;3</span></h1>
+  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-11&middot;4</span></h1>
   <span class="badge" id="countBadge">lädt…</span>
   <div class="searchwrap" id="searchWrap">
     <input type="text" id="searchInput" placeholder="Suche StockID, Grund, Bearbeiter…" autocomplete="off">
@@ -453,6 +478,7 @@ a.btn { text-decoration: none; display: inline-block; }
             <h3>Fahrzeugdaten (aus Carol)</h3>
             <button class="btn btn-sm btn-accent" id="btnAutofill" type="button">Autofill Starten</button>
           </div>
+          <div class="carol-status" id="carolStatus"></div>
           <div class="grid2">
             <div>
               <label class="fld">Modell</label>
@@ -1274,11 +1300,16 @@ function openDetail(ent) {
   $("createMsg").textContent = "";
   $("createMsg").className = "msg top-msg";
   $("btnCreate").classList.remove("hidden");
+  if (ent.carolModell && ent.carolVin) {
+    setCarolStatus("ok", "Carol Daten empfangen — Modell/VIN geladen");
+  } else {
+    setCarolStatus("");
+  }
   renderChecklists();
   $("viewList").classList.add("hidden");
   $("viewDetail").classList.remove("hidden");
   window.scrollTo(0, 0);
-  startCarolPoll(ent.stockId);
+  if (!(ent.carolModell && ent.carolVin)) startCarolPoll(ent.stockId);
 }
 
 function renderGruende() {
@@ -1373,8 +1404,27 @@ function stopCarolPoll() {
   }
 }
 
-function startCarolPoll(stockId) {
+function setCarolStatus(mode, text) {
+  var el = $("carolStatus");
+  if (!el) return;
+  if (!mode) {
+    el.className = "carol-status";
+    el.innerHTML = "";
+    return;
+  }
+  el.className = "carol-status show " + mode;
+  if (mode === "loading") {
+    el.innerHTML = '<span class="spin"></span><span>' + esc(text || "Lade Carol-Daten…") + "</span>";
+  } else {
+    el.textContent = text || "";
+  }
+}
+
+function startCarolPoll(stockId, showLoading) {
   stopCarolPoll();
+  if (showLoading && !($("inModell").value && $("inVin").value)) {
+    setCarolStatus("loading", "Carol geöffnet — warte auf automatischen Versand…");
+  }
   pollCarolOnce(stockId);
   state.pollTimer = setInterval(function() {
     if (!state.current || state.current.stockId !== stockId) { stopCarolPoll(); return; }
@@ -1387,7 +1437,6 @@ function pollCarolOnce(stockId) {
   if (!state.current || state.current.stockId !== stockId) return;
   if ($("inModell").value && $("inVin").value) {
     stopCarolPoll();
-    if (($("createMsg").textContent || "").indexOf("Autofill") !== -1) setMsg("");
     return;
   }
   google.script.run.withSuccessHandler(function(res) {
@@ -1405,7 +1454,8 @@ function pollCarolOnce(stockId) {
       }
       if ($("inModell").value && $("inVin").value) {
         stopCarolPoll();
-        if (($("createMsg").textContent || "").indexOf("Autofill") !== -1) setMsg("");
+        setCarolStatus("ok", "Carol Daten empfangen — Modell/VIN geladen");
+        setMsg("Carol Autofill fertig", "ok");
       }
     }
   }).getCarolData(stockId);
@@ -1851,11 +1901,15 @@ function carolAutofillUrl(stockId, carolUrl) {
 function startCarolAutofill() {
   if (!state.current || !state.current.stockId) return;
   var sid = state.current.stockId;
+  if ($("inModell").value && $("inVin").value) {
+    setCarolStatus("ok", "Carol Daten bereits vorhanden");
+    setMsg("");
+    return;
+  }
   var url = carolAutofillUrl(sid, state.current.carolUrl);
   window.open(url, "_blank", "noopener");
-  startCarolPoll(sid);
-  if ($("inModell").value && $("inVin").value) setMsg("");
-  else setMsg("Carol Autofill gestartet — warte auf Modell/VIN…", "ok");
+  setMsg("Carol Autofill läuft…", "ok");
+  startCarolPoll(sid, true);
 }
 
 $("btnAutofill").addEventListener("click", startCarolAutofill);

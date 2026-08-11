@@ -39,6 +39,7 @@ function hudIsExcludedGrund_(grund) {
 }
 
 var HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
+var HUD_CAROL_BRIDGE_SECRET = "ARASAKA69";
 var HUD_INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
 var HUD_CHAT_ALLOWED_EMAILS = {
   "francesco.berger@auto1.com": 1,
@@ -178,8 +179,7 @@ function doPost(e) {
   var out = { success: false };
   try {
     var body = JSON.parse(e.postData.contents || "{}");
-    var secret = String(PropertiesService.getScriptProperties().getProperty("CAROL_BRIDGE_SECRET") || "");
-    if (!secret || String(body.secret || "") !== secret) {
+    if (String(body.secret || "") !== String(HUD_CAROL_BRIDGE_SECRET || "")) {
       out.message = "Ungültiges Secret";
       return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
     }
