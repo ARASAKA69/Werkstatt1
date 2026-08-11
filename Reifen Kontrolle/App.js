@@ -38,16 +38,13 @@ function onOpen() {
 }
 
 function openReifenApp() {
-  ensureCacheTrigger_();
-  try {
-    var cache = readCache_();
-    if (!cache || isCacheStale_(cache)) rebuildReifenCache();
-  } catch (e0) {}
+  try { ensureCacheTrigger_(); } catch (e0) {}
   var html = HtmlService.createHtmlOutput(
-    '<!DOCTYPE html><html><body style="margin:0"><script>' +
-    'window.onload=function(){window.open(' + JSON.stringify(WEB_APP_URL) + ',"_blank");google.script.host.close();};' +
-    '</script></body></html>'
-  );
+    '<!DOCTYPE html><html><body style="margin:0;font:14px sans-serif;padding:16px;background:#111;color:#eee">' +
+    '<div>Öffne Reifen Kontrolle…</div>' +
+    '<script>window.onload=function(){window.open(' + JSON.stringify(WEB_APP_URL) + ',"_blank");google.script.host.close();};</script>' +
+    '</body></html>'
+  ).setWidth(280).setHeight(80);
   SpreadsheetApp.getUi().showModalDialog(html, 'Reifen Kontrolle');
 }
 
@@ -255,17 +252,15 @@ function buildRefurbMap_() {
     if (!sheet) return map;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var numRows = lastRow - 1;
-    var data = sheet.getRange(2, 1, numRows, 30).getValues();
-    var formulas = sheet.getRange(2, 3, numRows, 1).getFormulas();
-    var richVals = sheet.getRange(2, 3, numRows, 1).getRichTextValues();
+    var data = sheet.getRange(2, 1, lastRow, 30).getValues();
+    var formulas = sheet.getRange(2, 3, lastRow, 3).getFormulas();
     for (var i = 0; i < data.length; i++) {
       var stockId = normalizeStockId_(data[i][1]);
       if (!stockId || map[stockId]) continue;
       map[stockId] = {
         found: true,
         row: i + 2,
-        carolUrl: carolUrlFromSheetParts_(richVals[i][0], formulas[i][0], data[i][2]),
+        carolUrl: carolUrlFromSheetParts_(null, formulas[i][0], data[i][2]),
         markeModel: String(data[i][12] || '').trim(),
         schaeden: String(data[i][22] || '').trim(),
         kommBestellung: String(data[i][23] || '').trim(),
@@ -387,6 +382,79 @@ function isGreenColor_(hex) {
   return g >= 110 && g > r + 25 && g > b + 25;
 }
 
+function isReifenGestelltText_(reifen) {
+  var v = String(reifen || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!v) return false;
+  if (v === '2' || v === '4') return true;
+  if (v === '2 gestellt' || v === '4 gestellt') return true;
+  if (/^(2|4)\s*gestellt$/.test(v)) return true;
+  if (/\bgestellt\b/.test(v) && v.indexOf('nicht') === -1) return true;
+  return false;
+}
+
+function isReifenGestellt_(reifen, bg) {
+  if (isReifenGestelltText_(reifen)) return true;
+  var v = String(reifen || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!v || v === '2 reifen' || v === '4 reifen' || v === 'lagerbestand') return false;
+  return isGreenColor_(bg);
+}
+
+function normalizeTlEntryGestellt_(entry) {
+  if (!entry) return entry;
+  if (isReifenGestelltText_(entry.reifen)) entry.reifenGreen = true;
+  return entry;
+}
+
+function findTlGestelltEntry_(entries) {
+  var list = entries || [];
+  for (var i = 0; i < list.length; i++) {
+    var e = normalizeTlEntryGestellt_(list[i]);
+    if (e && (e.reifenGreen || isReifenGestelltText_(e.reifen))) return e;
+  }
+  return null;
+}
+
+function resolveTlGestellt_(tl) {
+  var entries = tl || [];
+  var latest = entries.length ? normalizeTlEntryGestellt_(entries[0]) : null;
+  var gestelltEntry = findTlGestelltEntry_(entries);
+  var fromEarlier = !!(gestelltEntry && latest && gestelltEntry.row !== latest.row);
+  return {
+    latest: latest,
+    gestelltEntry: gestelltEntry,
+    gestellt: !!gestelltEntry,
+    fromEarlier: fromEarlier,
+    reifen: gestelltEntry ? gestelltEntry.reifen : (latest && latest.reifen ? latest.reifen : ''),
+    datum: gestelltEntry ? gestelltEntry.datum : (latest && latest.datum ? latest.datum : ''),
+    url: gestelltEntry ? gestelltEntry.url : (latest && latest.url ? latest.url : '')
+  };
+}
+
+function normalizeTlGestellt_(it) {
+  if (!it) return it;
+  if (isReifenGestelltText_(it.tlReifen)) it.tlReifenGreen = true;
+  return it;
+}
+
+function applyTlGestelltToItem_(it, detail) {
+  if (!it) return it;
+  normalizeTlGestellt_(it);
+  var entries = detail && detail.tagesliste ? (detail.tagesliste.entries || []) : [];
+  var resolved = resolveTlGestellt_(entries.length ? entries : (
+    (it.tlReifen || it.tlReifenGreen)
+      ? [{ reifen: it.tlReifen || '', reifenGreen: !!it.tlReifenGreen, datum: it.tlDatum || '', url: it.tlUrl || '', row: 0 }]
+      : []
+  ));
+  if (resolved.gestellt) {
+    it.tlReifenGreen = true;
+    it.tlReifen = resolved.reifen || it.tlReifen || '';
+    if (resolved.datum) it.tlDatum = resolved.datum;
+    if (resolved.url) it.tlUrl = resolved.url;
+    it.tlGestelltEarlier = !!resolved.fromEarlier;
+  }
+  return it;
+}
+
 function tageslisteUrl_(row) {
   var u = 'https://docs.google.com/spreadsheets/d/' + TAGESLISTE_SHEET_ID + '/edit#gid=' + TAGESLISTE_GID;
   if (row) u += '&range=E' + row;
@@ -404,7 +472,7 @@ function getTageslisteSheet_() {
   return null;
 }
 
-function buildTageslisteMap_() {
+function buildTageslisteMap_(onlyIds) {
   var map = {};
   try {
     var sheet = getTageslisteSheet_();
@@ -413,17 +481,17 @@ function buildTageslisteMap_() {
     if (lastRow < 2) return map;
     var numCols = Math.max(TL_STOCK_COL, TL_REIFEN_COL);
     var data = sheet.getRange(1, 1, lastRow, numCols).getDisplayValues();
-    var bgs = sheet.getRange(1, TL_REIFEN_COL, lastRow, 1).getBackgrounds();
     for (var i = 0; i < data.length; i++) {
       var sid = normalizeStockId_(data[i][TL_STOCK_COL - 1]);
       if (!sid || !looksLikeStockId_(sid)) continue;
+      if (onlyIds && !onlyIds[sid]) continue;
       var reifen = String(data[i][TL_REIFEN_COL - 1] || '').trim();
       var entry = {
         row: i + 1,
         datum: String(data[i][TL_DATUM_COL - 1] || '').trim(),
         schicht: String(data[i][TL_SCHICHT_COL - 1] || '').trim(),
         reifen: reifen,
-        reifenGreen: !!reifen && isGreenColor_(bgs[i][0]),
+        reifenGreen: isReifenGestelltText_(reifen),
         url: tageslisteUrl_(i + 1)
       };
       if (!map[sid]) map[sid] = [];
@@ -518,12 +586,17 @@ function evaluateStock_(stockId, refurb, nbs, returnMail, sheetStatus, tl) {
     if (nbReifenOpen.length) reasons.push(nbReifenOpen.length + ' offene Reifen-Nachbestellung(en)');
   }
   if (tl.length) {
-    var tlLatest = tl[0];
+    var tlRes = resolveTlGestellt_(tl);
+    var tlLatest = tlRes.latest || {};
     var tlTxt = 'War auf Tagesliste' + (tlLatest.datum ? ' am ' + tlLatest.datum : '') + (tlLatest.schicht ? ' (' + tlLatest.schicht + ')' : '');
-    if (tlLatest.reifen) {
-      tlTxt += tlLatest.reifenGreen
-        ? ' — Reifen gestellt (grün) · Wert: ' + tlLatest.reifen
-        : ' — Reifen nicht gestellt (nicht grün) · Wert: ' + tlLatest.reifen;
+    if (tlRes.gestellt) {
+      var gWhen = (tlRes.gestelltEntry.datum ? ' am ' + tlRes.gestelltEntry.datum : '') +
+        (tlRes.gestelltEntry.schicht ? ' (' + tlRes.gestelltEntry.schicht + ')' : '');
+      tlTxt += ' — Reifen gestellt · bei Mechanik (nicht mehr im Lager) · Wert: ' + (tlRes.reifen || '');
+      if (tlRes.fromEarlier) tlTxt += ' · gestellt in früherem Eintrag' + gWhen;
+      if (tl.length > 1) tlTxt += ' · ' + tl.length + '× auf Tagesliste';
+    } else if (tlLatest.reifen) {
+      tlTxt += ' — Reifen nicht gestellt · noch im Lager · Wert: ' + tlLatest.reifen;
     } else {
       tlTxt += ' — nicht gestellt — kein Reifen-Eintrag (2/4)';
     }
@@ -571,6 +644,7 @@ function buildDetail_(entry, refurbMap, nbMap, tlMap, withMail) {
   var tl = (tlMap && tlMap[stockId]) || [];
   var returnMail = withMail ? searchReturnMail_(stockId) : { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
   var evalRes = evaluateStock_(stockId, refurb, nbs, returnMail, entry.sheetStatus, tl);
+  var tlRes = resolveTlGestellt_(tl);
   return {
     success: true,
     stockId: stockId,
@@ -578,7 +652,16 @@ function buildDetail_(entry, refurbMap, nbMap, tlMap, withMail) {
     sheetStatus: entry.sheetStatus || '',
     refurb: refurb,
     nachbestellungen: nbs,
-    tagesliste: { found: tl.length > 0, count: tl.length, entries: tl, latest: tl.length ? tl[0] : null, url: tl.length ? tl[0].url : '' },
+    tagesliste: {
+      found: tl.length > 0,
+      count: tl.length,
+      entries: tl,
+      latest: tlRes.latest,
+      gestelltEntry: tlRes.gestelltEntry,
+      anyGestellt: tlRes.gestellt,
+      gestelltEarlier: tlRes.fromEarlier,
+      url: tlRes.url || (tl.length ? tl[0].url : '')
+    },
     returnMail: returnMail,
     evalx: evalRes,
     carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
@@ -589,6 +672,7 @@ function buildDetail_(entry, refurbMap, nbMap, tlMap, withMail) {
 }
 
 function itemFromDetail_(d) {
+  var tlRes = resolveTlGestellt_((d.tagesliste && d.tagesliste.entries) || []);
   return {
     stockId: d.stockId,
     sheetRow: d.sheetRow,
@@ -607,12 +691,46 @@ function itemFromDetail_(d) {
     nbReifenOpenCount: d.evalx.nbReifenOpenCount,
     nbReifenTeile: d.evalx.nbReifenTeile || [],
     tlFound: !!(d.tagesliste && d.tagesliste.found),
-    tlReifen: (d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.reifen) || '',
-    tlReifenGreen: !!(d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.reifenGreen),
-    tlDatum: (d.tagesliste && d.tagesliste.latest && d.tagesliste.latest.datum) || '',
-    tlUrl: (d.tagesliste && d.tagesliste.url) || '',
+    tlReifen: tlRes.reifen || '',
+    tlReifenGreen: !!(d.tagesliste && d.tagesliste.anyGestellt) || tlRes.gestellt,
+    tlGestelltEarlier: !!(d.tagesliste && d.tagesliste.gestelltEarlier) || tlRes.fromEarlier,
+    tlDatum: tlRes.datum || '',
+    tlUrl: (d.tagesliste && d.tagesliste.url) || tlRes.url || '',
     mismatch: !!(d.sheetStatus && d.evalx.suggested === 'B2A1' && d.sheetStatus !== 'B2A1')
   };
+}
+
+function reuseReturnMail_(detail, oldMail) {
+  if (!detail || !oldMail || !oldMail.found) return detail;
+  detail.returnMail = oldMail;
+  detail.evalx = evaluateStock_(
+    detail.stockId,
+    detail.refurb,
+    detail.nachbestellungen || [],
+    oldMail,
+    detail.sheetStatus,
+    (detail.tagesliste && detail.tagesliste.entries) || []
+  );
+  return detail;
+}
+
+function collectOldMails_(details) {
+  var out = {};
+  if (!details) return out;
+  var keys = Object.keys(details);
+  for (var i = 0; i < keys.length; i++) {
+    var mail = details[keys[i]] && details[keys[i]].returnMail;
+    if (mail && mail.found) out[keys[i]] = mail;
+  }
+  return out;
+}
+
+function stockIdSetFromList_(list) {
+  var need = {};
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].stockId) need[list[i].stockId] = true;
+  }
+  return need;
 }
 
 function rebuildReifenCache() {
@@ -620,18 +738,15 @@ function rebuildReifenCache() {
   var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
   dedupeReifenSheet_();
   var list = readReifenList_();
+  var oldMails = collectOldMails_((readCache_() || {}).details);
   var refurbMap = buildRefurbMap_();
   var nbMap = buildNachbestellMap_();
-  var tlMap = buildTageslisteMap_();
+  var tlMap = buildTageslisteMap_(stockIdSetFromList_(list));
   var items = [];
   var details = {};
   for (var i = 0; i < list.length; i++) {
-    var d;
-    try {
-      d = buildDetail_(list[i], refurbMap, nbMap, tlMap, true);
-    } catch (e) {
-      d = buildDetail_(list[i], refurbMap, nbMap, tlMap, false);
-    }
+    var d = buildDetail_(list[i], refurbMap, nbMap, tlMap, false);
+    reuseReturnMail_(d, oldMails[d.stockId]);
     d.fromCache = true;
     details[d.stockId] = d;
     items.push(itemFromDetail_(d));
@@ -645,6 +760,279 @@ function rebuildReifenCache() {
   };
   writeCachePayload_(payload);
   return payload;
+}
+
+var REBUILD_MAP_KEYS = {
+  refurb: 'reifen_rb_refurb_',
+  nb: 'reifen_rb_nb_',
+  tl: 'reifen_rb_tl_',
+  meta: 'reifen_rb_meta_'
+};
+
+function clearCacheJson_(prefix) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(prefix + 'n') || 0);
+    var keys = [prefix + 'n'];
+    for (var i = 0; i < n; i++) keys.push(prefix + i);
+    if (keys.length) cache.removeAll(keys);
+  } catch (e0) {}
+}
+
+function putCacheJson_(prefix, obj) {
+  var cache = CacheService.getScriptCache();
+  var raw = JSON.stringify(obj == null ? {} : obj);
+  var chunk = 90000;
+  var parts = Math.max(1, Math.ceil(raw.length / chunk));
+  if (parts > 80) return false;
+  clearCacheJson_(prefix);
+  cache.put(prefix + 'n', String(parts), 600);
+  for (var p = 0; p < parts; p++) {
+    cache.put(prefix + p, raw.substr(p * chunk, chunk), 600);
+  }
+  return true;
+}
+
+function getCacheJson_(prefix) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(prefix + 'n') || 0);
+    if (n < 1 || n > 80) return null;
+    var json = '';
+    for (var i = 0; i < n; i++) json += String(cache.get(prefix + i) || '');
+    if (!json) return null;
+    return JSON.parse(json);
+  } catch (e1) {
+    return null;
+  }
+}
+
+function clearAllRebuildMaps_() {
+  clearCacheJson_(REBUILD_MAP_KEYS.refurb);
+  clearCacheJson_(REBUILD_MAP_KEYS.nb);
+  clearCacheJson_(REBUILD_MAP_KEYS.tl);
+  try { CacheService.getScriptCache().remove(REBUILD_MAP_KEYS.meta + 'total'); } catch (e2) {}
+}
+
+function loadRebuildMaps_() {
+  var refurb = getCacheJson_(REBUILD_MAP_KEYS.refurb);
+  var nb = getCacheJson_(REBUILD_MAP_KEYS.nb);
+  var tl = getCacheJson_(REBUILD_MAP_KEYS.tl);
+  if (!refurb || !nb || !tl) return null;
+  return { refurb: refurb, nb: nb, tl: tl };
+}
+
+function rebuildStepResult_(opt) {
+  return {
+    success: true,
+    done: !!opt.done,
+    nextStep: opt.nextStep || '',
+    offset: opt.offset || 0,
+    total: opt.total || 0,
+    percent: opt.percent || 0,
+    count: opt.count != null ? opt.count : (opt.total || 0),
+    currentSid: opt.currentSid || '',
+    phase: opt.phase || '',
+    cachedAt: opt.cachedAt || '',
+    message: opt.message || ''
+  };
+}
+
+function rebuildCacheStep(step, offset, batchSize) {
+  try {
+    step = String(step || 'start').toLowerCase();
+    offset = Math.max(0, Number(offset) || 0);
+    batchSize = Math.max(1, Math.min(12, Number(batchSize) || 8));
+
+    if (step === 'start') {
+      dedupeReifenSheet_();
+      clearAllRebuildMaps_();
+      var list0 = readReifenList_();
+      try { CacheService.getScriptCache().put(REBUILD_MAP_KEYS.meta + 'total', String(list0.length), 600); } catch (e3) {}
+      return rebuildStepResult_({
+        done: false,
+        nextStep: 'refurb',
+        offset: 0,
+        total: list0.length,
+        percent: 4,
+        currentSid: list0.length ? (list0.length + ' Stock-IDs') : 'Liste leer',
+        phase: 'Liste vorbereitet',
+        count: list0.length
+      });
+    }
+
+    if (step === 'refurb') {
+      putCacheJson_(REBUILD_MAP_KEYS.refurb, buildRefurbMap_());
+      var t1 = Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || readReifenList_().length) || 0;
+      return rebuildStepResult_({
+        done: false,
+        nextStep: 'nb',
+        offset: 0,
+        total: t1,
+        percent: 18,
+        currentSid: 'Refurbishment ✓',
+        phase: 'Refurbishment geladen',
+        count: t1
+      });
+    }
+
+    if (step === 'nb') {
+      putCacheJson_(REBUILD_MAP_KEYS.nb, buildNachbestellMap_());
+      var t2 = Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || readReifenList_().length) || 0;
+      return rebuildStepResult_({
+        done: false,
+        nextStep: 'tl',
+        offset: 0,
+        total: t2,
+        percent: 32,
+        currentSid: 'Nachbestellungen ✓',
+        phase: 'Nachbestellungen geladen',
+        count: t2
+      });
+    }
+
+    if (step === 'tl') {
+      var listTl = readReifenList_();
+      putCacheJson_(REBUILD_MAP_KEYS.tl, buildTageslisteMap_(stockIdSetFromList_(listTl)));
+      return rebuildStepResult_({
+        done: false,
+        nextStep: 'items',
+        offset: 0,
+        total: listTl.length,
+        percent: 48,
+        currentSid: 'Tagesliste ✓ — starte Checks',
+        phase: 'Tagesliste geladen',
+        count: listTl.length
+      });
+    }
+
+    var maps = loadRebuildMaps_();
+    if (!maps) {
+      return { success: false, message: 'Vorbereitung unvollständig — bitte erneut laden', done: false, nextStep: 'start' };
+    }
+
+    var list = readReifenList_();
+    var total = list.length;
+    var builtAtMs = Date.now();
+    var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
+    if (!total) {
+      clearAllRebuildMaps_();
+      writeCachePayload_({ builtAt: builtAt, builtAtMs: builtAtMs, items: [], details: {}, count: 0 });
+      return rebuildStepResult_({
+        done: true,
+        nextStep: '',
+        offset: 0,
+        total: 0,
+        percent: 100,
+        currentSid: 'Fertig',
+        phase: 'Fertig',
+        count: 0,
+        cachedAt: builtAt
+      });
+    }
+
+    var prev = readCache_() || { items: [], details: {} };
+    var oldMails = collectOldMails_(prev.details);
+    var details = offset === 0 ? {} : (prev.details || {});
+    if (offset === 0) details = {};
+
+    var end = Math.min(offset + batchSize, total);
+    var currentSid = '';
+    for (var i = offset; i < end; i++) {
+      currentSid = list[i].stockId;
+      var d = buildDetail_(list[i], maps.refurb, maps.nb, maps.tl, false);
+      reuseReturnMail_(d, oldMails[d.stockId]);
+      d.fromCache = true;
+      details[d.stockId] = d;
+    }
+
+    if (end < total && prev.details) {
+      for (var k = end; k < total; k++) {
+        var sidKeep = list[k].stockId;
+        if (!details[sidKeep] && prev.details[sidKeep]) details[sidKeep] = prev.details[sidKeep];
+      }
+    }
+
+    var items = [];
+    for (var j = 0; j < total; j++) {
+      var sid = list[j].stockId;
+      if (details[sid]) {
+        items.push(itemFromDetail_(details[sid]));
+      } else {
+        items.push({
+          stockId: sid,
+          sheetRow: list[j].sheetRow,
+          sheetStatus: list[j].sheetStatus,
+          statusKey: statusKey_(list[j].sheetStatus),
+          suggested: '',
+          suggestedKey: 'none',
+          markeModel: '',
+          refurbFound: false,
+          refurbStatus: '',
+          reifenDa: false,
+          carolDone: false,
+          mailFound: false,
+          nbCount: 0,
+          nbReifenCount: 0,
+          nbReifenOpenCount: 0,
+          nbReifenTeile: [],
+          tlFound: false,
+          tlReifen: '',
+          tlReifenGreen: false,
+          tlDatum: '',
+          tlUrl: '',
+          mismatch: false,
+          uncached: true
+        });
+      }
+    }
+
+    var done = end >= total;
+    var payload = {
+      builtAt: builtAt,
+      builtAtMs: builtAtMs,
+      items: items,
+      details: details,
+      count: total
+    };
+    if (done) {
+      clearAllRebuildMaps_();
+      writeCachePayload_(payload);
+    } else {
+      writeHotCache_(JSON.stringify(payload));
+    }
+
+    var itemPct = total ? Math.round((end / total) * 50) : 50;
+    return rebuildStepResult_({
+      done: done,
+      nextStep: done ? '' : 'items',
+      offset: end,
+      total: total,
+      percent: Math.min(100, 50 + itemPct),
+      currentSid: currentSid || '—',
+      phase: done ? 'Fertig' : 'Stock-IDs prüfen',
+      count: total,
+      cachedAt: builtAt,
+      message: done ? 'Cache neu gebaut' : ('Fortschritt ' + end + '/' + total)
+    });
+  } catch (err) {
+    return { success: false, message: String(err.message || err), done: false, nextStep: step || 'start' };
+  }
+}
+
+function rebuildCacheChunk(offset, batchSize) {
+  if (!offset) {
+    var start = rebuildCacheStep('start', 0, batchSize);
+    if (!start.success) return start;
+    var r = rebuildCacheStep('refurb', 0, batchSize);
+    if (!r.success) return r;
+    var n = rebuildCacheStep('nb', 0, batchSize);
+    if (!n.success) return n;
+    var t = rebuildCacheStep('tl', 0, batchSize);
+    if (!t.success) return t;
+    return rebuildCacheStep('items', 0, batchSize || 8);
+  }
+  return rebuildCacheStep('items', offset, batchSize || 8);
 }
 
 function isCacheStale_(cache) {
@@ -739,6 +1127,8 @@ function filterItems_(items, filter) {
     if (filter === 'b2a1' && it.statusKey !== 'b2a1' && !it.mailFound) continue;
     if (filter === 'complete' && it.statusKey !== 'complete' && !it.carolDone) continue;
     if (filter === 'mech' && it.statusKey !== 'mech') continue;
+    if (filter === 'gestellt' && !(it.tlReifenGreen || isReifenGestelltText_(it.tlReifen))) continue;
+    if ((filter === 'imlager' || filter === 'ohnegestellt') && (it.tlReifenGreen || isReifenGestelltText_(it.tlReifen))) continue;
     if (filter === 'mail' && !it.mailFound) continue;
     if (filter === 'pruefen' && it.suggested !== 'PRÜFEN' && !it.mismatch) continue;
     if (filter === 'reifenfehlt' && it.reifenDa) continue;
@@ -769,6 +1159,7 @@ function getQueue(filter, includeDetails) {
         it.suggestedKey = 'none';
       }
       it.mismatch = !!(it.sheetStatus && it.suggested === 'B2A1' && it.sheetStatus !== 'B2A1');
+      applyTlGestelltToItem_(it, cache.details && cache.details[it.stockId]);
       items.push(it);
     }
     for (var n = 0; n < live.length; n++) {
@@ -821,6 +1212,7 @@ function getQueue(filter, includeDetails) {
           det.evalx.suggested = '';
         }
         det.cachedAt = cache.builtAt || '';
+        normalizeTageslisteDetail_(det);
         details[dkeys[di]] = det;
       }
       out.details = details;
@@ -831,6 +1223,19 @@ function getQueue(filter, includeDetails) {
   }
 }
 
+function normalizeTageslisteDetail_(det) {
+  if (!det || !det.tagesliste) return det;
+  var ents = det.tagesliste.entries || [];
+  for (var ei = 0; ei < ents.length; ei++) normalizeTlEntryGestellt_(ents[ei]);
+  var tlFix = resolveTlGestellt_(ents);
+  det.tagesliste.latest = tlFix.latest || det.tagesliste.latest;
+  det.tagesliste.gestelltEntry = tlFix.gestelltEntry;
+  det.tagesliste.anyGestellt = tlFix.gestellt;
+  det.tagesliste.gestelltEarlier = tlFix.fromEarlier;
+  if (tlFix.url) det.tagesliste.url = tlFix.url;
+  return det;
+}
+
 function getStockDetail(stockId) {
   try {
     stockId = normalizeStockId_(stockId);
@@ -839,7 +1244,7 @@ function getStockDetail(stockId) {
     if (cache && cache.details && cache.details[stockId]) {
       var d = cache.details[stockId];
       d.cachedAt = cache.builtAt || '';
-      return d;
+      return normalizeTageslisteDetail_(d);
     }
     return checkStockLive(stockId);
   } catch (err) {
@@ -1061,15 +1466,5 @@ function addStockIds(ids) {
 }
 
 function forceRebuildCache() {
-  try {
-    var res = rebuildReifenCache();
-    return {
-      success: true,
-      message: 'Cache neu gebaut',
-      count: (res && res.items) ? res.items.length : 0,
-      cachedAt: (res && res.builtAt) || ''
-    };
-  } catch (err) {
-    return { success: false, message: String(err.message || err) };
-  }
+  return rebuildCacheChunk(0, 5000);
 }

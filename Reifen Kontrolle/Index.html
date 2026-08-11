@@ -190,6 +190,11 @@
     .item.st-mech { background: rgba(74, 134, 232, 0.18); border-color: rgba(74, 134, 232, 0.45); }
     .item.st-pruefen { background: rgba(255, 255, 0, 0.14); border-color: rgba(255, 255, 0, 0.45); }
     .item.st-other { background: rgba(255, 153, 0, 0.14); border-color: rgba(255, 153, 0, 0.4); }
+    .item.tl-gestellt {
+      opacity: 0.78;
+      background: linear-gradient(90deg, rgba(52, 168, 83, 0.2), rgba(255,255,255,0.03));
+      border-color: rgba(52, 168, 83, 0.55);
+    }
     .item-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; align-items: center; }
     .sid { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; }
     .item-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 100%; }
@@ -208,6 +213,10 @@
     .status-pill.other { background: #ff9900; border-color: #ff9900; color: #1a1a1a; }
     .status-pill.none { background: rgba(255,255,255,0.12); border-color: var(--border-strong); color: var(--foreground-muted); }
     .status-pill.ghosted { opacity: 0.75; }
+    .status-pill.gestellt {
+      background: #34A853; border-color: #34A853; color: #fff;
+      box-shadow: 0 0 0 1px rgba(52, 168, 83, 0.35);
+    }
 
     .sub {
       margin-top: 3px; font-size: 0.82rem; color: var(--foreground-muted); font-weight: 600;
@@ -670,6 +679,8 @@
           <button class="chip" data-f="b2a1" type="button">B2A1</button>
           <button class="chip" data-f="complete" type="button">COMPLETE</button>
           <button class="chip" data-f="mech" type="button">MECH</button>
+          <button class="chip" data-f="gestellt" type="button">Gestellt</button>
+          <button class="chip" data-f="imlager" type="button" title="Gestellt ausblenden — nur noch im Lager">Ohne Gestellt</button>
           <button class="chip" data-f="mail" type="button">Return-Mail</button>
           <button class="chip" data-f="reifenfehlt" type="button">Reifen fehlt</button>
         </div>
@@ -885,6 +896,7 @@
         clearInterval(hideLoad._anim);
         hideLoad._anim = null;
       }
+      if (typeof stopRebuildTicker === 'function') stopRebuildTicker();
     }
 
     function showDeleteProgress(ids) {
@@ -958,8 +970,12 @@
 
     function visibleItems() {
       var q = state.query.trim().toUpperCase();
+      var f = String(state.filter || 'alle').toLowerCase();
       return state.items.filter(function(it) {
-        return !q || it.stockId.indexOf(q) !== -1;
+        if (q && it.stockId.indexOf(q) === -1) return false;
+        if (f === 'gestellt' && !isTlGestellt(it)) return false;
+        if ((f === 'imlager' || f === 'ohnegestellt') && isTlGestellt(it)) return false;
+        return true;
       });
     }
 
@@ -987,6 +1003,37 @@
       return 'other';
     }
 
+    function isTlGestelltText(reifen) {
+      var v = String(reifen || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!v) return false;
+      if (v === '2' || v === '4') return true;
+      if (v === '2 gestellt' || v === '4 gestellt') return true;
+      if (/^(2|4)\s*gestellt$/.test(v)) return true;
+      if (/\bgestellt\b/.test(v) && v.indexOf('nicht') === -1) return true;
+      return false;
+    }
+
+    function findTlGestelltEntry(entries) {
+      var list = entries || [];
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (!e) continue;
+        if (e.reifenGreen || isTlGestelltText(e.reifen)) return e;
+      }
+      return null;
+    }
+
+    function isTlGestellt(itOrReifen, greenFlag) {
+      if (itOrReifen && typeof itOrReifen === 'object') {
+        if (itOrReifen.tlReifenGreen || itOrReifen.reifenGreen || itOrReifen.anyGestellt) return true;
+        if (itOrReifen.entries && findTlGestelltEntry(itOrReifen.entries)) return true;
+        if (itOrReifen.gestelltEntry && isTlGestellt(itOrReifen.gestelltEntry)) return true;
+        return isTlGestelltText(itOrReifen.tlReifen || itOrReifen.reifen);
+      }
+      if (greenFlag) return true;
+      return isTlGestelltText(itOrReifen);
+    }
+
     function renderList() {
       var box = $('list');
       var items = visibleItems();
@@ -1000,7 +1047,9 @@
       var html = '';
       for (var i = 0; i < items.length; i++) {
         var it = items[i];
+        var gestellt = isTlGestellt(it);
         var cls = 'item st-' + pillClass(it.statusKey);
+        if (gestellt) cls += ' tl-gestellt';
         if (state.selected === it.stockId) cls += ' active';
         var picked = !!state.picked[it.stockId];
         var hints = [];
@@ -1011,8 +1060,9 @@
         if (it.nbReifenCount) hints.push('<span class="hint green">' + it.nbReifenCount + '× Reifen-NB</span>');
         if (it.tlFound) {
           if (it.tlReifen) {
-            hints.push('<span class="hint ' + (it.tlReifenGreen ? 'green' : 'yellow') + '">TL ' +
-              (it.tlReifenGreen ? 'gestellt' : 'nicht gestellt') + ' · ' + esc(it.tlReifen) + '</span>');
+            if (!gestellt) {
+              hints.push('<span class="hint yellow">TL nicht gestellt · ' + esc(it.tlReifen) + ' · noch im Lager</span>');
+            }
           } else {
             hints.push('<span class="hint yellow">TL ohne Reifen</span>');
           }
@@ -1023,6 +1073,12 @@
         }
         if (it.uncached) hints.push('<span class="hint yellow">Noch nicht geprüft</span>');
         var pills = '';
+        if (gestellt) {
+          pills += '<span class="status-pill gestellt" title="Auf Tagesliste gestellt — bei Mechanik, nicht mehr im Lager' +
+            (it.tlGestelltEarlier ? ' (früherer Eintrag)' : '') + '">' +
+            'Gestellt · Mechanik' + (it.tlReifen ? ' · ' + esc(it.tlReifen) : '') +
+            (it.tlGestelltEarlier ? ' · früher' : '') + '</span>';
+        }
         if (it.sheetStatus) pills += '<span class="status-pill ' + pillClass(it.statusKey) + '">' + esc(it.sheetStatus) + '</span>';
         var showSuggest = it.suggested && it.suggested !== it.sheetStatus &&
           (!it.sheetStatus || (it.suggested === 'B2A1' && it.sheetStatus !== 'B2A1'));
@@ -1075,10 +1131,40 @@
           if (!silent) toast((res && res.message) || 'Laden fehlgeschlagen', true);
           return;
         }
-        state.items = res.items || [];
         state.cachedAt = res.cachedAt || '';
         state.cachedAtMs = res.cachedAtMs || 0;
-        if (res.details) state.details = res.details;
+        if (res.details) {
+          Object.keys(res.details).forEach(function(sid) {
+            var det = res.details[sid];
+            if (!det || !det.tagesliste) return;
+            var gEntry = findTlGestelltEntry(det.tagesliste.entries || []);
+            if (gEntry) {
+              gEntry.reifenGreen = true;
+              det.tagesliste.gestelltEntry = gEntry;
+              det.tagesliste.anyGestellt = true;
+              var latest = det.tagesliste.latest || {};
+              det.tagesliste.gestelltEarlier = !!(latest.row && gEntry.row && latest.row !== gEntry.row);
+            } else if (det.tagesliste.latest && isTlGestellt(det.tagesliste.latest)) {
+              det.tagesliste.latest.reifenGreen = true;
+              det.tagesliste.anyGestellt = true;
+              det.tagesliste.gestelltEntry = det.tagesliste.latest;
+            }
+          });
+          state.details = res.details;
+        }
+        state.items = (res.items || []).map(function(it) {
+          var det = state.details && state.details[it.stockId];
+          var gEntry = det && det.tagesliste ? findTlGestelltEntry(det.tagesliste.entries || []) : null;
+          if (gEntry || isTlGestellt(it) || (det && det.tagesliste && det.tagesliste.anyGestellt)) {
+            it.tlReifenGreen = true;
+            if (gEntry) {
+              it.tlReifen = gEntry.reifen || it.tlReifen || '';
+              it.tlDatum = gEntry.datum || it.tlDatum || '';
+              it.tlGestelltEarlier = !!(det.tagesliste && det.tagesliste.gestelltEarlier);
+            }
+          }
+          return it;
+        });
         var alive = {};
         for (var a = 0; a < state.items.length; a++) alive[state.items[a].stockId] = true;
         Object.keys(state.picked).forEach(function(sid) {
@@ -1137,7 +1223,27 @@
       shPill.textContent = d.sheetStatus || '—';
       shPill.className = 'big-pill ' + pillClass(keyOf(d.sheetStatus));
 
-      var reasons = ev.reasons || [];
+      var tlistEarly = d.tagesliste || { found: false, latest: null, entries: [] };
+      var gEarly = tlistEarly.gestelltEntry || findTlGestelltEntry(tlistEarly.entries || []) ||
+        (tlistEarly.latest && isTlGestellt(tlistEarly.latest) ? tlistEarly.latest : null);
+      if (gEarly) {
+        gEarly.reifenGreen = true;
+        tlistEarly.anyGestellt = true;
+        tlistEarly.gestelltEntry = gEarly;
+      }
+      var reasons = (ev.reasons || []).map(function(r) {
+        var s = String(r || '');
+        if (gEarly && /Tagesliste/i.test(s) && /nicht gestellt|nicht grün|kein Reifen-Eintrag/i.test(s)) {
+          var lt = tlistEarly.latest || gEarly;
+          var when = (lt.datum ? ' am ' + lt.datum : '') + (lt.schicht ? ' (' + lt.schicht + ')' : '');
+          var earlier = !!(lt.row && gEarly.row && lt.row !== gEarly.row);
+          var gWhen = (gEarly.datum ? ' am ' + gEarly.datum : '') + (gEarly.schicht ? ' (' + gEarly.schicht + ')' : '');
+          return 'War auf Tagesliste' + when +
+            ' — Reifen gestellt · bei Mechanik (nicht mehr im Lager) · Wert: ' + (gEarly.reifen || '') +
+            (earlier ? ' · gestellt in früherem Eintrag' + gWhen : '');
+        }
+        return s;
+      });
       $('reasonList').innerHTML = reasons.length
         ? reasons.map(function(r) { return '<li>' + esc(r) + '</li>'; }).join('')
         : '<li>Keine Auffälligkeiten gefunden</li>';
@@ -1198,19 +1304,22 @@
       var tlist = d.tagesliste || { found: false, count: 0, entries: [], latest: null };
       if (tlist.found) {
         var lt = tlist.latest || {};
+        var gEntry = tlist.gestelltEntry || findTlGestelltEntry(tlist.entries || []) || (isTlGestellt(lt) ? lt : null);
         var when = [lt.datum, lt.schicht].filter(function(x) { return x; }).join(' · ');
         var extra = tlist.count > 1 ? ' · ' + tlist.count + '× insgesamt' : '';
         var tlLink = tlist.url ? ' · <a href="' + esc(tlist.url) + '" target="_blank" rel="noopener">In Tagesliste öffnen</a>' : '';
-        if (lt.reifen) {
-          if (lt.reifenGreen) {
-            checks += checkRow('ok', 'Tagesliste',
-              'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
-              ' · Reifen <b>gestellt</b> (grün markiert) · Wert: <b>' + esc(lt.reifen) + '</b>' + extra + tlLink);
-          } else {
-            checks += checkRow('warn', 'Tagesliste',
-              'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
-              ' · Reifen <b>nicht gestellt</b> (Zelle nicht grün) · Wert: <b>' + esc(lt.reifen) + '</b>' + extra + tlLink);
-          }
+        if (gEntry) {
+          var gWhen = [gEntry.datum, gEntry.schicht].filter(function(x) { return x; }).join(' · ');
+          var earlier = !!(lt.row && gEntry.row && lt.row !== gEntry.row) || !!tlist.gestelltEarlier;
+          checks += checkRow('ok', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
+            ' · Reifen <b>gestellt</b> · <b>bei Mechanik</b> (nicht mehr im Lager) · Wert: <b>' + esc(gEntry.reifen || '') + '</b>' +
+            (earlier ? ' · gestellt in früherem Eintrag' + (gWhen ? ' (<b>' + esc(gWhen) + '</b>)' : '') : '') +
+            extra + tlLink);
+        } else if (lt.reifen) {
+          checks += checkRow('warn', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
+            ' · Reifen <b>nicht gestellt</b> · <b>noch im Lager</b> · Wert: <b>' + esc(lt.reifen) + '</b>' + extra + tlLink);
         } else {
           checks += checkRow('warn', 'Tagesliste',
             'War auf Tagesliste' + (when ? ' — <b>' + esc(when) + '</b>' : '') +
@@ -1251,9 +1360,15 @@
         ft.className = 'fv muted';
       }
       var ftr = $('fTlReifen');
-      if (tlist.found && tlist.latest && tlist.latest.reifen) {
-        ftr.textContent = (tlist.latest.reifenGreen ? 'gestellt · ' : 'nicht gestellt · ') + tlist.latest.reifen;
-        ftr.className = 'fv' + (tlist.latest.reifenGreen ? ' green' : ' yellow');
+      var gFact = tlist.gestelltEntry || findTlGestelltEntry(tlist.entries || []) ||
+        (tlist.latest && isTlGestellt(tlist.latest) ? tlist.latest : null);
+      if (gFact) {
+        ftr.textContent = 'gestellt · bei Mechanik · ' + (gFact.reifen || '') +
+          (tlist.gestelltEarlier || (tlist.latest && gFact.row && tlist.latest.row !== gFact.row) ? ' · früherer Eintrag' : '');
+        ftr.className = 'fv green';
+      } else if (tlist.found && tlist.latest && tlist.latest.reifen) {
+        ftr.textContent = 'nicht gestellt · im Lager · ' + tlist.latest.reifen;
+        ftr.className = 'fv yellow';
       } else if (tlist.found) {
         ftr.textContent = 'kein Eintrag';
         ftr.className = 'fv yellow';
@@ -1388,21 +1503,90 @@
       loadQueue();
     });
 
+    function stopRebuildTicker() {
+      if (state._rebuildTick) {
+        clearInterval(state._rebuildTick);
+        state._rebuildTick = null;
+      }
+    }
+
+    function startRebuildTicker(startedAt) {
+      stopRebuildTicker();
+      state._rebuildTick = setInterval(function() {
+        if (!$('loadOverlay').classList.contains('show')) {
+          stopRebuildTicker();
+          return;
+        }
+        var sec = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+        var el = $('loadCount');
+        var txt = el.textContent || '';
+        if (/·\s*\d+s/.test(txt)) el.textContent = txt.replace(/·\s*\d+s/, '· ' + sec + 's');
+        else el.textContent = txt + (txt ? ' · ' : '') + sec + 's';
+      }, 400);
+    }
+
+    function showRebuildProgress(res, startedAt) {
+      $('loadCard').classList.add('wide');
+      $('loadSid').style.display = '';
+      $('loadCount').style.display = '';
+      $('loadBar').style.display = '';
+      $('loadLog').style.display = 'none';
+      $('loadOverlay').classList.add('show');
+      var total = (res && res.total) || 0;
+      var offset = (res && res.offset) || 0;
+      var percent = (res && res.percent != null) ? res.percent : (total ? Math.round((offset / total) * 100) : 0);
+      var sid = (res && res.currentSid) || '—';
+      var phase = (res && res.phase) || '';
+      var sec = Math.max(0, Math.round((Date.now() - (startedAt || Date.now())) / 1000));
+      $('loadLabel').textContent = (phase ? phase + ' · ' : 'Cache wird neu gebaut… ') + percent + '%';
+      $('loadSid').textContent = sid;
+      var checked = (res && res.nextStep === 'items') || (res && res.phase === 'Stock-IDs prüfen') || (res && res.done)
+        ? (offset + ' / ' + total)
+        : ('0 / ' + total + ' bereit');
+      if (res && res.nextStep && res.nextStep !== 'items' && !res.done) {
+        checked = phase || 'Vorbereitung';
+      }
+      $('loadCount').textContent = checked + ' · ' + percent + '% · ' + sec + 's';
+      $('loadBarFill').style.width = percent + '%';
+    }
+
+    function runRebuildStep(step, offset, startedAt) {
+      run(function(res) {
+        if (!res || !res.success) {
+          state.busy = false;
+          stopRebuildTicker();
+          hideLoad();
+          toast((res && res.message) || 'Rebuild fehlgeschlagen', true);
+          return;
+        }
+        showRebuildProgress(res, startedAt);
+        if (!res.done) {
+          runRebuildStep(res.nextStep || 'items', res.offset || 0, startedAt);
+          return;
+        }
+        state.busy = false;
+        stopRebuildTicker();
+        hideLoad();
+        toast('Neu geprüft: ' + res.count + ' Stock-IDs');
+        loadQueue();
+        if (state.selected) selectStock(state.selected, false);
+      }).rebuildCacheStep(step, offset, 8);
+    }
+
     $('btnReload').addEventListener('click', function() {
       if (state.busy) return;
       state.busy = true;
-      showLoad('Alle Stock-IDs werden neu geprüft…');
-      run(function(res) {
-        state.busy = false;
-        hideLoad();
-        if (res && res.success) {
-          toast('Neu geprüft: ' + res.count + ' Stock-IDs');
-          loadQueue();
-          if (state.selected) selectStock(state.selected, false);
-        } else {
-          toast((res && res.message) || 'Rebuild fehlgeschlagen', true);
-        }
-      }).forceRebuildCache();
+      var startedAt = Date.now();
+      showRebuildProgress({
+        total: 0,
+        offset: 0,
+        percent: 1,
+        currentSid: 'Starte Live-Check…',
+        phase: 'Vorbereitung',
+        nextStep: 'start'
+      }, startedAt);
+      startRebuildTicker(startedAt);
+      runRebuildStep('start', 0, startedAt);
     });
 
     $('btnRecheck').addEventListener('click', function() {
@@ -1675,8 +1859,12 @@
         rows.push({ cls: 'warn', k: 'Refurb', v: 'Nicht in Refurbishment List' });
       }
       if (tl.found) {
-        if (lt.reifenGreen) rows.push({ cls: 'ok', k: 'Tagesliste', v: 'gestellt · ' + (lt.reifen || '') + (lt.datum ? ' · ' + lt.datum : '') });
-        else if (lt.reifen) rows.push({ cls: 'warn', k: 'Tagesliste', v: 'nicht gestellt · ' + lt.reifen + (lt.datum ? ' · ' + lt.datum : '') });
+        var gInv = tl.gestelltEntry || findTlGestelltEntry(tl.entries || []) || (isTlGestellt(lt) ? lt : null);
+        if (gInv) {
+          var earlierInv = !!(lt.row && gInv.row && lt.row !== gInv.row);
+          rows.push({ cls: 'ok', k: 'Tagesliste', v: 'gestellt · bei Mechanik · ' + (gInv.reifen || '') +
+            (gInv.datum ? ' · ' + gInv.datum : '') + (earlierInv ? ' · früherer Eintrag' : '') });
+        } else if (lt.reifen) rows.push({ cls: 'warn', k: 'Tagesliste', v: 'nicht gestellt · im Lager · ' + lt.reifen + (lt.datum ? ' · ' + lt.datum : '') });
         else rows.push({ cls: 'warn', k: 'Tagesliste', v: 'Eintrag ohne Reifen-Wert' });
       } else {
         rows.push({ cls: 'info', k: 'Tagesliste', v: 'Kein Eintrag' });
