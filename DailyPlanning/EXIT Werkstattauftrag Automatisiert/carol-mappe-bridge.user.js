@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Werkstattmappe Bridge
 // @namespace    arasaka
-// @version      0.4
+// @version      0.5
 // @description  Sendet Modell + VIN aus Carol automatisch an das EXIT Werkstattmappe HUD
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -23,6 +23,8 @@
     var lastCapture = null;
     var lastAutoSent = '';
     var autofillBusy = false;
+    var toastEl = null;
+    var toastHideTimer = null;
 
     function injectPageHook() {
         var hookSrc = '(function(){'
@@ -159,11 +161,50 @@
         return data;
     }
 
+    function ensureToast() {
+        if (toastEl && document.body.contains(toastEl)) return toastEl;
+        toastEl = document.createElement('div');
+        toastEl.id = 'wm-bridge-toast';
+        toastEl.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:999999;min-width:220px;max-width:340px;'
+            + 'padding:12px 14px;border-radius:10px;font:13px/1.4 "Segoe UI",sans-serif;'
+            + 'background:#161b22;color:#e6edf3;border:1px solid #30363d;box-shadow:0 8px 24px rgba(0,0,0,.35);'
+            + 'display:none;';
+        toastEl.innerHTML = ''
+            + '<div style="font-weight:700;color:#ffa94d;margin-bottom:4px;">Werkstattmappe Bridge</div>'
+            + '<div id="wm-bridge-toast-msg" style="color:#c9d1d9;"></div>';
+        document.body.appendChild(toastEl);
+        return toastEl;
+    }
+
+    function setToast(msg, tone, sticky) {
+        if (!document.body) return;
+        ensureToast();
+        var msgEl = toastEl.querySelector('#wm-bridge-toast-msg');
+        var color = '#c9d1d9';
+        var border = '#30363d';
+        if (tone === 'ok') { color = '#56d364'; border = '#238636'; }
+        else if (tone === 'err') { color = '#f85149'; border = '#da3633'; }
+        else if (tone === 'load') { color = '#58a6ff'; border = '#1f6feb'; }
+        toastEl.style.borderColor = border;
+        toastEl.style.display = 'block';
+        if (msgEl) {
+            msgEl.style.color = color;
+            msgEl.textContent = msg || '';
+        }
+        if (toastHideTimer) clearTimeout(toastHideTimer);
+        if (!sticky) {
+            toastHideTimer = setTimeout(function () {
+                if (toastEl) toastEl.style.display = 'none';
+            }, tone === 'ok' ? 6000 : 8000);
+        }
+    }
+
     function sendToHud(data, onDone) {
         if (!data.stockId || !data.vin || !data.modell) {
             onDone(false, 'unvollständig');
             return;
         }
+        setToast('Sende ' + data.stockId + ' an HUD…', 'load', true);
         var payload = JSON.stringify({
             secret: BRIDGE_SECRET,
             entries: [{ stockId: data.stockId, modell: data.modell, vin: data.vin }]
@@ -176,11 +217,13 @@
                 headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 onload: function (res) {
                     var ok = false;
+                    var detail = 'HTTP ' + res.status;
                     try {
                         var parsed = JSON.parse(res.responseText);
                         ok = !!parsed.success;
+                        if (parsed.message) detail = parsed.message;
                     } catch (e) {}
-                    onDone(ok, ok ? data.stockId : ('HTTP ' + res.status));
+                    onDone(ok, ok ? data.stockId : detail);
                 },
                 onerror: function () { onDone(false, 'netzwerk'); }
             });
@@ -268,12 +311,14 @@
         if (sid) markAutofillSession(sid);
 
         if (isDetailPage()) {
+            setToast('Detailseite — lese ' + (sid || 'Fahrzeug') + '…', 'load', true);
             autoTick(true);
             return;
         }
 
         if (!/refurbishment/i.test(location.href)) return;
         autofillBusy = true;
+        setToast('Suche ' + (sid || 'Fahrzeug') + ' in Carol…', 'load', true);
 
         var tries = 0;
         var timer = setInterval(function () {
@@ -287,6 +332,7 @@
             var link = findStockResultLink(sid);
             if (link) {
                 clearInterval(timer);
+                setToast('Treffer — öffne ' + sid + '…', 'load', true);
                 clickEl(link);
                 setTimeout(function () { autofillBusy = false; }, 1500);
                 return;
@@ -294,6 +340,7 @@
             if (tries >= 40) {
                 clearInterval(timer);
                 autofillBusy = false;
+                setToast('Kein Treffer für ' + sid + ' — bitte manuell öffnen', 'err');
             }
         }, 400);
     }
@@ -302,14 +349,24 @@
         if (!force && !wantsAutofill() && !isDetailPage()) return;
         if (!isDetailPage()) return;
         var data = collectData();
-        if (!data.stockId || !data.vin || !data.modell) return;
+        if (!data.stockId || !data.vin || !data.modell) {
+            if (wantsAutofill() || force) {
+                setToast('Warte auf Modell/VIN…', 'load', true);
+            }
+            return;
+        }
         var want = targetAutofillStock();
         if (want && normalizeSid(data.stockId) !== want) return;
         if (data.stockId === lastAutoSent) return;
         lastAutoSent = data.stockId;
-        sendToHud(data, function (ok) {
-            if (ok) clearAutofillSession();
-            else lastAutoSent = '';
+        sendToHud(data, function (ok, msg) {
+            if (ok) {
+                setToast('Gesendet an HUD: ' + data.stockId, 'ok');
+                clearAutofillSession();
+            } else {
+                lastAutoSent = '';
+                setToast('Senden fehlgeschlagen' + (msg ? ' (' + msg + ')' : ''), 'err');
+            }
         });
     }
 
@@ -323,10 +380,15 @@
 
     function init() {
         if (!document.body) { setTimeout(init, 300); return; }
+        ensureToast();
         if (wantsAutofill()) {
             var sid0 = targetAutofillStock();
             if (sid0) markAutofillSession(sid0);
+            setToast('Autofill gestartet' + (sid0 ? (': ' + sid0) : '') + '…', 'load', true);
             setTimeout(runAutofillNavigation, 600);
+        } else if (isDetailPage()) {
+            setToast('Bridge aktiv — sende automatisch an HUD…', 'load', true);
+            setTimeout(function () { autoTick(true); }, 500);
         }
         setInterval(function () { autoTick(true); }, 2000);
         setInterval(function () {
