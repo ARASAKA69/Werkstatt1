@@ -39,6 +39,78 @@ function hudIsExcludedGrund_(grund) {
 }
 
 var HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
+var HUD_INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
+var HUD_CHAT_ALLOWED_EMAILS = {
+  "francesco.berger@auto1.com": 1,
+  "joerg.eichenseher@auto1.com": 1
+};
+
+function hudGetViewerEmail_() {
+  try {
+    var a = String(Session.getActiveUser().getEmail() || "").trim().toLowerCase();
+    if (a) return a;
+  } catch (e1) {}
+  try {
+    var e = String(Session.getEffectiveUser().getEmail() || "").trim().toLowerCase();
+    if (e) return e;
+  } catch (e2) {}
+  return "";
+}
+
+function hudIsChatDeepLinkAllowed_(email) {
+  email = String(email || "").trim().toLowerCase();
+  return !!(email && HUD_CHAT_ALLOWED_EMAILS[email]);
+}
+
+function hudExitChatThreadKey_(stockId) {
+  return "exit-" + String(stockId || "").replace(/[^a-zA-Z0-9_-]/g, "").toUpperCase();
+}
+
+function hudInfoLagerWebhookPostUrl_() {
+  var base = String(HUD_INFO_LAGER_EXIT_WEBHOOK_URL || "");
+  if (!base) return "";
+  if (base.indexOf("messageReplyOption=") !== -1) return base;
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD";
+}
+
+function markExitChatErledigt(stockId, grund, messageName) {
+  try {
+    var email = hudGetViewerEmail_();
+    if (!hudIsChatDeepLinkAllowed_(email)) {
+      return { success: false, message: "Keine Berechtigung" };
+    }
+    stockId = hudNormalizeStockId_(stockId);
+    if (!stockId) return { success: false, message: "Stock-ID fehlt" };
+    if (!HUD_INFO_LAGER_EXIT_WEBHOOK_URL) return { success: false, message: "Webhook fehlt" };
+
+    var who = email || "unbekannt";
+    var text = "👍 *" + stockId + "* — Werkstattmappe gestartet\nvon " + who;
+    var payload = {
+      text: text,
+      thread: { threadKey: hudExitChatThreadKey_(stockId) }
+    };
+    var res = UrlFetchApp.fetch(hudInfoLagerWebhookPostUrl_(), {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true
+    });
+    var code = res.getResponseCode();
+    if (code >= 200 && code < 300) return { success: true, mode: "thread" };
+
+    var res2 = UrlFetchApp.fetch(HUD_INFO_LAGER_EXIT_WEBHOOK_URL, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ text: text }),
+      muteHttpExceptions: true
+    });
+    var code2 = res2.getResponseCode();
+    if (code2 >= 200 && code2 < 300) return { success: true, mode: "plain" };
+    return { success: false, message: "Chat-Post HTTP " + code + "/" + code2 };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
 
 function authorizeScopes() {
   var out = [];
@@ -81,7 +153,21 @@ function openExitHud() {
 }
 
 function doGet(e) {
+  e = e || {};
+  var p = (e.parameter || {});
+  var deepStockId = hudNormalizeStockId_(p.stockId || "");
+  var deepGrund = String(p.grund || p.parts || "").trim();
+  var deepMsg = String(p.msg || "").trim();
+  var viewerEmail = hudGetViewerEmail_();
+  var deepDeny = false;
+  if (deepStockId && !hudIsChatDeepLinkAllowed_(viewerEmail)) deepDeny = true;
+
   var t = HtmlService.createTemplateFromFile("HUD_App");
+  t.deepStockId = deepStockId;
+  t.deepGrund = deepGrund;
+  t.deepMsg = deepMsg;
+  t.deepDeny = deepDeny;
+  t.viewerEmail = viewerEmail;
   return t.evaluate()
     .setTitle("EXIT Werkstattmappe HUD")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)

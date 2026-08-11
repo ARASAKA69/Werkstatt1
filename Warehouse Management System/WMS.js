@@ -148,6 +148,7 @@ const PACKZETTEL_TAB = "Packzettel";
 const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM";
 const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
 const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
+const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -3004,20 +3005,79 @@ function findInputExitRowByKeys(exitSheet, stockId, entryId) {
   return { row: -1, message: "Input Exit: Zeile nicht gefunden" };
 }
 
+function exitChatThreadKey_(stockId) {
+  return "exit-" + String(stockId || "").replace(/[^a-zA-Z0-9_-]/g, "").toUpperCase();
+}
+
+function infoLagerWebhookPostUrl_() {
+  var base = String(INFO_LAGER_EXIT_WEBHOOK_URL || "");
+  if (!base) return "";
+  if (base.indexOf("messageReplyOption=") !== -1) return base;
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD";
+}
+
+function buildInfoLagerExitCardPayload_(stockId, beschreibung, hudUrl) {
+  var besch = String(beschreibung || "").trim();
+  var text = stockId + "\n-> " + besch + "\nEXIT";
+  var bodyHtml = "-> " + besch.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "<br>EXIT";
+  return {
+    text: text,
+    thread: { threadKey: exitChatThreadKey_(stockId) },
+    cardsV2: [{
+      cardId: "exit-" + String(stockId || "").replace(/[^a-zA-Z0-9_-]/g, ""),
+      card: {
+        header: {
+          title: String(stockId || ""),
+          subtitle: "EXIT"
+        },
+        sections: [{
+          widgets: [
+            { textParagraph: { text: bodyHtml } },
+            {
+              buttonList: {
+                buttons: [{
+                  text: "Werkstattmappe öffnen",
+                  onClick: {
+                    openLink: { url: String(hudUrl || EXIT_HUD_WEB_APP_URL) }
+                  }
+                }]
+              }
+            }
+          ]
+        }]
+      }
+    }]
+  };
+}
+
 function sendInfoLagerExitChat_(stockId, beschreibung) {
   try {
     stockId = String(stockId || "").trim();
     if (!stockId) return "Info Lager: keine Stock-ID";
     if (!INFO_LAGER_EXIT_WEBHOOK_URL) return "Info Lager: Webhook fehlt";
-    var text = stockId + "\n-> " + String(beschreibung || "").trim() + "\nEXIT";
-    var res = UrlFetchApp.fetch(INFO_LAGER_EXIT_WEBHOOK_URL, {
+    beschreibung = String(beschreibung || "").trim();
+    var hudUrl = EXIT_HUD_WEB_APP_URL
+      + "?stockId=" + encodeURIComponent(stockId)
+      + "&grund=" + encodeURIComponent(beschreibung);
+    var payload = buildInfoLagerExitCardPayload_(stockId, beschreibung, hudUrl);
+    var res = UrlFetchApp.fetch(infoLagerWebhookPostUrl_(), {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({ text: text }),
+      payload: JSON.stringify(payload),
       muteHttpExceptions: true
     });
     var code = res.getResponseCode();
     if (code >= 200 && code < 300) return "EXIT an Info Lager gesendet";
+
+    var resText = UrlFetchApp.fetch(INFO_LAGER_EXIT_WEBHOOK_URL, {
+      method: "post",
+      contentType: "application/json",
+      payload: JSON.stringify({ text: stockId + "\n-> " + beschreibung + "\nEXIT\n" + hudUrl }),
+      muteHttpExceptions: true
+    });
+    if (resText.getResponseCode() >= 200 && resText.getResponseCode() < 300) {
+      return "EXIT an Info Lager gesendet (Text-Fallback)";
+    }
     return "Info Lager Fehler (" + code + ")";
   } catch (err) {
     return "Info Lager Fehler: " + err.message;

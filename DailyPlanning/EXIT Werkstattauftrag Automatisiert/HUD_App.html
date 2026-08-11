@@ -343,11 +343,73 @@ input.err { border-color: var(--red); }
 .linkbtns { display: flex; gap: 8px; flex-wrap: wrap; }
 a.btn { text-decoration: none; display: inline-block; }
 .carol-hint { font-size: 11px; color: var(--green); margin-top: 4px; }
+.deny-box {
+  max-width: 520px;
+  margin: 80px auto;
+  padding: 28px 24px;
+  background: var(--bg2);
+  border: 1px solid var(--red);
+  border-radius: 12px;
+  text-align: center;
+}
+.deny-box h2 { color: var(--red); margin-bottom: 10px; font-size: 20px; }
+.deny-box p { color: var(--muted); font-size: 14px; line-height: 1.45; }
+.deep-load {
+  max-width: 560px;
+  margin: 72px auto;
+  padding: 32px 28px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  text-align: center;
+}
+.deep-load .deep-from {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.deep-load .deep-sid {
+  font-size: 34px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+}
+.deep-load .deep-grund {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 22px;
+  word-break: break-word;
+}
+.deep-load .deep-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--muted);
+}
 </style>
 </head>
 <body>
+<div id="denyView" class="hidden">
+  <div class="deny-box">
+    <h2>Keine Berechtigung</h2>
+    <p>Du hast keinen Zugriff auf die EXIT-Werkstattmappe über den Chat-Button.</p>
+    <p id="denyEmail" style="margin-top:12px;color:var(--text);"></p>
+  </div>
+</div>
+<div id="deepLoadView" class="hidden">
+  <div class="deep-load">
+    <div class="deep-from">Aus Info Lager Chat</div>
+    <div class="deep-sid" id="deepLoadSid">—</div>
+    <div class="deep-grund hidden" id="deepLoadGrund"></div>
+    <div class="deep-status"><span class="spin"></span><span id="deepLoadStatus">Lade Daten…</span></div>
+  </div>
+</div>
 <div class="topbar">
-  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-10&middot;29</span></h1>
+  <h1>EXIT <span>Werkstattmappe</span> HUD <span class="ver">build&nbsp;08-11&middot;3</span></h1>
   <span class="badge" id="countBadge">lädt…</span>
   <div class="searchwrap" id="searchWrap">
     <input type="text" id="searchInput" placeholder="Suche StockID, Grund, Bearbeiter…" autocomplete="off">
@@ -519,6 +581,13 @@ a.btn { text-decoration: none; display: inline-block; }
 
 <script>
 var BRIDGE_URL = "http://localhost:9150";
+var DEEP_LINK = {
+  stockId: <?!= JSON.stringify(deepStockId || "") ?>,
+  grund: <?!= JSON.stringify(deepGrund || "") ?>,
+  msg: <?!= JSON.stringify(deepMsg || "") ?>,
+  deny: <?!= deepDeny ? "true" : "false" ?>,
+  email: <?!= JSON.stringify(viewerEmail || "") ?>
+};
 var state = {
   entries: [],
   meta: null,
@@ -540,7 +609,9 @@ var state = {
   autoWork: {},
   autoD: {},
   autoFree: [],
-  autoNotes: []
+  autoNotes: [],
+  deepLinkGrund: "",
+  deepLinkHandled: false
 };
 var SYNC_INTERVAL_MS = 120000;
 
@@ -552,13 +623,44 @@ function esc(s) {
   });
 }
 
+function showDeepLinkLoading() {
+  if (!DEEP_LINK || !DEEP_LINK.stockId || DEEP_LINK.deny) return;
+  document.querySelector(".topbar").classList.add("hidden");
+  $("viewList").classList.add("hidden");
+  $("viewDetail").classList.add("hidden");
+  $("denyView").classList.add("hidden");
+  $("deepLoadView").classList.remove("hidden");
+  $("deepLoadSid").textContent = DEEP_LINK.stockId;
+  if (DEEP_LINK.grund) {
+    $("deepLoadGrund").textContent = DEEP_LINK.grund;
+    $("deepLoadGrund").classList.remove("hidden");
+  } else {
+    $("deepLoadGrund").classList.add("hidden");
+  }
+  $("deepLoadStatus").textContent = "Lade Daten von " + DEEP_LINK.stockId + "…";
+  $("countBadge").textContent = DEEP_LINK.stockId;
+}
+
+function hideDeepLinkLoading() {
+  $("deepLoadView").classList.add("hidden");
+  document.querySelector(".topbar").classList.remove("hidden");
+}
+
 function loadAll(force) {
-  $("countBadge").textContent = "lädt…";
-  $("listEmpty").classList.remove("hidden");
-  $("listEmpty").innerHTML = '<span class="spin"></span> Lade offene Werkstattmappen…';
-  $("cardsWrap").innerHTML = "";
+  var fromChat = !!(DEEP_LINK && DEEP_LINK.stockId && !DEEP_LINK.deny && !state.deepLinkHandled);
+  if (fromChat) {
+    showDeepLinkLoading();
+  } else {
+    $("countBadge").textContent = "lädt…";
+    $("listEmpty").classList.remove("hidden");
+    $("listEmpty").innerHTML = '<span class="spin"></span> Lade offene Werkstattmappen…';
+    $("cardsWrap").innerHTML = "";
+  }
   google.script.run.withSuccessHandler(function(res) {
     if (!res || !res.success) {
+      hideDeepLinkLoading();
+      $("viewList").classList.remove("hidden");
+      $("listEmpty").classList.remove("hidden");
       $("listEmpty").innerHTML = '<span class="msg err">Fehler: ' + esc(res && res.message || "Unbekannt") + "</span>";
       $("countBadge").textContent = "Fehler";
       return;
@@ -566,8 +668,17 @@ function loadAll(force) {
     state.entries = res.entries || [];
     state.sig = res.sig || "";
     if (res.petronasUrl) state.petronasUrl = res.petronasUrl;
-    renderList();
+    if (fromChat) {
+      $("deepLoadStatus").textContent = "Öffne " + DEEP_LINK.stockId + "…";
+      applyDeepLinkAfterLoad();
+    } else {
+      renderList();
+      applyDeepLinkAfterLoad();
+    }
   }).withFailureHandler(function(err) {
+    hideDeepLinkLoading();
+    $("viewList").classList.remove("hidden");
+    $("listEmpty").classList.remove("hidden");
     $("listEmpty").innerHTML = '<span class="msg err">Fehler: ' + esc(err.message || err) + "</span>";
     $("countBadge").textContent = "Fehler";
   }).getOpenMappen(!!force);
@@ -577,9 +688,83 @@ function loadAll(force) {
       if (res && res.success) {
         state.meta = res;
         computeOilRequiredRows();
+        if (state.current) renderChecklists();
       }
     }).getInputMeta();
   }
+}
+
+function showDeepLinkDenied() {
+  hideDeepLinkLoading();
+  document.querySelector(".topbar").classList.add("hidden");
+  $("viewList").classList.add("hidden");
+  $("viewDetail").classList.add("hidden");
+  $("denyView").classList.remove("hidden");
+  $("denyEmail").textContent = DEEP_LINK.email
+    ? ("Angemeldet als: " + DEEP_LINK.email)
+    : "Benutzer konnte nicht ermittelt werden.";
+}
+
+function markChatErledigtFromDeepLink() {
+  if (!DEEP_LINK.stockId || DEEP_LINK.deny) return;
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) setMsg("Chat: 👍 Mappe gestartet gemeldet", "ok");
+    else setMsg("Chat-Status nicht gemeldet" + (res && res.message ? " (" + res.message + ")" : ""), "err");
+  }).withFailureHandler(function(err) {
+    setMsg("Chat-Status Fehler: " + (err.message || err), "err");
+  }).markExitChatErledigt(DEEP_LINK.stockId, DEEP_LINK.grund || "", DEEP_LINK.msg || "");
+}
+
+function applyDeepLinkAfterLoad() {
+  if (state.deepLinkHandled) return;
+  if (!DEEP_LINK || !DEEP_LINK.stockId) return;
+  state.deepLinkHandled = true;
+  if (DEEP_LINK.deny) {
+    showDeepLinkDenied();
+    return;
+  }
+  var sid = String(DEEP_LINK.stockId || "").trim().toUpperCase();
+  var ent = null;
+  for (var i = 0; i < state.entries.length; i++) {
+    if (String(state.entries[i].stockId || "").trim().toUpperCase() === sid) {
+      ent = state.entries[i];
+      break;
+    }
+  }
+  if (!ent) {
+    hideDeepLinkLoading();
+    $("viewList").classList.remove("hidden");
+    $("searchInput").value = DEEP_LINK.stockId;
+    state.search = String(DEEP_LINK.stockId || "").toLowerCase();
+    renderList();
+    $("listEmpty").classList.remove("hidden");
+    $("listEmpty").innerHTML = '<span class="msg err">Keine offene Werkstattmappe für '
+      + esc(DEEP_LINK.stockId) + " — ggf. schon erledigt oder noch nicht in Input Exit.</span>";
+    markChatErledigtFromDeepLink();
+    return;
+  }
+  if (DEEP_LINK.grund) {
+    ent = {
+      stockId: ent.stockId,
+      rows: [{
+        grund: DEEP_LINK.grund,
+        art: "EXIT Chat",
+        bearbeiter: "",
+        status: "",
+        entryId: "",
+        datum: "",
+        sheetRow: 0,
+        _chat: true
+      }].concat(ent.rows || []),
+      carolUrl: ent.carolUrl,
+      carolModell: ent.carolModell,
+      carolVin: ent.carolVin
+    };
+  }
+  state.deepLinkGrund = DEEP_LINK.grund || "";
+  hideDeepLinkLoading();
+  openDetail(ent);
+  markChatErledigtFromDeepLink();
 }
 
 function backgroundRefresh() {
@@ -686,11 +871,17 @@ function selectedOrderSegments() {
     if (state.orderSel[i] === false) return;
     var g = String(r.grund || "").trim();
     if (!g) return;
-    String(g).split(/\/\/|;|\n/).forEach(function(part) {
+    String(g).split(/\/\/|;|\n|\s*\/\s*/).forEach(function(part) {
       var p = part.trim();
       if (p) out.push(p);
     });
   });
+  if (state.deepLinkGrund) {
+    String(state.deepLinkGrund).split(/\/\/|;|\n|\s*\/\s*/).forEach(function(part) {
+      var p = part.trim();
+      if (p && out.indexOf(p) === -1) out.push(p);
+    });
+  }
   return out;
 }
 
@@ -1773,8 +1964,13 @@ $("bwAdd").addEventListener("click", function() {
   setMsg("");
 });
 
-loadAll(false);
-startSync();
+if (DEEP_LINK && DEEP_LINK.deny && DEEP_LINK.stockId) {
+  showDeepLinkDenied();
+} else {
+  if (DEEP_LINK && DEEP_LINK.stockId && !DEEP_LINK.deny) showDeepLinkLoading();
+  loadAll(false);
+  startSync();
+}
 </script>
 </body>
 </html>
