@@ -3038,7 +3038,7 @@ function buildInfoLagerExitCardPayload_(stockId, beschreibung, hudUrl) {
           widgets: [{
             buttonList: {
               buttons: [{
-                text: "Werkstattmappe öffnen",
+                text: "Werkstattmappe Erstellen",
                 onClick: {
                   openLink: { url: String(hudUrl || EXIT_HUD_WEB_APP_URL) }
                 }
