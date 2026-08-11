@@ -23,6 +23,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.2",
+    date: "11.08.2026",
+    notes:
+      "• Kleines Update für EXIT Nachbestellungen Info Lager Chat"
+  }, 
+  {
     version: "2.2.1",
     date: "07.08.2026",
     notes:
@@ -3018,8 +3024,7 @@ function infoLagerWebhookPostUrl_() {
 
 function buildInfoLagerExitCardPayload_(stockId, beschreibung, hudUrl) {
   var besch = String(beschreibung || "").trim();
-  var text = stockId + "\n-> " + besch + "\nEXIT";
-  var bodyHtml = "-> " + besch.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "<br>EXIT";
+  var text = stockId + (besch ? ("\n-> " + besch) : "") + "\nEXIT";
   return {
     text: text,
     thread: { threadKey: exitChatThreadKey_(stockId) },
@@ -3027,23 +3032,19 @@ function buildInfoLagerExitCardPayload_(stockId, beschreibung, hudUrl) {
       cardId: "exit-" + String(stockId || "").replace(/[^a-zA-Z0-9_-]/g, ""),
       card: {
         header: {
-          title: String(stockId || ""),
-          subtitle: "EXIT"
+          title: String(stockId || "")
         },
         sections: [{
-          widgets: [
-            { textParagraph: { text: bodyHtml } },
-            {
-              buttonList: {
-                buttons: [{
-                  text: "Werkstattmappe öffnen",
-                  onClick: {
-                    openLink: { url: String(hudUrl || EXIT_HUD_WEB_APP_URL) }
-                  }
-                }]
-              }
+          widgets: [{
+            buttonList: {
+              buttons: [{
+                text: "Werkstattmappe öffnen",
+                onClick: {
+                  openLink: { url: String(hudUrl || EXIT_HUD_WEB_APP_URL) }
+                }
+              }]
             }
-          ]
+          }]
         }]
       }
     }]
