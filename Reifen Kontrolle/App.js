@@ -197,7 +197,7 @@ function dedupeReifenSheet_() {
     var sheet = getReifenSheet_();
     var last = sheet.getLastRow();
     if (last < 3) return 0;
-    var data = sheet.getRange(2, 1, last - 1, 2).getDisplayValues();
+    var data = sheet.getRange(2, 1, last, 2).getDisplayValues();
     var first = {};
     var toDelete = [];
     for (var i = 0; i < data.length; i++) {
@@ -215,9 +215,26 @@ function dedupeReifenSheet_() {
       }
       toDelete.push(i + 2);
     }
-    for (var d = toDelete.length - 1; d >= 0; d--) {
-      sheet.deleteRow(toDelete[d]);
-      removed++;
+    if (!toDelete.length) return 0;
+    toDelete.sort(function(a, b) { return a - b; });
+    var ranges = [];
+    var runStart = toDelete[0];
+    var runEnd = toDelete[0];
+    for (var t = 1; t < toDelete.length; t++) {
+      if (toDelete[t] === runEnd + 1) {
+        runEnd = toDelete[t];
+      } else {
+        ranges.push([runStart, runEnd]);
+        runStart = toDelete[t];
+        runEnd = toDelete[t];
+      }
+    }
+    ranges.push([runStart, runEnd]);
+    for (var r = ranges.length - 1; r >= 0; r--) {
+      var from = ranges[r][0];
+      var to = ranges[r][1];
+      sheet.deleteRows(from, to - from + 1);
+      removed += (to - from + 1);
     }
     if (removed) SpreadsheetApp.flush();
   } catch (e) {}
@@ -229,7 +246,7 @@ function readReifenList_() {
   var last = sheet.getLastRow();
   var list = [];
   if (last < 2) return list;
-  var data = sheet.getRange(2, 1, last - 1, 2).getDisplayValues();
+  var data = sheet.getRange(2, 1, last, 2).getDisplayValues();
   var seen = {};
   for (var i = 0; i < data.length; i++) {
     var sid = normalizeStockId_(data[i][0]);
@@ -474,36 +491,55 @@ function getTageslisteSheet_() {
 
 function buildTageslisteMap_(onlyIds) {
   var map = {};
+  var meta = { rows: 0, scanned: 0, matched: 0 };
   try {
     var sheet = getTageslisteSheet_();
     if (!sheet) return map;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var numCols = Math.max(TL_STOCK_COL, TL_REIFEN_COL);
-    var data = sheet.getRange(1, 1, lastRow, numCols).getDisplayValues();
-    for (var i = 0; i < data.length; i++) {
-      var sid = normalizeStockId_(data[i][TL_STOCK_COL - 1]);
-      if (!sid || !looksLikeStockId_(sid)) continue;
-      if (onlyIds && !onlyIds[sid]) continue;
-      var reifen = String(data[i][TL_REIFEN_COL - 1] || '').trim();
-      var entry = {
-        row: i + 1,
-        datum: String(data[i][TL_DATUM_COL - 1] || '').trim(),
-        schicht: String(data[i][TL_SCHICHT_COL - 1] || '').trim(),
-        reifen: reifen,
-        reifenGreen: isReifenGestelltText_(reifen),
-        url: tageslisteUrl_(i + 1)
-      };
-      if (!map[sid]) map[sid] = [];
-      map[sid].push(entry);
+    meta.rows = lastRow;
+    var needLeft = 0;
+    var full = {};
+    if (onlyIds) {
+      var needKeys = Object.keys(onlyIds);
+      needLeft = needKeys.length;
+      for (var nk = 0; nk < needKeys.length; nk++) full[needKeys[nk]] = false;
     }
-    var keys = Object.keys(map);
-    for (var k = 0; k < keys.length; k++) {
-      var list = map[keys[k]];
-      list.sort(function(a, b) { return b.row - a.row; });
-      if (list.length > TL_MAX_ENTRIES) map[keys[k]] = list.slice(0, TL_MAX_ENTRIES);
+    var chunk = 2500;
+    for (var end = lastRow; end >= 2; end -= chunk) {
+      var start = Math.max(2, end - chunk + 1);
+      var n = end - start + 1;
+      var stocks = sheet.getRange(start, TL_STOCK_COL, end, TL_STOCK_COL).getDisplayValues();
+      var reifens = sheet.getRange(start, TL_REIFEN_COL, end, TL_REIFEN_COL).getDisplayValues();
+      var datums = sheet.getRange(start, TL_DATUM_COL, end, TL_DATUM_COL).getDisplayValues();
+      var schichten = sheet.getRange(start, TL_SCHICHT_COL, end, TL_SCHICHT_COL).getDisplayValues();
+      meta.scanned += n;
+      for (var i = n - 1; i >= 0; i--) {
+        var sid = normalizeStockId_(stocks[i][0]);
+        if (!sid || !looksLikeStockId_(sid)) continue;
+        if (onlyIds && !onlyIds[sid]) continue;
+        if (map[sid] && map[sid].length >= TL_MAX_ENTRIES) continue;
+        var reifen = String(reifens[i][0] || '').trim();
+        var entry = {
+          row: start + i,
+          datum: String(datums[i][0] || '').trim(),
+          schicht: String(schichten[i][0] || '').trim(),
+          reifen: reifen,
+          reifenGreen: isReifenGestelltText_(reifen),
+          url: tageslisteUrl_(start + i)
+        };
+        if (!map[sid]) map[sid] = [];
+        map[sid].push(entry);
+        meta.matched++;
+        if (onlyIds && map[sid].length >= TL_MAX_ENTRIES && !full[sid]) {
+          full[sid] = true;
+          needLeft--;
+        }
+      }
+      if (onlyIds && needLeft <= 0) break;
     }
   } catch (e) {}
+  map._meta = meta;
   return map;
 }
 
@@ -733,6 +769,16 @@ function stockIdSetFromList_(list) {
   return need;
 }
 
+function filterMapToIds_(map, idSet) {
+  var out = {};
+  if (!map || !idSet) return out;
+  var keys = Object.keys(idSet);
+  for (var i = 0; i < keys.length; i++) {
+    if (map[keys[i]] != null) out[keys[i]] = map[keys[i]];
+  }
+  return out;
+}
+
 function rebuildReifenCache() {
   var builtAtMs = Date.now();
   var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
@@ -742,6 +788,7 @@ function rebuildReifenCache() {
   var refurbMap = buildRefurbMap_();
   var nbMap = buildNachbestellMap_();
   var tlMap = buildTageslisteMap_(stockIdSetFromList_(list));
+  if (tlMap && tlMap._meta) delete tlMap._meta;
   var items = [];
   var details = {};
   for (var i = 0; i < list.length; i++) {
@@ -766,6 +813,9 @@ var REBUILD_MAP_KEYS = {
   refurb: 'reifen_rb_refurb_',
   nb: 'reifen_rb_nb_',
   tl: 'reifen_rb_tl_',
+  list: 'reifen_rb_list_',
+  details: 'reifen_rb_details_',
+  mails: 'reifen_rb_mails_',
   meta: 'reifen_rb_meta_'
 };
 
@@ -811,6 +861,9 @@ function clearAllRebuildMaps_() {
   clearCacheJson_(REBUILD_MAP_KEYS.refurb);
   clearCacheJson_(REBUILD_MAP_KEYS.nb);
   clearCacheJson_(REBUILD_MAP_KEYS.tl);
+  clearCacheJson_(REBUILD_MAP_KEYS.list);
+  clearCacheJson_(REBUILD_MAP_KEYS.details);
+  clearCacheJson_(REBUILD_MAP_KEYS.mails);
   try { CacheService.getScriptCache().remove(REBUILD_MAP_KEYS.meta + 'total'); } catch (e2) {}
 }
 
@@ -833,6 +886,8 @@ function rebuildStepResult_(opt) {
     count: opt.count != null ? opt.count : (opt.total || 0),
     currentSid: opt.currentSid || '',
     phase: opt.phase || '',
+    debug: opt.debug || '',
+    ms: opt.ms || 0,
     cachedAt: opt.cachedAt || '',
     message: opt.message || ''
   };
@@ -842,76 +897,111 @@ function rebuildCacheStep(step, offset, batchSize) {
   try {
     step = String(step || 'start').toLowerCase();
     offset = Math.max(0, Number(offset) || 0);
-    batchSize = Math.max(1, Math.min(12, Number(batchSize) || 8));
+    batchSize = Math.max(1, Math.min(40, Number(batchSize) || 25));
+    var t0 = Date.now();
 
     if (step === 'start') {
-      dedupeReifenSheet_();
       clearAllRebuildMaps_();
+      var tList = Date.now();
       var list0 = readReifenList_();
+      var listMs = Date.now() - tList;
+      putCacheJson_(REBUILD_MAP_KEYS.list, list0);
       try { CacheService.getScriptCache().put(REBUILD_MAP_KEYS.meta + 'total', String(list0.length), 600); } catch (e3) {}
       return rebuildStepResult_({
         done: false,
         nextStep: 'refurb',
         offset: 0,
         total: list0.length,
-        percent: 4,
+        percent: 5,
         currentSid: list0.length ? (list0.length + ' Stock-IDs') : 'Liste leer',
-        phase: 'Liste vorbereitet',
-        count: list0.length
+        phase: 'Liste geladen',
+        count: list0.length,
+        ms: Date.now() - t0,
+        debug: 'start · Liste ' + list0.length + ' IDs in ' + listMs + 'ms · Dedupe übersprungen (schneller)'
       });
     }
 
     if (step === 'refurb') {
-      putCacheJson_(REBUILD_MAP_KEYS.refurb, buildRefurbMap_());
-      var t1 = Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || readReifenList_().length) || 0;
+      var listR = getCacheJson_(REBUILD_MAP_KEYS.list) || [];
+      var needR = stockIdSetFromList_(listR);
+      var refurbMap = filterMapToIds_(buildRefurbMap_(), needR);
+      var refurbKeys = Object.keys(refurbMap).length;
+      var okR = putCacheJson_(REBUILD_MAP_KEYS.refurb, refurbMap);
+      var t1 = listR.length || Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || 0) || 0;
+      var msR = Date.now() - t0;
       return rebuildStepResult_({
         done: false,
         nextStep: 'nb',
         offset: 0,
         total: t1,
-        percent: 18,
+        percent: 20,
         currentSid: 'Refurbishment ✓',
-        phase: 'Refurbishment geladen',
-        count: t1
+        phase: 'Refurbishment',
+        count: t1,
+        ms: msR,
+        debug: 'refurb · ' + refurbKeys + '/' + t1 + ' Treffer · ' + msR + 'ms' + (okR ? '' : ' · Cache voll')
       });
     }
 
     if (step === 'nb') {
-      putCacheJson_(REBUILD_MAP_KEYS.nb, buildNachbestellMap_());
-      var t2 = Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || readReifenList_().length) || 0;
+      var listN = getCacheJson_(REBUILD_MAP_KEYS.list) || [];
+      var needN = stockIdSetFromList_(listN);
+      var nbMap = filterMapToIds_(buildNachbestellMap_(), needN);
+      var nbKeys = Object.keys(nbMap).length;
+      var okN = putCacheJson_(REBUILD_MAP_KEYS.nb, nbMap);
+      var t2 = listN.length || Number(CacheService.getScriptCache().get(REBUILD_MAP_KEYS.meta + 'total') || 0) || 0;
+      var msN = Date.now() - t0;
       return rebuildStepResult_({
         done: false,
         nextStep: 'tl',
         offset: 0,
         total: t2,
-        percent: 32,
+        percent: 35,
         currentSid: 'Nachbestellungen ✓',
-        phase: 'Nachbestellungen geladen',
-        count: t2
+        phase: 'Nachbestellungen',
+        count: t2,
+        ms: msN,
+        debug: 'nb · ' + nbKeys + '/' + t2 + ' Treffer · ' + msN + 'ms' + (okN ? '' : ' · Cache voll')
       });
     }
 
     if (step === 'tl') {
-      var listTl = readReifenList_();
-      putCacheJson_(REBUILD_MAP_KEYS.tl, buildTageslisteMap_(stockIdSetFromList_(listTl)));
+      var listTl = getCacheJson_(REBUILD_MAP_KEYS.list) || readReifenList_();
+      putCacheJson_(REBUILD_MAP_KEYS.list, listTl);
+      var tlMap = buildTageslisteMap_(stockIdSetFromList_(listTl));
+      var tlMeta = tlMap._meta || {};
+      delete tlMap._meta;
+      var tlKeys = Object.keys(tlMap).length;
+      var okT = putCacheJson_(REBUILD_MAP_KEYS.tl, tlMap);
+      var oldMails0 = collectOldMails_((readCache_() || {}).details);
+      putCacheJson_(REBUILD_MAP_KEYS.mails, oldMails0);
+      putCacheJson_(REBUILD_MAP_KEYS.details, {});
+      var msT = Date.now() - t0;
       return rebuildStepResult_({
         done: false,
         nextStep: 'items',
         offset: 0,
         total: listTl.length,
-        percent: 48,
-        currentSid: 'Tagesliste ✓ — starte Checks',
-        phase: 'Tagesliste geladen',
-        count: listTl.length
+        percent: 50,
+        currentSid: 'Tagesliste ✓',
+        phase: 'Tagesliste',
+        count: listTl.length,
+        ms: msT,
+        debug: 'tl · Sheet ' + (tlMeta.rows || '?') + ' Zeilen · gescannt ' + (tlMeta.scanned || 0) +
+          ' · Treffer ' + tlKeys + '/' + listTl.length + ' · ' + msT + 'ms' + (okT ? '' : ' · Cache voll')
       });
     }
 
+    batchSize = Math.max(1, Math.min(40, Number(batchSize) || 25));
+    var tMaps = Date.now();
     var maps = loadRebuildMaps_();
+    var mapsMs = Date.now() - tMaps;
     if (!maps) {
-      return { success: false, message: 'Vorbereitung unvollständig — bitte erneut laden', done: false, nextStep: 'start' };
+      return { success: false, message: 'Vorbereitung unvollständig — bitte erneut laden', done: false, nextStep: 'start', debug: 'items · maps fehlen' };
     }
 
-    var list = readReifenList_();
+    var list = getCacheJson_(REBUILD_MAP_KEYS.list);
+    if (!list || !list.length) list = readReifenList_();
     var total = list.length;
     var builtAtMs = Date.now();
     var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
@@ -931,11 +1021,11 @@ function rebuildCacheStep(step, offset, batchSize) {
       });
     }
 
-    var prev = readCache_() || { items: [], details: {} };
-    var oldMails = collectOldMails_(prev.details);
-    var details = offset === 0 ? {} : (prev.details || {});
+    var oldMails = getCacheJson_(REBUILD_MAP_KEYS.mails) || {};
+    var details = offset === 0 ? {} : (getCacheJson_(REBUILD_MAP_KEYS.details) || {});
     if (offset === 0) details = {};
 
+    var tBatch = Date.now();
     var end = Math.min(offset + batchSize, total);
     var currentSid = '';
     for (var i = offset; i < end; i++) {
@@ -945,20 +1035,38 @@ function rebuildCacheStep(step, offset, batchSize) {
       d.fromCache = true;
       details[d.stockId] = d;
     }
+    var batchCoreMs = Date.now() - tBatch;
 
-    if (end < total && prev.details) {
-      for (var k = end; k < total; k++) {
-        var sidKeep = list[k].stockId;
-        if (!details[sidKeep] && prev.details[sidKeep]) details[sidKeep] = prev.details[sidKeep];
-      }
+    var done = end >= total;
+    var tWrite = Date.now();
+    var writeMs = 0;
+    if (!done) {
+      putCacheJson_(REBUILD_MAP_KEYS.details, details);
+      writeMs = Date.now() - tWrite;
+      var batchMs = Date.now() - t0;
+      var itemPct = Math.round((end / total) * 50);
+      return rebuildStepResult_({
+        done: false,
+        nextStep: 'items',
+        offset: end,
+        total: total,
+        percent: Math.min(99, 50 + itemPct),
+        currentSid: currentSid || '—',
+        phase: 'Stock-IDs',
+        count: total,
+        cachedAt: builtAt,
+        ms: batchMs,
+        debug: 'items · ' + offset + '→' + end + '/' + total +
+          ' · maps ' + mapsMs + 'ms · check ' + batchCoreMs + 'ms · save ' + writeMs + 'ms',
+        message: 'Fortschritt ' + end + '/' + total
+      });
     }
 
     var items = [];
     for (var j = 0; j < total; j++) {
       var sid = list[j].stockId;
-      if (details[sid]) {
-        items.push(itemFromDetail_(details[sid]));
-      } else {
+      if (details[sid]) items.push(itemFromDetail_(details[sid]));
+      else {
         items.push({
           stockId: sid,
           sheetRow: list[j].sheetRow,
@@ -986,37 +1094,33 @@ function rebuildCacheStep(step, offset, batchSize) {
         });
       }
     }
-
-    var done = end >= total;
-    var payload = {
+    writeCachePayload_({
       builtAt: builtAt,
       builtAtMs: builtAtMs,
       items: items,
       details: details,
       count: total
-    };
-    if (done) {
-      clearAllRebuildMaps_();
-      writeCachePayload_(payload);
-    } else {
-      writeHotCache_(JSON.stringify(payload));
-    }
-
-    var itemPct = total ? Math.round((end / total) * 50) : 50;
+    });
+    writeMs = Date.now() - tWrite;
+    clearAllRebuildMaps_();
+    var batchMsDone = Date.now() - t0;
     return rebuildStepResult_({
-      done: done,
-      nextStep: done ? '' : 'items',
+      done: true,
+      nextStep: '',
       offset: end,
       total: total,
-      percent: Math.min(100, 50 + itemPct),
-      currentSid: currentSid || '—',
-      phase: done ? 'Fertig' : 'Stock-IDs prüfen',
+      percent: 100,
+      currentSid: currentSid || 'Fertig',
+      phase: 'Fertig',
       count: total,
       cachedAt: builtAt,
-      message: done ? 'Cache neu gebaut' : ('Fortschritt ' + end + '/' + total)
+      ms: batchMsDone,
+      debug: 'items · ' + offset + '→' + end + '/' + total +
+        ' · maps ' + mapsMs + 'ms · check ' + batchCoreMs + 'ms · final ' + writeMs + 'ms',
+      message: 'Cache neu gebaut'
     });
   } catch (err) {
-    return { success: false, message: String(err.message || err), done: false, nextStep: step || 'start' };
+    return { success: false, message: String(err.message || err), done: false, nextStep: step || 'start', debug: 'error @ ' + step };
   }
 }
 
@@ -1265,7 +1369,10 @@ function checkStockLive(stockId) {
     if (!entry) entry = { stockId: stockId, sheetRow: 0, sheetStatus: '' };
     var refurbMap = buildRefurbMap_();
     var nbMap = buildNachbestellMap_();
-    var tlMap = buildTageslisteMap_();
+    var onlyTl = {};
+    onlyTl[stockId] = true;
+    var tlMap = buildTageslisteMap_(onlyTl);
+    if (tlMap && tlMap._meta) delete tlMap._meta;
     var d = buildDetail_(entry, refurbMap, nbMap, tlMap, true);
     d.fromCache = false;
     d.inSheet = entry.sheetRow > 0;

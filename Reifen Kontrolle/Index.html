@@ -523,13 +523,31 @@
       border-radius: inherit; transition: width 280ms var(--easing);
     }
     .load-log {
-      max-height: 120px; overflow: hidden; text-align: left;
+      max-height: 140px; overflow: auto; text-align: left;
       display: flex; flex-direction: column; gap: 4px;
-      font-size: 0.78rem; font-weight: 600; color: var(--foreground-muted);
+      font-size: 0.72rem; font-weight: 600; color: var(--foreground-muted);
     }
     .load-log .gone {
       padding: 4px 8px; border-radius: 8px; background: rgba(0,255,0,0.08);
       color: #86efac; animation: sidPop 320ms var(--easing);
+    }
+    .load-log .dbg {
+      padding: 4px 8px; border-radius: 8px; background: rgba(255,255,255,0.05);
+      color: #a5b4fc; font-family: ui-monospace, Consolas, monospace; line-height: 1.35;
+    }
+    .load-debug {
+      font-size: 0.72rem; font-weight: 600; color: #94a3b8;
+      font-family: ui-monospace, Consolas, monospace; line-height: 1.35;
+      min-height: 1.2em;
+    }
+    .load-esc {
+      font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted);
+      letter-spacing: 0.02em;
+    }
+    .load-esc kbd {
+      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 6px;
+      border: 1px solid var(--border-strong); background: rgba(255,255,255,0.06);
+      color: var(--foreground); font: inherit; font-weight: 800;
     }
     .spinner {
       width: 42px; height: 42px; border-radius: 50%;
@@ -650,8 +668,10 @@
       <span class="load-title" id="loadLabel">Lädt…</span>
       <div class="load-sid" id="loadSid" style="display:none"></div>
       <div class="load-count" id="loadCount" style="display:none"></div>
+      <div class="load-debug" id="loadDebug" style="display:none"></div>
       <div class="load-bar" id="loadBar" style="display:none"><i id="loadBarFill"></i></div>
       <div class="load-log" id="loadLog" style="display:none"></div>
+      <div class="load-esc" id="loadEsc" style="display:none"><kbd>ESC</kbd> Abbrechen</div>
     </div>
   </div>
 
@@ -855,6 +875,8 @@
       selected: null,
       detail: null,
       busy: false,
+      cancelled: false,
+      opId: 0,
       cachedAt: '',
       cachedAtMs: 0,
       detailSourceMs: 0,
@@ -879,12 +901,38 @@
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     }
 
+    function beginOp() {
+      state.busy = true;
+      state.cancelled = false;
+      state.opId += 1;
+      return state.opId;
+    }
+
+    function isOpActive(opId) {
+      return !!opId && state.opId === opId && state.busy && !state.cancelled;
+    }
+
+    function cancelBusyOp(silent) {
+      var overlayOn = $('loadOverlay').classList.contains('show');
+      if (!state.busy && !overlayOn) return false;
+      state.cancelled = true;
+      state.busy = false;
+      state.opId += 1;
+      state._rebuildWaiting = '';
+      stopRebuildTicker();
+      hideLoad();
+      if (!silent) toast('Abgebrochen');
+      return true;
+    }
+
     function showLoad(label) {
       $('loadCard').classList.remove('wide');
       $('loadSid').style.display = 'none';
       $('loadCount').style.display = 'none';
+      $('loadDebug').style.display = 'none';
       $('loadBar').style.display = 'none';
       $('loadLog').style.display = 'none';
+      $('loadEsc').style.display = '';
       $('loadLog').innerHTML = '';
       $('loadBarFill').style.width = '0%';
       $('loadLabel').textContent = label || 'Lädt…';
@@ -892,6 +940,7 @@
     }
     function hideLoad() {
       $('loadOverlay').classList.remove('show');
+      $('loadEsc').style.display = 'none';
       if (hideLoad._anim) {
         clearInterval(hideLoad._anim);
         hideLoad._anim = null;
@@ -904,6 +953,7 @@
       $('loadSid').style.display = '';
       $('loadCount').style.display = '';
       $('loadBar').style.display = '';
+      $('loadEsc').style.display = '';
       $('loadLog').style.display = '';
       $('loadLog').innerHTML = '';
       $('loadBarFill').style.width = '0%';
@@ -979,12 +1029,16 @@
       });
     }
 
-    function run(onOk) {
+    function run(onOk, opId) {
       return google.script.run.withFailureHandler(function(err) {
+        if (opId != null && state.opId !== opId) return;
         hideLoad();
         state.busy = false;
         toast(String(err && err.message ? err.message : err), true);
-      }).withSuccessHandler(onOk);
+      }).withSuccessHandler(function(res) {
+        if (opId != null && state.opId !== opId) return;
+        onOk(res);
+      });
     }
 
     function pillClass(key) {
@@ -1409,10 +1463,11 @@
         return;
       }
       if (state.busy) return;
-      state.busy = true;
+      var opId = beginOp();
       showLoad(live ? (stockId + ' wird live geprüft…') : (stockId + ' wird geladen…'));
       var fn = live ? 'checkStockLive' : 'getStockDetail';
       run(function(res) {
+        if (!isOpActive(opId)) return;
         state.busy = false;
         hideLoad();
         if (!res || !res.success) {
@@ -1422,7 +1477,7 @@
         state.details[res.stockId] = res;
         state.detailSourceMs = Date.now();
         renderDetail(res);
-      })[fn](stockId);
+      }, opId)[fn](stockId);
     }
 
     function setStatus(status) {
@@ -1503,6 +1558,14 @@
       loadQueue();
     });
 
+    function formatElapsed(sec) {
+      sec = Math.max(0, Math.floor(Number(sec) || 0));
+      if (sec < 60) return sec + 's';
+      var m = Math.floor(sec / 60);
+      var s = sec % 60;
+      return m + 'm ' + (s < 10 ? '0' : '') + s + 's';
+    }
+
     function stopRebuildTicker() {
       if (state._rebuildTick) {
         clearInterval(state._rebuildTick);
@@ -1520,17 +1583,35 @@
         var sec = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
         var el = $('loadCount');
         var txt = el.textContent || '';
-        if (/·\s*\d+s/.test(txt)) el.textContent = txt.replace(/·\s*\d+s/, '· ' + sec + 's');
-        else el.textContent = txt + (txt ? ' · ' : '') + sec + 's';
+        var stamp = formatElapsed(sec);
+        if (/·\s*(?:\d+m\s*)?\d+s$/.test(txt)) el.textContent = txt.replace(/·\s*(?:\d+m\s*)?\d+s$/, '· ' + stamp);
+        else el.textContent = txt + (txt ? ' · ' : '') + stamp;
+        var wait = $('loadDebug');
+        if (wait && state._rebuildWaiting) {
+          wait.style.display = '';
+          wait.textContent = 'warte auf Server: ' + state._rebuildWaiting + ' · ' + stamp;
+        }
       }, 400);
+    }
+
+    function pushRebuildDebug(line) {
+      if (!line) return;
+      var log = $('loadLog');
+      log.style.display = '';
+      var row = document.createElement('div');
+      row.className = 'dbg';
+      row.textContent = line;
+      log.insertBefore(row, log.firstChild);
+      while (log.children.length > 8) log.removeChild(log.lastChild);
     }
 
     function showRebuildProgress(res, startedAt) {
       $('loadCard').classList.add('wide');
       $('loadSid').style.display = '';
       $('loadCount').style.display = '';
+      $('loadDebug').style.display = '';
       $('loadBar').style.display = '';
-      $('loadLog').style.display = 'none';
+      $('loadEsc').style.display = '';
       $('loadOverlay').classList.add('show');
       var total = (res && res.total) || 0;
       var offset = (res && res.offset) || 0;
@@ -1540,28 +1621,46 @@
       var sec = Math.max(0, Math.round((Date.now() - (startedAt || Date.now())) / 1000));
       $('loadLabel').textContent = (phase ? phase + ' · ' : 'Cache wird neu gebaut… ') + percent + '%';
       $('loadSid').textContent = sid;
-      var checked = (res && res.nextStep === 'items') || (res && res.phase === 'Stock-IDs prüfen') || (res && res.done)
+      var checked = (res && (res.nextStep === 'items' || res.phase === 'Stock-IDs' || res.done))
         ? (offset + ' / ' + total)
-        : ('0 / ' + total + ' bereit');
+        : (total ? ('0 / ' + total + ' bereit') : '—');
       if (res && res.nextStep && res.nextStep !== 'items' && !res.done) {
         checked = phase || 'Vorbereitung';
       }
-      $('loadCount').textContent = checked + ' · ' + percent + '% · ' + sec + 's';
+      $('loadCount').textContent = checked + ' · ' + percent + '% · ' + formatElapsed(sec);
       $('loadBarFill').style.width = percent + '%';
+      if (res && res.debug) {
+        $('loadDebug').textContent = res.debug;
+        pushRebuildDebug(res.debug);
+      }
     }
 
-    function runRebuildStep(step, offset, startedAt) {
+    function runRebuildStep(step, offset, startedAt, opId) {
+      if (!isOpActive(opId)) return;
+      state._rebuildWaiting = step + (step === 'items' ? (' @' + offset) : '');
+      var hints = {
+        start: 'liest Reifen-Kontrolle Liste…',
+        refurb: 'lädt Refurbishment Sheet…',
+        nb: 'lädt Nachbestellungen…',
+        tl: 'scannt Tagesliste (neueste zuerst)…',
+        items: 'prüft Stock-IDs Batch…'
+      };
+      $('loadDebug').style.display = '';
+      $('loadDebug').textContent = 'warte: ' + (hints[step] || step) + ' · ESC = Abbrechen';
       run(function(res) {
+        if (!isOpActive(opId)) return;
+        state._rebuildWaiting = '';
         if (!res || !res.success) {
           state.busy = false;
           stopRebuildTicker();
+          if (res && res.debug) pushRebuildDebug(res.debug);
           hideLoad();
           toast((res && res.message) || 'Rebuild fehlgeschlagen', true);
           return;
         }
         showRebuildProgress(res, startedAt);
         if (!res.done) {
-          runRebuildStep(res.nextStep || 'items', res.offset || 0, startedAt);
+          runRebuildStep(res.nextStep || 'items', res.offset || 0, startedAt, opId);
           return;
         }
         state.busy = false;
@@ -1570,23 +1669,25 @@
         toast('Neu geprüft: ' + res.count + ' Stock-IDs');
         loadQueue();
         if (state.selected) selectStock(state.selected, false);
-      }).rebuildCacheStep(step, offset, 8);
+      }, opId).rebuildCacheStep(step, offset, 25);
     }
 
     $('btnReload').addEventListener('click', function() {
       if (state.busy) return;
-      state.busy = true;
+      var opId = beginOp();
       var startedAt = Date.now();
+      $('loadLog').innerHTML = '';
       showRebuildProgress({
         total: 0,
         offset: 0,
         percent: 1,
         currentSid: 'Starte Live-Check…',
         phase: 'Vorbereitung',
-        nextStep: 'start'
+        nextStep: 'start',
+        debug: 'client · rufe start auf · ESC = Abbrechen'
       }, startedAt);
       startRebuildTicker(startedAt);
-      runRebuildStep('start', 0, startedAt);
+      runRebuildStep('start', 0, startedAt, opId);
     });
 
     $('btnRecheck').addEventListener('click', function() {
@@ -1667,14 +1768,10 @@
       var ids = Object.keys(state.picked);
       if (!ids.length || state.busy) return;
       if (!confirm(ids.length + ' Stock-ID' + (ids.length === 1 ? '' : 's') + ' aus dem Sheet löschen?')) return;
-      state.busy = true;
+      var opId = beginOp();
       showDeleteProgress(ids);
-      google.script.run.withFailureHandler(function(err) {
-        state.busy = false;
-        hideLoad();
-        toast('Löschen fehlgeschlagen: ' + String(err && err.message ? err.message : err), true);
-        loadQueue(true);
-      }).withSuccessHandler(function(res) {
+      run(function(res) {
+        if (!isOpActive(opId)) return;
         state.busy = false;
         if (!res || !res.success) {
           hideLoad();
@@ -1684,6 +1781,7 @@
         }
         var done = ids;
         function finish() {
+          if (state.opId !== opId) return;
           hideLoad();
           removeLocalIds(done);
           clearPicked();
@@ -1707,7 +1805,7 @@
         } else {
           setTimeout(finish, 350);
         }
-      }).deleteStockIds(ids);
+      }, opId).deleteStockIds(ids);
     }
 
     $('btnDeleteSid').addEventListener('click', deleteStock);
@@ -1792,9 +1890,10 @@
 
     function printList() {
       if (state.busy) return;
-      state.busy = true;
+      var opId = beginOp();
       showLoad('Druckliste wird erstellt…');
       run(function(res) {
+        if (!isOpActive(opId)) return;
         state.busy = false;
         hideLoad();
         if (!res || !res.success) {
@@ -1809,7 +1908,7 @@
           return;
         }
         printStockItems(items, 'Reifen Kontrolle');
-      }).getQueue('alle');
+      }, opId).getQueue('alle');
     }
 
     function inventurOpenItems() {
@@ -2023,9 +2122,10 @@
 
     function openInventur() {
       if (state.busy) return;
-      state.busy = true;
+      var opId = beginOp();
       showLoad('Inventur wird vorbereitet…');
       run(function(res) {
+        if (!isOpActive(opId)) return;
         state.busy = false;
         hideLoad();
         if (!res || !res.success) {
@@ -2053,7 +2153,7 @@
         $('invLayer').classList.add('show');
         renderInventur();
         loadInventurDetailIfNeeded();
-      }).getQueue('ohne', true);
+      }, opId).getQueue('ohne', true);
     }
 
     function closeInventur() {
@@ -2196,9 +2296,10 @@
     $('batchSave').addEventListener('click', function() {
       if ($('batchInput').value.trim()) batchAddFromInput();
       if (!batch.length || state.busy) return;
-      state.busy = true;
+      var opId = beginOp();
       showLoad(batch.length + ' Stock-IDs werden hinzugefügt…');
       run(function(res) {
+        if (!isOpActive(opId)) return;
         state.busy = false;
         hideLoad();
         if (!res || !res.success) {
@@ -2208,20 +2309,29 @@
         toast(res.message || 'Hinzugefügt');
         closeBatch();
         loadQueue();
-      }).addStockIds(batch);
+      }, opId).addStockIds(batch);
     });
 
     document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        if ($('loadOverlay').classList.contains('show') || state.busy) {
+          e.preventDefault();
+          cancelBusyOp();
+          return;
+        }
+        if ($('batchModal').classList.contains('show')) {
+          closeBatch();
+          return;
+        }
+        if ($('invLayer').classList.contains('show') && state.inventur) {
+          if (state.inventur.done) closeInventur();
+          else if (confirm('Inventur schließen? Fortschritt der gesetzten Status bleibt gespeichert.')) closeInventur();
+          return;
+        }
+      }
       if (e.target === $('qSearch') || e.target === $('batchInput')) return;
       if ($('invLayer').classList.contains('show') && state.inventur) {
-        if (state.inventur.done) {
-          if (e.key === 'Escape') closeInventur();
-          return;
-        }
-        if (e.key === 'Escape') {
-          if (confirm('Inventur schließen? Fortschritt der gesetzten Status bleibt gespeichert.')) closeInventur();
-          return;
-        }
+        if (state.inventur.done) return;
         if (e.key === '1') { e.preventDefault(); inventurSet('OK'); }
         else if (e.key === '2') { e.preventDefault(); inventurSet('COMPLETE'); }
         else if (e.key === '3') { e.preventDefault(); inventurSet('B2A1'); }
@@ -2231,10 +2341,7 @@
         else if (e.key === 'ArrowRight') { e.preventDefault(); inventurSkip(); }
         return;
       }
-      if ($('batchModal').classList.contains('show')) {
-        if (e.key === 'Escape') closeBatch();
-        return;
-      }
+      if ($('batchModal').classList.contains('show')) return;
       if (e.key === '/' || (e.key.length === 1 && /[a-z0-9]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         $('qSearch').focus();
         if (e.key === '/') e.preventDefault();
