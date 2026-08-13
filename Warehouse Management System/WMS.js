@@ -155,6 +155,7 @@ const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM
 const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
 const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
 const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
+const INFO_LAGER_EXIT_HUD_BUTTON = 1;
 
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
@@ -3057,6 +3058,17 @@ function sendInfoLagerExitChat_(stockId, beschreibung) {
     if (!stockId) return "Info Lager: keine Stock-ID";
     if (!INFO_LAGER_EXIT_WEBHOOK_URL) return "Info Lager: Webhook fehlt";
     beschreibung = String(beschreibung || "").trim();
+    var text = stockId + (beschreibung ? ("\n-> " + beschreibung) : "") + "\nEXIT";
+    if (!INFO_LAGER_EXIT_HUD_BUTTON) {
+      var resPlain = UrlFetchApp.fetch(INFO_LAGER_EXIT_WEBHOOK_URL, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ text: text }),
+        muteHttpExceptions: true
+      });
+      if (resPlain.getResponseCode() >= 200 && resPlain.getResponseCode() < 300) return "EXIT an Info Lager gesendet";
+      return "Info Lager Fehler (" + resPlain.getResponseCode() + ")";
+    }
     var hudUrl = EXIT_HUD_WEB_APP_URL
       + "?stockId=" + encodeURIComponent(stockId)
       + "&grund=" + encodeURIComponent(beschreibung);
@@ -3073,7 +3085,7 @@ function sendInfoLagerExitChat_(stockId, beschreibung) {
     var resText = UrlFetchApp.fetch(INFO_LAGER_EXIT_WEBHOOK_URL, {
       method: "post",
       contentType: "application/json",
-      payload: JSON.stringify({ text: stockId + "\n-> " + beschreibung + "\nEXIT\n" + hudUrl }),
+      payload: JSON.stringify({ text: text }),
       muteHttpExceptions: true
     });
     if (resText.getResponseCode() >= 200 && resText.getResponseCode() < 300) {
