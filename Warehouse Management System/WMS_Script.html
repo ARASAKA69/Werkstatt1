@@ -536,6 +536,8 @@
     var ov = document.getElementById('regalScanOverlay');
     var inp = document.getElementById('regalScanInput');
     if(!ov || !inp) return;
+    if (ov.parentNode !== document.body) document.body.appendChild(ov);
+    try { ov.style.setProperty('z-index', '10150', 'important'); } catch(e) { ov.style.zIndex = '10150'; }
     ov.classList.add('open');
     ov.setAttribute('aria-hidden', 'false');
     inp.value = '';
