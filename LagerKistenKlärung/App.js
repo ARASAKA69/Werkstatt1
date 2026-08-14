@@ -4,6 +4,14 @@ var REFURB_SHEET_ID = '13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM';
 var REFURB_SHEET_NAME = 'Refurbisment List';
 var NACHBESTELL_SHEET_ID = '1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE';
 var NACHBESTELL_TAB = 'Nachbestellung';
+var TAGESLISTE_SHEET_ID = '1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo';
+var TAGESLISTE_TAB = 'Tagesliste';
+var TAGESLISTE_GID = 1855179002;
+var TL_DATUM_COL = 1;
+var TL_SCHICHT_COL = 3;
+var TL_REIFEN_COL = 4;
+var TL_STOCK_COL = 5;
+var TL_MAX_ENTRIES = 5;
 var CACHE_TAB = '_KlärungCache';
 var NOTES_TAB = '_KlärungNotes';
 var CHECKS_TAB = '_KlärungChecks';
@@ -12,7 +20,7 @@ var NOTIF_STATE_TAB = '_KlärungNotifState';
 var USER_NOTES_TAB = '_KlärungUserNotes';
 var CACHE_TTL_MS = 15 * 60 * 1000;
 var CACHE_CHUNK = 48000;
-var HOT_CACHE_PREFIX = 'klarung_v1_';
+var HOT_CACHE_PREFIX = 'klarung_v2_';
 var HOT_CACHE_CHUNK = 90000;
 var HOT_CACHE_TTL_SEC = 300;
 var SYNC_STATUS_COLOR_TO_SHEET = true;
@@ -98,6 +106,170 @@ function formatReifenLabel_(val) {
   if (!s) return '';
   if (/^werkstatt\s*1$/i.test(s) || /^ws\s*1$/i.test(s)) return 'Reifen da';
   return s;
+}
+
+function isReifenPart_(text) {
+  var s = String(text || '');
+  if (/reifen|felge|komplettrad|räder|raeder|tyre|tire/i.test(s)) return true;
+  if (/\brad\b|\bräder\b/i.test(s)) return true;
+  return false;
+}
+
+function isReifenGestelltText_(reifen) {
+  var v = String(reifen || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if (!v) return false;
+  if (v === '2' || v === '4') return true;
+  if (v === '2 gestellt' || v === '4 gestellt') return true;
+  if (/^(2|4)\s*gestellt$/.test(v)) return true;
+  if (/\bgestellt\b/.test(v) && v.indexOf('nicht') === -1) return true;
+  return false;
+}
+
+function carolUrlFor_(stockId, sheetUrl) {
+  var u = String(sheetUrl || '').trim();
+  if (/^https?:\/\//i.test(u)) return u;
+  return 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(stockId);
+}
+
+function tageslisteUrl_(row) {
+  var u = 'https://docs.google.com/spreadsheets/d/' + TAGESLISTE_SHEET_ID + '/edit#gid=' + TAGESLISTE_GID;
+  if (row) u += '&range=E' + row;
+  return u;
+}
+
+function getTageslisteSheet_() {
+  try {
+    var ss = SpreadsheetApp.openById(TAGESLISTE_SHEET_ID);
+    var sh = ss.getSheetByName(TAGESLISTE_TAB);
+    if (sh) return sh;
+    var all = ss.getSheets();
+    for (var i = 0; i < all.length; i++) {
+      if (all[i].getSheetId() === TAGESLISTE_GID) return all[i];
+    }
+  } catch (e) {}
+  return null;
+}
+
+function buildTageslisteMap_(onlyIds) {
+  var map = {};
+  try {
+    var sheet = getTageslisteSheet_();
+    if (!sheet) return map;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return map;
+    var needLeft = 0;
+    var full = {};
+    if (onlyIds) {
+      var needKeys = Object.keys(onlyIds);
+      needLeft = needKeys.length;
+      for (var nk = 0; nk < needKeys.length; nk++) full[needKeys[nk]] = false;
+    }
+    var chunk = 2500;
+    for (var end = lastRow; end >= 2; end -= chunk) {
+      var start = Math.max(2, end - chunk + 1);
+      var n = end - start + 1;
+      var stocks = sheet.getRange(start, TL_STOCK_COL, n, 1).getDisplayValues();
+      var reifens = sheet.getRange(start, TL_REIFEN_COL, n, 1).getDisplayValues();
+      var datums = sheet.getRange(start, TL_DATUM_COL, n, 1).getDisplayValues();
+      var schichten = sheet.getRange(start, TL_SCHICHT_COL, n, 1).getDisplayValues();
+      for (var i = n - 1; i >= 0; i--) {
+        var sid = normalizeStockId_(stocks[i][0]);
+        if (!sid || !lagerLooksLikeStockId_(sid)) continue;
+        if (onlyIds && !onlyIds[sid]) continue;
+        if (map[sid] && map[sid].length >= TL_MAX_ENTRIES) continue;
+        var reifen = String(reifens[i][0] || '').trim();
+        var entry = {
+          row: start + i,
+          datum: String(datums[i][0] || '').trim(),
+          schicht: String(schichten[i][0] || '').trim(),
+          reifen: reifen,
+          reifenGreen: isReifenGestelltText_(reifen),
+          url: tageslisteUrl_(start + i)
+        };
+        if (!map[sid]) map[sid] = [];
+        map[sid].push(entry);
+        if (onlyIds && map[sid].length >= TL_MAX_ENTRIES && !full[sid]) {
+          full[sid] = true;
+          needLeft--;
+        }
+      }
+      if (onlyIds && needLeft <= 0) break;
+    }
+  } catch (e) {}
+  return map;
+}
+
+function findTlGestelltEntry_(entries) {
+  var list = entries || [];
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i];
+    if (e && (e.reifenGreen || isReifenGestelltText_(e.reifen))) {
+      e.reifenGreen = true;
+      return e;
+    }
+  }
+  return null;
+}
+
+function resolveTlGestellt_(tl) {
+  var entries = tl || [];
+  var latest = entries.length ? entries[0] : null;
+  if (latest && isReifenGestelltText_(latest.reifen)) latest.reifenGreen = true;
+  var gestelltEntry = findTlGestelltEntry_(entries);
+  var fromEarlier = !!(gestelltEntry && latest && gestelltEntry.row !== latest.row);
+  return {
+    latest: latest,
+    gestelltEntry: gestelltEntry,
+    gestellt: !!gestelltEntry,
+    fromEarlier: fromEarlier,
+    reifen: gestelltEntry ? gestelltEntry.reifen : (latest && latest.reifen ? latest.reifen : ''),
+    datum: gestelltEntry ? gestelltEntry.datum : (latest && latest.datum ? latest.datum : ''),
+    schicht: gestelltEntry ? gestelltEntry.schicht : (latest && latest.schicht ? latest.schicht : ''),
+    url: gestelltEntry ? gestelltEntry.url : (latest && latest.url ? latest.url : '')
+  };
+}
+
+function hasReifenDaComment_(refurb) {
+  if (!refurb || !refurb.found) return false;
+  var text = String(refurb.kommBestellung || '') + ' ' + String(refurb.kommAnlieferung || '');
+  return /reifen\s*(sind\s*|ist\s*)?da/i.test(text);
+}
+
+function evaluateStockLite_(stockId, refurb, nbs, tl) {
+  refurb = refurb || { found: false };
+  nbs = nbs || [];
+  tl = tl || [];
+  var reifenWerkstatt = refurb.found && refurb.reifenStatus === 'Reifen da';
+  var reifenComment = hasReifenDaComment_(refurb);
+  var reifenDa = reifenWerkstatt || reifenComment;
+  var statusLow = String(refurb.status || '').toLowerCase();
+  var carolDone = refurb.found && /herausgegeben|handed\s*out|complete/i.test(statusLow);
+  var teilweise = /teilweise/.test(statusLow);
+  var komplett = /komplett/.test(statusLow);
+  var nbReifen = [];
+  var nbReifenOpen = [];
+  var nbOpenCount = 0;
+  for (var i = 0; i < nbs.length; i++) {
+    var st = String(nbs[i].status || '').toLowerCase();
+    var closed = st.indexOf('komplett') !== -1 || st.indexOf('fertiggestellt') !== -1 || st === 'angeliefert' || st.indexOf('fahrzeug rr') !== -1 || st.indexOf('nicht bestellt') !== -1 || st.indexOf('nicht notwendig') !== -1;
+    if (!closed) nbOpenCount++;
+    if (!nbs[i].reifen) continue;
+    nbReifen.push(nbs[i]);
+    if (!closed) nbReifenOpen.push(nbs[i]);
+  }
+  return {
+    reifenDa: reifenDa,
+    reifenWerkstatt: reifenWerkstatt,
+    reifenComment: reifenComment,
+    carolDone: carolDone,
+    teilweise: teilweise,
+    komplett: komplett,
+    inRefurb: refurb.found && !carolDone,
+    nbCount: nbs.length,
+    nbOpenCount: nbOpenCount,
+    nbReifenCount: nbReifen.length,
+    nbReifenOpenCount: nbReifenOpen.length
+  };
 }
 
 function nowStamp_() {
@@ -926,12 +1098,13 @@ function rebuildKlärungCache() {
   var items = [];
   var details = {};
   var activeStocks = {};
+  for (var s0 = 0; s0 < grid.items.length; s0++) activeStocks[grid.items[s0].stockId] = true;
+  var tlMap = buildTageslisteMap_(activeStocks);
 
   for (var i = 0; i < grid.items.length; i++) {
     var g = grid.items[i];
     var stockId = g.stockId;
     var cellKey = g.cellKey;
-    activeStocks[stockId] = true;
 
     var comments = commentsForStock_(allComments, stockId);
     var primary = primaryFromComments_(comments);
@@ -943,7 +1116,22 @@ function rebuildKlärungCache() {
     var yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
     var refurb = refurbMap[stockId] || { found: false };
     var nbs = nbMap[stockId] || [];
+    var tl = tlMap[stockId] || [];
+    var tlRes = resolveTlGestellt_(tl);
+    var evalx = evaluateStockLite_(stockId, refurb, nbs, tl);
     var checks = countChecks_(checksMap[stockId] ? JSON.parse(JSON.stringify(checksMap[stockId])) : emptyChecks_());
+    var tlLabel = '';
+    if (tlRes.datum || tlRes.schicht) {
+      tlLabel = (tlRes.datum || '') + (tlRes.schicht ? ((tlRes.datum ? ' · ' : '') + tlRes.schicht) : '');
+    } else if (tl.length) {
+      tlLabel = 'Eintrag';
+    }
+    var tlReifenLabel = '';
+    if (tlRes.gestellt) {
+      tlReifenLabel = 'gestellt · bei Mechanik' + (tlRes.reifen ? (' · ' + tlRes.reifen) : '');
+    } else if (tlRes.reifen) {
+      tlReifenLabel = tlRes.reifen + ' · noch im Lager';
+    }
 
     var kisten = {
       row: g.sheetRow,
@@ -958,6 +1146,19 @@ function rebuildKlärungCache() {
       yellow: yellow,
       hasNote: hasNote,
       checks: checks
+    };
+
+    var tagesliste = {
+      found: tl.length > 0,
+      count: tl.length,
+      entries: tl,
+      latest: tlRes.latest,
+      gestelltEntry: tlRes.gestelltEntry,
+      anyGestellt: tlRes.gestellt,
+      gestelltEarlier: tlRes.fromEarlier,
+      url: tlRes.url || '',
+      label: tlLabel,
+      reifenLabel: tlReifenLabel
     };
 
     var item = {
@@ -978,7 +1179,20 @@ function rebuildKlärungCache() {
       markeModel: refurb.markeModel || '',
       refurbStatus: refurb.status || '',
       reifenStatus: refurb.reifenStatus || '',
+      reifenDa: !!evalx.reifenDa,
+      carolDone: !!evalx.carolDone,
+      tlFound: tagesliste.found,
+      tlReifen: tlRes.reifen || '',
+      tlReifenGreen: !!tlRes.gestellt,
+      tlDatum: tlRes.datum || '',
+      tlSchicht: tlRes.schicht || '',
+      tlLabel: tlLabel,
+      tlReifenLabel: tlReifenLabel,
+      tlUrl: tlRes.url || '',
       nbCount: nbs.length,
+      nbOpenCount: evalx.nbOpenCount || 0,
+      nbReifenCount: evalx.nbReifenCount || 0,
+      nbReifenOpenCount: evalx.nbReifenOpenCount || 0,
       checksDone: checks.done,
       checksTotal: CHECK_TOTAL
     };
@@ -989,8 +1203,12 @@ function rebuildKlärungCache() {
       regal: g.regal || '',
       refurb: refurb,
       nachbestellungen: nbs,
+      tagesliste: tagesliste,
+      evalx: evalx,
       checks: checks,
+      carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
       gmailSearchUrl: gmailSearchUrl_(stockId),
+      gmailReturnSearchUrl: gmailSearchUrl_('"Return to Auto1" "' + stockId + '"'),
       carolSearchHint: 'Carol: begonnen / Fertiggestellt / B2A1 prüfen',
       fromCache: true,
       rev: builtAtMs
@@ -1037,6 +1255,7 @@ function buildRefurbMap_() {
         kommAnlieferung: String(data[i][24] || '').trim(),
         status: String(data[i][25] || '').trim(),
         regal: String(data[i][27] || '').trim(),
+        reifenStatusRaw: String(data[i][29] || '').trim(),
         reifenStatus: formatReifenLabel_(data[i][29])
       };
     }
@@ -1109,15 +1328,18 @@ function buildNachbestellMap_() {
       }
       var typVal = typCol ? data[i][typCol - 1] : '';
       if (typVal instanceof Date || Object.prototype.toString.call(typVal) === '[object Date]') typVal = '';
+      var teilVal = String(data[i][teilCol - 1] || '').trim();
+      var typStr = String(typVal || '').trim();
       if (!map[sid]) map[sid] = [];
       map[sid].push({
         source: 'Nachbestellung',
-        typ: String(typVal || '').trim(),
-        teil: String(data[i][teilCol - 1] || '').trim(),
+        typ: typStr,
+        teil: teilVal,
         status: String(data[i][statusCol - 1] || '').trim(),
         regal: String(data[i][regalCol - 1] || '').trim(),
         date: dateStr,
         dateMs: dateMs,
+        reifen: isReifenPart_(teilVal) || isReifenPart_(typStr),
         sheetRow: headerRow + 1 + i
       });
     }
@@ -1312,17 +1534,23 @@ function detailFromCache_(cache, d) {
   kisten.status = statusHint;
   kisten.primaryColor = primary ? primary.color : (sheetKat ? normalizeColor_(sheetKat) : '');
   kisten.yellow = statusHint === 'ALFAH' || statusHint === 'Kontrollieren';
+  var stockId = d.stockId;
+  var carolUrl = d.carolUrl || carolUrlFor_(stockId, d.refurb && d.refurb.carolUrl);
   return {
     success: true,
     unchanged: false,
-    stockId: d.stockId,
+    stockId: stockId,
     kisten: kisten,
     regal: d.regal,
     refurb: d.refurb,
     nachbestellungen: d.nachbestellungen || [],
+    tagesliste: d.tagesliste || { found: false, entries: [], latest: null },
+    evalx: d.evalx || evaluateStockLite_(stockId, d.refurb, d.nachbestellungen || [], (d.tagesliste && d.tagesliste.entries) || []),
     checks: checks,
+    carolUrl: carolUrl,
     gmail: { threads: [], orderHits: [], ok: true, message: 'Mails on-demand', alfahUnanswered: false },
-    gmailSearchUrl: d.gmailSearchUrl,
+    gmailSearchUrl: d.gmailSearchUrl || gmailSearchUrl_(stockId),
+    gmailReturnSearchUrl: d.gmailReturnSearchUrl || gmailSearchUrl_('"Return to Auto1" "' + stockId + '"'),
     carolSearchHint: d.carolSearchHint,
     fromCache: true,
     cachedAt: cache.builtAt || '',

@@ -238,16 +238,32 @@
     .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
 
     .item {
+      position: relative;
       width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
-      color: inherit; border-radius: 10px; padding: 8px 10px; cursor: pointer; margin-bottom: 4px;
-      transition: background 160ms var(--easing), border-color 160ms var(--easing), transform 150ms var(--easing);
+      color: inherit; border-radius: 10px; padding: 8px 10px 8px 14px; cursor: pointer; margin-bottom: 4px;
+      transition: background 160ms var(--easing), border-color 160ms var(--easing), transform 150ms var(--easing), box-shadow 160ms var(--easing);
     }
     .item:hover { filter: brightness(1.08); }
     .item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
     .item:active { transform: scale(0.985); }
     .item.active {
-      box-shadow: inset 0 0 0 2px rgba(13, 148, 136, 0.75);
+      border-color: #3FA0DB;
+      box-shadow: 0 0 0 2px rgba(63, 160, 219, 0.85), 0 0 22px rgba(63, 160, 219, 0.35);
     }
+    .item.active::before {
+      content: '';
+      position: absolute; left: 0; top: 6px; bottom: 6px; width: 4px;
+      border-radius: 4px;
+      background: linear-gradient(180deg, #3FA0DB, #F27420);
+    }
+    .item.active .sid { color: #fff; }
+    .sel-mark {
+      display: none; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.06em;
+      text-transform: uppercase; color: #3FA0DB;
+      border: 1px solid rgba(63, 160, 219, 0.5); background: rgba(63, 160, 219, 0.16);
+      border-radius: 999px; padding: 0.1rem 0.38rem;
+    }
+    .item.active .sel-mark { display: inline-flex; }
     .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
     .item.st-alfah { background: rgba(255, 153, 0, 0.18); border-color: rgba(255, 153, 0, 0.45); }
     .item.st-nachbestellt { background: rgba(74, 134, 232, 0.18); border-color: rgba(74, 134, 232, 0.45); }
@@ -256,6 +272,11 @@
     .item.st-tagesliste { background: rgba(0, 255, 0, 0.12); border-color: rgba(0, 255, 0, 0.4); }
     .item.st-complete { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
     .item.st-erledigt { background: rgba(52, 211, 153, 0.16); border-color: rgba(52, 211, 153, 0.45); }
+    .item.active {
+      border-color: #3FA0DB;
+      box-shadow: 0 0 0 2px rgba(63, 160, 219, 0.9), 0 0 22px rgba(63, 160, 219, 0.4);
+      background-image: linear-gradient(90deg, rgba(63, 160, 219, 0.32), rgba(242, 116, 32, 0.12));
+    }
     .item-top {
       display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; align-items: center;
     }
@@ -281,6 +302,29 @@
     .hint.red { color: #f87171; }
     .hint.purple { color: #c084fc; }
     .hint.blue { color: #60a5fa; }
+    .hint.cyan { color: #67e8f9; }
+    .item-hints {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;
+    }
+    .item-hints .hint {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.01em;
+      padding: 0.12rem 0.38rem; border-radius: 999px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    }
+    .item-hints .hint.green { color: #86efac; border-color: rgba(52,211,153,0.4); background: rgba(52,211,153,0.1); }
+    .item-hints .hint.yellow { color: #fde047; border-color: rgba(253,224,71,0.4); background: rgba(253,224,71,0.1); }
+    .item-hints .hint.cyan { color: #67e8f9; border-color: rgba(103,232,249,0.4); background: rgba(103,232,249,0.1); }
+    .item-hints .hint.blue { color: #93c5fd; border-color: rgba(63,160,219,0.4); background: rgba(63,160,219,0.1); }
+    .cache-dot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      background: #34d399; margin-right: 6px; vertical-align: middle;
+      box-shadow: 0 0 8px rgba(52,211,153,0.55);
+    }
+    .cache-dot.sync {
+      background: #3FA0DB; box-shadow: 0 0 8px rgba(63,160,219,0.55);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
     .regal-tag {
       display: inline-block; font-weight: 700; font-size: 0.78rem; letter-spacing: 0.02em;
       color: #fbbf24; background: rgba(251, 191, 36, 0.12);
@@ -526,6 +570,7 @@
       display: flex; align-items: center; gap: 8px;
       flex-shrink: 0;
     }
+    .card h2.subhead { margin-top: 16px; }
     .card h2 .step {
       display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 6px;
       background: rgba(13, 148, 136, 0.2); color: var(--color-secondary);
@@ -651,6 +696,34 @@
     }
     .fact .fk { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--foreground-muted); font-weight: 600; }
     .fact .fv { margin-top: 4px; font-size: 1.05rem; font-weight: 500; word-break: break-word; }
+    .fact .fv.ok { color: #86efac; }
+    .fact .fv.info { color: #7dd3fc; }
+    .fact .fv.warn { color: #fde047; }
+    .fact .fv a { color: #3FA0DB; font-weight: 700; text-decoration: none; }
+    .fact .fv a:hover { text-decoration: underline; color: #67e8f9; }
+    .rk-list { display: flex; flex-direction: column; gap: 8px; }
+    .rk-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+    }
+    .rk-row.ok { border-left-color: #34d399; background: rgba(52,211,153,0.08); }
+    .rk-row.warn { border-left-color: #fde047; background: rgba(253,224,71,0.08); }
+    .rk-row.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
+    .rk-row.none { border-left-color: var(--border-strong); }
+    .rk-ico {
+      width: 22px; height: 22px; flex-shrink: 0; margin-top: 1px; color: var(--foreground-muted);
+    }
+    .rk-row.ok .rk-ico { color: #34d399; }
+    .rk-row.warn .rk-ico { color: #fde047; }
+    .rk-row.info .rk-ico { color: #67e8f9; }
+    .rk-ico svg { width: 22px; height: 22px; display: block; }
+    .rk-body { min-width: 0; flex: 1; }
+    .rk-body .ct { font-size: 0.95rem; font-weight: 700; color: var(--foreground); }
+    .rk-body .cm { font-size: 0.82rem; color: var(--foreground-muted); margin-top: 2px; line-height: 1.4; }
+    .rk-body .cm b { color: var(--foreground); font-weight: 700; }
+    .rk-body .cm a { color: #3FA0DB; font-weight: 700; text-decoration: none; }
+    .rk-body .cm a:hover { text-decoration: underline; }
     .fact.wide { grid-column: 1 / -1; }
     .fact .fv.clamp {
       overflow: hidden;
@@ -1345,6 +1418,8 @@
                     <div class="fact"><div class="fk">Refurb</div><div class="fv" id="refurbStatus">—</div></div>
                     <div class="fact"><div class="fk">Reifen</div><div class="fv" id="reifen">—</div></div>
                     <div class="fact"><div class="fk">Regal Refurb</div><div class="fv" id="refurbRegal">—</div></div>
+                    <div class="fact"><div class="fk">Tagesliste</div><div class="fv" id="fTagesliste">—</div></div>
+                    <div class="fact"><div class="fk">TL Reifen</div><div class="fv" id="fTlReifen">—</div></div>
                     <div class="fact"><div class="fk">Bestellung</div><div class="fv" id="kommBest">—</div></div>
                     <div class="fact"><div class="fk">Anlieferung</div><div class="fv" id="kommAn">—</div></div>
                     <div class="fact wide">
@@ -1358,6 +1433,8 @@
                     </div>
                   </div>
                   <div id="nbBox"></div>
+                  <h2 class="subhead">Checks</h2>
+                  <div class="rk-list" id="rkChecks"></div>
                 </div>
               </div>
             </div>
@@ -1397,15 +1474,19 @@
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
+    var SEL_STORE = 'kk-sel-v1';
+    var BG_SYNC_MS = 2 * 60 * 1000;
     var state = {
       filter: 'open',
       items: [],
       selectedKey: null,
+      selectedSid: '',
       detail: null,
       detailByKey: {},
       detailReqId: 0,
       softReqId: 0,
       busy: false,
+      bgSyncing: false,
       cachedAt: '',
       commentColor: 'b2a1',
       notifs: [],
@@ -1416,6 +1497,54 @@
     };
 
     function $(id) { return document.getElementById(id); }
+
+    function persistSelection() {
+      try {
+        var listEl = $('list');
+        sessionStorage.setItem(SEL_STORE, JSON.stringify({
+          key: state.selectedKey || '',
+          sid: state.selectedSid || '',
+          filter: state.filter || 'open',
+          scroll: listEl ? listEl.scrollTop : 0
+        }));
+      } catch (e) {}
+    }
+
+    function readSelection() {
+      try {
+        var raw = sessionStorage.getItem(SEL_STORE);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function restoreListScroll(scrollTop) {
+      var listEl = $('list');
+      if (!listEl) return;
+      if (scrollTop == null || isNaN(scrollTop)) return;
+      listEl.scrollTop = scrollTop;
+    }
+
+    function scrollSelectedIntoView() {
+      var listEl = $('list');
+      if (!listEl) return;
+      var active = listEl.querySelector('.item.active');
+      if (!active) return;
+      var lr = listEl.getBoundingClientRect();
+      var ar = active.getBoundingClientRect();
+      if (ar.top < lr.top || ar.bottom > lr.bottom) {
+        active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      }
+    }
+
+    function setCacheLabel() {
+      var el = $('cacheLabel');
+      if (!el) return;
+      var txt = (state.items.length ? (state.items.length + ' · ') : '') + (state.cachedAt ? ('Cache ' + state.cachedAt) : '');
+      var dot = '<span class="cache-dot' + (state.bgSyncing ? ' sync' : '') + '"></span>';
+      el.innerHTML = dot + escapeHtml(txt);
+    }
 
     function toast(msg, err) {
       var el = $('toast');
@@ -1738,39 +1867,40 @@
       $('list').innerHTML = html;
     }
 
-    function loadQueue(forceRebuild) {
-      setBusy(true, forceRebuild ? 'Cache neu…' : 'Lädt Liste…');
-      showListSkeleton();
-      var needDetails = !!forceRebuild || !Object.keys(state.detailByKey).length;
+    function loadQueue(forceRebuild, silent) {
+      var listEl = $('list');
+      var hadItems = state.items.length > 0;
+      var savedScroll = listEl ? listEl.scrollTop : 0;
+      if (!hadItems) {
+        var savedSel = readSelection();
+        if (savedSel && typeof savedSel.scroll === 'number') savedScroll = savedSel.scroll;
+      }
+      if (!silent) {
+        if (!hadItems || forceRebuild) {
+          setBusy(true, forceRebuild ? 'Cache neu…' : 'Lädt Liste…');
+          if (!hadItems) showListSkeleton();
+        } else {
+          setBusy(true, 'Aktualisiert…');
+        }
+      }
+      var needDetails = !!forceRebuild || silent || !Object.keys(state.detailByKey).length;
       var run = function() {
         api()
           .withSuccessHandler(function(res) {
-            setBusy(false);
+            if (!silent) setBusy(false);
             if (!res || !res.success) {
-              toast((res && res.message) || 'Laden fehlgeschlagen', true);
-              $('list').innerHTML = '<div class="empty">Fehler beim Laden</div>';
+              if (!silent) {
+                toast((res && res.message) || 'Laden fehlgeschlagen', true);
+                if (!hadItems) $('list').innerHTML = '<div class="empty">Fehler beim Laden</div>';
+              }
               return;
             }
-            state.items = res.items || [];
-            state.cachedAt = res.cachedAt || '';
-            if (forceRebuild) state.detailByKey = {};
-            if (res.details) {
-              var keys = Object.keys(res.details);
-              for (var i = 0; i < keys.length; i++) {
-                state.detailByKey[keys[i]] = res.details[keys[i]];
-              }
-            }
-            $('cacheLabel').textContent = (res.totalCached ? (res.totalCached + ' · ') : '') + (res.cachedAt ? ('Cache ' + res.cachedAt) : '');
-            renderList();
-            if (state.selectedKey && state.detailByKey[state.selectedKey]) {
-              state.detail = state.detailByKey[state.selectedKey];
-              renderDetail();
-            }
+            applyQueuePayload(res, { silent: !!silent, scrollTop: savedScroll, forceRebuild: !!forceRebuild });
           })
           .getQueue(state.filter, needDetails);
       };
       if (forceRebuild) {
-        state.detailByKey = {};
+        if (!silent) state.detailByKey = {};
         api()
           .withSuccessHandler(function(r) {
             if (r && !r.success) toast((r && r.message) || 'Rebuild fehlgeschlagen', true);
@@ -1780,6 +1910,87 @@
         return;
       }
       run();
+    }
+
+    function applyQueuePayload(res, opts) {
+      opts = opts || {};
+      var keepKey = state.selectedKey;
+      var keepDetail = (opts.silent && keepKey && state.detail) ? state.detail : null;
+      state.items = res.items || [];
+      state.cachedAt = res.cachedAt || '';
+      if (opts.forceRebuild) state.detailByKey = {};
+      if (res.details) {
+        var keys = Object.keys(res.details);
+        for (var i = 0; i < keys.length; i++) {
+          if (opts.silent && keepKey && keys[i] === keepKey) continue;
+          state.detailByKey[keys[i]] = res.details[keys[i]];
+        }
+      }
+      if (keepDetail) {
+        state.detail = keepDetail;
+        if (keepKey) state.detailByKey[keepKey] = keepDetail;
+      }
+      if (res.totalCached) {
+        $('countLabel').textContent = state.items.length + ' / ' + res.totalCached;
+      }
+      setCacheLabel();
+      renderList({ scrollTop: opts.scrollTop, scrollToSelected: !opts.silent });
+      if (!opts.silent && keepKey) {
+        var sid = state.selectedSid || '';
+        for (var j = 0; j < state.items.length; j++) {
+          if (state.items[j].cellKey === keepKey) {
+            sid = state.items[j].stockId;
+            break;
+          }
+        }
+        if (sid) selectItem(sid, keepKey);
+      } else if (!opts.silent && !keepKey) {
+        restoreOpenItem();
+      }
+    }
+
+    function restoreOpenItem() {
+      var saved = readSelection();
+      if (!saved) return;
+      if (saved.filter && saved.filter !== state.filter) return;
+      var key = saved.key || '';
+      var sid = saved.sid || '';
+      var found = null;
+      for (var i = 0; i < state.items.length; i++) {
+        if ((key && state.items[i].cellKey === key) || (sid && state.items[i].stockId === sid)) {
+          found = state.items[i];
+          break;
+        }
+      }
+      if (!found) {
+        if (saved.scroll) restoreListScroll(saved.scroll);
+        return;
+      }
+      state.selectedKey = found.cellKey;
+      state.selectedSid = found.stockId;
+      renderList({ scrollTop: saved.scroll, scrollToSelected: true });
+      selectItem(found.stockId, found.cellKey);
+    }
+
+    function pollBackgroundSync() {
+      if (state.busy) return;
+      state.bgSyncing = true;
+      setCacheLabel();
+      apiQuiet()
+        .withSuccessHandler(function(res) {
+          state.bgSyncing = false;
+          if (!res || !res.success) {
+            setCacheLabel();
+            return;
+          }
+          var listEl = $('list');
+          applyQueuePayload(res, { silent: true, scrollTop: listEl ? listEl.scrollTop : 0 });
+        })
+        .withFailureHandler(function() {
+          state.bgSyncing = false;
+          setCacheLabel();
+        })
+        .getQueue(state.filter, true);
     }
 
     function shortName(email) {
@@ -1878,7 +2089,7 @@
             return;
           }
           applyChecks(res.checks);
-          renderList();
+          renderList({ scrollToSelected: true });
           toast(res.message || 'Gespeichert');
         })
         .setCheckStep(key, d.stockId, step, !!checked);
@@ -1898,17 +2109,35 @@
       return '';
     }
 
-    function renderList() {
+    function itemHintsHtml(it) {
+      var hints = [];
+      if (it.reifenDa) hints.push('<span class="hint green">Reifen da</span>');
+      else if (it.reifenStatus) hints.push('<span class="hint yellow">' + escapeHtml(it.reifenStatus) + '</span>');
+      if (it.carolDone) hints.push('<span class="hint cyan">Herausgegeben</span>');
+      if (it.tlReifenGreen) hints.push('<span class="hint green">Gestellt · Mechanik</span>');
+      else if (it.tlFound && it.tlReifen) hints.push('<span class="hint yellow">TL ' + escapeHtml(it.tlReifen) + '</span>');
+      else if (it.tlFound) hints.push('<span class="hint yellow">Tagesliste</span>');
+      if (it.tlLabel) hints.push('<span class="hint blue">' + escapeHtml(it.tlLabel) + '</span>');
+      if (it.nbReifenOpenCount) hints.push('<span class="hint yellow">' + it.nbReifenOpenCount + '× Reifen-NB</span>');
+      if (!hints.length) return '';
+      return '<div class="item-hints">' + hints.join('') + '</div>';
+    }
+
+    function renderList(opts) {
+      opts = opts || {};
+      var listEl = $('list');
+      var scrollTop = opts.scrollTop != null ? opts.scrollTop : (listEl ? listEl.scrollTop : 0);
       var q = String($('qSearch').value || '').trim().toUpperCase();
       var html = '';
       var shown = 0;
       for (var i = 0; i < state.items.length; i++) {
         var it = state.items[i];
-        var hay = [it.stockId, it.comment, it.regal, it.markeModel, it.refurbStatus, it.kategorie].join(' ').toUpperCase();
+        var hay = [it.stockId, it.comment, it.regal, it.markeModel, it.refurbStatus, it.kategorie, it.tlLabel, it.tlReifen, it.reifenStatus].join(' ').toUpperCase();
         if (q && hay.indexOf(q) === -1) continue;
         shown++;
         var sk = statusKey(it);
         var cardClass = sk ? (' st-' + sk) : '';
+        var isActive = state.selectedKey === it.cellKey;
         var dotClass = sk || String(it.primaryColor || '') || (it.hasNote ? 'none' : '');
         var noteMark = it.hasNote ? '<span class="note-dot ' + escapeHtml(dotClass) + '" title="Kommentar"></span>' : '';
         var done = Number(it.checksDone) || 0;
@@ -1920,21 +2149,25 @@
           : '';
         var line2 = it.markeModel || '';
         var line3 = it.comment || '';
-        html += '<button type="button" class="item' + cardClass + (state.selectedKey === it.cellKey ? ' active' : '') + '" data-key="' + escapeHtml(it.cellKey) + '" data-sid="' + escapeHtml(it.stockId) + '">'
+        html += '<button type="button" class="item' + cardClass + (isActive ? ' active' : '') + '" data-key="' + escapeHtml(it.cellKey) + '" data-sid="' + escapeHtml(it.stockId) + '"' + (isActive ? ' aria-current="true"' : '') + '>'
           + '<div class="item-top"><span class="sid">' + noteMark + escapeHtml(it.stockId) + '</span>'
-          + '<span class="item-meta">' + progHtml + statusHtml + '</span></div>'
+          + '<span class="item-meta">' + (isActive ? '<span class="sel-mark">Aktiv</span>' : '') + progHtml + statusHtml + '</span></div>'
           + '<div class="sub">' + regalHtml + escapeHtml(line2 || '—') + '</div>'
           + (line3 ? '<div class="sub">' + escapeHtml(line3) + '</div>' : '')
+          + itemHintsHtml(it)
           + '</button>';
       }
-      $('list').innerHTML = html || '<div class="empty">Keine Treffer</div>';
+      listEl.innerHTML = html || '<div class="empty">Keine Treffer</div>';
       $('countLabel').textContent = shown + ' / ' + state.items.length;
-      var buttons = $('list').querySelectorAll('.item');
+      restoreListScroll(scrollTop);
+      var buttons = listEl.querySelectorAll('.item');
       for (var b = 0; b < buttons.length; b++) {
         buttons[b].onclick = function() {
           selectItem(this.getAttribute('data-sid'), this.getAttribute('data-key'));
         };
       }
+      if (opts.scrollToSelected) scrollSelectedIntoView();
+      persistSelection();
     }
 
     function syncListItemFromDetail(res) {
@@ -1955,6 +2188,20 @@
         it.checksDone = Number(ch.done) || 0;
         it.checksTotal = Number(ch.total) || 3;
         it.done = it.checksDone >= it.checksTotal;
+        if (res.refurb) {
+          it.markeModel = res.refurb.markeModel || it.markeModel;
+          it.refurbStatus = res.refurb.status || it.refurbStatus;
+          it.reifenStatus = res.refurb.reifenStatus || it.reifenStatus;
+        }
+        var ev = res.evalx || {};
+        if (ev.reifenDa != null) it.reifenDa = !!ev.reifenDa;
+        if (ev.carolDone != null) it.carolDone = !!ev.carolDone;
+        var tl = res.tagesliste || {};
+        if (tl.found != null) it.tlFound = !!tl.found;
+        if (tl.label) it.tlLabel = tl.label;
+        if (tl.reifenLabel) it.tlReifenLabel = tl.reifenLabel;
+        if (tl.anyGestellt != null) it.tlReifenGreen = !!tl.anyGestellt;
+        if (tl.url) it.tlUrl = tl.url;
         break;
       }
     }
@@ -1972,14 +2219,18 @@
           state.detail = res;
           syncListItemFromDetail(res);
           renderDetail();
-          renderList();
+          renderList({ keepScroll: true });
         })
         .getStockDetailIfChanged(stockId, cellKey, Number(rev) || 0);
     }
 
     function selectItem(stockId, cellKey, forceNet) {
+      var listEl = $('list');
+      var savedScroll = listEl ? listEl.scrollTop : 0;
       state.selectedKey = cellKey;
-      renderList();
+      state.selectedSid = stockId || '';
+      persistSelection();
+      renderList({ scrollTop: savedScroll, scrollToSelected: true });
       $('detailSid').textContent = stockId;
       if ($('btnCopySid')) $('btnCopySid').disabled = !stockId || stockId === '—';
       var local = cellKey && state.detailByKey[cellKey];
@@ -2006,6 +2257,7 @@
           if (cellKey) state.detailByKey[cellKey] = res;
           syncListItemFromDetail(res);
           renderDetail();
+          renderList({ scrollToSelected: true });
         })
         .withFailureHandler(function() {
           if (reqId !== state.detailReqId) return;
@@ -2050,6 +2302,115 @@
       return s;
     }
 
+    function setFact(id, text, cls) {
+      var el = $(id);
+      if (!el) return;
+      el.textContent = text || '—';
+      el.className = 'fv' + (cls ? (' ' + cls) : '');
+    }
+
+    function setFactHtml(id, html, cls) {
+      var el = $(id);
+      if (!el) return;
+      el.innerHTML = html || '—';
+      el.className = 'fv' + (cls ? (' ' + cls) : '');
+    }
+
+    function rkIco(kind) {
+      var icons = {
+        ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+        warn: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+        info: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        none: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>'
+      };
+      return icons[kind] || icons.none;
+    }
+
+    function rkRow(kind, title, meta) {
+      return '<div class="rk-row ' + kind + '"><span class="rk-ico">' + rkIco(kind) + '</span>'
+        + '<div class="rk-body"><div class="ct">' + title + '</div><div class="cm">' + meta + '</div></div></div>';
+    }
+
+    function renderRkChecks(d) {
+      var box = $('rkChecks');
+      if (!box) return;
+      var r = d.refurb || { found: false };
+      var ev = d.evalx || {};
+      var tl = d.tagesliste || { found: false, entries: [] };
+      var nbs = d.nachbestellungen || [];
+      var carolUrl = d.carolUrl || (r.carolUrl && /^https?:\/\//i.test(r.carolUrl) ? r.carolUrl : '');
+      var gmailRet = d.gmailReturnSearchUrl || '';
+      var html = '';
+
+      if (!r.found) {
+        html += rkRow('info', 'Refurbishment', 'Nicht (mehr) in der Refurbishment List — evtl. Completed. In Carol checken.');
+      } else if (ev.carolDone) {
+        html += rkRow('info', 'Refurbishment', 'Status: <b>' + escapeHtml(r.status || '—') + '</b> — Auftrag wurde herausgegeben.');
+      } else if (ev.teilweise) {
+        html += rkRow('warn', 'Refurbishment', 'Noch in Refurbishment — Status: <b>' + escapeHtml(r.status) + '</b>');
+      } else {
+        html += rkRow('ok', 'Refurbishment', 'In Refurbishment — Status: <b>' + escapeHtml(r.status || 'ohne Status') + '</b>');
+      }
+
+      if (ev.reifenWerkstatt) {
+        html += rkRow('ok', 'Reifen da (Werkstatt 1)', 'Reifen-Spalte in Refurbishment: <b>' + escapeHtml(r.reifenStatusRaw || r.reifenStatus || 'Werkstatt 1') + '</b>');
+      } else if (ev.reifenComment) {
+        html += rkRow('ok', 'Reifen da (Kommentar)', '„Reifen da“ im Kommentar gefunden');
+      } else if (r.found) {
+        html += rkRow('warn', 'Reifen', 'Kein „Reifen da“ Nachweis — Reifen-Spalte: <b>' + escapeHtml(r.reifenStatusRaw || r.reifenStatus || 'leer') + '</b>');
+      } else {
+        html += rkRow('none', 'Reifen', 'Keine Refurbishment-Daten vorhanden');
+      }
+
+      var gmailLink = gmailRet ? ' · <a href="' + escapeHtml(gmailRet) + '" target="_blank" rel="noopener">In Gmail prüfen</a>' : '';
+      html += rkRow('info', 'Return to Auto1 (B2A1)', 'In Gmail auf Return-to-Auto1 prüfen' + gmailLink);
+
+      var carolLink = carolUrl ? ' — <a href="' + escapeHtml(carolUrl) + '" target="_blank" rel="noopener">in Carol checken</a>' : '';
+      if (ev.carolDone) {
+        html += rkRow('info', 'Carol', 'Vermutlich <b>Completed</b> (herausgegeben)' + carolLink);
+      } else {
+        html += rkRow('none', 'Carol', 'Completed / Flagged for Return in Carol checken' + carolLink);
+      }
+
+      if (tl.found) {
+        var latest = tl.latest || {};
+        var when = tl.label || ((latest.datum || '') + (latest.schicht ? (' · ' + latest.schicht) : ''));
+        var tlLink = tl.url ? ' · <a href="' + escapeHtml(tl.url) + '" target="_blank" rel="noopener">In Tagesliste öffnen</a>' : '';
+        if (tl.anyGestellt) {
+          html += rkRow('ok', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + escapeHtml(when) + '</b>' : '') +
+            ' · Reifen <b>gestellt</b> · <b>bei Mechanik</b> (nicht mehr im Lager)' +
+            (tl.reifenLabel ? ' · Wert: <b>' + escapeHtml((tl.gestelltEntry && tl.gestelltEntry.reifen) || tl.reifenLabel) + '</b>' : '') +
+            tlLink);
+        } else if (latest.reifen) {
+          html += rkRow('warn', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + escapeHtml(when) + '</b>' : '') +
+            ' · Reifen nicht gestellt · noch im Lager · Wert: <b>' + escapeHtml(latest.reifen) + '</b>' + tlLink);
+        } else {
+          html += rkRow('warn', 'Tagesliste',
+            'War auf Tagesliste' + (when ? ' — <b>' + escapeHtml(when) + '</b>' : '') +
+            ' — nicht gestellt' + tlLink);
+        }
+      } else {
+        html += rkRow('none', 'Tagesliste', 'Nicht auf der Tagesliste gefunden');
+      }
+
+      if (!nbs.length) {
+        html += rkRow('ok', 'Nachbestellungen', 'Keine Bestellungen in Übersicht Nachbestellungen/Exit');
+      } else if (ev.nbReifenOpenCount) {
+        html += rkRow('warn', 'Nachbestellungen',
+          nbs.length + ' Bestellung(en) · <b>' + ev.nbReifenOpenCount + ' offene Reifen-NB</b>');
+      } else if (ev.nbReifenCount) {
+        html += rkRow('ok', 'Nachbestellungen', nbs.length + ' Bestellung(en), Reifen-NB geschlossen');
+      } else if (ev.nbOpenCount) {
+        html += rkRow('info', 'Nachbestellungen', nbs.length + ' Bestellung(en), ' + ev.nbOpenCount + ' offen');
+      } else {
+        html += rkRow('ok', 'Nachbestellungen', nbs.length + ' Bestellung(en), keine offen');
+      }
+
+      box.innerHTML = html;
+    }
+
     function renderDetail() {
       var d = state.detail;
       if (!d) return;
@@ -2064,16 +2425,31 @@
       var r = d.refurb || {};
       var k = d.kisten || {};
       var ch = d.checks || k.checks || {};
+      var ev = d.evalx || {};
+      var tl = d.tagesliste || {};
       $('detailSid').textContent = d.stockId;
-      if (r.carolUrl && /^https?:\/\//i.test(r.carolUrl)) {
-        $('carolLink').innerHTML = '<a href="' + escapeHtml(r.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>';
+      var carolHref = d.carolUrl || r.carolUrl || '';
+      if (carolHref && /^https?:\/\//i.test(carolHref)) {
+        $('carolLink').innerHTML = '<a href="' + escapeHtml(carolHref) + '" target="_blank" rel="noopener">Carol öffnen</a>';
       } else {
         $('carolLink').textContent = r.found === false ? 'nicht in Refurb' : (r.carolUrl || 'kein Link');
       }
-      $('marke').textContent = r.markeModel || '—';
-      $('refurbStatus').textContent = r.status || '—';
-      $('refurbRegal').textContent = r.regal || '—';
-      $('reifen').textContent = formatReifen(r.reifenStatus);
+      setFact('marke', r.markeModel || '—');
+      var rs = r.status || '—';
+      setFact('refurbStatus', rs, ev.carolDone ? 'info' : (/teilweise/i.test(rs) ? 'warn' : ''));
+      var reifenTxt = formatReifen(r.reifenStatus);
+      setFact('reifen', reifenTxt, (ev.reifenDa || reifenTxt === 'Reifen da') ? 'ok' : (reifenTxt !== '—' ? 'warn' : ''));
+      setFact('refurbRegal', r.regal || '—');
+      var tlTxt = tl.label || '—';
+      var tlHtml = tlTxt;
+      if (tl.url && tl.found) {
+        tlHtml = '<a href="' + escapeHtml(tl.url) + '" target="_blank" rel="noopener">' + escapeHtml(tlTxt === '—' ? 'Öffnen' : tlTxt) + '</a>';
+        setFactHtml('fTagesliste', tlHtml, tl.anyGestellt ? 'ok' : (tl.found ? 'warn' : ''));
+      } else {
+        setFact('fTagesliste', tl.found ? tlTxt : '—', tl.anyGestellt ? 'ok' : '');
+      }
+      var tlReifenTxt = tl.reifenLabel || (tl.latest && tl.latest.reifen) || '—';
+      setFact('fTlReifen', tl.found ? tlReifenTxt : '—', tl.anyGestellt ? 'ok' : (tl.found ? 'warn' : ''));
       $('kommBest').textContent = r.kommBestellung || '—';
       $('kommAn').textContent = r.kommAnlieferung || '—';
       var sch = String(r.schaeden || '').trim();
@@ -2101,6 +2477,7 @@
 
       var nbs = d.nachbestellungen || [];
       $('nbBox').innerHTML = renderNbList(nbs);
+      renderRkChecks(d);
     }
 
     function formatNbDate(val) {
@@ -2263,7 +2640,6 @@
           var ck = key || (res.cellKey || '');
           if (ck) delete state.detailByKey[ck];
           selectItem(d.stockId, ck, true);
-          loadQueue();
         })
         .editStockComment(id, text, color || 'none');
     }
@@ -2290,7 +2666,6 @@
           $('commentBox').value = '';
           delete state.detailByKey[key];
           selectItem(d.stockId, key, true);
-          loadQueue();
         })
         .addStockComment(key, d.stockId, state.commentColor || 'none', text);
     }
@@ -2312,7 +2687,6 @@
           $('commentBox').value = '';
           delete state.detailByKey[key];
           selectItem(d.stockId, key, true);
-          loadQueue();
         })
         .markStockErledigt(key, d.stockId, text);
     }
@@ -2332,7 +2706,6 @@
           toast('Gelöscht');
           if (key) delete state.detailByKey[key];
           if (d) selectItem(d.stockId, key, true);
-          loadQueue();
         })
         .deleteStockComment(id);
     }
@@ -2340,7 +2713,7 @@
     function openCarol() {
       var d = state.detail;
       if (!d) return;
-      var url = d.refurb && d.refurb.carolUrl;
+      var url = d.carolUrl || (d.refurb && d.refurb.carolUrl);
       if (url && /^https?:\/\//i.test(url)) {
         window.open(url, '_blank', 'noopener,noreferrer');
         return;
@@ -2452,9 +2825,31 @@
     }
 
     initSkateLoader();
+    (function bootSelection() {
+      var saved = readSelection();
+      if (saved && saved.filter) {
+        state.filter = saved.filter;
+        var chips = $('filters').querySelectorAll('.chip');
+        for (var i = 0; i < chips.length; i++) {
+          chips[i].classList.toggle('active', chips[i].getAttribute('data-f') === saved.filter);
+        }
+      }
+      if (saved && saved.key) {
+        state.selectedKey = saved.key;
+        state.selectedSid = saved.sid || '';
+      }
+    })();
     loadQueue();
     pollNotifications();
     setInterval(pollNotifications, 8000);
+    setInterval(pollBackgroundSync, BG_SYNC_MS);
+    if ($('list')) {
+      var scrollTimer = null;
+      $('list').addEventListener('scroll', function() {
+        clearTimeout(scrollTimer);
+        scrollTimer = setTimeout(persistSelection, 180);
+      });
+    }
 
     (function initSideResize() {
       var KEY = 'kk-side-width';
