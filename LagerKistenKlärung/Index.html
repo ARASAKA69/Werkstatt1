@@ -810,6 +810,17 @@
     .inv-check.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
     .inv-check .ik { font-weight: 800; flex: 0 0 auto; min-width: 6.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
     .inv-check .iv { font-weight: 600; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
+    .inv-check .iv a, .inv-checks .rk-body .cm a { color: #3FA0DB; font-weight: 700; text-decoration: none; }
+    .inv-check .iv a:hover, .inv-checks .rk-body .cm a:hover { text-decoration: underline; color: #67e8f9; }
+    .inv-checks .rk-list { margin: 0; }
+    .inv-comment {
+      display: flex; flex-direction: column; gap: 8px;
+      margin: 0 0 12px; padding: 12px; border-radius: 14px;
+      border: 1px solid var(--border-strong); background: var(--surface);
+    }
+    .inv-comment-head { font-size: 0.82rem; font-weight: 700; color: var(--foreground-muted); }
+    .inv-comment textarea { min-height: 5.2rem; }
+    .inv-comment-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .inv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
     .inv-actions .sbtn { min-width: 5.5rem; }
     .inv-nav {
@@ -2463,15 +2474,20 @@
         + '<div class="rk-body"><div class="ct">' + title + '</div><div class="cm">' + meta + '</div></div></div>';
     }
 
-    function renderRkChecks(d) {
-      var box = $('rkChecks');
-      if (!box) return;
+    function gmailHref(query) {
+      return 'https://mail.google.com/mail/?authuser=' + encodeURIComponent('ersatzteile.hemau@autohero.com')
+        + '#search/' + encodeURIComponent(query || '');
+    }
+
+    function buildRkChecksHtml(d) {
+      d = d || {};
       var r = d.refurb || { found: false };
       var ev = d.evalx || {};
       var tl = d.tagesliste || { found: false, entries: [] };
       var nbs = d.nachbestellungen || [];
+      var sid = d.stockId || '';
       var carolUrl = d.carolUrl || (r.carolUrl && /^https?:\/\//i.test(r.carolUrl) ? r.carolUrl : '');
-      var gmailRet = d.gmailReturnSearchUrl || '';
+      var gmailRet = d.gmailReturnSearchUrl || (sid ? gmailHref('"Return to Auto1" "' + sid + '"') : '');
       var html = '';
 
       if (!r.found) {
@@ -2540,7 +2556,13 @@
         html += rkRow('ok', 'Nachbestellungen', nbs.length + ' Bestellung(en), keine offen');
       }
 
-      box.innerHTML = html;
+      return html;
+    }
+
+    function renderRkChecks(d) {
+      var box = $('rkChecks');
+      if (!box) return;
+      box.innerHTML = buildRkChecksHtml(d);
     }
 
     function renderDetail() {
@@ -2875,7 +2897,7 @@
     }
 
     var INV_STATUSES = [
-      { key: 'OK', color: 'none', label: 'Da', cls: 'ok', text: 'Inventur OK — Kiste da' },
+      { key: 'OK', color: 'none', label: 'Normal', cls: 'ok', text: 'Inventur · Normal' },
       { key: 'kontrollieren', color: 'kontrollieren', label: 'Kontrollieren', cls: 'ctrl', text: 'Inventur · Kontrollieren' },
       { key: 'b2a1', color: 'b2a1', label: 'B2A1', cls: 'b2a1', text: 'Inventur · B2A1' },
       { key: 'alfah', color: 'alfah', label: 'ALFAH', cls: 'alfah', text: 'Inventur · ALFAH' },
@@ -2927,45 +2949,63 @@
       }
     }
 
-    function inventurSaveStatus(it, key) {
+    function inventurSaveStatus(it, key, note) {
       var meta = inventurMeta(key);
       if (!meta || !it) return;
-      inventurApplyLocal(it, meta.color, meta.text);
+      var text = String(note || '').trim() || meta.text;
+      inventurApplyLocal(it, meta.color, text);
       apiQuiet()
         .withSuccessHandler(function(res) {
           if (!res || !res.success) toast((res && res.message) || 'Speichern fehlgeschlagen', true);
         })
-        .addStockComment(it.cellKey, it.stockId, meta.color, meta.text);
+        .addStockComment(it.cellKey, it.stockId, meta.color, text);
+    }
+
+    function inventurCheckData(it, d) {
+      if (d) {
+        if (!d.stockId) d.stockId = it.stockId;
+        return d;
+      }
+      var nbs = [];
+      var n = Number(it.nbCount) || 0;
+      for (var i = 0; i < n; i++) nbs.push({});
+      return {
+        stockId: it.stockId,
+        refurb: {
+          found: !!(it.markeModel || it.refurbStatus || it.reifenStatus || it.carolDone),
+          status: it.refurbStatus || '',
+          markeModel: it.markeModel || '',
+          reifenStatus: it.reifenStatus || '',
+          reifenStatusRaw: it.reifenStatus || ''
+        },
+        evalx: {
+          reifenDa: !!it.reifenDa,
+          reifenWerkstatt: !!it.reifenDa,
+          carolDone: !!it.carolDone,
+          teilweise: /teilweise/i.test(it.refurbStatus || ''),
+          nbOpenCount: it.nbOpenCount || 0,
+          nbReifenCount: it.nbReifenCount || 0,
+          nbReifenOpenCount: it.nbReifenOpenCount || 0
+        },
+        tagesliste: {
+          found: !!it.tlFound,
+          label: it.tlLabel || '',
+          reifenLabel: it.tlReifenLabel || '',
+          anyGestellt: !!it.tlReifenGreen,
+          url: it.tlUrl || '',
+          latest: { reifen: it.tlReifen || '', datum: it.tlDatum || '', schicht: it.tlSchicht || '' }
+        },
+        nachbestellungen: nbs,
+        carolUrl: it.carolUrl || '',
+        gmailReturnSearchUrl: gmailHref('"Return to Auto1" "' + it.stockId + '"'),
+        gmailSearchUrl: gmailHref(it.stockId)
+      };
     }
 
     function inventurHintRows(it, d) {
       var rows = [];
-      var r = (d && d.refurb) || {};
-      var ev = (d && d.evalx) || {};
-      var tl = (d && d.tagesliste) || {};
       var k = (d && d.kisten) || {};
       rows.push({ cls: it.regal ? 'ok' : 'warn', k: 'Regal', v: it.regal || 'Kein Regal' });
-      if (r.found === false) rows.push({ cls: 'info', k: 'Refurb', v: 'Nicht in Refurbishment List' });
-      else rows.push({ cls: ev.carolDone ? 'info' : 'ok', k: 'Refurb', v: (r.status || it.refurbStatus || '—') + (r.markeModel || it.markeModel ? ' · ' + (r.markeModel || it.markeModel) : '') });
-      if (ev.reifenDa || it.reifenDa) rows.push({ cls: 'ok', k: 'Reifen', v: 'Reifen da' });
-      else if (r.reifenStatus || it.reifenStatus) rows.push({ cls: 'warn', k: 'Reifen', v: r.reifenStatus || it.reifenStatus });
-      else rows.push({ cls: 'warn', k: 'Reifen', v: 'Kein Eintrag' });
-      if (tl.found || it.tlFound) {
-        if (tl.anyGestellt || it.tlReifenGreen) rows.push({ cls: 'ok', k: 'Tagesliste', v: tl.reifenLabel || it.tlReifenLabel || 'gestellt · bei Mechanik' });
-        else rows.push({ cls: 'warn', k: 'Tagesliste', v: tl.reifenLabel || it.tlReifen || 'nicht gestellt' });
-      } else {
-        rows.push({ cls: 'info', k: 'Tagesliste', v: 'Kein Eintrag' });
-      }
-      var nbs = (d && d.nachbestellungen) || [];
-      var nbOpen = ev.nbOpenCount || it.nbOpenCount || 0;
-      if (nbs.length || it.nbCount) {
-        rows.push({ cls: nbOpen ? 'warn' : 'ok', k: 'Nachbestellung', v: (nbs.length || it.nbCount) + ' Zeile(n)' + (nbOpen ? ' · ' + nbOpen + ' offen' : '') });
-      } else {
-        rows.push({ cls: 'ok', k: 'Nachbestellung', v: 'Keine' });
-      }
-      var done = Number(it.checksDone) || 0;
-      var total = Number(it.checksTotal) || 3;
-      rows.push({ cls: done >= total ? 'ok' : (done ? 'warn' : 'info'), k: 'Kontrolle', v: done + '/' + total + ' kontrolliert' });
       if (k.comment || it.comment) rows.push({ cls: 'info', k: 'Kommentar', v: k.comment || it.comment });
       return rows;
     }
@@ -3005,7 +3045,7 @@
           '<h3>Inventur fertig</h3>' +
           '<p>' + inv.queue.length + ' Kisten durchgearbeitet</p>' +
           '<div class="inv-stats">' +
-          '<div class="inv-stat ok"><div class="n">' + c.OK + '</div><div class="l">Da</div></div>' +
+          '<div class="inv-stat ok"><div class="n">' + c.OK + '</div><div class="l">Normal</div></div>' +
           '<div class="inv-stat ctrl"><div class="n">' + c.kontrollieren + '</div><div class="l">Kontrollieren</div></div>' +
           '<div class="inv-stat b2a1"><div class="n">' + c.b2a1 + '</div><div class="l">B2A1</div></div>' +
           '<div class="inv-stat alfah"><div class="n">' + c.alfah + '</div><div class="l">ALFAH</div></div>' +
@@ -3022,20 +3062,35 @@
       }
       var it = inv.queue[inv.index];
       var d = (it.cellKey && state.detailByKey[it.cellKey]) || null;
+      var checkData = inventurCheckData(it, d);
       var pct = Math.round((inv.index / Math.max(inv.queue.length, 1)) * 100);
       var hints = inventurHintRows(it, d);
       var checksHtml = '';
       for (var h = 0; h < hints.length; h++) {
         checksHtml += '<div class="inv-check ' + hints[h].cls + '"><div class="ik">' + escapeHtml(hints[h].k) + '</div><div class="iv">' + escapeHtml(hints[h].v) + '</div></div>';
       }
+      checksHtml += '<div class="rk-list">' + buildRkChecksHtml(checkData) + '</div>';
       var car = (d && d.refurb && d.refurb.markeModel) || it.markeModel || '—';
       var regal = it.regal || (d && d.regal) || '';
       var currentMark = (inv.results && inv.results[it.stockId]) || '';
       var currentLabel = currentMark === 'SKIP' ? 'übersprungen' : ((inventurMeta(currentMark) && inventurMeta(currentMark).label) || currentMark);
+      var activeKey = inv.pending || currentMark;
       var btns = '';
       for (var b = 0; b < INV_STATUSES.length; b++) {
         var st = INV_STATUSES[b];
-        btns += '<button type="button" class="sbtn ' + st.cls + (currentMark === st.key ? ' set' : '') + '" data-s="' + st.key + '">' + st.label + '</button>';
+        btns += '<button type="button" class="sbtn ' + st.cls + (activeKey === st.key ? ' set' : '') + '" data-s="' + st.key + '">' + st.label + '</button>';
+      }
+      var pmeta = inventurMeta(inv.pending);
+      var noteHtml = '';
+      if (pmeta) {
+        noteHtml =
+          '<div class="inv-comment">' +
+          '<div class="inv-comment-head">Kommentar zu ' + escapeHtml(it.stockId) + ' · ' + escapeHtml(pmeta.label) + '</div>' +
+          '<textarea id="invNote" rows="3" placeholder="Kommentar schreiben…">' + escapeHtml(inv.pendingText != null ? inv.pendingText : pmeta.text) + '</textarea>' +
+          '<div class="inv-comment-actions">' +
+          '<button type="button" class="btn primary" id="invSaveNote">Speichern &amp; weiter</button>' +
+          '<button type="button" class="btn ghost" id="invCancelNote">Abbrechen</button>' +
+          '</div></div>';
       }
       box.innerHTML =
         '<div class="inv-progress">' +
@@ -3047,6 +3102,7 @@
         (currentMark ? ' · zuletzt: ' + escapeHtml(currentLabel) : '') + '</div>' +
         '<div class="inv-checks">' + checksHtml + '</div>' +
         '<div class="inv-actions" id="invStatusBtns">' + btns + '</div>' +
+        noteHtml +
         '<div class="inv-nav">' +
         '<div class="inv-nav-left">' +
         '<button type="button" class="btn ghost" id="invPrev"' + (inv.index === 0 ? ' disabled' : '') + '>Zurück</button>' +
@@ -3056,12 +3112,28 @@
         '<button type="button" class="btn" id="invCarol">Carol</button>' +
         '<button type="button" class="btn" id="invGmail">Gmail</button>' +
         '</div></div>' +
-        '<div class="inv-keys">Tasten: 1 Da · 2 Kontrollieren · 3 B2A1 · 4 ALFAH · 5 Nachbestellt · 6 Erledigt · S überspringen · ← →</div>';
+        '<div class="inv-keys">Tasten: 1 Normal · 2 Kontrollieren · 3 B2A1 · 4 ALFAH · 5 Nachbestellt · 6 Erledigt · Enter speichern · S überspringen · ← →</div>';
+      if (pmeta) {
+        var ta = $('invNote');
+        if (ta) {
+          ta.focus();
+          var len = ta.value.length;
+          try { ta.setSelectionRange(len, len); } catch (e) {}
+        }
+      }
+    }
+
+    function inventurClearPending() {
+      var inv = state.inventur;
+      if (!inv) return;
+      inv.pending = '';
+      inv.pendingText = '';
     }
 
     function inventurAdvance() {
       var inv = state.inventur;
       if (!inv || inv.done) return;
+      inventurClearPending();
       inv.index++;
       if (inv.index >= inv.queue.length) {
         inv.done = true;
@@ -3071,16 +3143,40 @@
       loadInventurDetailIfNeeded();
     }
 
-    function inventurSet(key) {
+    function inventurPick(key) {
       var inv = state.inventur;
       if (!inv || inv.done || inv.index >= inv.queue.length) return;
-      var it = inv.queue[inv.index];
       var meta = inventurMeta(key);
       if (!meta) return;
-      inventurSaveStatus(it, key);
-      inventurMark(it.stockId, key);
+      if (inv.pending === key) {
+        inventurCommit();
+        return;
+      }
+      var prev = inventurMeta(inv.pending);
+      var current = String(inv.pendingText != null ? inv.pendingText : '').trim();
+      var prevDefault = prev ? prev.text : '';
+      inv.pending = key;
+      if (!current || current === prevDefault) inv.pendingText = meta.text;
+      renderInventur();
+    }
+
+    function inventurCommit() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length || !inv.pending) return;
+      var it = inv.queue[inv.index];
+      var meta = inventurMeta(inv.pending);
+      if (!meta) return;
+      var ta = $('invNote');
+      var text = String((ta && ta.value) || inv.pendingText || '').trim() || meta.text;
+      inventurSaveStatus(it, inv.pending, text);
+      inventurMark(it.stockId, inv.pending);
       toast(meta.label + ' — ' + it.stockId);
       inventurAdvance();
+    }
+
+    function inventurCancelPick() {
+      inventurClearPending();
+      renderInventur();
     }
 
     function inventurSkip() {
@@ -3093,6 +3189,7 @@
     function inventurPrev() {
       var inv = state.inventur;
       if (!inv || inv.done || inv.index <= 0) return;
+      inventurClearPending();
       inv.index--;
       renderInventur();
       loadInventurDetailIfNeeded();
@@ -3103,7 +3200,6 @@
       if (!inv || inv.done || inv.index >= inv.queue.length) return;
       var it = inv.queue[inv.index];
       if (it.cellKey && state.detailByKey[it.cellKey]) {
-        renderInventur();
         return;
       }
       apiQuiet()
@@ -3113,10 +3209,16 @@
           if (state.inventur && !state.inventur.done &&
               state.inventur.queue[state.inventur.index] &&
               state.inventur.queue[state.inventur.index].stockId === res.stockId) {
+            inventurSyncNote();
             renderInventur();
           }
         })
         .getStockDetail(it.stockId, it.cellKey);
+    }
+
+    function inventurSyncNote() {
+      var ta = $('invNote');
+      if (ta && state.inventur) state.inventur.pendingText = ta.value;
     }
 
     function openInventur() {
@@ -3130,6 +3232,8 @@
         queue: queue.slice(),
         index: 0,
         done: false,
+        pending: '',
+        pendingText: '',
         results: {},
         counts: { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 }
       };
@@ -3290,10 +3394,13 @@
     }
     if ($('invBody')) {
       $('invBody').onclick = function(e) {
+        if (e.target.closest('a')) return;
         if (e.target.id === 'invPrintAll') { printInventurFlagged(); return; }
         if (e.target.id === 'invFinishClose') { closeInventur(); return; }
+        if (e.target.id === 'invSaveNote') { inventurCommit(); return; }
+        if (e.target.id === 'invCancelNote') { inventurCancelPick(); return; }
         var sbtn = e.target.closest('#invStatusBtns .sbtn');
-        if (sbtn) { inventurSet(sbtn.getAttribute('data-s') || ''); return; }
+        if (sbtn) { inventurPick(sbtn.getAttribute('data-s') || ''); return; }
         if (e.target.id === 'invSkip') inventurSkip();
         if (e.target.id === 'invPrev') inventurPrev();
         if (e.target.id === 'invCarol') {
@@ -3310,26 +3417,36 @@
           if (!inv2 || inv2.done) return;
           var sid = inv2.queue[inv2.index].stockId;
           var d2 = inv2.queue[inv2.index].cellKey && state.detailByKey[inv2.queue[inv2.index].cellKey];
-          var gurl = (d2 && d2.gmailSearchUrl) || ('https://mail.google.com/mail/?authuser=' + encodeURIComponent('ersatzteile.hemau@autohero.com') + '#search/' + encodeURIComponent(sid));
+          var gurl = (d2 && d2.gmailSearchUrl) || gmailHref(sid);
           window.open(gurl, '_blank', 'noopener,noreferrer');
         }
+      };
+      $('invBody').oninput = function(e) {
+        if (e.target && e.target.id === 'invNote') inventurSyncNote();
       };
     }
     document.addEventListener('keydown', function(e) {
       if (!inventurIsOpen()) return;
+      var inNote = e.target && (e.target.id === 'invNote' || e.target.tagName === 'TEXTAREA');
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (state.inventur && state.inventur.done) closeInventur();
+        if (state.inventur && state.inventur.pending) inventurCancelPick();
+        else if (state.inventur && state.inventur.done) closeInventur();
         else if (confirm('Inventur schließen? Gesetzte Status bleiben gespeichert.')) closeInventur();
         return;
       }
+      if (inNote) {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); inventurCommit(); }
+        return;
+      }
       if (state.inventur && state.inventur.done) return;
-      if (e.key === '1') { e.preventDefault(); inventurSet('OK'); }
-      else if (e.key === '2') { e.preventDefault(); inventurSet('kontrollieren'); }
-      else if (e.key === '3') { e.preventDefault(); inventurSet('b2a1'); }
-      else if (e.key === '4') { e.preventDefault(); inventurSet('alfah'); }
-      else if (e.key === '5') { e.preventDefault(); inventurSet('nachbestellt'); }
-      else if (e.key === '6') { e.preventDefault(); inventurSet('erledigt'); }
+      if (e.key === '1') { e.preventDefault(); inventurPick('OK'); }
+      else if (e.key === '2') { e.preventDefault(); inventurPick('kontrollieren'); }
+      else if (e.key === '3') { e.preventDefault(); inventurPick('b2a1'); }
+      else if (e.key === '4') { e.preventDefault(); inventurPick('alfah'); }
+      else if (e.key === '5') { e.preventDefault(); inventurPick('nachbestellt'); }
+      else if (e.key === '6') { e.preventDefault(); inventurPick('erledigt'); }
+      else if (e.key === 'Enter' && state.inventur && state.inventur.pending) { e.preventDefault(); inventurCommit(); }
       else if (e.key === 's' || e.key === 'S') { e.preventDefault(); inventurSkip(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); inventurPrev(); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); inventurSkip(); }
