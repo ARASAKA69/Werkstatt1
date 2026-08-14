@@ -761,14 +761,14 @@
     .inv-layer {
       position: fixed; inset: 0; z-index: 85; display: none;
       background: rgba(5, 5, 6, 0.82); backdrop-filter: blur(10px);
-      padding: 16px; overflow: auto;
+      padding: 10px; overflow: auto;
     }
     .inv-layer.show { display: grid; place-items: center; }
     .inv-panel {
-      width: min(720px, 100%); max-height: calc(100vh - 32px);
+      width: min(1400px, 96vw); max-height: calc(100vh - 20px);
       overflow: auto; border-radius: 20px;
       background: rgba(14, 16, 20, 0.96); border: 1px solid var(--border-strong);
-      box-shadow: var(--shadow-lg); padding: 22px 24px 20px;
+      box-shadow: var(--shadow-lg); padding: 22px 28px 20px;
       box-sizing: border-box; max-width: 100%;
     }
     .inv-head {
@@ -808,8 +808,8 @@
     .inv-check.warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
     .inv-check.bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
     .inv-check.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
-    .inv-check .ik { font-weight: 800; flex: 0 0 auto; min-width: 6.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
-    .inv-check .iv { font-weight: 600; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
+    .inv-check .ik { font-weight: 800; flex: 0 0 auto; min-width: 7.2rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .inv-check .iv { font-weight: 600; line-height: 1.45; min-width: 0; overflow-wrap: anywhere; }
     .inv-check .iv a, .inv-checks .rk-body .cm a { color: #3FA0DB; font-weight: 700; text-decoration: none; }
     .inv-check .iv a:hover, .inv-checks .rk-body .cm a:hover { text-decoration: underline; color: #67e8f9; }
     .inv-checks .rk-list { margin: 0; }
@@ -2989,7 +2989,9 @@
           status: it.refurbStatus || '',
           markeModel: it.markeModel || '',
           reifenStatus: it.reifenStatus || '',
-          reifenStatusRaw: it.reifenStatus || ''
+          reifenStatusRaw: it.reifenStatus || '',
+          kommBestellung: it.kommBestellung || '',
+          kommAnlieferung: it.kommAnlieferung || ''
         },
         evalx: {
           reifenDa: !!it.reifenDa,
@@ -3018,7 +3020,12 @@
     function inventurHintRows(it, d) {
       var rows = [];
       var k = (d && d.kisten) || {};
+      var r = (d && d.refurb) || {};
+      var best = String(r.kommBestellung || it.kommBestellung || '').trim();
+      var an = String(r.kommAnlieferung || it.kommAnlieferung || '').trim();
       rows.push({ cls: it.regal ? 'ok' : 'warn', k: 'Regal', v: it.regal || 'Kein Regal' });
+      rows.push({ cls: best ? 'info' : 'warn', k: 'Bestellung', v: best || 'Kein Eintrag' });
+      rows.push({ cls: an ? 'ok' : 'warn', k: 'Anlieferung', v: an || 'Kein Eintrag' });
       if (k.comment || it.comment) rows.push({ cls: 'info', k: 'Kommentar', v: k.comment || it.comment });
       return rows;
     }

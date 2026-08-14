@@ -1196,7 +1196,9 @@ function rebuildKlärungCacheUnlocked_() {
       nbReifenCount: evalx.nbReifenCount || 0,
       nbReifenOpenCount: evalx.nbReifenOpenCount || 0,
       checksDone: checks.done,
-      checksTotal: CHECK_TOTAL
+      checksTotal: CHECK_TOTAL,
+      kommBestellung: refurb.kommBestellung || '',
+      kommAnlieferung: refurb.kommAnlieferung || ''
     };
     items.push(item);
     details[cellKey] = {
