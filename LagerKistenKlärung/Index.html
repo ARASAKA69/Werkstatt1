@@ -272,6 +272,19 @@
     .item.st-tagesliste { background: rgba(0, 255, 0, 0.12); border-color: rgba(0, 255, 0, 0.4); }
     .item.st-complete { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
     .item.st-erledigt { background: rgba(52, 211, 153, 0.16); border-color: rgba(52, 211, 153, 0.45); }
+    .item.has-note {
+      background: rgba(244, 114, 182, 0.16);
+      border-color: rgba(244, 114, 182, 0.5);
+    }
+    .item.has-note .sub.comment {
+      color: #f9a8d4;
+      font-weight: 600;
+    }
+    .status-pill.note {
+      background: rgba(244, 114, 182, 0.22);
+      border-color: #f472b6;
+      color: #f9a8d4;
+    }
     .item.active {
       border-color: #3FA0DB;
       box-shadow: 0 0 0 2px rgba(63, 160, 219, 0.9), 0 0 22px rgba(63, 160, 219, 0.4);
@@ -724,6 +737,108 @@
     .rk-body .cm b { color: var(--foreground); font-weight: 700; }
     .rk-body .cm a { color: #3FA0DB; font-weight: 700; text-decoration: none; }
     .rk-body .cm a:hover { text-decoration: underline; }
+
+    .sbtn {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground);
+      border-radius: 999px; padding: 0.55rem 0.9rem; min-height: 2.4rem; font: 700 0.85rem/1 var(--font);
+      cursor: pointer; transition: 160ms var(--easing);
+    }
+    .sbtn:hover { filter: brightness(1.15); }
+    .sbtn:active { transform: scale(0.96); }
+    .sbtn.ok { border-color: rgba(0,255,0,0.5); color: #86efac; background: rgba(0,255,0,0.1); }
+    .sbtn.ok.set, .sbtn.ok:hover { background: #00ff00; color: #1a1a1a; }
+    .sbtn.ctrl { border-color: rgba(255,255,0,0.5); color: #fde047; background: rgba(255,255,0,0.1); }
+    .sbtn.ctrl.set, .sbtn.ctrl:hover { background: #ffff00; color: #1a1a1a; }
+    .sbtn.b2a1 { border-color: rgba(255,0,0,0.5); color: #fca5a5; background: rgba(255,0,0,0.1); }
+    .sbtn.b2a1.set, .sbtn.b2a1:hover { background: #ff0000; color: #fff; }
+    .sbtn.alfah { border-color: rgba(255,153,0,0.5); color: #fdba74; background: rgba(255,153,0,0.12); }
+    .sbtn.alfah.set, .sbtn.alfah:hover { background: #ff9900; color: #1a1a1a; }
+    .sbtn.nb { border-color: rgba(74,134,232,0.5); color: #93c5fd; background: rgba(74,134,232,0.12); }
+    .sbtn.nb.set, .sbtn.nb:hover { background: #4a86e8; color: #fff; }
+    .sbtn.done { border-color: rgba(52,211,153,0.5); color: #6ee7b7; background: rgba(52,211,153,0.12); }
+    .sbtn.done.set, .sbtn.done:hover { background: #34d399; color: #0a0a0f; }
+
+    .inv-layer {
+      position: fixed; inset: 0; z-index: 85; display: none;
+      background: rgba(5, 5, 6, 0.82); backdrop-filter: blur(10px);
+      padding: 16px; overflow: auto;
+    }
+    .inv-layer.show { display: grid; place-items: center; }
+    .inv-panel {
+      width: min(720px, 100%); max-height: calc(100vh - 32px);
+      overflow: auto; border-radius: 20px;
+      background: rgba(14, 16, 20, 0.96); border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-lg); padding: 22px 24px 20px;
+      box-sizing: border-box; max-width: 100%;
+    }
+    .inv-head {
+      display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+      margin-bottom: 14px;
+    }
+    .inv-head h2 { margin: 0; font-size: 1.25rem; letter-spacing: -0.02em; }
+    .inv-head p { margin: 4px 0 0; color: var(--foreground-muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+    .inv-progress { margin-bottom: 16px; min-width: 0; }
+    .inv-progress-meta {
+      display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+      font-size: 0.8rem; font-weight: 700; color: var(--foreground-muted); margin-bottom: 6px;
+      min-width: 0;
+    }
+    .inv-progress-meta > span:last-child { flex: 1; text-align: right; }
+    .inv-bar {
+      height: 10px; border-radius: 999px; background: rgba(255,255,255,0.1); overflow: hidden;
+    }
+    .inv-bar > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--color-secondary), #5eead4);
+      transition: width 280ms var(--easing);
+    }
+    .inv-sid {
+      font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; margin: 0 0 4px;
+      overflow-wrap: anywhere;
+    }
+    .inv-car { color: var(--foreground-muted); font-weight: 600; margin-bottom: 14px; overflow-wrap: anywhere; }
+    .inv-checks { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+    .inv-check {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+      font-size: 0.88rem; min-width: 0;
+    }
+    .inv-check.ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
+    .inv-check.warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
+    .inv-check.bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
+    .inv-check.info { border-left-color: #67e8f9; background: rgba(103,232,249,0.08); }
+    .inv-check .ik { font-weight: 800; flex: 0 0 auto; min-width: 6.5rem; color: var(--foreground-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .inv-check .iv { font-weight: 600; line-height: 1.35; min-width: 0; overflow-wrap: anywhere; }
+    .inv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .inv-actions .sbtn { min-width: 5.5rem; }
+    .inv-nav {
+      display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center;
+      border-top: 1px solid var(--border); padding-top: 14px; margin-top: 4px;
+    }
+    .inv-nav-left, .inv-nav-right { display: flex; flex-wrap: wrap; gap: 8px; }
+    .inv-keys { font-size: 0.75rem; color: var(--foreground-muted); margin-top: 10px; }
+    .inv-done { text-align: center; padding: 12px 0 4px; }
+    .inv-done h3 { margin: 0 0 8px; font-size: 1.35rem; }
+    .inv-done p { margin: 0 0 18px; color: var(--foreground-muted); }
+    .inv-stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+      margin-bottom: 18px;
+    }
+    .inv-stat {
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px;
+      background: var(--surface);
+    }
+    .inv-stat .n { font-size: 1.5rem; font-weight: 800; }
+    .inv-stat .l { font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .inv-stat.ok .n { color: #86efac; }
+    .inv-stat.ctrl .n { color: #fde047; }
+    .inv-stat.b2a1 .n { color: #fca5a5; }
+    .inv-stat.alfah .n { color: #fdba74; }
+    .inv-stat.nb .n { color: #93c5fd; }
+    .inv-stat.done .n { color: #6ee7b7; }
+    .inv-stat.skip .n { color: var(--foreground-muted); }
+    .inv-print-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
     .fact.wide { grid-column: 1 / -1; }
     .fact .fv.clamp {
       overflow: hidden;
@@ -798,7 +913,7 @@
     .nb-pill.regal { color: #fbbf24; border-color: rgba(251,191,36,0.35); }
 
     .toast {
-      position: fixed; right: 16px; bottom: 16px; z-index: 30;
+      position: fixed; right: 16px; bottom: 16px; z-index: 90;
       background: rgba(14, 16, 20, 0.92); border: 1px solid rgba(13, 148, 136, 0.5);
       color: var(--foreground); padding: 12px 14px; border-radius: 12px;
       box-shadow: var(--shadow-lg); backdrop-filter: blur(12px);
@@ -1339,6 +1454,10 @@
           <span id="detailSub">Stock-ID aus der Liste wählen</span>
         </div>
         <div class="actions">
+          <button class="btn teal" id="btnInventur" type="button" title="Inventur starten">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h6"/></svg>
+            Inventur
+          </button>
           <button class="btn teal" id="btnCarol" type="button" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Carol
@@ -1471,6 +1590,18 @@
       </div>
     </section>
   </div>
+  <div class="inv-layer" id="invLayer" role="dialog" aria-label="Kisten Inventur">
+    <div class="inv-panel">
+      <div class="inv-head">
+        <div>
+          <h2>Kisten Inventur</h2>
+          <p id="invSub">Kisten nacheinander prüfen.</p>
+        </div>
+        <button type="button" class="btn ghost" id="invClose">Schließen</button>
+      </div>
+      <div id="invBody"></div>
+    </div>
+  </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
@@ -1493,7 +1624,8 @@
       notifBootMs: Date.now(),
       notifToasted: {},
       notifReady: false,
-      bellOpen: false
+      bellOpen: false,
+      inventur: null
     };
 
     function $(id) { return document.getElementById(id); }
@@ -1883,7 +2015,7 @@
           setBusy(true, 'Aktualisiert…');
         }
       }
-      var needDetails = !!forceRebuild || silent || !Object.keys(state.detailByKey).length;
+      var needDetails = !!forceRebuild || !Object.keys(state.detailByKey).length;
       var run = function() {
         api()
           .withSuccessHandler(function(res) {
@@ -1973,7 +2105,7 @@
     }
 
     function pollBackgroundSync() {
-      if (state.busy) return;
+      if (state.busy || state.inventur) return;
       state.bgSyncing = true;
       setCacheLabel();
       apiQuiet()
@@ -1990,7 +2122,7 @@
           state.bgSyncing = false;
           setCacheLabel();
         })
-        .getQueue(state.filter, true);
+        .getQueue(state.filter, false);
     }
 
     function shortName(email) {
@@ -2136,24 +2268,24 @@
         if (q && hay.indexOf(q) === -1) continue;
         shown++;
         var sk = statusKey(it);
-        var cardClass = sk ? (' st-' + sk) : '';
+        var cardClass = sk ? (' st-' + sk) : (it.hasNote ? ' has-note' : '');
         var isActive = state.selectedKey === it.cellKey;
-        var dotClass = sk || String(it.primaryColor || '') || (it.hasNote ? 'none' : '');
-        var noteMark = it.hasNote ? '<span class="note-dot ' + escapeHtml(dotClass) + '" title="Kommentar"></span>' : '';
+        var dotClass = sk || (it.hasNote ? 'none' : '');
+        var noteMark = it.hasNote ? '<span class="note-dot ' + escapeHtml(dotClass || 'none') + '" title="Kommentar"></span>' : '';
         var done = Number(it.checksDone) || 0;
         var total = Number(it.checksTotal) || 3;
         var regalHtml = it.regal ? '<span class="regal-tag">' + escapeHtml(it.regal) + '</span>' : '';
         var progHtml = '<span class="prog ' + progClass(done, total) + '" title="' + done + '/' + total + ' kontrolliert">' + done + '/' + total + '</span>';
         var statusHtml = it.statusHint
           ? ('<span class="status-pill ' + escapeHtml(sk || 'none') + '" title="' + escapeHtml(it.statusHint) + '">' + escapeHtml(it.statusHint) + '</span>')
-          : '';
+          : (it.hasNote ? '<span class="status-pill note">Notiz</span>' : '');
         var line2 = it.markeModel || '';
         var line3 = it.comment || '';
         html += '<button type="button" class="item' + cardClass + (isActive ? ' active' : '') + '" data-key="' + escapeHtml(it.cellKey) + '" data-sid="' + escapeHtml(it.stockId) + '"' + (isActive ? ' aria-current="true"' : '') + '>'
           + '<div class="item-top"><span class="sid">' + noteMark + escapeHtml(it.stockId) + '</span>'
           + '<span class="item-meta">' + (isActive ? '<span class="sel-mark">Aktiv</span>' : '') + progHtml + statusHtml + '</span></div>'
           + '<div class="sub">' + regalHtml + escapeHtml(line2 || '—') + '</div>'
-          + (line3 ? '<div class="sub">' + escapeHtml(line3) + '</div>' : '')
+          + (line3 ? '<div class="sub comment">' + escapeHtml(line3) + '</div>' : '')
           + itemHintsHtml(it)
           + '</button>';
       }
@@ -2742,6 +2874,329 @@
       selectItem(next.stockId, next.cellKey);
     }
 
+    var INV_STATUSES = [
+      { key: 'OK', color: 'none', label: 'Da', cls: 'ok', text: 'Inventur OK — Kiste da' },
+      { key: 'kontrollieren', color: 'kontrollieren', label: 'Kontrollieren', cls: 'ctrl', text: 'Inventur · Kontrollieren' },
+      { key: 'b2a1', color: 'b2a1', label: 'B2A1', cls: 'b2a1', text: 'Inventur · B2A1' },
+      { key: 'alfah', color: 'alfah', label: 'ALFAH', cls: 'alfah', text: 'Inventur · ALFAH' },
+      { key: 'nachbestellt', color: 'nachbestellt', label: 'Nachbestellt', cls: 'nb', text: 'Inventur · Nachbestellt' },
+      { key: 'erledigt', color: 'erledigt', label: 'Erledigt', cls: 'done', text: 'Inventur · Erledigt' }
+    ];
+
+    function inventurMeta(key) {
+      for (var i = 0; i < INV_STATUSES.length; i++) {
+        if (INV_STATUSES[i].key === key) return INV_STATUSES[i];
+      }
+      return null;
+    }
+
+    function inventurQueueItems() {
+      var q = String(($('qSearch') && $('qSearch').value) || '').trim().toUpperCase();
+      var out = [];
+      for (var i = 0; i < state.items.length; i++) {
+        var it = state.items[i];
+        if (statusKey(it) === 'erledigt') continue;
+        if (q) {
+          var hay = [it.stockId, it.comment, it.regal, it.markeModel].join(' ').toUpperCase();
+          if (hay.indexOf(q) === -1) continue;
+        }
+        out.push(it);
+      }
+      return out;
+    }
+
+    function inventurApplyLocal(it, color, text) {
+      var sk = color === 'none' ? '' : color;
+      var label = color === 'none' ? '' : (inventurMeta(color) ? inventurMeta(color).label : color);
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].cellKey !== it.cellKey) continue;
+        state.items[i].comment = text;
+        state.items[i].hasNote = true;
+        state.items[i].statusHint = label;
+        state.items[i].primaryColor = sk;
+        state.items[i].kategorie = label;
+        state.items[i].yellow = sk === 'alfah' || sk === 'kontrollieren';
+        break;
+      }
+      var d = state.detailByKey[it.cellKey];
+      if (d && d.kisten) {
+        d.kisten.comment = text;
+        d.kisten.hasNote = true;
+        d.kisten.status = label;
+        d.kisten.primaryColor = sk;
+      }
+    }
+
+    function inventurSaveStatus(it, key) {
+      var meta = inventurMeta(key);
+      if (!meta || !it) return;
+      inventurApplyLocal(it, meta.color, meta.text);
+      apiQuiet()
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) toast((res && res.message) || 'Speichern fehlgeschlagen', true);
+        })
+        .addStockComment(it.cellKey, it.stockId, meta.color, meta.text);
+    }
+
+    function inventurHintRows(it, d) {
+      var rows = [];
+      var r = (d && d.refurb) || {};
+      var ev = (d && d.evalx) || {};
+      var tl = (d && d.tagesliste) || {};
+      var k = (d && d.kisten) || {};
+      rows.push({ cls: it.regal ? 'ok' : 'warn', k: 'Regal', v: it.regal || 'Kein Regal' });
+      if (r.found === false) rows.push({ cls: 'info', k: 'Refurb', v: 'Nicht in Refurbishment List' });
+      else rows.push({ cls: ev.carolDone ? 'info' : 'ok', k: 'Refurb', v: (r.status || it.refurbStatus || '—') + (r.markeModel || it.markeModel ? ' · ' + (r.markeModel || it.markeModel) : '') });
+      if (ev.reifenDa || it.reifenDa) rows.push({ cls: 'ok', k: 'Reifen', v: 'Reifen da' });
+      else if (r.reifenStatus || it.reifenStatus) rows.push({ cls: 'warn', k: 'Reifen', v: r.reifenStatus || it.reifenStatus });
+      else rows.push({ cls: 'warn', k: 'Reifen', v: 'Kein Eintrag' });
+      if (tl.found || it.tlFound) {
+        if (tl.anyGestellt || it.tlReifenGreen) rows.push({ cls: 'ok', k: 'Tagesliste', v: tl.reifenLabel || it.tlReifenLabel || 'gestellt · bei Mechanik' });
+        else rows.push({ cls: 'warn', k: 'Tagesliste', v: tl.reifenLabel || it.tlReifen || 'nicht gestellt' });
+      } else {
+        rows.push({ cls: 'info', k: 'Tagesliste', v: 'Kein Eintrag' });
+      }
+      var nbs = (d && d.nachbestellungen) || [];
+      var nbOpen = ev.nbOpenCount || it.nbOpenCount || 0;
+      if (nbs.length || it.nbCount) {
+        rows.push({ cls: nbOpen ? 'warn' : 'ok', k: 'Nachbestellung', v: (nbs.length || it.nbCount) + ' Zeile(n)' + (nbOpen ? ' · ' + nbOpen + ' offen' : '') });
+      } else {
+        rows.push({ cls: 'ok', k: 'Nachbestellung', v: 'Keine' });
+      }
+      var done = Number(it.checksDone) || 0;
+      var total = Number(it.checksTotal) || 3;
+      rows.push({ cls: done >= total ? 'ok' : (done ? 'warn' : 'info'), k: 'Kontrolle', v: done + '/' + total + ' kontrolliert' });
+      if (k.comment || it.comment) rows.push({ cls: 'info', k: 'Kommentar', v: k.comment || it.comment });
+      return rows;
+    }
+
+    function inventurRecount() {
+      var inv = state.inventur;
+      if (!inv) return { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 };
+      var c = { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 };
+      var results = inv.results || {};
+      var keys = Object.keys(results);
+      for (var i = 0; i < keys.length; i++) {
+        var v = results[keys[i]];
+        if (v === 'SKIP') c.SKIP++;
+        else if (c[v] != null) { c[v]++; c.set++; }
+      }
+      inv.counts = c;
+      return c;
+    }
+
+    function inventurMark(sid, outcome) {
+      var inv = state.inventur;
+      if (!inv) return;
+      if (!inv.results) inv.results = {};
+      inv.results[sid] = outcome;
+      inventurRecount();
+    }
+
+    function renderInventur() {
+      var inv = state.inventur;
+      var box = $('invBody');
+      if (!inv || !box) return;
+      var c = inventurRecount();
+      if (inv.done || inv.index >= inv.queue.length) {
+        inv.done = true;
+        box.innerHTML =
+          '<div class="inv-done">' +
+          '<h3>Inventur fertig</h3>' +
+          '<p>' + inv.queue.length + ' Kisten durchgearbeitet</p>' +
+          '<div class="inv-stats">' +
+          '<div class="inv-stat ok"><div class="n">' + c.OK + '</div><div class="l">Da</div></div>' +
+          '<div class="inv-stat ctrl"><div class="n">' + c.kontrollieren + '</div><div class="l">Kontrollieren</div></div>' +
+          '<div class="inv-stat b2a1"><div class="n">' + c.b2a1 + '</div><div class="l">B2A1</div></div>' +
+          '<div class="inv-stat alfah"><div class="n">' + c.alfah + '</div><div class="l">ALFAH</div></div>' +
+          '<div class="inv-stat nb"><div class="n">' + c.nachbestellt + '</div><div class="l">Nachbestellt</div></div>' +
+          '<div class="inv-stat done"><div class="n">' + c.erledigt + '</div><div class="l">Erledigt</div></div>' +
+          '<div class="inv-stat skip"><div class="n">' + c.SKIP + '</div><div class="l">Übersprungen</div></div>' +
+          '</div>' +
+          '<div class="inv-print-row">' +
+          '<button type="button" class="btn primary" id="invPrintAll">Auffällige drucken</button>' +
+          '</div>' +
+          '<button type="button" class="btn ghost" id="invFinishClose">Fertig & schließen</button>' +
+          '</div>';
+        return;
+      }
+      var it = inv.queue[inv.index];
+      var d = (it.cellKey && state.detailByKey[it.cellKey]) || null;
+      var pct = Math.round((inv.index / Math.max(inv.queue.length, 1)) * 100);
+      var hints = inventurHintRows(it, d);
+      var checksHtml = '';
+      for (var h = 0; h < hints.length; h++) {
+        checksHtml += '<div class="inv-check ' + hints[h].cls + '"><div class="ik">' + escapeHtml(hints[h].k) + '</div><div class="iv">' + escapeHtml(hints[h].v) + '</div></div>';
+      }
+      var car = (d && d.refurb && d.refurb.markeModel) || it.markeModel || '—';
+      var regal = it.regal || (d && d.regal) || '';
+      var currentMark = (inv.results && inv.results[it.stockId]) || '';
+      var currentLabel = currentMark === 'SKIP' ? 'übersprungen' : ((inventurMeta(currentMark) && inventurMeta(currentMark).label) || currentMark);
+      var btns = '';
+      for (var b = 0; b < INV_STATUSES.length; b++) {
+        var st = INV_STATUSES[b];
+        btns += '<button type="button" class="sbtn ' + st.cls + (currentMark === st.key ? ' set' : '') + '" data-s="' + st.key + '">' + st.label + '</button>';
+      }
+      box.innerHTML =
+        '<div class="inv-progress">' +
+        '<div class="inv-progress-meta"><span>' + (inv.index + 1) + ' / ' + inv.queue.length + '</span><span>' +
+        c.set + ' gesetzt · ' + c.SKIP + ' übersprungen</span></div>' +
+        '<div class="inv-bar"><i style="width:' + pct + '%"></i></div></div>' +
+        '<div class="inv-sid">' + escapeHtml(it.stockId) + '</div>' +
+        '<div class="inv-car">' + escapeHtml(regal ? (regal + ' · ' + car) : car) +
+        (currentMark ? ' · zuletzt: ' + escapeHtml(currentLabel) : '') + '</div>' +
+        '<div class="inv-checks">' + checksHtml + '</div>' +
+        '<div class="inv-actions" id="invStatusBtns">' + btns + '</div>' +
+        '<div class="inv-nav">' +
+        '<div class="inv-nav-left">' +
+        '<button type="button" class="btn ghost" id="invPrev"' + (inv.index === 0 ? ' disabled' : '') + '>Zurück</button>' +
+        '<button type="button" class="btn ghost" id="invSkip">Überspringen</button>' +
+        '</div>' +
+        '<div class="inv-nav-right">' +
+        '<button type="button" class="btn" id="invCarol">Carol</button>' +
+        '<button type="button" class="btn" id="invGmail">Gmail</button>' +
+        '</div></div>' +
+        '<div class="inv-keys">Tasten: 1 Da · 2 Kontrollieren · 3 B2A1 · 4 ALFAH · 5 Nachbestellt · 6 Erledigt · S überspringen · ← →</div>';
+    }
+
+    function inventurAdvance() {
+      var inv = state.inventur;
+      if (!inv || inv.done) return;
+      inv.index++;
+      if (inv.index >= inv.queue.length) {
+        inv.done = true;
+        renderList({ keepScroll: true });
+      }
+      renderInventur();
+      loadInventurDetailIfNeeded();
+    }
+
+    function inventurSet(key) {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      var it = inv.queue[inv.index];
+      var meta = inventurMeta(key);
+      if (!meta) return;
+      inventurSaveStatus(it, key);
+      inventurMark(it.stockId, key);
+      toast(meta.label + ' — ' + it.stockId);
+      inventurAdvance();
+    }
+
+    function inventurSkip() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      inventurMark(inv.queue[inv.index].stockId, 'SKIP');
+      inventurAdvance();
+    }
+
+    function inventurPrev() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index <= 0) return;
+      inv.index--;
+      renderInventur();
+      loadInventurDetailIfNeeded();
+    }
+
+    function loadInventurDetailIfNeeded() {
+      var inv = state.inventur;
+      if (!inv || inv.done || inv.index >= inv.queue.length) return;
+      var it = inv.queue[inv.index];
+      if (it.cellKey && state.detailByKey[it.cellKey]) {
+        renderInventur();
+        return;
+      }
+      apiQuiet()
+        .withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          if (res.kisten && res.kisten.cellKey) state.detailByKey[res.kisten.cellKey] = res;
+          if (state.inventur && !state.inventur.done &&
+              state.inventur.queue[state.inventur.index] &&
+              state.inventur.queue[state.inventur.index].stockId === res.stockId) {
+            renderInventur();
+          }
+        })
+        .getStockDetail(it.stockId, it.cellKey);
+    }
+
+    function openInventur() {
+      if (state.busy) return;
+      var queue = inventurQueueItems();
+      if (!queue.length) {
+        toast('Keine offenen Kisten in der aktuellen Liste', true);
+        return;
+      }
+      state.inventur = {
+        queue: queue.slice(),
+        index: 0,
+        done: false,
+        results: {},
+        counts: { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 }
+      };
+      $('invSub').textContent = queue.length + ' Kisten in der aktuellen Liste — nacheinander prüfen';
+      $('invLayer').classList.add('show');
+      renderInventur();
+      loadInventurDetailIfNeeded();
+    }
+
+    function closeInventur() {
+      $('invLayer').classList.remove('show');
+      state.inventur = null;
+      renderList({ keepScroll: true, scrollToSelected: true });
+    }
+
+    function printInventurFlagged() {
+      var inv = state.inventur;
+      if (!inv) return;
+      var flagged = [];
+      for (var i = 0; i < inv.queue.length; i++) {
+        var it = inv.queue[i];
+        var st = (inv.results && inv.results[it.stockId]) || '';
+        if (st === 'b2a1' || st === 'alfah' || st === 'kontrollieren' || st === 'nachbestellt') {
+          flagged.push({ it: it, st: st });
+        }
+      }
+      if (!flagged.length) {
+        toast('Keine auffälligen Kisten zum Drucken');
+        return;
+      }
+      var now = new Date();
+      var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear();
+      var rows = '';
+      for (var f = 0; f < flagged.length; f++) {
+        var row = flagged[f];
+        var meta = inventurMeta(row.st);
+        rows += '<div class="entry"><div class="entry-top"><span class="sid">' + escapeHtml(row.it.stockId) + '</span>' +
+          '<span class="st">' + escapeHtml((meta && meta.label) || row.st) + '</span></div>' +
+          '<div class="meta">' + escapeHtml((row.it.regal || '') + (row.it.markeModel ? ' · ' + row.it.markeModel : '')) + '</div>' +
+          '<svg class="bc" data-sid="' + escapeHtml(row.it.stockId) + '"></svg></div>';
+      }
+      var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Kisten Inventur</title>' +
+        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
+        '<style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;text-align:center}' +
+        'h1{font-size:18px;margin:0 0 2px}.sub{color:#555;font-size:11px;margin-bottom:14px}' +
+        '.entry{width:70mm;margin:0 auto 14px;page-break-inside:avoid}' +
+        '.entry-top{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:4px}' +
+        '.sid{font-weight:bold;font-size:15px}.st{font-weight:bold;padding:2px 10px;border-radius:10px;border:1px solid #999}' +
+        '.meta{color:#555;margin-bottom:4px}.bc{display:block;height:38px;margin:0 auto}</style></head><body>' +
+        '<h1>Kisten Inventur</h1><div class="sub">Stand: ' + dateStr + ' · ' + flagged.length + ' auffällige Kisten</div>' + rows +
+        '<script>window.onload=function(){var els=document.querySelectorAll("svg.bc");for(var i=0;i<els.length;i++){try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:32,width:1.5,displayValue:false,margin:0});}catch(e){}}setTimeout(function(){window.print();},250);};<\/script>' +
+        '</body></html>';
+      var win = window.open('', '_blank');
+      if (!win) {
+        toast('Popup blockiert — bitte Popups erlauben', true);
+        return;
+      }
+      win.document.open();
+      win.document.write(doc);
+      win.document.close();
+      win.focus();
+    }
+
+    function inventurIsOpen() {
+      return !!(state.inventur && $('invLayer') && $('invLayer').classList.contains('show'));
+    }
+
     $('filters').onclick = function(e) {
       var btn = e.target.closest('.chip');
       if (!btn) return;
@@ -2823,6 +3278,62 @@
         state.commentColor = btn.getAttribute('data-c') || 'none';
       };
     }
+
+    if ($('btnInventur')) $('btnInventur').onclick = openInventur;
+    if ($('invClose')) {
+      $('invClose').onclick = function() {
+        if (state.inventur && !state.inventur.done) {
+          if (!confirm('Inventur schließen? Gesetzte Status bleiben gespeichert.')) return;
+        }
+        closeInventur();
+      };
+    }
+    if ($('invBody')) {
+      $('invBody').onclick = function(e) {
+        if (e.target.id === 'invPrintAll') { printInventurFlagged(); return; }
+        if (e.target.id === 'invFinishClose') { closeInventur(); return; }
+        var sbtn = e.target.closest('#invStatusBtns .sbtn');
+        if (sbtn) { inventurSet(sbtn.getAttribute('data-s') || ''); return; }
+        if (e.target.id === 'invSkip') inventurSkip();
+        if (e.target.id === 'invPrev') inventurPrev();
+        if (e.target.id === 'invCarol') {
+          var inv = state.inventur;
+          if (!inv || inv.done) return;
+          var it = inv.queue[inv.index];
+          var d = it.cellKey && state.detailByKey[it.cellKey];
+          var url = (d && (d.carolUrl || (d.refurb && d.refurb.carolUrl))) || '';
+          if (url && /^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+          else toast('Kein Carol-Link — in Carol nach ' + it.stockId + ' suchen', true);
+        }
+        if (e.target.id === 'invGmail') {
+          var inv2 = state.inventur;
+          if (!inv2 || inv2.done) return;
+          var sid = inv2.queue[inv2.index].stockId;
+          var d2 = inv2.queue[inv2.index].cellKey && state.detailByKey[inv2.queue[inv2.index].cellKey];
+          var gurl = (d2 && d2.gmailSearchUrl) || ('https://mail.google.com/mail/?authuser=' + encodeURIComponent('ersatzteile.hemau@autohero.com') + '#search/' + encodeURIComponent(sid));
+          window.open(gurl, '_blank', 'noopener,noreferrer');
+        }
+      };
+    }
+    document.addEventListener('keydown', function(e) {
+      if (!inventurIsOpen()) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (state.inventur && state.inventur.done) closeInventur();
+        else if (confirm('Inventur schließen? Gesetzte Status bleiben gespeichert.')) closeInventur();
+        return;
+      }
+      if (state.inventur && state.inventur.done) return;
+      if (e.key === '1') { e.preventDefault(); inventurSet('OK'); }
+      else if (e.key === '2') { e.preventDefault(); inventurSet('kontrollieren'); }
+      else if (e.key === '3') { e.preventDefault(); inventurSet('b2a1'); }
+      else if (e.key === '4') { e.preventDefault(); inventurSet('alfah'); }
+      else if (e.key === '5') { e.preventDefault(); inventurSet('nachbestellt'); }
+      else if (e.key === '6') { e.preventDefault(); inventurSet('erledigt'); }
+      else if (e.key === 's' || e.key === 'S') { e.preventDefault(); inventurSkip(); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); inventurPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); inventurSkip(); }
+    });
 
     initSkateLoader();
     (function bootSelection() {

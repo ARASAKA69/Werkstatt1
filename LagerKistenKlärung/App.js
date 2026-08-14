@@ -11,7 +11,8 @@ var TL_DATUM_COL = 1;
 var TL_SCHICHT_COL = 3;
 var TL_REIFEN_COL = 4;
 var TL_STOCK_COL = 5;
-var TL_MAX_ENTRIES = 5;
+var TL_MAX_ENTRIES = 2;
+var TL_SCAN_MAX_ROWS = 6000;
 var CACHE_TAB = '_KlärungCache';
 var NOTES_TAB = '_KlärungNotes';
 var CHECKS_TAB = '_KlärungChecks';
@@ -157,43 +158,29 @@ function buildTageslisteMap_(onlyIds) {
     if (!sheet) return map;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var needLeft = 0;
-    var full = {};
-    if (onlyIds) {
-      var needKeys = Object.keys(onlyIds);
-      needLeft = needKeys.length;
-      for (var nk = 0; nk < needKeys.length; nk++) full[needKeys[nk]] = false;
-    }
-    var chunk = 2500;
-    for (var end = lastRow; end >= 2; end -= chunk) {
-      var start = Math.max(2, end - chunk + 1);
+    var scanFrom = Math.max(2, lastRow - TL_SCAN_MAX_ROWS + 1);
+    var chunk = 4000;
+    for (var end = lastRow; end >= scanFrom; end -= chunk) {
+      var start = Math.max(scanFrom, end - chunk + 1);
       var n = end - start + 1;
-      var stocks = sheet.getRange(start, TL_STOCK_COL, n, 1).getDisplayValues();
-      var reifens = sheet.getRange(start, TL_REIFEN_COL, n, 1).getDisplayValues();
-      var datums = sheet.getRange(start, TL_DATUM_COL, n, 1).getDisplayValues();
-      var schichten = sheet.getRange(start, TL_SCHICHT_COL, n, 1).getDisplayValues();
+      var block = sheet.getRange(start, 1, n, TL_STOCK_COL).getDisplayValues();
       for (var i = n - 1; i >= 0; i--) {
-        var sid = normalizeStockId_(stocks[i][0]);
+        var sid = normalizeStockId_(block[i][TL_STOCK_COL - 1]);
         if (!sid || !lagerLooksLikeStockId_(sid)) continue;
         if (onlyIds && !onlyIds[sid]) continue;
         if (map[sid] && map[sid].length >= TL_MAX_ENTRIES) continue;
-        var reifen = String(reifens[i][0] || '').trim();
+        var reifen = String(block[i][TL_REIFEN_COL - 1] || '').trim();
         var entry = {
           row: start + i,
-          datum: String(datums[i][0] || '').trim(),
-          schicht: String(schichten[i][0] || '').trim(),
+          datum: String(block[i][TL_DATUM_COL - 1] || '').trim(),
+          schicht: String(block[i][TL_SCHICHT_COL - 1] || '').trim(),
           reifen: reifen,
           reifenGreen: isReifenGestelltText_(reifen),
           url: tageslisteUrl_(start + i)
         };
         if (!map[sid]) map[sid] = [];
         map[sid].push(entry);
-        if (onlyIds && map[sid].length >= TL_MAX_ENTRIES && !full[sid]) {
-          full[sid] = true;
-          needLeft--;
-        }
       }
-      if (onlyIds && needLeft <= 0) break;
     }
   } catch (e) {}
   return map;
@@ -989,9 +976,11 @@ function readCache_() {
 function ensureCacheTrigger_() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'rebuildKlärungCache') return;
+    if (triggers[i].getHandlerFunction() === 'rebuildKlärungCache') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
   }
-  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(5).create();
 }
 
 function installCacheTrigger() {
@@ -1001,7 +990,7 @@ function installCacheTrigger() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(1).create();
+  ScriptApp.newTrigger('rebuildKlärungCache').timeBased().everyMinutes(5).create();
   var res = rebuildKlärungCache();
   SpreadsheetApp.getUi().alert('Cache-Trigger aktiv.\n' + (res.items ? res.items.length : 0) + ' Kisten aus LAGER.');
 }
@@ -1081,6 +1070,20 @@ function statusFromSheetKat_(kat) {
 }
 
 function rebuildKlärungCache() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(2500)) {
+    var existing = readCache_();
+    if (existing && existing.items) return existing;
+    try { lock.waitLock(20000); } catch (eWait) {}
+  }
+  try {
+    return rebuildKlärungCacheUnlocked_();
+  } finally {
+    try { lock.releaseLock(); } catch (eLock) {}
+  }
+}
+
+function rebuildKlärungCacheUnlocked_() {
   var builtAtMs = Date.now();
   var builtAt = Utilities.formatDate(new Date(builtAtMs), 'Europe/Berlin', 'dd.MM.yyyy HH:mm:ss');
   var grid = parseLagerGrid_();
@@ -1151,9 +1154,8 @@ function rebuildKlärungCache() {
     var tagesliste = {
       found: tl.length > 0,
       count: tl.length,
-      entries: tl,
-      latest: tlRes.latest,
-      gestelltEntry: tlRes.gestelltEntry,
+      latest: tlRes.latest || null,
+      gestelltEntry: tlRes.gestelltEntry || null,
       anyGestellt: tlRes.gestellt,
       gestelltEarlier: tlRes.fromEarlier,
       url: tlRes.url || '',
@@ -1545,7 +1547,7 @@ function detailFromCache_(cache, d) {
     refurb: d.refurb,
     nachbestellungen: d.nachbestellungen || [],
     tagesliste: d.tagesliste || { found: false, entries: [], latest: null },
-    evalx: d.evalx || evaluateStockLite_(stockId, d.refurb, d.nachbestellungen || [], (d.tagesliste && d.tagesliste.entries) || []),
+    evalx: d.evalx || evaluateStockLite_(stockId, d.refurb, d.nachbestellungen || [], (d.tagesliste && (d.tagesliste.latest ? [d.tagesliste.latest] : [])) || []),
     checks: checks,
     carolUrl: carolUrl,
     gmail: { threads: [], orderHits: [], ok: true, message: 'Mails on-demand', alfahUnanswered: false },
