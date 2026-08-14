@@ -833,15 +833,19 @@
     .inv-done h3 { margin: 0 0 8px; font-size: 1.35rem; }
     .inv-done p { margin: 0 0 18px; color: var(--foreground-muted); }
     .inv-stats {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px;
       margin-bottom: 18px;
     }
     .inv-stat {
-      border: 1px solid var(--border); border-radius: 12px; padding: 12px 10px;
-      background: var(--surface);
+      border: 1px solid var(--border); border-radius: 12px; padding: 12px 8px;
+      background: var(--surface); min-width: 0; overflow: hidden; box-sizing: border-box;
     }
     .inv-stat .n { font-size: 1.5rem; font-weight: 800; }
-    .inv-stat .l { font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+    .inv-stat .l {
+      font-size: 0.68rem; font-weight: 700; color: var(--foreground-muted);
+      text-transform: uppercase; letter-spacing: 0.02em; margin-top: 4px;
+      line-height: 1.25; overflow-wrap: anywhere; word-break: break-word;
+    }
     .inv-stat.ok .n { color: #86efac; }
     .inv-stat.ctrl .n { color: #fde047; }
     .inv-stat.b2a1 .n { color: #fca5a5; }
@@ -849,7 +853,17 @@
     .inv-stat.nb .n { color: #93c5fd; }
     .inv-stat.done .n { color: #6ee7b7; }
     .inv-stat.skip .n { color: var(--foreground-muted); }
-    .inv-print-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 14px; }
+    .inv-opening {
+      text-align: center; padding: 52px 18px 36px;
+      color: var(--foreground-muted); font-weight: 700; font-size: 1.08rem;
+    }
+    .inv-opening p { margin: 8px 0 0; font-size: 0.88rem; font-weight: 600; }
+    .inv-opening i {
+      display: block; width: 28px; height: 28px; margin: 20px auto 0;
+      border: 3px solid var(--border-strong); border-top-color: #3FA0DB;
+      border-radius: 50%; animation: inv-spin 0.75s linear infinite;
+    }
+    @keyframes inv-spin { to { transform: rotate(360deg); } }
     .fact.wide { grid-column: 1 / -1; }
     .fact .fv.clamp {
       overflow: hidden;
@@ -2117,7 +2131,7 @@
     }
 
     function pollBackgroundSync() {
-      if (state.busy || state.inventur) return;
+      if (state.busy || state.inventur || state.inventurLoading) return;
       state.bgSyncing = true;
       setCacheLabel();
       apiQuiet()
@@ -3052,9 +3066,6 @@
           '<div class="inv-stat done"><div class="n">' + c.erledigt + '</div><div class="l">Erledigt</div></div>' +
           '<div class="inv-stat skip"><div class="n">' + c.SKIP + '</div><div class="l">Übersprungen</div></div>' +
           '</div>' +
-          '<div class="inv-print-row">' +
-          '<button type="button" class="btn primary" id="invPrintAll">Auffällige drucken</button>' +
-          '</div>' +
           '<button type="button" class="btn ghost" id="invFinishClose">Fertig & schließen</button>' +
           '</div>';
         return;
@@ -3221,10 +3232,18 @@
     }
 
     function openInventur() {
-      if (state.busy || state.inventurLoading) return;
-      var start = function(items) {
+      if (state.busy || state.inventurLoading || inventurIsOpen()) return;
+      var btn = $('btnInventur');
+      var unlock = function() {
+        state.inventurLoading = false;
+        if (btn) btn.disabled = false;
+      };
+      var begin = function(items) {
+        if (!state.inventurLoading) return;
         var queue = inventurQueueItems(items);
+        unlock();
         if (!queue.length) {
+          $('invLayer').classList.remove('show');
           toast('Keine Kisten ohne Notiz oder Status', true);
           return;
         }
@@ -3238,83 +3257,39 @@
           counts: { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 }
         };
         $('invSub').textContent = queue.length + ' Kisten ohne Notiz und Status — nacheinander prüfen';
-        $('invLayer').classList.add('show');
         renderInventur();
         loadInventurDetailIfNeeded();
       };
+      state.inventurLoading = true;
+      if (btn) btn.disabled = true;
+      $('invSub').textContent = 'Bitte warten — Inventur wird vorbereitet.';
+      $('invBody').innerHTML =
+        '<div class="inv-opening">Inventur wird geöffnet…<p>Liste der ungeprüften Kisten wird geladen.</p><i></i></div>';
+      $('invLayer').classList.add('show');
       if (state.filter === 'all' && state.items.length) {
-        start(state.items);
+        begin(state.items);
         return;
       }
-      state.inventurLoading = true;
       apiQuiet()
         .withFailureHandler(function() {
-          state.inventurLoading = false;
-          start(state.items);
+          begin(state.items);
         })
         .withSuccessHandler(function(res) {
-          state.inventurLoading = false;
-          start((res && res.success && res.items) || state.items);
+          begin((res && res.success && res.items) || state.items);
         })
         .getQueue('all', false);
     }
 
     function closeInventur() {
+      state.inventurLoading = false;
+      if ($('btnInventur')) $('btnInventur').disabled = false;
       $('invLayer').classList.remove('show');
       state.inventur = null;
       renderList({ keepScroll: true, scrollToSelected: true });
     }
 
-    function printInventurFlagged() {
-      var inv = state.inventur;
-      if (!inv) return;
-      var flagged = [];
-      for (var i = 0; i < inv.queue.length; i++) {
-        var it = inv.queue[i];
-        var st = (inv.results && inv.results[it.stockId]) || '';
-        if (st === 'b2a1' || st === 'alfah' || st === 'kontrollieren' || st === 'nachbestellt') {
-          flagged.push({ it: it, st: st });
-        }
-      }
-      if (!flagged.length) {
-        toast('Keine auffälligen Kisten zum Drucken');
-        return;
-      }
-      var now = new Date();
-      var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear();
-      var rows = '';
-      for (var f = 0; f < flagged.length; f++) {
-        var row = flagged[f];
-        var meta = inventurMeta(row.st);
-        rows += '<div class="entry"><div class="entry-top"><span class="sid">' + escapeHtml(row.it.stockId) + '</span>' +
-          '<span class="st">' + escapeHtml((meta && meta.label) || row.st) + '</span></div>' +
-          '<div class="meta">' + escapeHtml((row.it.regal || '') + (row.it.markeModel ? ' · ' + row.it.markeModel : '')) + '</div>' +
-          '<svg class="bc" data-sid="' + escapeHtml(row.it.stockId) + '"></svg></div>';
-      }
-      var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>Kisten Inventur</title>' +
-        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
-        '<style>@page{size:A4 portrait;margin:12mm}body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:24px;font-size:12px;text-align:center}' +
-        'h1{font-size:18px;margin:0 0 2px}.sub{color:#555;font-size:11px;margin-bottom:14px}' +
-        '.entry{width:70mm;margin:0 auto 14px;page-break-inside:avoid}' +
-        '.entry-top{display:flex;justify-content:center;align-items:center;gap:10px;margin-bottom:4px}' +
-        '.sid{font-weight:bold;font-size:15px}.st{font-weight:bold;padding:2px 10px;border-radius:10px;border:1px solid #999}' +
-        '.meta{color:#555;margin-bottom:4px}.bc{display:block;height:38px;margin:0 auto}</style></head><body>' +
-        '<h1>Kisten Inventur</h1><div class="sub">Stand: ' + dateStr + ' · ' + flagged.length + ' auffällige Kisten</div>' + rows +
-        '<script>window.onload=function(){var els=document.querySelectorAll("svg.bc");for(var i=0;i<els.length;i++){try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:32,width:1.5,displayValue:false,margin:0});}catch(e){}}setTimeout(function(){window.print();},250);};<\/script>' +
-        '</body></html>';
-      var win = window.open('', '_blank');
-      if (!win) {
-        toast('Popup blockiert — bitte Popups erlauben', true);
-        return;
-      }
-      win.document.open();
-      win.document.write(doc);
-      win.document.close();
-      win.focus();
-    }
-
     function inventurIsOpen() {
-      return !!(state.inventur && $('invLayer') && $('invLayer').classList.contains('show'));
+      return !!( $('invLayer') && $('invLayer').classList.contains('show'));
     }
 
     $('filters').onclick = function(e) {
@@ -3411,7 +3386,6 @@
     if ($('invBody')) {
       $('invBody').onclick = function(e) {
         if (e.target.closest('a')) return;
-        if (e.target.id === 'invPrintAll') { printInventurFlagged(); return; }
         if (e.target.id === 'invFinishClose') { closeInventur(); return; }
         if (e.target.id === 'invSaveNote') { inventurCommit(); return; }
         if (e.target.id === 'invCancelNote') { inventurCancelPick(); return; }
@@ -3446,8 +3420,9 @@
       var inNote = e.target && (e.target.id === 'invNote' || e.target.tagName === 'TEXTAREA');
       if (e.key === 'Escape') {
         e.preventDefault();
-        if (state.inventur && state.inventur.pending) inventurCancelPick();
-        else if (state.inventur && state.inventur.done) closeInventur();
+        if (state.inventurLoading || !state.inventur) closeInventur();
+        else if (state.inventur.pending) inventurCancelPick();
+        else if (state.inventur.done) closeInventur();
         else if (confirm('Inventur schließen? Gesetzte Status bleiben gespeichert.')) closeInventur();
         return;
       }
