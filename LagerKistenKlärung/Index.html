@@ -1636,7 +1636,8 @@
       notifToasted: {},
       notifReady: false,
       bellOpen: false,
-      inventur: null
+      inventur: null,
+      inventurLoading: false
     };
 
     function $(id) { return document.getElementById(id); }
@@ -2912,16 +2913,14 @@
       return null;
     }
 
-    function inventurQueueItems() {
-      var q = String(($('qSearch') && $('qSearch').value) || '').trim().toUpperCase();
+    function inventurQueueItems(items) {
+      items = items || state.items;
       var out = [];
-      for (var i = 0; i < state.items.length; i++) {
-        var it = state.items[i];
-        if (statusKey(it) === 'erledigt') continue;
-        if (q) {
-          var hay = [it.stockId, it.comment, it.regal, it.markeModel].join(' ').toUpperCase();
-          if (hay.indexOf(q) === -1) continue;
-        }
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        if (it.hasNote) continue;
+        if (String(it.comment || '').trim()) continue;
+        if (statusKey(it)) continue;
         out.push(it);
       }
       return out;
@@ -3222,25 +3221,42 @@
     }
 
     function openInventur() {
-      if (state.busy) return;
-      var queue = inventurQueueItems();
-      if (!queue.length) {
-        toast('Keine offenen Kisten in der aktuellen Liste', true);
+      if (state.busy || state.inventurLoading) return;
+      var start = function(items) {
+        var queue = inventurQueueItems(items);
+        if (!queue.length) {
+          toast('Keine Kisten ohne Notiz oder Status', true);
+          return;
+        }
+        state.inventur = {
+          queue: queue.slice(),
+          index: 0,
+          done: false,
+          pending: '',
+          pendingText: '',
+          results: {},
+          counts: { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 }
+        };
+        $('invSub').textContent = queue.length + ' Kisten ohne Notiz und Status — nacheinander prüfen';
+        $('invLayer').classList.add('show');
+        renderInventur();
+        loadInventurDetailIfNeeded();
+      };
+      if (state.filter === 'all' && state.items.length) {
+        start(state.items);
         return;
       }
-      state.inventur = {
-        queue: queue.slice(),
-        index: 0,
-        done: false,
-        pending: '',
-        pendingText: '',
-        results: {},
-        counts: { OK: 0, kontrollieren: 0, b2a1: 0, alfah: 0, nachbestellt: 0, erledigt: 0, SKIP: 0, set: 0 }
-      };
-      $('invSub').textContent = queue.length + ' Kisten in der aktuellen Liste — nacheinander prüfen';
-      $('invLayer').classList.add('show');
-      renderInventur();
-      loadInventurDetailIfNeeded();
+      state.inventurLoading = true;
+      apiQuiet()
+        .withFailureHandler(function() {
+          state.inventurLoading = false;
+          start(state.items);
+        })
+        .withSuccessHandler(function(res) {
+          state.inventurLoading = false;
+          start((res && res.success && res.items) || state.items);
+        })
+        .getQueue('all', false);
     }
 
     function closeInventur() {
