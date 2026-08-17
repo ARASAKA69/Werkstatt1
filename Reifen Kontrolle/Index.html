@@ -183,7 +183,6 @@
     .item:hover { filter: brightness(1.08); }
     .item:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.35); }
     .item:active { transform: scale(0.985); }
-    .item.active { box-shadow: inset 0 0 0 2px rgba(13, 148, 136, 0.75); }
     .item.st-ok { background: rgba(0, 255, 0, 0.12); border-color: rgba(0, 255, 0, 0.4); }
     .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
     .item.st-complete { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
@@ -194,6 +193,28 @@
       opacity: 0.78;
       background: linear-gradient(90deg, rgba(52, 168, 83, 0.2), rgba(255,255,255,0.03));
       border-color: rgba(52, 168, 83, 0.55);
+    }
+    .item.active,
+    .item.active.st-ok,
+    .item.active.st-b2a1,
+    .item.active.st-complete,
+    .item.active.st-mech,
+    .item.active.st-pruefen,
+    .item.active.st-other,
+    .item.active.tl-gestellt {
+      opacity: 1;
+      position: relative;
+      background: rgba(13, 148, 136, 0.28);
+      border-color: #2dd4bf;
+      box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.55), 0 8px 18px rgba(13, 148, 136, 0.28);
+    }
+    .item.active::before {
+      content: "";
+      position: absolute;
+      left: 0; top: 6px; bottom: 6px;
+      width: 4px;
+      border-radius: 0 4px 4px 0;
+      background: #2dd4bf;
     }
     .item-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; align-items: center; }
     .sid { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; }
