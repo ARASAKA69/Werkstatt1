@@ -237,9 +237,34 @@
     .cam-stage { flex: 1; min-height: 0; position: relative; background: #000; }
     #camReader { width: 100%; height: 100%; }
     #camReader video { width: 100% !important; height: 100% !important; object-fit: cover; }
+    .cam-banner {
+      margin: 0 12px 10px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border-strong);
+      background: rgba(14, 16, 20, 0.94);
+      text-align: center;
+    }
+    .cam-banner.ready {
+      border-color: rgba(13, 148, 136, 0.55);
+      background: rgba(8, 28, 26, 0.96);
+      box-shadow: 0 0 0 1px rgba(13, 148, 136, 0.18);
+    }
+    .cam-banner .k {
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--foreground-muted);
+    }
+    .cam-banner .v {
+      margin: 6px 0 2px;
+      font-size: 1.45rem; font-weight: 800; letter-spacing: -0.03em;
+    }
+    .cam-banner.ready .v { color: var(--color-secondary); }
+    .cam-banner .s {
+      font-size: 0.82rem; font-weight: 600; color: var(--foreground-muted);
+    }
     .cam-hint {
-      padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
-      text-align: center; color: var(--foreground-muted); font-size: 0.82rem; font-weight: 600;
+      padding: 0 14px calc(14px + env(safe-area-inset-bottom));
+      text-align: center; color: var(--foreground-muted); font-size: 0.78rem; font-weight: 600;
     }
     .load-overlay {
       position: fixed; inset: 0; z-index: 80;
@@ -293,7 +318,7 @@
     <section class="regal-card" id="regalCard">
       <div class="regal-kicker" id="regalKicker">Aktives Regal</div>
       <div class="regal-val" id="regalVal">—</div>
-      <div class="regal-hint" id="regalHint">Regal-Barcode scannen oder z.B. 2.4 eingeben</div>
+      <div class="regal-hint" id="regalHint">Regal-Barcode scannen, danach Stock-ID</div>
     </section>
     <div class="scan-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7V4h3"/><path d="M17 4h3v3"/><path d="M20 17v3h-3"/><path d="M7 20H4v-3"/><rect x="7" y="8" width="10" height="8" rx="1"/></svg>
@@ -317,11 +342,16 @@
   </div>
   <div class="cam-overlay" id="camOverlay">
     <div class="cam-bar">
-      <strong>Barcode scannen</strong>
+      <strong id="camTitle">Regal scannen</strong>
       <button type="button" class="btn ghost" id="btnCamClose">Schließen</button>
     </div>
     <div class="cam-stage"><div id="camReader"></div></div>
-    <div class="cam-hint">Regal x.x oder Stock-ID auf die Mitte halten</div>
+    <div class="cam-banner" id="camBanner">
+      <div class="k" id="camBannerK">Schritt 1</div>
+      <div class="v" id="camBannerV">Regal scannen</div>
+      <div class="s" id="camBannerS">Danach Kamera offen lassen und Stock-ID scannen</div>
+    </div>
+    <div class="cam-hint" id="camHint">Regal x.x auf die Mitte halten</div>
   </div>
   <div class="load-overlay" id="loadOverlay"><div class="load-card"><div class="spinner"></div><span id="loadLabel">Speichere…</span></div></div>
   <input id="camFile" type="file" accept="image/*" capture="environment" hidden>
@@ -453,23 +483,24 @@
       regalCard.classList.toggle('has', has);
       regalVal.textContent = has ? currentRegal : '—';
       regalHint.textContent = has
-        ? 'Jetzt Stock-ID scannen. Neues Regal überschreibt den Platz.'
-        : 'Regal-Barcode scannen oder z.B. 2.4 eingeben';
+        ? currentRegal + ' ist gesetzt. Jetzt Stock-ID scannen, um den Platz zu wechseln.'
+        : 'Regal-Barcode scannen, danach Stock-ID';
       scanInput.placeholder = has ? 'Stock-ID scannen…' : 'Regal scannen…';
       stepRegal.className = 'step' + (has ? ' done' : ' on');
       stepStock.className = 'step' + (has ? ' on' : '');
       btnClear.disabled = !has;
     }
 
-    function setRegal(regal, silent) {
+    function setRegal(regal, silent, fromCam) {
       currentRegal = regal;
       try { localStorage.setItem(LS_REGAL, regal); } catch (e) {}
       renderRegal();
       if (!silent) {
-        setStatus(regal + ' aktiv — Stock-IDs scannen', '#34D399');
+        setStatus(regal + ' ist gesetzt. Jetzt Stock-ID scannen, um den Platz zu wechseln.', '#34D399');
         beep('regal');
       }
-      focusScan();
+      if (fromCam) updateCamUi();
+      else focusScan();
     }
 
     function clearRegal() {
@@ -517,7 +548,8 @@
         beep('err');
         return;
       }
-      setBusy(true, 'Speichere ' + stockId + '…');
+      closeCamNow();
+      setBusy(true, 'Speichere ' + stockId + ' in ' + currentRegal + '…');
       setStatus('Speichere ' + stockId + ' in ' + currentRegal + '…', '#F59E0B');
       google.script.run
         .withSuccessHandler(function(res) {
@@ -550,7 +582,12 @@
       var parsed = classify(raw);
       scanInput.value = '';
       if (parsed.type === 'regal') {
-        setRegal(parsed.value);
+        if (parsed.value === currentRegal) {
+          setStatus(currentRegal + ' ist gesetzt. Jetzt Stock-ID scannen, um den Platz zu wechseln.', '#34D399');
+          if (!camOpen) focusScan();
+          return;
+        }
+        setRegal(parsed.value, false, camOpen);
         return;
       }
       if (parsed.type === 'stock') {
@@ -560,7 +597,7 @@
       if (!String(raw || '').trim()) return;
       setStatus('Unbekannt: ' + String(raw).trim(), '#f87171');
       beep('err');
-      focusScan();
+      if (!camOpen) focusScan();
     }
 
     function onIdleSubmit() {
@@ -591,26 +628,61 @@
 
     $('btnClear').addEventListener('click', clearRegal);
 
-    function stopCam() {
+    function closeCamNow() {
       camOpen = false;
       camOverlay.classList.remove('show');
       lastCamValue = '';
-      if (!cam) { focusScan(); return; }
+      if (!cam) return;
       var stopper = cam;
       cam = null;
-      try {
-        stopper.stop().then(function() { focusScan(); }).catch(function() { focusScan(); });
-      } catch (e) { focusScan(); }
+      try { stopper.stop().then(function() {}).catch(function() {}); } catch (e) {}
+    }
+
+    function stopCam() {
+      closeCamNow();
+      focusScan();
+    }
+
+    function updateCamUi() {
+      var has = !!currentRegal;
+      var banner = $('camBanner');
+      $('camTitle').textContent = has ? 'Stock-ID scannen' : 'Regal scannen';
+      $('camHint').textContent = has
+        ? 'Etikett der Box auf die Mitte halten'
+        : 'Regal x.x auf die Mitte halten';
+      banner.classList.toggle('ready', has);
+      $('camBannerK').textContent = has ? 'Regal gesetzt' : 'Schritt 1';
+      $('camBannerV').textContent = has ? currentRegal : 'Regal scannen';
+      $('camBannerS').textContent = has
+        ? 'Jetzt Stock-ID scannen, um den Platz zu wechseln'
+        : 'Danach bleibt die Kamera offen für die Stock-ID';
     }
 
     function onCamCode(text) {
+      if (!camOpen || busy) return;
       var v = String(text || '').trim();
       if (!v) return;
+      var parsed = classify(v);
+      if (parsed.type === 'unknown') return;
       var now = Date.now();
-      if (v === lastCamValue && now - lastCamAt < 1400) return;
+      if (v === lastCamValue && now - lastCamAt < 900) return;
       lastCamValue = v;
       lastCamAt = now;
-      handleScan(v);
+
+      if (parsed.type === 'regal') {
+        if (parsed.value === currentRegal) return;
+        setRegal(parsed.value, false, true);
+        return;
+      }
+      if (parsed.type === 'stock') {
+        if (!currentRegal) {
+          $('camBannerS').textContent = 'Zuerst Regal scannen';
+          beep('err');
+          return;
+        }
+        closeCamNow();
+        setTimeout(function() { saveStock(parsed.value); }, 40);
+      }
     }
 
     function startCam() {
@@ -619,8 +691,10 @@
         camFile.click();
         return;
       }
+      updateCamUi();
       camOverlay.classList.add('show');
       camOpen = true;
+      lastCamValue = '';
       cam = new Html5Qrcode('camReader');
       var cfg = {
         fps: 8,
