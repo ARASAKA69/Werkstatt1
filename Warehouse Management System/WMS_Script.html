@@ -121,6 +121,18 @@
     var w = window.open(REIFEN_KONTROLLE_URL, '_blank', 'noopener,noreferrer');
     if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
   }
+  function openRegalScanHud() {
+    var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
+    if (!base) {
+      try { base = String(window.location.href || '').split('?')[0].split('#')[0]; } catch (e0) { base = ''; }
+    }
+    if (!base) {
+      showStickyToast('err', 'Kein Link', 'WMS-URL fehlt – Seite neu laden.');
+      return;
+    }
+    var w = window.open(base + '?page=regal', '_blank', 'noopener,noreferrer');
+    if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
+  }
   function downloadBridgeFile(url, filename) {
     fetch(url, { mode: 'cors', cache: 'no-store' }).then(function(r) {
       if(!r.ok) throw new Error('bad');

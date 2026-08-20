@@ -23,6 +23,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.3",
+    date: "20.08.2026",
+    notes:
+      "• Neues HUD „Regal Scan“: eigenes Handy-/Scanner-Fenster zum Einlagern — erst Regal x.x scannen, dann Stock-IDs, Regal wird automatisch in Refurbishment und offenen Nachbestellungen gesetzt\n" +
+      "• Kamera-Scan + Hardware-Scanner + Tastatur, Link im Menü unter Lager & Überblick"
+  },
+  {
     version: "2.2.2",
     date: "11.08.2026",
     notes:
@@ -1465,6 +1472,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
   function onOpen() {
     SpreadsheetApp.getUi().createMenu('WMS')
       .addItem('Öffne Warehouse Management System', 'openWMS')
+      .addItem('Öffne Regal Scan', 'openRegalScan')
       .addToUi();
   }
   
@@ -1502,8 +1510,21 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     };
   }
 
+  function getRegalScanAppUrl_() {
+    var base = String(getWmsWebAppUrl_() || "").split("?")[0].split("#")[0];
+    if (!base) return "";
+    return base + "?page=regal";
+  }
+
   function doGet(e) {
     var p = e && e.parameter || {};
+    var page = String(p.page || p.view || "").toLowerCase();
+    if (page === "regal" || page === "scan" || page === "regalscan") {
+      return HtmlService.createHtmlOutputFromFile("WMS_RegalScan")
+        .setTitle("Regal Scan")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag("viewport", "width=device-width, initial-scale=1, viewport-fit=cover");
+    }
     var mode = String(p.mode || 'standalone').toLowerCase();
     if (mode !== 'overlay' && mode !== 'standalone') mode = 'standalone';
     var t = HtmlService.createTemplateFromFile('WMS_App');
@@ -1531,6 +1552,20 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
       "</script></body></html>"
     );
     SpreadsheetApp.getUi().showModalDialog(html, "Warehouse Management System");
+  }
+
+  function openRegalScan() {
+    var url = getRegalScanAppUrl_();
+    if (!url) {
+      SpreadsheetApp.getUi().alert("Keine Web-App-URL. Bitte WMS_WEB_APP_URL setzen oder Web-App bereitstellen.");
+      return;
+    }
+    var html = HtmlService.createHtmlOutput(
+      "<!DOCTYPE html><html><body style=\"margin:0\"><script>" +
+      "window.onload=function(){window.open(" + JSON.stringify(url) + ",\"_blank\");google.script.host.close();};" +
+      "</script></body></html>"
+    );
+    SpreadsheetApp.getUi().showModalDialog(html, "Regal Scan");
   }
 
   function applyTrackingDateIfEmpty(stockId) {
@@ -2300,6 +2335,143 @@ function getRefurbishmentCachePayload() {
       }
       return { success: false, message: "Stock-ID nicht gefunden!" };
     });
+  }
+
+  function assignRegalToRefurb_(stockId, regal) {
+    var locked = withRefurbDocumentLock_(function() {
+      var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+      if (!sheet) return { found: false, success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (cellMatchesStockId(data[i][0], stockId)) {
+          var row = i + 1;
+          var oldRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+          var oldNorm = normalizeRegalKeyForCount(oldRegal) || oldRegal;
+          if (oldNorm === regal) {
+            return { found: true, success: true, already: true, oldRegal: oldRegal || regal };
+          }
+          sheet.getRange(row, 28).setValue(regal);
+          SpreadsheetApp.flush();
+          var check = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (check != regal) return { found: true, success: false, oldRegal: oldRegal, message: "Refurb: Verifizieren fehlgeschlagen" };
+          return { found: true, success: true, already: false, oldRegal: oldRegal };
+        }
+      }
+      return { found: false, success: true };
+    });
+    if (!locked || locked.found === undefined) {
+      return { found: false, success: false, message: (locked && locked.message) || "Refurb Fehler" };
+    }
+    return locked;
+  }
+
+  function assignRegalToNachbestellungen_(stockId, regal) {
+    try {
+      var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+      var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+      if (!sheet) return { found: false, success: true, updated: 0, oldRegals: [] };
+
+      var layout = findNachbestellungSheetLayout(sheet);
+      var lagerortCol = layout.lagerortCol;
+      var statusCol = layout.statusCol;
+      var lastRow = Math.max(2, sheet.getLastRow());
+      var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+      if (lagerortCol > lastCol) lagerortCol = Math.min(NACHBESTELL_REGAL_COL, lastCol);
+      if (statusCol > lastCol) statusCol = Math.min(NACHBESTELL_STATUS_COL, lastCol);
+      var stockCol = getNachbestellungStockIdCol(sheet, layout);
+      var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+      var headerIdx = layout.headerRow - 1;
+      var targets = [];
+      var oldRegals = [];
+
+      for (var i = headerIdx + 1; i < data.length; i++) {
+        if (!cellMatchesStockId(data[i][stockCol - 1], stockId)) continue;
+        var rawStatus = String(data[i][statusCol - 1] || "").trim();
+        if (nachbestellungIsClosedStatus(rawStatus)) continue;
+        targets.push(i + 1);
+        oldRegals.push(nachbestellungRegalUiFromCell(data[i][lagerortCol - 1]));
+      }
+
+      if (!targets.length) return { found: false, success: true, updated: 0, oldRegals: [] };
+
+      var allowedLv = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
+      var regalWrite = nachbestellungLagerortToSheetValue(regal, allowedLv);
+      if (regalWrite === null) {
+        return { found: true, success: false, updated: 0, oldRegals: oldRegals, message: "Regal nicht in der Nachbestellung-Liste" };
+      }
+
+      for (var t = 0; t < targets.length; t++) {
+        var lr = sheet.getRange(targets[t], lagerortCol);
+        lr.setNumberFormat("@");
+        lr.setValue(regalWrite);
+      }
+      SpreadsheetApp.flush();
+
+      var updated = 0;
+      for (var v = 0; v < targets.length; v++) {
+        var verifyCell = sheet.getRange(targets[v], lagerortCol).getValue();
+        if (!nachbestellungLagerortVerifyMatch(regalWrite, verifyCell)) {
+          return { found: true, success: false, updated: updated, oldRegals: oldRegals, message: "NB: Lagerort nicht verifiziert" };
+        }
+        updated++;
+      }
+      return { found: true, success: true, updated: updated, oldRegals: oldRegals };
+    } catch (err) {
+      return { found: false, success: false, updated: 0, oldRegals: [], message: err.message };
+    }
+  }
+
+  function assignRegalByScan(stockId, regal) {
+    stockId = normalizeStockId(stockId);
+    var regalNorm = normalizeRegalKeyForCount(regal);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    if (!regalNorm || !/^Regal\s+\d+\.\d+$/i.test(regalNorm)) {
+      return { success: false, message: "Ungültiger Regalplatz" };
+    }
+
+    var refurb = assignRegalToRefurb_(stockId, regalNorm);
+    if (refurb && refurb.found === false && refurb.success === false) {
+      return { success: false, message: refurb.message || "Speichern beschäftigt" };
+    }
+
+    var nb = { found: false, success: true, updated: 0, oldRegals: [] };
+    try {
+      nb = assignRegalToNachbestellungen_(stockId, regalNorm);
+    } catch (nbErr) {
+      nb = { found: false, success: false, updated: 0, oldRegals: [], message: nbErr.message };
+    }
+
+    if (!refurb.found && !nb.found) {
+      if (nb.success === false) return { success: false, message: nb.message || "Nachbestellung Fehler" };
+      return { success: false, message: "Stock-ID nicht in Refurbishment und nicht in offenen Nachbestellungen gefunden." };
+    }
+
+    var sources = [];
+    if (refurb.found) sources.push("Refurbishment");
+    if (nb.found) sources.push(nb.updated > 1 ? ("Nachbestellung ×" + nb.updated) : "Nachbestellung");
+
+    var ok = (!refurb.found || refurb.success) && (!nb.found || nb.success);
+    var msg;
+    if (ok) {
+      msg = stockId + " → " + regalNorm + " (" + sources.join(" + ") + ")";
+      if (refurb.already && !nb.found) msg = stockId + " bereits in " + regalNorm;
+    } else {
+      var parts = [];
+      if (refurb.found && !refurb.success) parts.push(refurb.message || "Refurb Fehler");
+      if (nb.found && !nb.success) parts.push(nb.message || "NB Fehler");
+      msg = parts.join(" | ") || "Speichern fehlgeschlagen";
+    }
+
+    return {
+      success: ok,
+      message: msg,
+      stockId: stockId,
+      regal: regalNorm,
+      sources: sources,
+      previousRegal: refurb.oldRegal || (nb.oldRegals && nb.oldRegals[0]) || "",
+      already: !!(refurb.already && (!nb.found || nb.success))
+    };
   }
 
   function saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal) {
