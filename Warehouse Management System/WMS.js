@@ -26,8 +26,7 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.3",
     date: "20.08.2026",
     notes:
-      "• Neues HUD „Regal Scan“: eigenes Handy-/Scanner-Fenster zum Einlagern — erst Regal x.x scannen, dann Stock-IDs, Regal wird automatisch in Refurbishment und offenen Nachbestellungen gesetzt\n" +
-      "• Kamera-Scan + Hardware-Scanner + Tastatur, Link im Menü unter Lager & Überblick"
+      "• WIP HUD „Regal Scan“ neues untermenü mit eigenem HUD zum umlagern von Lagerboxen easly auch mit dem Handy\n"
   },
   {
     version: "2.2.2",
@@ -164,6 +163,14 @@ const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5
 const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
 const INFO_LAGER_EXIT_HUD_BUTTON = 1;
 
+function isProtectedRefurbRegal_(val) {
+  var s = String(val == null ? "" : val).trim().toLowerCase();
+  if (!s) return false;
+  if (s === "tagesliste" || s.indexOf("tagesliste") !== -1) return true;
+  if (s === "lack" || s === "exit") return true;
+  return false;
+}
+
 function normalizeRegalKeyForCount(val) {
   if (val === "" || val == null) return "";
   if (Object.prototype.toString.call(val) === "[object Date]" || val instanceof Date) {
@@ -185,8 +192,7 @@ function normalizeRegalKeyForCount(val) {
   }
   var s = String(val || "").trim().replace(/,/g, ".");
   if (!s) return "";
-  var low = s.toLowerCase();
-  if (low === "tagesliste" || low === "lack" || low === "exit") return "";
+  if (isProtectedRefurbRegal_(s)) return "";
   var m = s.match(/^regal\s+(\d+)\s*\.\s*(\d+)$/i);
   if (m) return "Regal " + parseInt(m[1], 10) + "." + parseInt(m[2], 10);
   m = s.match(/^(\d+)\s*\.\s*(\d+)$/);
@@ -2368,6 +2374,9 @@ function getRefurbishmentCachePayload() {
         if (cellMatchesStockId(data[i][0], stockId)) {
           var row = i + 1;
           var oldRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+          if (isProtectedRefurbRegal_(oldRegal)) {
+            return { found: true, success: true, skipped: true, already: true, oldRegal: oldRegal };
+          }
           var oldNorm = normalizeRegalKeyForCount(oldRegal) || oldRegal;
           if (oldNorm === regal) {
             return { found: true, success: true, already: true, oldRegal: oldRegal || regal };
@@ -2451,11 +2460,6 @@ function getRefurbishmentCachePayload() {
       return { success: false, message: "Ungültiger Regalplatz" };
     }
 
-    var refurb = assignRegalToRefurb_(stockId, regalNorm);
-    if (refurb && refurb.found === false && refurb.success === false) {
-      return { success: false, message: refurb.message || "Speichern beschäftigt" };
-    }
-
     var nb = { found: false, success: true, updated: 0, oldRegals: [] };
     try {
       nb = assignRegalToNachbestellungen_(stockId, regalNorm);
@@ -2463,18 +2467,56 @@ function getRefurbishmentCachePayload() {
       nb = { found: false, success: false, updated: 0, oldRegals: [], message: nbErr.message };
     }
 
+    var refurb = { found: false, success: true, skipped: false, already: false, oldRegal: "" };
+    if (!nb.found) {
+      refurb = assignRegalToRefurb_(stockId, regalNorm);
+      if (refurb && refurb.found === false && refurb.success === false) {
+        return { success: false, message: refurb.message || "Speichern beschäftigt" };
+      }
+    }
+
     if (!refurb.found && !nb.found) {
       if (nb.success === false) return { success: false, message: nb.message || "Nachbestellung Fehler" };
       return { success: false, message: "Stock-ID nicht in Refurbishment und nicht in offenen Nachbestellungen gefunden." };
     }
 
+    if (refurb.skipped && !nb.found) {
+      return {
+        success: false,
+        message: stockId + " in Refurbishment auf " + (refurb.oldRegal || "Tagesliste") + " — Scan ändert das nicht.",
+        stockId: stockId,
+        regal: regalNorm,
+        sources: [],
+        previousRegal: refurb.oldRegal || "",
+        already: true
+      };
+    }
+
     var sources = [];
-    if (refurb.found) sources.push("Refurbishment");
+    if (refurb.found && !refurb.skipped) sources.push("Refurbishment");
     if (nb.found) sources.push(nb.updated > 1 ? ("Nachbestellung ×" + nb.updated) : "Nachbestellung");
 
     var ok = (!refurb.found || refurb.success) && (!nb.found || nb.success);
-    var prevRegal = normalizeRegalKeyForCount(refurb.oldRegal) || String(refurb.oldRegal || "").trim() || (nb.oldRegals && normalizeRegalKeyForCount(nb.oldRegals[0])) || (nb.oldRegals && String(nb.oldRegals[0] || "").trim()) || "";
-    var already = !!(refurb.already && (!nb.found || nb.success));
+    var prevRegal = "";
+    if (nb.found && nb.oldRegals && nb.oldRegals.length) {
+      prevRegal = normalizeRegalKeyForCount(nb.oldRegals[0]) || String(nb.oldRegals[0] || "").trim() || "";
+    } else {
+      prevRegal = normalizeRegalKeyForCount(refurb.oldRegal) || String(refurb.oldRegal || "").trim() || "";
+    }
+    var already = false;
+    if (nb.found) {
+      already = true;
+      var na;
+      for (na = 0; na < (nb.oldRegals || []).length; na++) {
+        var oldNb = normalizeRegalKeyForCount(nb.oldRegals[na]) || String(nb.oldRegals[na] || "").trim();
+        if (oldNb !== regalNorm) {
+          already = false;
+          break;
+        }
+      }
+    } else {
+      already = !!refurb.already;
+    }
     var msg;
     if (ok) {
       msg = stockId + " → " + regalNorm + " (" + sources.join(" + ") + ")";
@@ -2482,7 +2524,7 @@ function getRefurbishmentCachePayload() {
       else logRegalVerlauf_(stockId, prevRegal, regalNorm, action || "speichern+regal");
     } else {
       var parts = [];
-      if (refurb.found && !refurb.success) parts.push(refurb.message || "Refurb Fehler");
+      if (refurb.found && !refurb.skipped && !refurb.success) parts.push(refurb.message || "Refurb Fehler");
       if (nb.found && !nb.success) parts.push(nb.message || "NB Fehler");
       msg = parts.join(" | ") || "Speichern fehlgeschlagen";
     }
@@ -2508,21 +2550,32 @@ function getRefurbishmentCachePayload() {
       return moved;
     }
 
-    var refurb = assignRegalToRefurb_(stockId, "");
-    if (refurb && refurb.found === false && refurb.success === false) {
-      return { success: false, message: refurb.message || "Speichern beschäftigt" };
-    }
     var nb = { found: false, success: true, updated: 0, oldRegals: [] };
     try {
       nb = assignRegalToNachbestellungen_(stockId, "");
     } catch (nbErr) {
       nb = { found: false, success: false, updated: 0, oldRegals: [], message: nbErr.message };
     }
+    var refurb = { found: false, success: true, skipped: false, oldRegal: "" };
+    if (!nb.found) {
+      refurb = assignRegalToRefurb_(stockId, "");
+      if (refurb && refurb.found === false && refurb.success === false) {
+        return { success: false, message: refurb.message || "Speichern beschäftigt" };
+      }
+    }
     if (!refurb.found && !nb.found) {
       return { success: false, message: "Stock-ID nicht gefunden." };
     }
+    if (refurb.skipped && !nb.found) {
+      return { success: false, reverted: true, message: "Refurbishment bleibt " + (refurb.oldRegal || "Tagesliste"), stockId: stockId, regal: "", previousRegal: refurb.oldRegal || "" };
+    }
     var ok = (!refurb.found || refurb.success) && (!nb.found || nb.success);
-    var prev = normalizeRegalKeyForCount(refurb.oldRegal) || String(refurb.oldRegal || "").trim() || "";
+    var prev = "";
+    if (nb.found && nb.oldRegals && nb.oldRegals.length) {
+      prev = normalizeRegalKeyForCount(nb.oldRegals[0]) || String(nb.oldRegals[0] || "").trim() || "";
+    } else {
+      prev = normalizeRegalKeyForCount(refurb.oldRegal) || String(refurb.oldRegal || "").trim() || "";
+    }
     if (ok) logRegalVerlauf_(stockId, prev, "", "regal-revert");
     return {
       success: ok,
