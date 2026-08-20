@@ -6262,6 +6262,7 @@
 
   function handleVerlaufSaveSuccess(res) {
     if (res && res.success && res.verlaufEntry) appendVerlaufToLocalCache(res.verlaufEntry);
+    if (res && res.success && res.verlaufRegalEntry) appendVerlaufToLocalCache(res.verlaufRegalEntry);
   }
 
   function getVerlaufRowsForStock(stockId) {
@@ -6816,6 +6817,7 @@
         return;
       }
       if(res && res.success) {
+        handleVerlaufSaveSuccess(res);
         if (normalizeStockIdJs(currentStock) === stockId) {
           setBaselines(expectedKommentar, regal);
         }
