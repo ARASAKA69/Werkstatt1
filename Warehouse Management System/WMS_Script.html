@@ -133,6 +133,358 @@
     var w = window.open(base + '?page=regal', '_blank', 'noopener,noreferrer');
     if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
   }
+
+  var CAST_LS_WS = 'wms_cast_ws_v1';
+  var CAST_POLL_MS = 2000;
+  var castWsId = '';
+  var castState = null;
+  var castPollTimer = null;
+  var castPollInflight = false;
+  var castWasConnected = false;
+  var castHandledJobId = '';
+  var castPendingCarolJob = null;
+  var castQrLibTried = false;
+
+  function getOrCreateCastWsId() {
+    try {
+      var existing = localStorage.getItem(CAST_LS_WS);
+      if (existing && /^[a-zA-Z0-9_-]{8,32}$/.test(existing)) return existing;
+    } catch (e0) {}
+    var id = 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    try { localStorage.setItem(CAST_LS_WS, id); } catch (e1) {}
+    return id;
+  }
+
+  function applyCastUi(state) {
+    castState = state && state.success ? state : castState;
+    var connected = !!(state && state.success && state.connected);
+    var email = state && state.email ? String(state.email) : '';
+    var bind = state && state.bind ? String(state.bind) : '';
+    var menuBtn = document.getElementById('wmsCastMenuBtn');
+    var menuSub = document.getElementById('wmsCastMenuSub');
+    var pill = document.getElementById('castHudPill');
+    var statusEl = document.getElementById('wmsCastStatus');
+    var codeEl = document.getElementById('wmsCastCode');
+    var emailEl = document.getElementById('wmsCastEmail');
+    var titleEl = document.getElementById('wmsCastTitle');
+    if (menuBtn) menuBtn.classList.toggle('is-connected', connected);
+    if (menuSub) menuSub.textContent = connected ? 'Verbunden' : 'QR scannen · Session verbinden';
+    if (pill) pill.hidden = !connected;
+    if (codeEl && bind) codeEl.textContent = bind;
+    if (emailEl) emailEl.textContent = email || '';
+    if (statusEl) {
+      statusEl.textContent = connected ? 'Handy verbunden' : 'QR mit dem Handy scannen';
+      statusEl.classList.toggle('is-on', connected);
+    }
+    if (titleEl) titleEl.textContent = connected ? 'Cast verbunden' : 'Cast verbinden';
+    if (state && state.success && state.castUrl) renderWmsCastQr(state.castUrl);
+    if (connected && !castWasConnected) {
+      showStickyToast('ok', 'Handy verbunden', email ? ('Session: ' + email) : 'Cast aktiv');
+    }
+    if (!connected && castWasConnected) {
+      showStickyToast('err', 'Handy getrennt', 'Cast-Session ist nicht mehr verbunden.');
+    }
+    castWasConnected = connected;
+  }
+
+  function renderWmsCastQr(url) {
+    var box = document.getElementById('wmsCastQr');
+    if (!box || !url) return;
+    if (box.getAttribute('data-url') === url && box.childNodes.length) return;
+    box.setAttribute('data-url', url);
+    box.innerHTML = '';
+    if (window.QRCode) {
+      try {
+        new QRCode(box, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+        return;
+      } catch (e0) {}
+    }
+    var img = document.createElement('img');
+    img.alt = 'Cast QR';
+    img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=8&data=' + encodeURIComponent(url);
+    box.appendChild(img);
+  }
+
+  function ensureQrCodeLib(cb) {
+    if (window.QRCode) { cb(); return; }
+    if (castQrLibTried) { cb(); return; }
+    castQrLibTried = true;
+    var s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js';
+    s.onload = function() { cb(); };
+    s.onerror = function() { cb(); };
+    document.head.appendChild(s);
+  }
+
+  function ackCastJob(job, ok, message) {
+    if (!castWsId || !job || !job.id) return;
+    google.script.run
+      .withSuccessHandler(function() {})
+      .withFailureHandler(function() {})
+      .castAckJob(castWsId, job.id, !!ok, String(message || ''));
+  }
+
+  function applyCastJobToHud(job) {
+    if (!job) return;
+    var stockId = normalizeStockIdJs(job.stockId);
+    if (stockId) {
+      currentStock = stockId;
+      var inp = document.getElementById('searchInput');
+      if (inp) inp.value = stockId;
+    }
+    if (job.comment != null && String(job.comment) !== '') {
+      setCommentText(job.comment);
+    }
+    if (job.carolUrl) {
+      currentCarolUrl = job.carolUrl;
+      var btn = document.getElementById('btnCarol');
+      if (btn) btn.disabled = false;
+    }
+    var expC = job.expectedKommentar != null ? String(job.expectedKommentar) : getCommentText();
+    var expR = job.expectedRegal != null ? String(job.expectedRegal) : baselineRegal;
+    setBaselines(expC, expR);
+  }
+
+  function showCastCarolPrompt(job) {
+    castPendingCarolJob = job;
+    var wrap = document.getElementById('castCarolPrompt');
+    var stockEl = document.getElementById('castCarolPromptStock');
+    if (stockEl) stockEl.textContent = job && job.stockId ? job.stockId : '';
+    if (wrap) wrap.hidden = false;
+  }
+
+  function hideCastCarolPrompt() {
+    var wrap = document.getElementById('castCarolPrompt');
+    if (wrap) wrap.hidden = true;
+  }
+
+  var castCarolArmed = false;
+
+  function armCastCarolWindow() {
+    if (castCarolArmed) return true;
+    try {
+      var w = window.open('', 'wmsCastCarol');
+      if (!w) return null;
+      try {
+        var doc = w.document;
+        if (doc && (!doc.body || !doc.body.getAttribute('data-wms-cast'))) {
+          doc.open();
+          doc.write('<!DOCTYPE html><html><head><title>WMS Cast</title></head><body data-wms-cast="1" style="margin:0;background:#050506;color:#86efac;font:700 16px/1.4 system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px;">WMS Cast bereit<br><span style="opacity:.55;font-size:13px;font-weight:600;">Carol startet hier vom Handy</span></body></html>');
+          doc.close();
+        }
+      } catch (e1) {}
+      castCarolArmed = true;
+      return w;
+    } catch (e0) {
+      return null;
+    }
+  }
+
+  function launchCastCarol(job) {
+    applyCastJobToHud(job);
+    if (!currentCarolUrl || !normalizeStockIdJs(currentStock)) {
+      ackCastJob(job, false, 'Kein Carol-Link');
+      return;
+    }
+    if (typeof isStockEditBlocked === 'function' && isStockEditBlocked(normalizeStockIdJs(currentStock))) {
+      ackCastJob(job, false, 'Auftrag gesperrt');
+      return;
+    }
+    var launched = fireCarol({ windowName: 'wmsCastCarol' });
+    if (launched && launched.blocked) {
+      showCastCarolPrompt(job);
+      showStickyToast('err', 'Carol Popup', 'Am PC bestätigen — Popup blockiert');
+      return;
+    }
+    if (!launched || launched.success === false) {
+      ackCastJob(job, false, 'Carol nicht gestartet');
+      return;
+    }
+    ackCastJob(job, true, 'Carol gestartet');
+    showStickyToast('ok', 'Handy: Carol', (job.stockId || '') + ' gestartet');
+  }
+
+  function confirmCastCarol() {
+    var job = castPendingCarolJob;
+    hideCastCarolPrompt();
+    castPendingCarolJob = null;
+    if (!job) return;
+    armCastCarolWindow();
+    launchCastCarol(job);
+  }
+
+  function dismissCastCarolPrompt() {
+    var job = castPendingCarolJob;
+    hideCastCarolPrompt();
+    if (job) ackCastJob(job, false, 'Am PC abgelehnt');
+    castPendingCarolJob = null;
+  }
+
+  function executeCastJob(job) {
+    if (!job || !job.id) return;
+    if (String(job.id) === String(castHandledJobId)) return;
+    castHandledJobId = String(job.id);
+    if (job.type === 'dymo') {
+      var printed = sendDymoPrint({ stockId: job.stockId, copies: job.copies || 1, silent: false });
+      var ok = !!(printed && printed.success);
+      var msg = printed && printed.skipped
+        ? 'DYMO übersprungen'
+        : (ok ? 'DYMO gesendet' : (printed && printed.message ? printed.message : 'DYMO fehlgeschlagen'));
+      setStatus('📱 Handy: ' + msg + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
+      ackCastJob(job, ok, msg);
+      return;
+    }
+    if (job.type === 'carol') {
+      if (!currentCarolUrl && job.stockId && !job.carolUrl) {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success) {
+              applyFetchWmsResult(res, job.stockId);
+              if (job.comment) setCommentText(job.comment);
+            }
+            launchCastCarol(job);
+          })
+          .withFailureHandler(function() {
+            launchCastCarol(job);
+          })
+          .fetchWmsData(job.stockId);
+        return;
+      }
+      launchCastCarol(job);
+      return;
+    }
+    if (job.type === 'open') {
+      var sid = normalizeStockIdJs(job.stockId);
+      if (!sid) {
+        ackCastJob(job, false, 'Keine Stock-ID');
+        return;
+      }
+      var inp = document.getElementById('searchInput');
+      if (inp) inp.value = sid;
+      if (typeof setHudBusy === 'function') setHudBusy(true, 'Handy: öffne ' + sid + '…');
+      setStatus('📱 Handy: öffne ' + sid, '#3FA0DB');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, sid);
+          if (job.comment) setCommentText(job.comment);
+          var ok = !!(res && res.success);
+          ackCastJob(job, ok, ok ? 'Auftrag geöffnet' : ((res && res.message) || 'Nicht gefunden'));
+          if (ok) showStickyToast('ok', 'Handy: Auftrag', sid + ' am PC geöffnet');
+        })
+        .withFailureHandler(function(err) {
+          if (typeof setHudBusy === 'function') setHudBusy(false);
+          ackCastJob(job, false, err && err.message ? err.message : 'Laden fehlgeschlagen');
+        })
+        .fetchWmsData(sid);
+      return;
+    }
+    ackCastJob(job, false, 'Unbekannter Befehl');
+  }
+
+  function onCastPcHeartbeat(res) {
+    castPollInflight = false;
+    if (!res || !res.success) return;
+    applyCastUi(res);
+    if (res.claimed && res.job) executeCastJob(res.job);
+  }
+
+  function pollCastPc() {
+    if (castPollInflight) return;
+    if (!castWsId) castWsId = getOrCreateCastWsId();
+    castPollInflight = true;
+    google.script.run
+      .withSuccessHandler(onCastPcHeartbeat)
+      .withFailureHandler(function() { castPollInflight = false; })
+      .castPcHeartbeat(castWsId);
+  }
+
+  function startCastPcPolling() {
+    if (castPollTimer) return;
+    if (!castWsId) castWsId = getOrCreateCastWsId();
+    pollCastPc();
+    castPollTimer = setInterval(pollCastPc, CAST_POLL_MS);
+  }
+
+  function openWmsCastModal() {
+    startCastPcPolling();
+    armCastCarolWindow();
+    var modal = document.getElementById('wmsCastModal');
+    if (modal) {
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+    ensureQrCodeLib(function() {
+      var box = document.getElementById('wmsCastQr');
+      if (box) box.removeAttribute('data-url');
+      if (castState && castState.castUrl) renderWmsCastQr(castState.castUrl);
+    });
+    pollCastPc();
+  }
+
+  function closeWmsCastModal() {
+    var modal = document.getElementById('wmsCastModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+  }
+
+  function copyWmsCastUrl() {
+    var url = castState && castState.castUrl ? String(castState.castUrl) : '';
+    if (!url) {
+      showStickyToast('err', 'Kein Link', 'Session noch nicht bereit.');
+      return;
+    }
+    function ok() { showStickyToast('ok', 'Link kopiert', 'Am Handy öffnen oder QR scannen.'); }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(ok).catch(function() {
+        window.prompt('Cast-Link', url);
+      });
+    } else {
+      window.prompt('Cast-Link', url);
+    }
+  }
+
+  function dropWmsCastPhone() {
+    if (!castWsId) return;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        applyCastUi(res && res.success ? res : { success: true, connected: false, bind: castState && castState.bind, email: castState && castState.email, castUrl: castState && castState.castUrl });
+      })
+      .withFailureHandler(function() {})
+      .castDropPhone(castWsId);
+  }
+
+  function openWmsCastHud() {
+    var url = castState && castState.castUrl ? String(castState.castUrl) : '';
+    if (!url) {
+      var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
+      url = base ? (base + '?page=cast') : '';
+    }
+    if (!url) {
+      showStickyToast('err', 'Kein Link', 'WMS-URL fehlt – Seite neu laden.');
+      return;
+    }
+    var w = window.open(url, '_blank', 'noopener,noreferrer');
+    if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert.');
+  }
+
+  startCastPcPolling();
+  document.addEventListener('pointerdown', function() {
+    if (!castWasConnected || castCarolArmed) return;
+    armCastCarolWindow();
+  }, true);
+  document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) pollCastPc();
+  });
+  (function() {
+    var modal = document.getElementById('wmsCastModal');
+    if (!modal) return;
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) closeWmsCastModal();
+    });
+  })();
+
   function downloadBridgeFile(url, filename) {
     fetch(url, { mode: 'cors', cache: 'no-store' }).then(function(r) {
       if(!r.ok) throw new Error('bad');
@@ -870,6 +1222,19 @@
       return;
     }
     if (!isEsc) return;
+
+    var carolPrompt = document.getElementById('castCarolPrompt');
+    if (carolPrompt && !carolPrompt.hidden) {
+      e.preventDefault();
+      dismissCastCarolPrompt();
+      return;
+    }
+    var castModal = document.getElementById('wmsCastModal');
+    if (castModal && castModal.classList.contains('open')) {
+      e.preventDefault();
+      closeWmsCastModal();
+      return;
+    }
 
     var cl = document.getElementById('wmsChangelogModal');
     if (cl && cl.classList.contains('open')) {
@@ -7089,26 +7454,34 @@
     }, 80);
   }
 
-  function fireCarol() {
-    if(!currentCarolUrl || !currentStock) return;
+  function fireCarol(opts) {
+    opts = opts || {};
+    if(!currentCarolUrl || !currentStock) return { success: false };
     var text = getCommentText().trim();
-    if(!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+    if(!text) {
+      setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      return { success: false };
+    }
     var stockId = normalizeStockIdJs(currentStock);
-    if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+    if (!stockId) {
+      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+      return { success: false };
+    }
     if (isStockEditBlocked(stockId)) {
-      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+      setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+      return { success: false };
     }
     if (carolMissionInflight[stockId]) {
       setStatus("⏳ Carol für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
-      return;
+      return { success: false };
     }
 
     var dymoResult = sendDymoPrint({ silent: true, requireInitials: true });
     var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
-    var carolWindow = window.open(autoUrl, '_blank');
+    var carolWindow = window.open(autoUrl, opts.windowName || '_blank');
     if(!carolWindow) {
       setStatus("❌ Carol-Popup wurde blockiert!", "#f85149");
-      return;
+      return { success: false, blocked: true };
     }
     registerCarolWindow(carolWindow);
     document.getElementById('btnCarol').disabled = true;
@@ -7209,6 +7582,7 @@
         showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
       })
       .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal);
+    return { success: true };
   }
 
   var WMS_SHORTCUTS = [

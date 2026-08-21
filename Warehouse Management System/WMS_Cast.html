@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>WMS Cast</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <style>
+    :root {
+      --color-primary: #0D9488;
+      --color-on-primary: #FFFFFF;
+      --color-secondary: #14B8A6;
+      --color-accent: #EA580C;
+      --color-destructive: #DC2626;
+      --color-ring: #0D9488;
+      --bg-deep: #0a0a0f;
+      --bg-base: #050506;
+      --bg-elevated: #0e1014;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-2: rgba(255, 255, 255, 0.08);
+      --foreground: #EDEDEF;
+      --foreground-muted: #8A8F98;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --ok: #34D399;
+      --warn: #FBBF24;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 999px;
+      --font: "Plus Jakarta Sans", system-ui, sans-serif;
+      --blur: 16px;
+      --easing: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    html { font-size: 18px; }
+    body {
+      font-family: var(--font);
+      color: var(--foreground);
+      background: linear-gradient(180deg, #0a0a0f 0%, #050506 100%);
+      color-scheme: dark;
+      min-height: 100dvh;
+    }
+    .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .blob {
+      position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.11;
+      animation: drift 18s var(--easing) infinite alternate;
+    }
+    .blob.a { width: 420px; height: 420px; background: #0D9488; top: -80px; left: -60px; }
+    .blob.b { width: 360px; height: 360px; background: #EA580C; bottom: 8%; right: -80px; animation-duration: 22s; }
+    .blob.c { width: 260px; height: 260px; background: #14B8A6; top: 42%; left: 48%; opacity: 0.07; }
+    @keyframes drift {
+      from { transform: translate(0, 0); }
+      to { transform: translate(28px, -18px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .blob { animation: none; }
+    }
+    .app {
+      position: relative; z-index: 1;
+      max-width: 560px; margin: 0 auto;
+      min-height: 100dvh;
+      display: flex; flex-direction: column;
+      padding: calc(12px + env(safe-area-inset-top)) 14px calc(16px + env(safe-area-inset-bottom));
+      gap: 12px;
+    }
+    .top {
+      display: flex; align-items: center; gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid rgba(20, 184, 166, 0.28);
+      border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.72);
+      backdrop-filter: blur(var(--blur));
+      -webkit-backdrop-filter: blur(var(--blur));
+    }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+      display: grid; place-items: center;
+      background: #0a0612;
+      overflow: hidden;
+    }
+    .brand-mark img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .brand-text { min-width: 0; flex: 1; }
+    .brand-text strong { display: block; font-size: 0.98rem; font-weight: 800; letter-spacing: -0.02em; }
+    .brand-text span {
+      display: block; font-size: 0.62rem; color: var(--foreground-muted);
+      text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600;
+    }
+    .wms-link {
+      border: 1px solid rgba(20, 184, 166, 0.4); background: rgba(13, 148, 136, 0.12); color: #99f6e4;
+      border-radius: var(--radius-pill); padding: 0.45rem 0.7rem; min-height: 36px;
+      font: 700 0.72rem/1 var(--font); text-decoration: none; letter-spacing: 0.04em;
+    }
+    .conn {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .conn-dot {
+      width: 10px; height: 10px; border-radius: 50%; background: #f87171; flex-shrink: 0;
+    }
+    .conn.on .conn-dot {
+      background: #34D399;
+      box-shadow: 0 0 10px rgba(52, 211, 153, 0.9);
+    }
+    .conn-text { flex: 1; min-width: 0; }
+    .conn-text strong { display: block; font-size: 0.82rem; font-weight: 800; }
+    .conn-text span { display: block; font-size: 0.68rem; color: var(--foreground-muted); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .conn-btn {
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--foreground);
+      border-radius: var(--radius-pill); padding: 0.4rem 0.7rem; min-height: 34px;
+      font: 700 0.7rem/1 var(--font); cursor: pointer;
+    }
+    .join {
+      display: flex; gap: 8px;
+    }
+    .join input {
+      flex: 1; min-width: 0;
+      padding: 0.85rem 0.9rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 800 1.05rem/1 var(--font);
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      text-align: center;
+      outline: none;
+    }
+    .card {
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.78);
+      padding: 14px 14px 12px;
+    }
+    .kicker {
+      font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--foreground-muted);
+    }
+    .stock-val {
+      margin: 6px 0 2px;
+      font-size: clamp(1.4rem, 6vw, 2rem);
+      font-weight: 800; letter-spacing: -0.03em;
+    }
+    .meta { font-size: 0.82rem; color: var(--foreground-muted); font-weight: 600; }
+    .scan-wrap { position: relative; }
+    .scan-wrap svg {
+      position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+      width: 1.2rem; height: 1.2rem; color: var(--foreground-muted); pointer-events: none;
+    }
+    .scan {
+      width: 100%;
+      padding: 1rem 0.9rem 1rem 2.7rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 700 1.15rem/1.2 var(--font);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      outline: none;
+      min-height: 56px;
+    }
+    .scan:focus {
+      border-color: var(--color-ring);
+      box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28);
+    }
+    .actions { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
+      border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.75rem 0.85rem; min-height: 48px;
+      font: 700 0.92rem/1 var(--font); cursor: pointer;
+    }
+    .btn:disabled { opacity: 0.42; cursor: not-allowed; }
+    .btn.primary {
+      background: var(--color-accent); border-color: transparent; color: #fff;
+      box-shadow: 0 0 20px rgba(234, 88, 12, 0.28);
+    }
+    .btn.teal {
+      background: rgba(13, 148, 136, 0.18); border-color: var(--color-primary); color: var(--color-secondary);
+    }
+    .btn.carol {
+      width: 100%;
+      background: linear-gradient(135deg, #7c3aed, #6d28d9);
+      border-color: transparent; color: #fff;
+      box-shadow: 0 0 20px rgba(124, 58, 237, 0.28);
+    }
+    .comment {
+      width: 100%; min-height: 110px; resize: vertical;
+      padding: 0.85rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 600 0.95rem/1.4 var(--font);
+      outline: none;
+    }
+    .comment:focus { border-color: var(--color-ring); }
+    .shelf {
+      width: 100%;
+      padding: 0.85rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 700 0.95rem/1 var(--font);
+      min-height: 48px;
+    }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .qty {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .qty input {
+      width: 64px; text-align: center;
+      padding: 0.7rem 0.4rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 800 1rem/1 var(--font);
+    }
+    .qty button {
+      width: 42px; height: 42px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--foreground);
+      font: 800 1.2rem/1 var(--font);
+      cursor: pointer;
+    }
+    .status {
+      min-height: 1.5rem;
+      font: 800 0.92rem/1.35 var(--font);
+      text-align: center;
+      color: var(--foreground);
+      padding: 0.45rem 0.7rem;
+      border-radius: var(--radius-pill);
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border-strong);
+    }
+    .status.ok { color: #6ee7b7; background: rgba(52, 211, 153, 0.16); border-color: rgba(52, 211, 153, 0.55); }
+    .status.warn { color: #fde68a; background: rgba(245, 158, 11, 0.16); border-color: rgba(245, 158, 11, 0.55); }
+    .status.err { color: #fca5a5; background: rgba(220, 38, 38, 0.16); border-color: rgba(220, 38, 38, 0.55); }
+    .info-box {
+      margin: 6px 0 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--surface);
+      font: 600 0.88rem/1.45 var(--font);
+      color: var(--foreground);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .info-box ul { margin: 0; padding-left: 1.15rem; }
+    .info-box li { margin: 0.2rem 0; }
+    .hi-red { color: #fca5a5; font-weight: 800; }
+    .load-overlay, .cam-overlay {
+      position: fixed; inset: 0;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(5, 5, 6, 0.72);
+    }
+    .cam-overlay { z-index: 20; }
+    .load-overlay { z-index: 30; }
+    .load-overlay.show, .cam-overlay.show { display: flex; }
+    .load-box {
+      padding: 16px 18px; border-radius: 14px;
+      background: rgba(14, 16, 20, 0.94);
+      border: 1px solid var(--border-strong);
+      font-weight: 800;
+    }
+    .cam-panel {
+      width: min(560px, 100%);
+      height: min(100dvh, 100%);
+      display: flex; flex-direction: column;
+      background: #050506;
+    }
+    .cam-top {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px;
+      padding: 12px 14px calc(8px);
+      padding-top: calc(12px + env(safe-area-inset-top));
+    }
+    .cam-hint {
+      margin-top: 4px;
+      font: 600 0.72rem/1.3 var(--font);
+      color: var(--foreground-muted);
+    }
+    .cam-modes {
+      display: flex; gap: 8px; padding: 0 14px 10px;
+    }
+    .cam-mode {
+      flex: 1;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--foreground-muted);
+      border-radius: var(--radius-pill);
+      padding: 0.55rem 0.7rem;
+      min-height: 42px;
+      font: 800 0.78rem/1 var(--font);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .cam-mode.on {
+      background: rgba(13, 148, 136, 0.2);
+      border-color: var(--color-primary);
+      color: var(--color-secondary);
+    }
+    #camReader { flex: 1; min-height: 240px; }
+    .ocr-live {
+      flex: 1; min-height: 240px;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 0 14px 14px;
+    }
+    #ocrVideo {
+      flex: 1; width: 100%; min-height: 220px;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      background: #000;
+    }
+    .ocr-result {
+      flex: 1; min-height: 0; overflow: auto;
+      display: flex; flex-direction: column; gap: 10px;
+      padding: 0 14px 14px;
+    }
+    .ocr-picks {
+      display: flex; flex-wrap: wrap; gap: 8px;
+    }
+    .ocr-pick {
+      border: 1px solid rgba(20, 184, 166, 0.45);
+      background: rgba(13, 148, 136, 0.16);
+      color: #99f6e4;
+      border-radius: var(--radius-sm);
+      padding: 0.7rem 0.85rem;
+      min-height: 48px;
+      font: 800 0.95rem/1 var(--font);
+      letter-spacing: 0.04em;
+      cursor: pointer;
+    }
+    .ocr-text {
+      width: 100%; min-height: 140px; resize: vertical;
+      padding: 0.85rem;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--foreground);
+      font: 600 0.92rem/1.45 var(--font);
+      outline: none;
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    .ocr-text:focus { border-color: var(--color-ring); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="blob a"></div>
+    <div class="blob b"></div>
+    <div class="blob c"></div>
+  </div>
+  <div class="app">
+    <header class="top">
+      <div class="brand-mark"><img src="https://raw.githubusercontent.com/ARASAKA69/Temp/main/autohero-logo.png" alt=""></div>
+      <div class="brand-text">
+        <strong>WMS Cast</strong>
+        <span>Handy · PC Session</span>
+      </div>
+      <a class="wms-link" id="wmsLink" href="#">WMS</a>
+    </header>
+
+    <div class="conn" id="connBox">
+      <span class="conn-dot" aria-hidden="true"></span>
+      <div class="conn-text">
+        <strong id="connTitle">Nicht verbunden</strong>
+        <span id="connSub">QR am PC scannen oder Code eingeben</span>
+      </div>
+      <button type="button" class="conn-btn" id="btnLeave">Trennen</button>
+    </div>
+
+    <div class="join" id="joinRow">
+      <input id="bindInput" maxlength="8" placeholder="CODE" autocomplete="off" autocapitalize="characters">
+      <button type="button" class="btn teal" id="btnJoin">Verbinden</button>
+    </div>
+
+    <div class="status" id="statusEl">QR im WMS-Menü scannen</div>
+
+    <div class="scan-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+      <input class="scan" id="scanInput" placeholder="Stock-ID / Bestellnummer…" autocomplete="off" autocapitalize="characters">
+    </div>
+    <div class="actions">
+      <button type="button" class="btn teal" id="btnLoad">Laden</button>
+      <button type="button" class="btn" id="btnCam">Kamera</button>
+      <button type="button" class="btn" id="btnPhoto" title="Foto">📷</button>
+    </div>
+    <input type="file" id="camFile" accept="image/*" capture="environment" class="hidden">
+
+    <section class="card">
+      <div class="kicker">Auftrag</div>
+      <div class="stock-val" id="stockVal">—</div>
+      <div class="meta" id="orderMeta">Kein Auftrag geladen</div>
+      <button type="button" class="btn teal" id="btnOpenPc" disabled style="width:100%;margin-top:10px">Am PC öffnen</button>
+    </section>
+
+    <section class="card">
+      <div class="kicker">Auftrags Infos</div>
+      <div class="kicker" style="margin-top:10px">Schäden (Manueller Input)</div>
+      <div class="info-box" id="infoSchaeden">—</div>
+      <div class="kicker">Ersatzteile Bestellung</div>
+      <div class="info-box" id="infoBestellung">—</div>
+    </section>
+
+    <section class="card stack">
+      <div class="kicker">Kommentar</div>
+      <textarea class="comment" id="commentEl" placeholder="Notizen…"></textarea>
+      <div class="kicker">Regal</div>
+      <select class="shelf" id="shelfSelect"><option value="">— Regal wählen —</option></select>
+      <button type="button" class="btn primary" id="btnSave">Kommentar + Regal speichern</button>
+    </section>
+
+    <section class="card stack">
+      <div class="kicker">Drucken am PC</div>
+      <div class="row">
+        <div class="qty">
+          <button type="button" id="qtyMinus">−</button>
+          <input id="dymoCount" type="number" min="1" max="9" value="1">
+          <button type="button" id="qtyPlus">+</button>
+        </div>
+        <button type="button" class="btn teal" id="btnDymo" style="flex:1">DYMO drucken</button>
+      </div>
+      <button type="button" class="btn carol" id="btnCarol" disabled>Auftrag beenden &amp; Carol</button>
+    </section>
+  </div>
+
+  <div class="load-overlay" id="loadOverlay"><div class="load-box" id="loadLabel">Laden…</div></div>
+  <div class="cam-overlay" id="camOverlay">
+    <div class="cam-panel">
+      <div class="cam-top">
+        <div>
+          <strong id="camTitle">Barcode</strong>
+          <div class="cam-hint" id="camHint">Barcode auf den Code halten</div>
+        </div>
+        <button type="button" class="btn" id="btnCamClose">Schließen</button>
+      </div>
+      <div class="cam-modes">
+        <button type="button" class="cam-mode on" id="camModeBarcode">Barcode</button>
+        <button type="button" class="cam-mode" id="camModeOcr">Text / Foto</button>
+      </div>
+      <div id="camReader"></div>
+      <div id="ocrLive" class="ocr-live hidden">
+        <video id="ocrVideo" autoplay playsinline muted></video>
+        <button type="button" class="btn primary" id="btnOcrShot">Foto aufnehmen</button>
+      </div>
+      <div id="ocrResult" class="ocr-result hidden">
+        <div class="kicker">Gefunden — antippen zum Laden</div>
+        <div id="ocrPicks" class="ocr-picks"></div>
+        <div class="kicker">Ganzer Text — markieren und laden</div>
+        <textarea id="ocrText" class="ocr-text"></textarea>
+        <div class="row">
+          <button type="button" class="btn teal" id="btnOcrUse">Markierung laden</button>
+          <button type="button" class="btn" id="btnOcrRetry">Neues Foto</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="application/json" id="castBoot"><?!= JSON.stringify({ bind: String(bindCode || ""), appUrl: String(appUrl || "") }) ?></script>
+  <script>
+  (function() {
+    window.CAST_BIND = '';
+    window.WMS_CLIENT_URL = '';
+    try {
+      var bootEl = document.getElementById('castBoot');
+      var boot = JSON.parse((bootEl && bootEl.textContent) || '{}');
+      window.CAST_BIND = String(boot.bind || '');
+      window.WMS_CLIENT_URL = String(boot.appUrl || '');
+    } catch (eBoot) {}
+    var $ = function(id) { return document.getElementById(id); };
+    var scanInput = $('scanInput');
+    var statusEl = $('statusEl');
+    var connBox = $('connBox');
+    var joinRow = $('joinRow');
+    var bindInput = $('bindInput');
+    var stockVal = $('stockVal');
+    var orderMeta = $('orderMeta');
+    var infoSchaeden = $('infoSchaeden');
+    var infoBestellung = $('infoBestellung');
+    var commentEl = $('commentEl');
+    var shelfSelect = $('shelfSelect');
+    var btnCarol = $('btnCarol');
+    var btnDymo = $('btnDymo');
+    var btnOpenPc = $('btnOpenPc');
+    var btnSave = $('btnSave');
+    var loadOverlay = $('loadOverlay');
+    var loadLabel = $('loadLabel');
+    var camOverlay = $('camOverlay');
+    var camFile = $('camFile');
+    var wmsLink = $('wmsLink');
+
+    var wsId = '';
+    var connected = false;
+    var pcOk = false;
+    var busy = false;
+    var currentStock = '';
+    var currentCarolUrl = '';
+    var baselineKommentar = '';
+    var baselineRegal = '';
+    var waitingJobId = '';
+    var pollTimer = null;
+    var pollInflight = false;
+    var cam = null;
+    var camOpen = false;
+    var camMode = 'barcode';
+    var lastCamValue = '';
+    var lastCamAt = 0;
+    var idleTimer = null;
+    var audioCtx = null;
+    var ocrStream = null;
+    var ocrBusy = false;
+
+    var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
+    if (wmsLink) wmsLink.href = base || '#';
+
+    for (var i = 1; i <= 9; i++) {
+      for (var j = 1; j <= 8; j++) {
+        var opt = document.createElement('option');
+        opt.value = 'Regal ' + i + '.' + j;
+        opt.textContent = 'Regal ' + i + '.' + j;
+        shelfSelect.appendChild(opt);
+      }
+    }
+
+    function beep(kind) {
+      try {
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if (!AC) return;
+        if (!audioCtx) audioCtx = new AC();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        var now = audioCtx.currentTime;
+        var osc = audioCtx.createOscillator();
+        var gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        if (kind === 'err') {
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(220, now);
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.08, now + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+          osc.start(now);
+          osc.stop(now + 0.24);
+        } else {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, now);
+          gain.gain.setValueAtTime(0.0001, now);
+          gain.gain.exponentialRampToValueAtTime(0.06, now + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+          osc.start(now);
+          osc.stop(now + 0.18);
+        }
+      } catch (e) {}
+      try { if (navigator.vibrate) navigator.vibrate(kind === 'err' ? [40, 40, 40] : 35); } catch (e2) {}
+    }
+
+    function setStatus(msg, color) {
+      statusEl.textContent = msg || '';
+      statusEl.classList.remove('ok', 'warn', 'err');
+      if (color === '#34D399' || color === '#56d364') statusEl.classList.add('ok');
+      else if (color === '#f87171' || color === '#f85149') statusEl.classList.add('err');
+      else if (color === '#F59E0B' || color === '#F27420') statusEl.classList.add('warn');
+    }
+
+    function setBusy(on, label) {
+      busy = !!on;
+      loadOverlay.classList.toggle('show', busy);
+      if (label) loadLabel.textContent = label;
+    }
+
+    function normalizeStock(raw) {
+      return String(raw || '').replace(/\s+/g, '').toUpperCase();
+    }
+
+    function escapeHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function formatInfo(text) {
+      var raw = String(text || '').trim();
+      if (!raw) return '—';
+      var mark = function(s) {
+        return escapeHtml(s).replace(/(Reifen Seng)/gi, '<span class="hi-red">$1</span>');
+      };
+      var parts = raw.split(/\n+/).map(function(p) { return p.trim(); }).filter(Boolean);
+      if (parts.length <= 1) {
+        parts = raw.split(/\s{2,}/).map(function(p) { return p.trim(); }).filter(Boolean);
+      }
+      if (parts.length <= 1) return mark(raw);
+      var html = '<ul>';
+      parts.forEach(function(p) { html += '<li>' + mark(p) + '</li>'; });
+      html += '</ul>';
+      return html;
+    }
+
+    function looksLikeStock(raw) {
+      return /^[A-Z]{2}\d{4,}$/.test(normalizeStock(raw));
+    }
+
+    function looksLikeOrder(raw) {
+      var s = normalizeStock(raw);
+      return /^N4P\d{4,}$/.test(s) || /^2\d{9}$/.test(s);
+    }
+
+    function pickIdFromText(raw) {
+      var all = pickAllIdsFromText(raw);
+      return all.length ? all[0] : null;
+    }
+
+    function pickAllIdsFromText(raw) {
+      var text = String(raw || '');
+      var compact = text.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      var out = [];
+      function add(type, value) {
+        if (!value) return;
+        for (var i = 0; i < out.length; i++) if (out[i].value === value) return;
+        out.push({ type: type, value: value });
+      }
+      var m, re;
+      re = /[A-Z]{2}\d{5}/g;
+      while ((m = re.exec(compact))) add('stock', m[0]);
+      re = /N4P\d{4,}/g;
+      while ((m = re.exec(compact))) add('order', m[0]);
+      re = /2\d{9}/g;
+      while ((m = re.exec(compact))) add('order', m[0]);
+      re = /[A-Z]{2}\d{4,7}/g;
+      while ((m = re.exec(compact))) {
+        if (looksLikeStock(m[0])) add('stock', m[0]);
+      }
+      var tokens = text.split(/\s+/);
+      for (var t = 0; t < tokens.length; t++) {
+        var regal = normalizeRegal(tokens[t]);
+        if (regal) add('regal', regal);
+      }
+      return out;
+    }
+
+    function classifyScan(raw) {
+      var regal = normalizeRegal(raw);
+      if (regal) return { type: 'regal', value: regal };
+      var compact = normalizeStock(raw);
+      if (looksLikeStock(compact)) return { type: 'stock', value: compact };
+      if (looksLikeOrder(compact)) return { type: 'order', value: compact };
+      var picked = pickIdFromText(raw);
+      if (picked) return picked;
+      return { type: 'unknown', value: String(raw || '').trim() };
+    }
+
+    function normalizeRegal(raw) {
+      var s = String(raw == null ? '' : raw).trim();
+      if (!s) return '';
+      var m = s.match(/(\d+)\s*[.,]\s*(\d+)/);
+      if (!m) return '';
+      var day = parseInt(m[1], 10);
+      var slot = parseInt(m[2], 10);
+      if (isNaN(day) || isNaN(slot)) return '';
+      if (day < 1 || day > 9 || slot < 1 || slot > 8) return '';
+      return 'Regal ' + day + '.' + slot;
+    }
+
+    function applyConn(state) {
+      connected = !!(state && state.success && state.pcOk);
+      pcOk = connected;
+      if (state && state.wsId) wsId = state.wsId;
+      connBox.classList.toggle('on', connected);
+      $('connTitle').textContent = connected ? 'Mit PC verbunden' : 'Nicht verbunden';
+      $('connSub').textContent = connected
+        ? (state.email || 'Session aktiv')
+        : 'QR am PC scannen oder Code eingeben';
+      joinRow.classList.toggle('hidden', connected);
+      if (state && state.job && waitingJobId && String(state.job.id) === waitingJobId) {
+        if (state.job.status === 'done') {
+          waitingJobId = '';
+          if (state.job.result === 'ok') {
+            setStatus(state.job.message || 'PC fertig', '#34D399');
+            beep('ok');
+          } else {
+            setStatus(state.job.message || 'PC Fehler', '#f87171');
+            beep('err');
+          }
+        } else if (state.job.at && (Date.now() - Number(state.job.at)) > 100000) {
+          waitingJobId = '';
+          setStatus('PC hat nicht geantwortet', '#F59E0B');
+        }
+      }
+      var commentOk = String(commentEl.value || '').trim().length > 0;
+      var jobBusy = !!waitingJobId;
+      btnDymo.disabled = !connected || !currentStock || jobBusy;
+      if (btnOpenPc) btnOpenPc.disabled = !connected || !currentStock || jobBusy;
+      btnCarol.disabled = !connected || !currentStock || !currentCarolUrl || !commentOk || jobBusy;
+    }
+
+    function startPoll() {
+      if (pollTimer) return;
+      pollTimer = setInterval(function() {
+        if (!wsId || pollInflight) return;
+        pollInflight = true;
+        google.script.run
+          .withSuccessHandler(function(res) {
+            pollInflight = false;
+            if (res && res.success) applyConn(res);
+            else {
+              connected = false;
+              pcOk = false;
+              applyConn({ success: true, pcOk: false });
+              if (res && res.message) setStatus(res.message, '#F59E0B');
+            }
+          })
+          .withFailureHandler(function() { pollInflight = false; })
+          .castPhoneHeartbeat(wsId);
+      }, 2000);
+    }
+
+    function stopPoll() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function join(bind) {
+      setBusy(true, 'Verbinde…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.success) {
+            applyConn(res);
+            startPoll();
+            setStatus('Verbunden mit PC', '#34D399');
+            beep('ok');
+          } else {
+            applyConn({ success: true, pcOk: false });
+            setStatus((res && res.message) || 'Verbinden fehlgeschlagen', '#f87171');
+            beep('err');
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Verbinden fehlgeschlagen', '#f87171');
+          beep('err');
+        })
+        .castPhoneJoin(bind || '');
+    }
+
+    function leave() {
+      stopPoll();
+      if (wsId) {
+        try { google.script.run.castPhoneLeave(wsId); } catch (e0) {}
+      }
+      wsId = '';
+      applyConn({ success: true, pcOk: false });
+      setStatus('Getrennt', '#F59E0B');
+    }
+
+    function renderOrder(res, id) {
+      currentStock = normalizeStock(id);
+      currentCarolUrl = String((res && res.carolUrl) || '');
+      var regal = String((res && res.regal) || '').trim();
+      var comment = String((res && res.kommAnlieferung) || '');
+      baselineKommentar = comment;
+      baselineRegal = regal;
+      stockVal.textContent = currentStock || '—';
+      var bits = [];
+      if (res && res.markeModel) bits.push(String(res.markeModel).trim());
+      bits.push(regal ? ('Aktuell: ' + regal) : 'Kein Regal');
+      orderMeta.textContent = bits.join(' · ');
+      commentEl.value = comment;
+      if (infoSchaeden) infoSchaeden.innerHTML = formatInfo(res && res.schaeden);
+      if (infoBestellung) infoBestellung.innerHTML = formatInfo(res && res.kommBestellung);
+      shelfSelect.value = regal && shelfSelect.querySelector('option[value="' + regal.replace(/"/g, '') + '"]') ? regal : '';
+      if (regal && !shelfSelect.value) {
+        var extra = document.createElement('option');
+        extra.value = regal;
+        extra.textContent = regal;
+        extra.selected = true;
+        shelfSelect.appendChild(extra);
+      }
+      btnDymo.disabled = !pcOk || !currentStock;
+      if (btnOpenPc) btnOpenPc.disabled = !pcOk || !currentStock;
+      btnCarol.disabled = !pcOk || !currentStock || !currentCarolUrl || !String(commentEl.value || '').trim();
+    }
+
+    function loadStock(raw) {
+      var id = normalizeStock(raw || scanInput.value);
+      if (!looksLikeStock(id)) {
+        setStatus('Keine gültige Stock-ID', '#f87171');
+        beep('err');
+        return;
+      }
+      closeCamNow();
+      setBusy(true, 'Lade ' + id + '…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.success) {
+            renderOrder(res, id);
+            setStatus('Daten für ' + id + ' geladen', '#34D399');
+            beep('ok');
+          } else {
+            setStatus((res && res.message) || 'Nicht gefunden', '#f87171');
+            beep('err');
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+        })
+        .fetchWmsData(id);
+    }
+
+    function loadByOrder(query) {
+      var q = normalizeStock(query);
+      if (!q) return;
+      closeCamNow();
+      setBusy(true, 'Suche Bestellnummer ' + q + '…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.found && res.stockId) {
+            setStatus((res.message || 'Gefunden') + ' → ' + res.stockId, '#34D399');
+            loadStock(res.stockId);
+            return;
+          }
+          setBusy(false);
+          setStatus((res && res.message) || 'Bestellnummer nicht gefunden', '#f87171');
+          beep('err');
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+        })
+        .searchByOrderNumber(q);
+    }
+
+    function loadQuery(raw) {
+      var hit = classifyScan(raw);
+      if (hit.type === 'regal') {
+        shelfSelect.value = hit.value;
+        setStatus(hit.value + ' gesetzt', '#34D399');
+        beep('ok');
+        return;
+      }
+      if (hit.type === 'stock') {
+        loadStock(hit.value);
+        return;
+      }
+      if (hit.type === 'order') {
+        loadByOrder(hit.value);
+        return;
+      }
+      if (String(raw || '').trim()) {
+        setStatus('Unbekannt: ' + String(raw).trim(), '#f87171');
+        beep('err');
+      }
+    }
+
+    function saveOrder() {
+      if (!currentStock) return setStatus('Zuerst Auftrag laden', '#f87171');
+      var text = String(commentEl.value || '').trim();
+      if (!text) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
+      var regal = String(shelfSelect.value || '').trim();
+      setBusy(true, 'Speichere…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.conflict) {
+            baselineKommentar = String(res.currentKommentar || '');
+            baselineRegal = String(res.currentRegal || '');
+            commentEl.value = baselineKommentar;
+            if (baselineRegal) shelfSelect.value = baselineRegal;
+            setStatus(res.message || 'Konflikt — neu prüfen', '#F59E0B');
+            beep('err');
+            return;
+          }
+          if (res && res.success) {
+            baselineKommentar = text;
+            baselineRegal = regal || baselineRegal;
+            orderMeta.textContent = (currentStock ? currentStock : '') + (baselineRegal ? (' · Aktuell: ' + baselineRegal) : '');
+            setStatus(res.message || 'Gespeichert', '#34D399');
+            beep('ok');
+          } else {
+            setStatus((res && res.message) || 'Speichern fehlgeschlagen', '#f87171');
+            beep('err');
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+        })
+        .saveKommentarUndRegal(currentStock, text, regal, baselineKommentar, baselineRegal);
+    }
+
+    function enqueue(type) {
+      if (!pcOk || !wsId) return setStatus('PC nicht verbunden', '#f87171');
+      if (!currentStock) return setStatus('Zuerst Auftrag laden', '#f87171');
+      var copies = parseInt($('dymoCount').value, 10);
+      if (isNaN(copies) || copies < 1) copies = 1;
+      var comment = String(commentEl.value || '');
+      if (type === 'carol' && !comment.trim()) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
+      if (type === 'carol' && !currentCarolUrl) return setStatus('Kein Carol-Link', '#f87171');
+      setBusy(true, type === 'dymo' ? 'Sende Druck an PC…' : (type === 'open' ? 'Öffne Auftrag am PC…' : 'Sende Carol an PC…'));
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.success && res.job) {
+            waitingJobId = res.job.id;
+            btnDymo.disabled = true;
+            btnCarol.disabled = true;
+            if (btnOpenPc) btnOpenPc.disabled = true;
+            setStatus(type === 'dymo' ? 'Druck läuft am PC…' : (type === 'open' ? 'PC lädt den Auftrag…' : 'Carol startet am PC…'), '#F59E0B');
+            beep('ok');
+          } else {
+            setStatus((res && res.message) || 'Befehl fehlgeschlagen', '#f87171');
+            beep('err');
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+        })
+        .castEnqueueJob(wsId, type, {
+          stockId: currentStock,
+          copies: copies,
+          comment: comment,
+          carolUrl: currentCarolUrl,
+          expectedKommentar: baselineKommentar,
+          expectedRegal: baselineRegal
+        });
+    }
+
+    function closeCamNow() {
+      camOpen = false;
+      camOverlay.classList.remove('show');
+      lastCamValue = '';
+      ocrBusy = false;
+      stopBarcodeCam();
+      stopOcrPreview();
+      if ($('ocrResult')) $('ocrResult').classList.add('hidden');
+    }
+
+    function stopBarcodeCam() {
+      if (!cam) return;
+      var stopper = cam;
+      cam = null;
+      try {
+        stopper.stop().then(function() {
+          try { stopper.clear(); } catch (e0) {}
+        }).catch(function() {});
+      } catch (e) {}
+    }
+
+    function stopOcrPreview() {
+      var video = $('ocrVideo');
+      if (video) {
+        try { video.pause(); } catch (e0) {}
+        try { video.srcObject = null; } catch (e1) {}
+      }
+      if (ocrStream) {
+        try {
+          ocrStream.getTracks().forEach(function(t) { t.stop(); });
+        } catch (e2) {}
+        ocrStream = null;
+      }
+    }
+
+    function onCamCode(text) {
+      if (!camOpen || busy || camMode !== 'barcode') return;
+      var v = String(text || '').trim();
+      if (!v) return;
+      var hit = classifyScan(v);
+      if (hit.type === 'unknown') return;
+      var now = Date.now();
+      if (hit.value === lastCamValue && now - lastCamAt < 900) return;
+      lastCamValue = hit.value;
+      lastCamAt = now;
+      if (hit.type === 'regal') {
+        shelfSelect.value = hit.value;
+        setStatus(hit.value + ' gesetzt', '#34D399');
+        beep('ok');
+        return;
+      }
+      closeCamNow();
+      setTimeout(function() { loadQuery(hit.value); }, 40);
+    }
+
+    function runOcrOnImage(source, done) {
+      if (typeof Tesseract === 'undefined' || !Tesseract.recognize) {
+        if (done) done('');
+        return;
+      }
+      Tesseract.recognize(source, 'eng', {
+        workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd.wasm.js',
+        langPath: 'https://tessdata.projectnaptha.com/4.0.0'
+      }).then(function(res) {
+        if (done) done(res && res.data && res.data.text ? res.data.text : '');
+      }).catch(function() { if (done) done(''); });
+    }
+
+    function showOcrResult(text) {
+      camMode = 'ocr';
+      $('camModeBarcode').classList.toggle('on', false);
+      $('camModeOcr').classList.toggle('on', true);
+      $('camTitle').textContent = 'Text / Foto';
+      $('camHint').textContent = 'Treffer antippen oder Text markieren';
+      $('camReader').classList.add('hidden');
+      $('ocrLive').classList.add('hidden');
+      $('ocrResult').classList.remove('hidden');
+      $('ocrText').value = String(text || '').trim();
+      var picks = pickAllIdsFromText(text);
+      var box = $('ocrPicks');
+      box.innerHTML = '';
+      if (!picks.length) {
+        var empty = document.createElement('div');
+        empty.className = 'cam-hint';
+        empty.textContent = 'Nichts erkannt — Text markieren oder neues Foto';
+        box.appendChild(empty);
+      } else {
+        picks.forEach(function(p) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'ocr-pick';
+          b.textContent = p.value;
+          b.addEventListener('click', function() {
+            closeCamNow();
+            loadQuery(p.value);
+          });
+          box.appendChild(b);
+        });
+      }
+    }
+
+    function startBarcodeCam() {
+      if (cam) return;
+      if (typeof Html5Qrcode === 'undefined') {
+        camFile.click();
+        return;
+      }
+      cam = new Html5Qrcode('camReader');
+      var cfg = {
+        fps: 10,
+        qrbox: function(w, h) {
+          return { width: Math.floor(Math.min(w, h) * 0.78), height: Math.floor(Math.min(w, h) * 0.42) };
+        }
+      };
+      cam.start({ facingMode: 'environment' }, cfg, onCamCode)
+        .catch(function() {
+          if (!cam) return;
+          cam.start({ facingMode: 'user' }, cfg, onCamCode)
+            .catch(function() {
+              stopBarcodeCam();
+              setStatus('Kamera blockiert — Foto nutzen', '#F59E0B');
+              camFile.click();
+            });
+        });
+    }
+
+    function startOcrPreview() {
+      if (ocrStream) return;
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        camFile.click();
+        return;
+      }
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' } },
+        audio: false
+      }).then(function(stream) {
+        if (!camOpen || camMode !== 'ocr') {
+          stream.getTracks().forEach(function(t) { t.stop(); });
+          return;
+        }
+        ocrStream = stream;
+        var video = $('ocrVideo');
+        video.srcObject = stream;
+        var play = video.play();
+        if (play && play.catch) play.catch(function() {});
+      }).catch(function() {
+        setStatus('Kamera blockiert — Foto nutzen', '#F59E0B');
+        camFile.click();
+      });
+    }
+
+    function captureOcrShot() {
+      if (ocrBusy) return;
+      var video = $('ocrVideo');
+      if (!video || video.readyState < 2 || video.videoWidth < 40) {
+        setStatus('Kamera noch nicht bereit', '#F59E0B');
+        return;
+      }
+      var canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0);
+      stopOcrPreview();
+      ocrBusy = true;
+      setBusy(true, 'Lese Text…');
+      runOcrOnImage(canvas, function(text) {
+        ocrBusy = false;
+        setBusy(false);
+        if (!camOpen) return;
+        showOcrResult(text);
+      });
+    }
+
+    function useOcrSelection() {
+      var ta = $('ocrText');
+      var sel = '';
+      try {
+        var a = ta.selectionStart;
+        var b = ta.selectionEnd;
+        if (typeof a === 'number' && typeof b === 'number' && b > a) {
+          sel = String(ta.value || '').substring(a, b);
+        }
+      } catch (e) {}
+      var v = String(sel || ta.value || '').trim();
+      if (!v) {
+        setStatus('Bitte Text markieren oder Treffer antippen', '#F59E0B');
+        return;
+      }
+      closeCamNow();
+      loadQuery(v);
+    }
+
+    function setCamMode(mode) {
+      camMode = mode === 'ocr' ? 'ocr' : 'barcode';
+      $('camModeBarcode').classList.toggle('on', camMode === 'barcode');
+      $('camModeOcr').classList.toggle('on', camMode === 'ocr');
+      $('ocrResult').classList.add('hidden');
+      if (camMode === 'barcode') {
+        $('camTitle').textContent = 'Barcode';
+        $('camHint').textContent = 'Barcode auf den Code halten';
+        $('ocrLive').classList.add('hidden');
+        $('camReader').classList.remove('hidden');
+        stopOcrPreview();
+        if (camOpen) startBarcodeCam();
+      } else {
+        $('camTitle').textContent = 'Text / Foto';
+        $('camHint').textContent = 'Auf den Text halten, dann Foto aufnehmen';
+        $('camReader').classList.add('hidden');
+        $('ocrLive').classList.remove('hidden');
+        stopBarcodeCam();
+        if (camOpen) startOcrPreview();
+      }
+    }
+
+    function startCam(mode) {
+      camOverlay.classList.add('show');
+      camOpen = true;
+      lastCamValue = '';
+      setCamMode(mode || camMode || 'barcode');
+    }
+
+    function handleScan(raw) {
+      loadQuery(raw);
+    }
+
+    $('btnJoin').addEventListener('click', function() {
+      join(String(bindInput.value || '').trim());
+    });
+    bindInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); join(String(bindInput.value || '').trim()); }
+    });
+    $('btnLeave').addEventListener('click', leave);
+    $('btnLoad').addEventListener('click', function() { loadQuery(scanInput.value); });
+    $('btnSave').addEventListener('click', saveOrder);
+    $('btnDymo').addEventListener('click', function() { enqueue('dymo'); });
+    if (btnOpenPc) btnOpenPc.addEventListener('click', function() { enqueue('open'); });
+    $('btnCarol').addEventListener('click', function() { enqueue('carol'); });
+    $('qtyMinus').addEventListener('click', function() {
+      var n = parseInt($('dymoCount').value, 10);
+      if (isNaN(n) || n < 2) n = 1;
+      else n -= 1;
+      $('dymoCount').value = String(n);
+    });
+    $('qtyPlus').addEventListener('click', function() {
+      var n = parseInt($('dymoCount').value, 10);
+      if (isNaN(n)) n = 1;
+      n = Math.min(9, n + 1);
+      $('dymoCount').value = String(n);
+    });
+    commentEl.addEventListener('input', function() {
+      var commentOk = String(commentEl.value || '').trim().length > 0;
+      btnCarol.disabled = !pcOk || !currentStock || !currentCarolUrl || !commentOk;
+    });
+    scanInput.addEventListener('input', function() {
+      this.value = String(this.value || '').toUpperCase();
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(function() {
+        var v = String(scanInput.value || '').trim();
+        var hit = classifyScan(v);
+        if (hit.type === 'stock' || hit.type === 'order' || hit.type === 'regal') handleScan(v);
+      }, 140);
+    });
+    scanInput.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+        handleScan(this.value);
+      }
+    });
+    $('btnCam').addEventListener('click', function() {
+      if (camOpen) closeCamNow();
+      else startCam(camMode || 'barcode');
+    });
+    $('btnCamClose').addEventListener('click', closeCamNow);
+    $('camModeBarcode').addEventListener('click', function() { setCamMode('barcode'); });
+    $('camModeOcr').addEventListener('click', function() { setCamMode('ocr'); });
+    $('btnOcrShot').addEventListener('click', captureOcrShot);
+    $('btnOcrUse').addEventListener('click', useOcrSelection);
+    $('btnOcrRetry').addEventListener('click', function() { setCamMode('ocr'); });
+    $('btnPhoto').addEventListener('click', function() { startCam('ocr'); });
+    camFile.addEventListener('change', function() {
+      var file = camFile.files && camFile.files[0];
+      camFile.value = '';
+      if (!file) return;
+      function showTextFromFile() {
+        camOverlay.classList.add('show');
+        camOpen = true;
+        setBusy(true, 'Lese Text…');
+        runOcrOnImage(file, function(text) {
+          setBusy(false);
+          showOcrResult(text);
+        });
+      }
+      if (camMode === 'ocr' || typeof Html5Qrcode === 'undefined') {
+        showTextFromFile();
+        return;
+      }
+      setBusy(true, 'Lese Barcode…');
+      var reader = new Html5Qrcode('camReader');
+      reader.scanFile(file, true)
+        .then(function(text) {
+          try { reader.clear(); } catch (e) {}
+          setBusy(false);
+          handleScan(text);
+        })
+        .catch(function() {
+          try { reader.clear(); } catch (e2) {}
+          showTextFromFile();
+        });
+    });
+    window.addEventListener('pagehide', function(e) {
+      if (e && e.persisted) return;
+      if (wsId) {
+        try { google.script.run.castPhoneLeave(wsId); } catch (e0) {}
+      }
+    });
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden && wsId && !pollInflight) {
+        pollInflight = true;
+        google.script.run
+          .withSuccessHandler(function(res) {
+            pollInflight = false;
+            if (res && res.success) applyConn(res);
+          })
+          .withFailureHandler(function() { pollInflight = false; })
+          .castPhoneHeartbeat(wsId);
+      }
+    });
+
+    var preset = String(window.CAST_BIND || '').trim();
+    if (preset) bindInput.value = preset;
+    join(preset);
+  })();
+  </script>
+</body>
+</html>

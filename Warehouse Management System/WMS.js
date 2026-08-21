@@ -23,6 +23,18 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.5",
+    date: "21.08.2026",
+    notes:
+      "• Was neues ausprobiert, ist noch nicht fertig implementiert. Tdm mal Updaten."
+  },
+  {
+    version: "2.2.4",
+    date: "21.08.2026",
+    notes:
+      "• DYMO sollte wieder gehen, am besten über Refurbishment -> WMS neu öffnen.\n"
+  },
+  {
     version: "2.2.3",
     date: "20.08.2026",
     notes:
@@ -1479,6 +1491,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     SpreadsheetApp.getUi().createMenu('WMS')
       .addItem('Öffne Warehouse Management System', 'openWMS')
       .addItem('Öffne Regal Scan', 'openRegalScan')
+      .addItem('Öffne Handy Cast', 'openCast')
       .addToUi();
   }
   
@@ -1522,12 +1535,30 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     return base + "?page=regal";
   }
 
+  function getCastAppUrl_(bind) {
+    var base = String(getWmsWebAppUrl_() || "").split("?")[0].split("#")[0];
+    if (!base) return "";
+    var url = base + "?page=cast";
+    var code = String(bind || "").trim().toUpperCase();
+    if (code) url += "&bind=" + encodeURIComponent(code);
+    return url;
+  }
+
   function doGet(e) {
     var p = e && e.parameter || {};
     var page = String(p.page || p.view || "").toLowerCase();
     if (page === "regal" || page === "scan" || page === "regalscan") {
       return HtmlService.createHtmlOutputFromFile("WMS_RegalScan")
         .setTitle("Regal Scan")
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag("viewport", "width=device-width, initial-scale=1, viewport-fit=cover");
+    }
+    if (page === "cast" || page === "handy" || page === "mobilecast") {
+      var ct = HtmlService.createTemplateFromFile("WMS_Cast");
+      ct.bindCode = String(p.bind || p.code || "").trim().toUpperCase();
+      ct.appUrl = getWmsWebAppUrl_();
+      return ct.evaluate()
+        .setTitle("WMS Cast")
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
         .addMetaTag("viewport", "width=device-width, initial-scale=1, viewport-fit=cover");
     }
@@ -1572,6 +1603,20 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
       "</script></body></html>"
     );
     SpreadsheetApp.getUi().showModalDialog(html, "Regal Scan");
+  }
+
+  function openCast() {
+    var url = getCastAppUrl_("");
+    if (!url) {
+      SpreadsheetApp.getUi().alert("Keine Web-App-URL. Bitte WMS_WEB_APP_URL setzen oder Web-App bereitstellen.");
+      return;
+    }
+    var html = HtmlService.createHtmlOutput(
+      "<!DOCTYPE html><html><body style=\"margin:0\"><script>" +
+      "window.onload=function(){window.open(" + JSON.stringify(url) + ",\"_blank\");google.script.host.close();};" +
+      "</script></body></html>"
+    );
+    SpreadsheetApp.getUi().showModalDialog(html, "WMS Cast");
   }
 
   function applyTrackingDateIfEmpty(stockId) {
@@ -1804,6 +1849,322 @@ function releaseStockEditLock(stockId) {
     }
     cache.remove(key);
     return { success: true, released: true, stockId: stockId };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+var WMS_CAST_TTL_SEC = 180;
+var WMS_CAST_JOB_TTL_SEC = 90;
+var WMS_CAST_PHONE_STALE_MS = 75000;
+var WMS_CAST_PC_STALE_MS = 75000;
+var WMS_CAST_BIND_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+function castEmailNorm_(email) {
+  return String(email || "").trim().toLowerCase();
+}
+
+function castWsKey_(wsId) {
+  return "castW:" + String(wsId || "");
+}
+
+function castEmailKey_(email) {
+  return "castE:" + castEmailNorm_(email);
+}
+
+function castBindKey_(bind) {
+  return "castB:" + String(bind || "").toUpperCase();
+}
+
+function castJobKey_(wsId) {
+  return "castJ:" + String(wsId || "");
+}
+
+function castParseJson_(raw) {
+  if (!raw) return null;
+  try {
+    return JSON.parse(String(raw));
+  } catch (e) {
+    return null;
+  }
+}
+
+function castRand_(chars, len) {
+  var s = "";
+  var n = len || 8;
+  var alphabet = chars || "abcdefghijklmnopqrstuvwxyz0123456789";
+  for (var i = 0; i < n; i++) {
+    s += alphabet.charAt(Math.floor(Math.random() * alphabet.length));
+  }
+  return s;
+}
+
+function castSanitizeWsId_(wsId) {
+  return String(wsId || "").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
+}
+
+function castSanitizeBind_(bind) {
+  return String(bind || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+}
+
+function castReadWs_(cache, wsId) {
+  if (!wsId) return null;
+  var rec = castParseJson_(cache.get(castWsKey_(wsId)));
+  if (!rec || !rec.wsId) return null;
+  return rec;
+}
+
+function castWriteWs_(cache, rec) {
+  if (!rec || !rec.wsId) return;
+  cache.put(castWsKey_(rec.wsId), JSON.stringify(rec), WMS_CAST_TTL_SEC);
+  if (rec.email) cache.put(castEmailKey_(rec.email), rec.wsId, WMS_CAST_TTL_SEC);
+  if (rec.bind) cache.put(castBindKey_(rec.bind), rec.wsId, WMS_CAST_TTL_SEC);
+}
+
+function castReadJob_(cache, wsId) {
+  return castParseJson_(cache.get(castJobKey_(wsId)));
+}
+
+function castWriteJob_(cache, wsId, job) {
+  if (!wsId) return;
+  if (!job) {
+    cache.remove(castJobKey_(wsId));
+    return;
+  }
+  cache.put(castJobKey_(wsId), JSON.stringify(job), WMS_CAST_JOB_TTL_SEC);
+}
+
+function castPhoneConnected_(rec) {
+  if (!rec || !rec.phoneAt) return false;
+  return (Date.now() - Number(rec.phoneAt || 0)) < WMS_CAST_PHONE_STALE_MS;
+}
+
+function castPcAlive_(rec) {
+  if (!rec || !rec.pcAt) return false;
+  return (Date.now() - Number(rec.pcAt || 0)) < WMS_CAST_PC_STALE_MS;
+}
+
+function castOwnWs_(rec, email) {
+  return !!(rec && rec.email && rec.email === castEmailNorm_(email));
+}
+
+function castPublicState_(rec, job, extra) {
+  rec = rec || {};
+  extra = extra || {};
+  var out = {
+    success: true,
+    wsId: rec.wsId || "",
+    email: rec.email || "",
+    bind: rec.bind || "",
+    castUrl: rec.bind ? getCastAppUrl_(rec.bind) : getCastAppUrl_(""),
+    connected: castPhoneConnected_(rec),
+    phoneOk: castPhoneConnected_(rec),
+    pcOk: castPcAlive_(rec),
+    phoneAt: rec.phoneAt || 0,
+    pcAt: rec.pcAt || 0,
+    job: job || null
+  };
+  if (extra.claimed) out.claimed = true;
+  if (extra.message) out.message = extra.message;
+  return out;
+}
+
+function castPcHeartbeat(wsId) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    if (!wsId) return { success: false, message: "Keine Session" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    if (!email || email === "unbekannt") return { success: false, message: "Kein Google-Konto" };
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || rec.email !== email) {
+      rec = {
+        wsId: wsId,
+        email: email,
+        bind: castRand_(WMS_CAST_BIND_CHARS, 6),
+        pcAt: Date.now(),
+        phoneAt: 0
+      };
+    } else {
+      rec.pcAt = Date.now();
+      rec.email = email;
+      if (!rec.bind) rec.bind = castRand_(WMS_CAST_BIND_CHARS, 6);
+    }
+    castWriteWs_(cache, rec);
+    var job = castReadJob_(cache, wsId);
+    var claimed = false;
+    if (job && job.status === "queued") {
+      job.status = "running";
+      job.claimedAt = Date.now();
+      castWriteJob_(cache, wsId, job);
+      claimed = true;
+    }
+    return castPublicState_(rec, job, { claimed: claimed });
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castPcLeave(wsId) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    if (!wsId) return { success: false, message: "Keine Session" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (rec && rec.email && rec.email !== email) {
+      return { success: false, message: "Fremde Session" };
+    }
+    cache.remove(castWsKey_(wsId));
+    cache.remove(castJobKey_(wsId));
+    if (rec && rec.bind) cache.remove(castBindKey_(rec.bind));
+    if (rec && rec.email && String(cache.get(castEmailKey_(rec.email)) || "") === wsId) {
+      cache.remove(castEmailKey_(rec.email));
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castDropPhone(wsId) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    if (!wsId) return { success: false, message: "Keine Session" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || !castOwnWs_(rec, email)) return { success: false, message: "Session ungültig" };
+    rec.phoneAt = 0;
+    rec.pcAt = Date.now();
+    castWriteWs_(cache, rec);
+    return castPublicState_(rec, null);
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castPhoneJoin(bind) {
+  try {
+    var email = castEmailNorm_(getActiveUserEmail_());
+    if (!email || email === "unbekannt") return { success: false, message: "Kein Google-Konto am Handy" };
+    var cache = CacheService.getScriptCache();
+    var code = castSanitizeBind_(bind);
+    var wsId = "";
+    if (code) wsId = String(cache.get(castBindKey_(code)) || "");
+    if (!wsId) wsId = String(cache.get(castEmailKey_(email)) || "");
+    if (!wsId) return { success: false, message: "Kein PC verbunden. QR im WMS-Menü scannen." };
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || !castPcAlive_(rec)) return { success: false, message: "PC-Session offline. WMS am PC öffnen." };
+    if (!castOwnWs_(rec, email)) return { success: false, message: "Anderes Google-Konto. Mit dem Konto vom PC anmelden." };
+    rec.phoneAt = Date.now();
+    castWriteWs_(cache, rec);
+    return castPublicState_(rec, castReadJob_(cache, rec.wsId));
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castPhoneHeartbeat(wsId) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    if (!wsId) return { success: false, message: "Keine Session" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || !castOwnWs_(rec, email)) return { success: false, message: "Session ungültig. Neu verbinden." };
+    if (!castPcAlive_(rec)) return { success: false, pcOk: false, message: "PC-Session offline." };
+    rec.phoneAt = Date.now();
+    castWriteWs_(cache, rec);
+    return castPublicState_(rec, castReadJob_(cache, wsId));
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castPhoneLeave(wsId) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    if (!wsId) return { success: true };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (rec && castOwnWs_(rec, email)) {
+      rec.phoneAt = 0;
+      castWriteWs_(cache, rec);
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castEnqueueJob(wsId, type, payload) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    type = String(type || "").trim().toLowerCase();
+    payload = payload || {};
+    if (!wsId) return { success: false, message: "Keine Session" };
+    if (type !== "dymo" && type !== "carol" && type !== "open") return { success: false, message: "Unbekannter Befehl" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || !castOwnWs_(rec, email)) return { success: false, message: "Session ungültig" };
+    if (!castPcAlive_(rec)) return { success: false, message: "PC nicht verbunden" };
+    rec.phoneAt = Date.now();
+    castWriteWs_(cache, rec);
+    var existing = castReadJob_(cache, wsId);
+    if (existing && (existing.status === "queued" || existing.status === "running")) {
+      return { success: false, message: "PC arbeitet noch an einem Befehl" };
+    }
+    var stockId = normalizeStockId(payload.stockId);
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var copies = parseInt(payload.copies, 10);
+    if (isNaN(copies) || copies < 1) copies = 1;
+    if (copies > 9) copies = 9;
+    var comment = String(payload.comment == null ? "" : payload.comment);
+    if (comment.length > 2500) comment = comment.substring(0, 2500);
+    if (type === "carol" && !comment.trim()) return { success: false, message: "Bitte erst Kommentar eintragen" };
+    var job = {
+      id: castRand_("abcdefghijklmnopqrstuvwxyz0123456789", 10),
+      type: type,
+      stockId: stockId,
+      copies: copies,
+      comment: comment,
+      carolUrl: String(payload.carolUrl || "").trim(),
+      expectedKommentar: payload.expectedKommentar == null ? undefined : String(payload.expectedKommentar),
+      expectedRegal: payload.expectedRegal == null ? undefined : String(payload.expectedRegal),
+      status: "queued",
+      at: Date.now(),
+      result: null,
+      message: ""
+    };
+    castWriteJob_(cache, wsId, job);
+    return { success: true, job: job };
+  } catch (err) {
+    return { success: false, message: err.message || String(err) };
+  }
+}
+
+function castAckJob(wsId, jobId, ok, message) {
+  try {
+    wsId = castSanitizeWsId_(wsId);
+    jobId = String(jobId || "");
+    if (!wsId || !jobId) return { success: false, message: "Kein Job" };
+    var email = castEmailNorm_(getActiveUserEmail_());
+    var cache = CacheService.getScriptCache();
+    var rec = castReadWs_(cache, wsId);
+    if (!rec || !castOwnWs_(rec, email)) return { success: false, message: "Session ungültig" };
+    var job = castReadJob_(cache, wsId);
+    if (!job || String(job.id) !== jobId) return { success: true, missing: true };
+    job.status = "done";
+    job.result = ok ? "ok" : "err";
+    job.message = String(message || "");
+    job.doneAt = Date.now();
+    castWriteJob_(cache, wsId, job);
+    rec.pcAt = Date.now();
+    castWriteWs_(cache, rec);
+    return { success: true, job: job };
   } catch (err) {
     return { success: false, message: err.message || String(err) };
   }

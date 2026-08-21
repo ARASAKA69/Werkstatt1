@@ -13,6 +13,7 @@
           <button type="button" class="topbar-action" onclick="openNbModal()">📦 Nachbestellungen</button>
           <button type="button" class="topbar-action" onclick="openPzModal()">📄 Packzettel</button>
           <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Reifen Ausgabe</button>
+          <button type="button" class="topbar-action" id="castTopbarBtnOverlay" onclick="openWmsCastModal()">📱 Cast</button>
         </div>
         <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
           <button type="button" class="wms-menutrigger btn-glow" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
@@ -173,6 +174,16 @@
               </div>
               <div class="wms-build-note" id="wmsBuildNote" translate="no">WMS build —</div>
             </div>
+            <div class="wms-menugroup wms-menugroup--cast" role="presentation">
+              <div class="wms-menugroup-label">Handy</div>
+              <button type="button" class="wms-menuitem wms-menuitem--flat wms-menuitem--cast" id="wmsCastMenuBtn" role="menuitem" onclick="openWmsCastModal(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon" id="wmsCastMenuIcon">📱</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Handy Cast</span>
+                  <span class="wms-menuitem-sub" id="wmsCastMenuSub">QR scannen · Session verbinden</span>
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       </nav>
@@ -184,6 +195,10 @@
         <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v2.0</span>
       </div>
       <div class="topbar-cache-cluster">
+        <button type="button" class="cast-hud-pill" id="castHudPill" hidden onclick="openWmsCastModal()">
+          <span class="cast-hud-dot" aria-hidden="true"></span>
+          Handy verbunden
+        </button>
         <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
         <div class="topbar-cache-sub">
           <span class="cache-load-spinner" id="cacheLoadSpinner" hidden></span>
@@ -939,6 +954,42 @@
     <div class="wms-update-actions">
       <button type="button" class="stock-lock-btn stock-lock-btn--primary" id="wmsUpdateNowBtn" onclick="applyWmsAppUpdate()">Jetzt aktualisieren</button>
     </div>
+  </div>
+</div>
+
+<div id="wmsCastModal" class="wms-cast-modal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="wmsCastTitle">
+  <div class="wms-cast-dialog">
+    <div class="wms-cast-header">
+      <div class="wms-cast-title-block">
+        <div class="wms-cast-kicker">Handy Session</div>
+        <div class="wms-cast-title" id="wmsCastTitle">Cast verbinden</div>
+      </div>
+      <button type="button" class="wms-cast-close" onclick="closeWmsCastModal()">Schließen</button>
+    </div>
+    <div class="wms-cast-body">
+      <div class="wms-cast-status" id="wmsCastStatus">QR mit dem Handy scannen</div>
+      <div class="wms-cast-qr" id="wmsCastQr"></div>
+      <div class="wms-cast-code-wrap">
+        <div class="wms-cast-code-label">Bind-Code</div>
+        <div class="wms-cast-code" id="wmsCastCode">————</div>
+      </div>
+      <div class="wms-cast-email" id="wmsCastEmail"></div>
+      <div class="wms-cast-hint">Gleiches Google-Konto am Handy. Drucken und Carol laufen auf diesem PC.</div>
+      <div class="wms-cast-actions">
+        <button type="button" class="wms-cast-action" onclick="copyWmsCastUrl()">Link kopieren</button>
+        <button type="button" class="wms-cast-action wms-cast-action--ghost" id="wmsCastDropBtn" onclick="dropWmsCastPhone()">Handy trennen</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="castCarolPrompt" class="cast-carol-prompt" hidden>
+  <div class="cast-carol-prompt-card">
+    <div class="cast-carol-prompt-kicker">Handy Cast</div>
+    <div class="cast-carol-prompt-title">Carol vom Handy angefordert</div>
+    <div class="cast-carol-prompt-stock" id="castCarolPromptStock"></div>
+    <button type="button" class="cast-carol-prompt-go" onclick="confirmCastCarol()">Auftrag beenden &amp; Carol starten</button>
+    <button type="button" class="cast-carol-prompt-no" onclick="dismissCastCarolPrompt()">Ablehnen</button>
   </div>
 </div>
 
