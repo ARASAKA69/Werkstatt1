@@ -1758,7 +1758,7 @@ function searchNachbestellungByQuery_(query) {
   return openHit || anyHit || { found: false };
 }
 
-function fetchWmsDataFromNachbestellung_(stockId) {
+function fetchWmsDataFromNachbestellung_(stockId, includeClosed) {
   var want = normalizeStockId(stockId);
   if (!want) return { success: false };
   var grid = loadNachbestellungGrid_();
@@ -1772,7 +1772,7 @@ function fetchWmsDataFromNachbestellung_(stockId) {
     anyRows.push(rec);
     if (!nachbestellungIsClosedStatus(cols.status >= 0 ? grid.data[i][cols.status] : "")) openRows.push(rec);
   }
-  var use = openRows.length ? openRows : anyRows;
+  var use = (includeClosed || !openRows.length) ? anyRows : openRows;
   if (!use.length) return { success: false };
 
   var typs = [];
@@ -1811,7 +1811,7 @@ function fetchWmsDataFromNachbestellung_(stockId) {
   };
 }
 
-function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKommentar, expectedRegal) {
+function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKommentar, expectedRegal, includeClosed) {
   var want = normalizeStockId(stockId);
   if (!want) return null;
   var grid = loadNachbestellungGrid_();
@@ -1826,7 +1826,7 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
     anyRows.push(rec);
     if (!nachbestellungIsClosedStatus(cols.status >= 0 ? grid.data[r][cols.status] : "")) openRows.push(rec);
   }
-  var use = openRows.length ? openRows : anyRows;
+  var use = (includeClosed || !openRows.length) ? anyRows : openRows;
   if (!use.length) return null;
 
   var currentComments = [];
@@ -1915,10 +1915,16 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
     }
   }
 
-  function fetchWmsData(stockId) {
+  function fetchWmsData(stockId, source) {
     try {
       stockId = normalizeStockId(stockId);
+      source = String(source || "").toLowerCase();
       if (!stockId) return { success: false, message: "Keine Stock-ID" };
+      if (source === "nachbestellung") {
+        var forced = fetchWmsDataFromNachbestellung_(stockId, true);
+        if (forced && forced.success) return forced;
+        return { success: false, message: "Stock-ID nicht in Nachbestellung gefunden!" };
+      }
   
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var sheet = ss.getSheetByName("Refurbisment List");
@@ -1948,6 +1954,11 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
         result.regal = String(rowData[27] || "");
         result.reifenStatus = String(rowData[29] || "");
         result.markeModel = String(rowData[12] || "");
+        return result;
+      }
+
+      if (source === "refurbishment") {
+        result.message = "Stock-ID in Refurbisment List nicht gefunden!";
         return result;
       }
 
@@ -2305,7 +2316,7 @@ function castEnqueueJob(wsId, type, payload) {
     type = String(type || "").trim().toLowerCase();
     payload = payload || {};
     if (!wsId) return { success: false, message: "Keine Session" };
-    if (type !== "dymo" && type !== "carol" && type !== "open") return { success: false, message: "Unbekannter Befehl" };
+    if (type !== "dymo" && type !== "carol" && type !== "open" && type !== "werkstatt" && type !== "nbprocess") return { success: false, message: "Unbekannter Befehl" };
     var email = castEmailNorm_(getActiveUserEmail_());
     var cache = CacheService.getScriptCache();
     var rec = castReadWs_(cache, wsId);
@@ -2324,7 +2335,12 @@ function castEnqueueJob(wsId, type, payload) {
     if (copies > 9) copies = 9;
     var comment = String(payload.comment == null ? "" : payload.comment);
     if (comment.length > 2500) comment = comment.substring(0, 2500);
-    if (type === "carol" && !comment.trim()) return { success: false, message: "Bitte erst Kommentar eintragen" };
+    var src = String(payload.source || "").toLowerCase() === "nachbestellung" ? "nachbestellung" : (String(payload.source || "").toLowerCase() === "refurbishment" ? "refurbishment" : "");
+    if (type === "carol" && !comment.trim() && src !== "nachbestellung") return { success: false, message: "Bitte erst Kommentar eintragen" };
+    var teil = String(payload.teil == null ? "" : payload.teil);
+    if (teil.length > 400) teil = teil.substring(0, 400);
+    var typ = String(payload.typ == null ? "" : payload.typ);
+    if (typ.length > 200) typ = typ.substring(0, 200);
     var job = {
       id: castRand_("abcdefghijklmnopqrstuvwxyz0123456789", 10),
       type: type,
@@ -2334,6 +2350,12 @@ function castEnqueueJob(wsId, type, payload) {
       carolUrl: String(payload.carolUrl || "").trim(),
       expectedKommentar: payload.expectedKommentar == null ? undefined : String(payload.expectedKommentar),
       expectedRegal: payload.expectedRegal == null ? undefined : String(payload.expectedRegal),
+      source: src,
+      doCarol: !!payload.doCarol || type === "carol",
+      doDymo: !!payload.doDymo || type === "dymo",
+      doWerkstatt: !!payload.doWerkstatt || type === "werkstatt",
+      teil: teil,
+      typ: typ,
       status: "queued",
       at: Date.now(),
       result: null,
@@ -2847,11 +2869,17 @@ function getRefurbishmentCachePayload() {
     }
   }
 
-  function saveKommentar(stockId, text, action, expectedKommentar, expectedRegal) {
+  function saveKommentar(stockId, text, action, expectedKommentar, expectedRegal, source) {
     return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       action = String(action || "speichern");
       text = String(text == null ? "" : text);
+      source = String(source || "").toLowerCase();
+      if (source === "nachbestellung") {
+        var nbForced = saveNachbestellungKommentarUndRegal_(stockId, text, "", expectedKommentar, expectedRegal, true);
+        if (nbForced) return nbForced;
+        return { success: false, message: "Stock-ID nicht in Nachbestellung gefunden!" };
+      }
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
       if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
       var lastRow = Math.max(2, sheet.getLastRow());
@@ -3152,13 +3180,19 @@ function getRefurbishmentCachePayload() {
     };
   }
 
-  function saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal) {
+  function saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal, source) {
     return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       regal = String(regal || "").trim();
       text = String(text || "");
+      source = String(source || "").toLowerCase();
       if (!stockId) return { success: false, message: "Keine Stock-ID" };
       if (!text.trim()) return { success: false, message: "Bitte erst Kommentar eintragen!" };
+      if (source === "nachbestellung") {
+        var nbForced = saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKommentar, expectedRegal, true);
+        if (nbForced) return nbForced;
+        return { success: false, message: "Stock-ID nicht in Nachbestellung gefunden!" };
+      }
 
       var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
       if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
@@ -3586,7 +3620,9 @@ function getNachbestellungenForStock(stockId) {
         });
       }
 
-      return { success: true, stockId: stockId, entries: entries, openCount: openCount, closedCount: closedCount };
+      var lagerortOptions = getNachbestellungLagerortAllowedList(sheet, lagerortCol);
+      var statusOptions = getNachbestellungStatusAllowedList(sheet, statusCol);
+      return { success: true, stockId: stockId, entries: entries, openCount: openCount, closedCount: closedCount, lagerortOptions: lagerortOptions, statusOptions: statusOptions };
     } catch (err) {
       return { success: false, message: err.message, entries: [] };
     }

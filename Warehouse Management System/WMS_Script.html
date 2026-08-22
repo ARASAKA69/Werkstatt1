@@ -1,5 +1,6 @@
 <script>
   var currentStock = "";
+  var currentWmsSource = "";
   var currentCarolUrl = "";
   var currentShelves = [];
   var currentSchaedenText = "";
@@ -281,6 +282,14 @@
   }
 
   function launchCastCarol(job) {
+    if (job && job.source === 'nachbestellung' && typeof startNbCarol === 'function') {
+      applyCastJobToHud(job);
+      startNbCarol(job.stockId, null);
+      if (typeof openNbForStock === 'function') openNbForStock(job.stockId);
+      ackCastJob(job, true, 'Carol gestartet');
+      showStickyToast('ok', 'Handy: Carol', (job.stockId || '') + ' gestartet');
+      return;
+    }
     applyCastJobToHud(job);
     if (!currentCarolUrl || !normalizeStockIdJs(currentStock)) {
       ackCastJob(job, false, 'Kein Carol-Link');
@@ -347,7 +356,7 @@
           .withFailureHandler(function() {
             launchCastCarol(job);
           })
-          .fetchWmsData(job.stockId);
+          .fetchWmsData(job.stockId, job.source || '');
         return;
       }
       launchCastCarol(job);
@@ -366,6 +375,7 @@
       google.script.run
         .withSuccessHandler(function(res) {
           if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, sid);
+          if (job.source === 'nachbestellung' && typeof openNbForStock === 'function') openNbForStock(sid);
           if (job.comment) setCommentText(job.comment);
           var ok = !!(res && res.success);
           ackCastJob(job, ok, ok ? 'Auftrag geöffnet' : ((res && res.message) || 'Nicht gefunden'));
@@ -375,10 +385,52 @@
           if (typeof setHudBusy === 'function') setHudBusy(false);
           ackCastJob(job, false, err && err.message ? err.message : 'Laden fehlgeschlagen');
         })
-        .fetchWmsData(sid);
+        .fetchWmsData(sid, job.source || '');
+      return;
+    }
+    if (job.type === 'nbprocess' || job.type === 'werkstatt') {
+      executeCastNbProcess(job);
       return;
     }
     ackCastJob(job, false, 'Unbekannter Befehl');
+  }
+
+  function executeCastNbProcess(job) {
+    var notes = [];
+    if (job.doDymo) {
+      var printed = sendDymoPrint({ stockId: job.stockId, copies: job.copies || 1, silent: false });
+      var okD = !!(printed && printed.success);
+      notes.push(printed && printed.skipped ? 'DYMO übersprungen' : (okD ? 'DYMO gesendet' : ((printed && printed.message) || 'DYMO fehlgeschlagen')));
+    }
+    function afterWerkstatt() {
+      if (job.doCarol) {
+        launchCastCarol(job);
+        return;
+      }
+      var ok = notes.join(' ').indexOf('fehlgeschlagen') === -1;
+      ackCastJob(job, ok, notes.join(' · ') || 'OK');
+      setStatus('📱 Handy: ' + (notes.join(' · ') || 'OK') + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
+      if (ok) showStickyToast('ok', 'Handy: Nachbestellung', job.stockId || '');
+    }
+    if (job.doWerkstatt) {
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res && res.success && res.printB64 && typeof sendWerkstattauftragPrint === 'function') {
+            sendWerkstattauftragPrint(res.printB64, null, null);
+            notes.push('Auftrag gedruckt');
+          } else {
+            notes.push((res && res.message) || 'Auftrag nicht gedruckt');
+          }
+          afterWerkstatt();
+        })
+        .withFailureHandler(function(err) {
+          notes.push(err && err.message ? err.message : 'Auftrag-Fehler');
+          afterWerkstatt();
+        })
+        .requestWerkstattauftragPrint(job.stockId, job.teil || '', job.typ || '');
+      return;
+    }
+    afterWerkstatt();
   }
 
   function onCastPcHeartbeat(res) {
@@ -2455,7 +2507,15 @@
   function openNbFromChooser() {
     var stock = nbChooserStock;
     closeNbChooser();
-    if(stock) openNbForStock(stock);
+    if(!stock) return;
+    if (typeof setHudBusy === 'function') setHudBusy(true, 'Lade Nachbestellung…');
+    google.script.run.withSuccessHandler(function(res) {
+      if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, stock);
+      openNbForStock(stock);
+    }).withFailureHandler(function() {
+      if (typeof setHudBusy === 'function') setHudBusy(false);
+      openNbForStock(stock);
+    }).fetchWmsData(stock, 'nachbestellung');
   }
 
   function nbChooserStatusClass(status) {
@@ -2506,15 +2566,11 @@
 
   function maybeShowNbChooser(stockId) {
     if(!stockId) return;
-    if(nbChooserCacheReady) {
-      var matches = nbEntriesForStock(stockId);
-      if(matches.length) showNbChooser(stockId, matches);
-      return;
-    }
-    loadNbChooserCache(false);
+    if(currentWmsSource === 'nachbestellung') return;
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success && res.entries && res.entries.length
-        && normalizeStockInput(stockId) === normalizeStockInput(currentStock)) {
+        && normalizeStockInput(stockId) === normalizeStockInput(currentStock)
+        && currentWmsSource !== 'nachbestellung') {
         showNbChooser(stockId, res.entries);
       }
     }).getNachbestellungenForStock(stockId);
@@ -6706,6 +6762,7 @@
     }
     hideStockLockBlock();
     currentStock = "";
+    currentWmsSource = "";
     currentCarolUrl = "";
     currentSchaedenText = "";
     currentBestellungText = "";
@@ -6717,6 +6774,7 @@
     var infoBestellung = document.getElementById('infoBestellung');
     if (infoSchaeden) infoSchaeden.innerHTML = '-';
     if (infoBestellung) infoBestellung.innerHTML = '-';
+    applyWmsSourceLabels('');
     var shelfPill = document.getElementById('currentShelfLabel');
     if (shelfPill) {
       shelfPill.innerText = 'Aktuell: -';
@@ -6753,6 +6811,18 @@
     else setStatus('Bereit für nächsten Auftrag.', '#3FA0DB');
   }
 
+  function applyWmsSourceLabels(source) {
+    var a = document.getElementById('infoSchaedenLabel');
+    var b = document.getElementById('infoBestellungLabel');
+    if (source === 'nachbestellung') {
+      if (a) a.textContent = 'Art der Nachbestellung';
+      if (b) b.textContent = 'Artikelnummer';
+    } else {
+      if (a) a.textContent = 'Schäden (Manueller Input)';
+      if (b) b.textContent = 'Ersatzteile Bestellung';
+    }
+  }
+
   function applyFetchWmsResult(res, id) {
     if (res.success) {
       var prevStock = normalizeStockIdJs(currentStock);
@@ -6770,9 +6840,11 @@
         hideStockLockBlock();
       }
       currentCarolUrl = res.carolUrl;
+      currentWmsSource = (res.source === 'nachbestellung') ? 'nachbestellung' : 'refurbishment';
       currentSchaedenText = res.schaeden || '';
       currentBestellungText = res.kommBestellung || '';
       currentMarkeModel = res.markeModel || '';
+      applyWmsSourceLabels(currentWmsSource);
 
       setCommentText(res.kommAnlieferung || '');
       var regalVal = (res.regal || '').trim();
@@ -6864,7 +6936,7 @@
       toggleUI(true);
 
       updatePzContext(id, res.kommBestellung);
-      maybeShowNbChooser(id);
+      if (currentWmsSource !== 'nachbestellung') maybeShowNbChooser(id);
       claimStockEditLockForCurrent(loadedStock);
     } else {
       skipRecentStockPush = false;
@@ -7034,7 +7106,7 @@
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       setHudBusy(false);
       toggleUI(true);
-    }).saveKommentar(stockId, text, "speichern", expectedKommentar, expectedRegal);
+    }).saveKommentar(stockId, text, "speichern", expectedKommentar, expectedRegal, currentWmsSource);
   }
 
   commentEditor.addEventListener('keydown', function(e) {
@@ -7156,7 +7228,7 @@
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
       setStatus("❌ Fehler: " + failMsg, "#f85149");
       showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg);
-    }).saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal);
+    }).saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal, currentWmsSource);
   }
 
   function saveRegal() {
@@ -7578,7 +7650,7 @@
         setStatus("❌ Kommentarfehler: " + failMsg, "#f85149");
         showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
       })
-      .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal);
+      .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal, currentWmsSource);
     return { success: true };
   }
 

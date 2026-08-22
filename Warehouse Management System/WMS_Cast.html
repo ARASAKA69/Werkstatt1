@@ -141,6 +141,7 @@
       background: rgba(14, 16, 20, 0.78);
       padding: 14px 14px 12px;
     }
+    .stack { display: flex; flex-direction: column; gap: 8px; }
     .kicker {
       font-size: 0.68rem; font-weight: 700; letter-spacing: 0.12em;
       text-transform: uppercase; color: var(--foreground-muted);
@@ -151,6 +152,32 @@
       font-weight: 800; letter-spacing: -0.03em;
     }
     .meta { font-size: 0.82rem; color: var(--foreground-muted); font-weight: 600; }
+    .src-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .src-btn {
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.7rem 0.6rem; min-height: 46px;
+      font: 800 0.78rem/1.15 var(--font); cursor: pointer; letter-spacing: 0.02em;
+    }
+    .src-btn.on {
+      background: rgba(13, 148, 136, 0.2); border-color: var(--color-primary); color: #99f6e4;
+    }
+    .src-btn.nb.on {
+      background: rgba(234, 88, 12, 0.18); border-color: var(--color-accent); color: #fdba74;
+    }
+    .src-preview {
+      margin-top: 10px; font: 600 0.78rem/1.4 var(--font); color: var(--foreground-muted);
+    }
+    .src-preview strong { display: block; color: var(--foreground); font-size: 0.82rem; margin-bottom: 2px; }
+    .nb-entry {
+      width: 100%; text-align: left;
+      border: 1px solid var(--border); background: var(--surface-2); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.65rem 0.75rem; margin-bottom: 8px;
+      font: 700 0.8rem/1.3 var(--font); cursor: pointer;
+    }
+    .nb-entry.on {
+      background: rgba(234, 88, 12, 0.16); border-color: var(--color-accent); color: #fdba74;
+    }
+    .nb-entry span { display: block; font-weight: 600; color: var(--foreground-muted); font-size: 0.72rem; margin-top: 2px; }
     .scan-wrap { position: relative; }
     .scan-wrap svg {
       position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
@@ -418,19 +445,43 @@
       <button type="button" class="btn teal" id="btnOpenPc" disabled style="width:100%;margin-top:10px">Am PC öffnen</button>
     </section>
 
+    <section class="card hidden" id="sourcePickCard">
+      <div class="kicker">Quelle wählen</div>
+      <div class="src-row">
+        <button type="button" class="src-btn" id="srcRefurb">Refurbishment</button>
+        <button type="button" class="src-btn nb" id="srcNb">Nachbestellung</button>
+      </div>
+      <div id="sourcePickPreview" class="src-preview"></div>
+    </section>
+
     <section class="card">
       <div class="kicker">Auftrags Infos</div>
-      <div class="kicker" style="margin-top:10px">Schäden (Manueller Input)</div>
+      <div class="kicker" style="margin-top:10px" id="infoSchaedenLabel">Schäden (Manueller Input)</div>
       <div class="info-box" id="infoSchaeden">—</div>
-      <div class="kicker">Ersatzteile Bestellung</div>
+      <div class="kicker" id="infoBestellungLabel">Ersatzteile Bestellung</div>
       <div class="info-box" id="infoBestellung">—</div>
+    </section>
+
+    <section class="card hidden stack" id="nbWorkCard">
+      <div class="kicker">Nachbestellung bearbeiten</div>
+      <div id="nbEntryPicks"></div>
+      <div class="kicker">Status ändern</div>
+      <select class="shelf" id="nbStatusSelect"></select>
+      <button type="button" class="btn primary" id="btnNbKomplett">Komplett + Carol</button>
+      <div id="nbRegalWrap" class="hidden stack">
+        <div class="kicker">Regal (erste Kiste)</div>
+        <select class="shelf" id="nbRegalSelect"></select>
+      </div>
+      <button type="button" class="btn teal hidden" id="btnNbWerkstatt">Auftrag drucken</button>
     </section>
 
     <section class="card stack">
       <div class="kicker">Kommentar</div>
       <textarea class="comment" id="commentEl" placeholder="Notizen…"></textarea>
-      <div class="kicker">Regal</div>
-      <select class="shelf" id="shelfSelect"><option value="">— Regal wählen —</option></select>
+      <div id="refurbRegalBlock">
+        <div class="kicker">Regal</div>
+        <select class="shelf" id="shelfSelect"><option value="">— Regal wählen —</option></select>
+      </div>
       <button type="button" class="btn primary" id="btnSave">Kommentar + Regal speichern</button>
     </section>
 
@@ -518,6 +569,13 @@
     var pcOk = false;
     var busy = false;
     var currentStock = '';
+    var currentSource = '';
+    var dualSource = false;
+    var lastNbEntries = [];
+    var lastNbStatusOptions = [];
+    var lastNbLagerortOptions = [];
+    var currentNbEntry = null;
+    var nbStatusIgnore = false;
     var currentCarolUrl = '';
     var baselineKommentar = '';
     var baselineRegal = '';
@@ -714,11 +772,24 @@
           setStatus('PC hat nicht geantwortet', '#F59E0B');
         }
       }
+      syncActionButtons();
+    }
+
+    function syncActionButtons() {
       var commentOk = String(commentEl.value || '').trim().length > 0;
       var jobBusy = !!waitingJobId;
-      btnDymo.disabled = !connected || !currentStock || jobBusy;
-      if (btnOpenPc) btnOpenPc.disabled = !connected || !currentStock || jobBusy;
-      btnCarol.disabled = !connected || !currentStock || !currentCarolUrl || !commentOk || jobBusy;
+      var nb = currentSource === 'nachbestellung';
+      btnDymo.disabled = !pcOk || !currentStock || jobBusy;
+      if (btnOpenPc) btnOpenPc.disabled = !pcOk || !currentStock || jobBusy;
+      btnCarol.disabled = !pcOk || !currentStock || jobBusy || (nb ? false : (!currentCarolUrl || !commentOk));
+      var st = $('nbStatusSelect');
+      if (st) st.disabled = !currentNbEntry || jobBusy;
+      var btnK = $('btnNbKomplett');
+      if (btnK) btnK.disabled = !currentNbEntry || jobBusy;
+      var btnW = $('btnNbWerkstatt');
+      if (btnW) btnW.disabled = !pcOk || !currentNbEntry || jobBusy;
+      var rg = $('nbRegalSelect');
+      if (rg) rg.disabled = !currentNbEntry || jobBusy;
     }
 
     function startPoll() {
@@ -813,9 +884,329 @@
       card.classList.toggle('hidden', !n);
     }
 
+    function applyInfoLabels(source) {
+      var a = $('infoSchaedenLabel');
+      var b = $('infoBestellungLabel');
+      if (source === 'nachbestellung') {
+        if (a) a.textContent = 'Art der Nachbestellung';
+        if (b) b.textContent = 'Artikelnummer';
+      } else {
+        if (a) a.textContent = 'Schäden (Manueller Input)';
+        if (b) b.textContent = 'Ersatzteile Bestellung';
+      }
+    }
+
+    function hideSourcePick() {
+      var card = $('sourcePickCard');
+      if (card) card.classList.add('hidden');
+    }
+
+    function renderSourcePick() {
+      var card = $('sourcePickCard');
+      var prev = $('sourcePickPreview');
+      var btnR = $('srcRefurb');
+      var btnN = $('srcNb');
+      if (!card) return;
+      if (!dualSource) {
+        card.classList.add('hidden');
+        return;
+      }
+      card.classList.remove('hidden');
+      if (btnR) btnR.classList.toggle('on', currentSource !== 'nachbestellung');
+      if (btnN) btnN.classList.toggle('on', currentSource === 'nachbestellung');
+      if (prev) {
+        var html = '';
+        (lastNbEntries || []).forEach(function(e) {
+          var typ = String((e && e.typ) || 'Nachbestellung').trim();
+          var status = String((e && e.status) || '').trim();
+          var teil = String((e && e.teil) || '').trim();
+          var artikel = String((e && e.artikel) || '').trim();
+          html += '<div style="margin-bottom:8px">';
+          html += '<strong>' + escapeHtml(typ + (status ? (' · ' + status) : '')) + '</strong>';
+          if (teil) html += '<div>' + escapeHtml(teil) + '</div>';
+          if (artikel) html += '<div>Artikel-Nr. ' + escapeHtml(artikel) + '</div>';
+          html += '</div>';
+        });
+        prev.innerHTML = html;
+      }
+    }
+
+    function refreshSourcePick(id, res) {
+      google.script.run
+        .withSuccessHandler(function(nb) {
+          if (normalizeStock(id) !== currentStock) return;
+          lastNbEntries = (nb && nb.success && nb.entries) ? nb.entries : [];
+          lastNbStatusOptions = (nb && nb.statusOptions) ? nb.statusOptions : [];
+          lastNbLagerortOptions = (nb && nb.lagerortOptions) ? nb.lagerortOptions : [];
+          if (res && res.source === 'refurbishment') dualSource = lastNbEntries.length > 0;
+          renderSourcePick();
+          renderNbWork();
+        })
+        .withFailureHandler(function() {
+          if (normalizeStock(id) !== currentStock) return;
+          if (res && res.source === 'refurbishment') {
+            lastNbEntries = [];
+            dualSource = false;
+            hideSourcePick();
+          }
+          renderNbWork();
+        })
+        .getNachbestellungenForStock(id);
+    }
+
+    function pickSource(src) {
+      if (!currentStock) return;
+      if (src === currentSource) return;
+      loadStock(currentStock, true, src);
+    }
+
+    function nbIsExitOrder(typ) {
+      return String(typ || '').toLowerCase().indexOf('exit') !== -1;
+    }
+
+    function nbIsKomplettStatus(value) {
+      var valStr = String(value || '');
+      var valLc = valStr.trim().toLowerCase();
+      return valStr.indexOf('Angeliefert/Bereit') !== -1 || valLc.indexOf('komplett angeliefert') !== -1;
+    }
+
+    function nbShouldStartCarol(value, typ) {
+      return nbIsKomplettStatus(value) && !nbIsExitOrder(typ);
+    }
+
+    function nbShouldAutoPrintDymo(value) {
+      return String(value || '').trim().toLowerCase().indexOf('komplett angeliefert') !== -1;
+    }
+
+    function nbTypShouldPrintWerkstattauftrag(typ) {
+      var t = String(typ || '').trim().toLowerCase();
+      if (!t) return false;
+      if (t.indexOf('exit') !== -1) return false;
+      if (t.indexOf('erstbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
+      if (t.indexOf('nachbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
+      if (t.indexOf('mechanik') !== -1 && t.indexOf('nachbestellung') !== -1) return true;
+      if (t.indexOf('q-check') !== -1 || t.indexOf('qcheck') !== -1) return true;
+      return false;
+    }
+
+    function nbKomplettStatusValue() {
+      var list = (lastNbStatusOptions && lastNbStatusOptions.length) ? lastNbStatusOptions : ['bestellt', 'nicht bestellt', 'teilweise angeliefert', 'komplett angeliefert', 'Lieferrückstand', 'B2A1', 'Fertiggestellt', 'Konsi-Lager'];
+      var i;
+      for (i = 0; i < list.length; i++) {
+        var opt = String(list[i] != null ? list[i] : '').trim();
+        if (opt.toLowerCase().indexOf('komplett angeliefert') !== -1) return opt;
+      }
+      for (i = 0; i < list.length; i++) {
+        var opt2 = String(list[i] != null ? list[i] : '').trim();
+        if (opt2.indexOf('Angeliefert/Bereit') !== -1) return opt2;
+      }
+      return 'komplett angeliefert';
+    }
+
+    function pickDefaultNbEntry() {
+      var list = lastNbEntries || [];
+      var i;
+      for (i = 0; i < list.length; i++) {
+        if (!list[i].closed) return list[i];
+      }
+      return list[0] || null;
+    }
+
+    function sameNbEntry(a, b) {
+      if (!a || !b) return false;
+      if (a.entryId && b.entryId) return String(a.entryId) === String(b.entryId);
+      return Number(a.row) === Number(b.row);
+    }
+
+    function fillNbStatusSelect(currentStatus) {
+      var sel = $('nbStatusSelect');
+      if (!sel) return;
+      var list = (lastNbStatusOptions && lastNbStatusOptions.length) ? lastNbStatusOptions : ['bestellt', 'nicht bestellt', 'teilweise angeliefert', 'komplett angeliefert', 'Lieferrückstand', 'B2A1', 'Fertiggestellt', 'Konsi-Lager'];
+      var cur = String(currentStatus || '').trim().toLowerCase();
+      var html = '';
+      var found = false;
+      var s;
+      for (s = 0; s < list.length; s++) {
+        var opt = String(list[s] != null ? list[s] : '').trim();
+        if (!opt) continue;
+        var selAttr = opt.toLowerCase() === cur ? ' selected' : '';
+        if (selAttr) found = true;
+        html += '<option value="' + escapeHtml(opt) + '"' + selAttr + '>' + escapeHtml(opt) + '</option>';
+      }
+      if (!found && currentStatus) {
+        html += '<option value="' + escapeHtml(currentStatus) + '" selected>' + escapeHtml(currentStatus) + '</option>';
+      }
+      nbStatusIgnore = true;
+      sel.innerHTML = html;
+      nbStatusIgnore = false;
+    }
+
+    function fillNbRegalSelect(selectedRaw) {
+      var sel = $('nbRegalSelect');
+      if (!sel) return;
+      var list = lastNbLagerortOptions && lastNbLagerortOptions.length ? lastNbLagerortOptions : [];
+      if (!list.length) {
+        list = ['Tagesliste'];
+        var ri;
+        var rj;
+        for (ri = 1; ri <= 5; ri++) {
+          for (rj = 1; rj <= 8; rj++) list.push(ri + '.' + rj);
+        }
+        list.push('LACK');
+        list.push('Exit');
+      }
+      var html = '<option value="">—</option>';
+      var k;
+      var cur = String(selectedRaw || '').trim().toLowerCase();
+      for (k = 0; k < list.length; k++) {
+        var optStr = String(list[k] != null ? list[k] : '').trim();
+        if (!optStr) continue;
+        var label = optStr;
+        if (/^(\d+)\.(\d+)$/.test(optStr)) label = 'Regal ' + optStr;
+        var selAttr = optStr.toLowerCase() === cur || ('regal ' + optStr).toLowerCase() === cur ? ' selected' : '';
+        html += '<option value="' + escapeHtml(optStr) + '"' + selAttr + '>' + escapeHtml(label) + '</option>';
+      }
+      sel.innerHTML = html;
+    }
+
+    function renderNbWork() {
+      var card = $('nbWorkCard');
+      var picks = $('nbEntryPicks');
+      var regalWrap = $('nbRegalWrap');
+      var btnK = $('btnNbKomplett');
+      var btnW = $('btnNbWerkstatt');
+      var refurbRegal = $('refurbRegalBlock');
+      var saveBtn = $('btnSave');
+      if (refurbRegal) refurbRegal.classList.toggle('hidden', currentSource === 'nachbestellung');
+      if (saveBtn) saveBtn.textContent = currentSource === 'nachbestellung' ? 'Kommentar speichern' : 'Kommentar + Regal speichern';
+      if (!card) return;
+      if (currentSource !== 'nachbestellung' || !lastNbEntries.length) {
+        card.classList.add('hidden');
+        currentNbEntry = null;
+        syncActionButtons();
+        return;
+      }
+      card.classList.remove('hidden');
+      var keep = null;
+      var i;
+      if (currentNbEntry) {
+        for (i = 0; i < lastNbEntries.length; i++) {
+          if (sameNbEntry(lastNbEntries[i], currentNbEntry)) { keep = lastNbEntries[i]; break; }
+        }
+      }
+      currentNbEntry = keep || pickDefaultNbEntry();
+      if (picks) {
+        picks.innerHTML = '';
+        lastNbEntries.forEach(function(e) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'nb-entry' + (sameNbEntry(e, currentNbEntry) ? ' on' : '');
+          b.innerHTML = escapeHtml(String(e.typ || 'Nachbestellung') + (e.status ? (' · ' + e.status) : ''))
+            + (e.teil ? ('<span>' + escapeHtml(e.teil) + '</span>') : '')
+            + (e.artikel ? ('<span>Artikel-Nr. ' + escapeHtml(e.artikel) + '</span>') : '');
+          b.addEventListener('click', function() {
+            currentNbEntry = e;
+            renderNbWork();
+          });
+          picks.appendChild(b);
+        });
+      }
+      fillNbStatusSelect(currentNbEntry ? currentNbEntry.status : '');
+      fillNbRegalSelect(currentNbEntry ? currentNbEntry.regal : '');
+      var isTeil = currentNbEntry && String(currentNbEntry.status || '').toLowerCase() === 'teilweise angeliefert';
+      if (regalWrap) regalWrap.classList.toggle('hidden', !isTeil);
+      var showKomplett = currentNbEntry && !nbIsExitOrder(currentNbEntry.typ) && !nbIsKomplettStatus(currentNbEntry.status);
+      if (btnK) btnK.classList.toggle('hidden', !showKomplett);
+      var showWa = currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ);
+      if (btnW) btnW.classList.toggle('hidden', !showWa);
+      if (currentNbEntry) {
+        var bits = ['Nachbestellung'];
+        if (currentNbEntry.status) bits.push(String(currentNbEntry.status).trim());
+        if (currentNbEntry.regal) bits.push('Aktuell: ' + currentNbEntry.regal);
+        else bits.push('Kein Regal');
+        orderMeta.textContent = bits.join(' · ');
+      }
+      syncActionButtons();
+    }
+
+    function afterNbStatusSaved(value, res) {
+      if (currentNbEntry) {
+        currentNbEntry.status = value;
+        if (res && res.newRegal) currentNbEntry.regal = res.newRegal;
+        currentNbEntry.closed = nbIsKomplettStatus(value);
+        var i;
+        for (i = 0; i < lastNbEntries.length; i++) {
+          if (sameNbEntry(lastNbEntries[i], currentNbEntry)) {
+            lastNbEntries[i].status = value;
+            if (res && res.newRegal) lastNbEntries[i].regal = res.newRegal;
+            lastNbEntries[i].closed = currentNbEntry.closed;
+          }
+        }
+      }
+      renderNbWork();
+      var doCarol = currentNbEntry && nbShouldStartCarol(value, currentNbEntry.typ);
+      var doDymo = nbShouldAutoPrintDymo(value);
+      var doWerkstatt = !!(res && res.printB64) || (doDymo && currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ));
+      if (doCarol || doDymo || doWerkstatt) {
+        if (pcOk) enqueue('nbprocess', { doCarol: doCarol, doDymo: doDymo, doWerkstatt: doWerkstatt });
+        else setStatus((res && res.message ? res.message + ' — ' : '') + 'PC nicht verbunden für Carol/Druck', '#F59E0B');
+      }
+    }
+
+    function saveNbStatus(value) {
+      if (!currentNbEntry || !currentStock) return;
+      setBusy(true, 'Speichere Status…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.success) {
+            setStatus(res.message || 'Status gespeichert', '#34D399');
+            beep('ok');
+            afterNbStatusSaved(value, res);
+          } else {
+            setStatus((res && res.message) || 'Status fehlgeschlagen', '#f87171');
+            beep('err');
+            renderNbWork();
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+          renderNbWork();
+        })
+        .updateNachbestellung(currentNbEntry.row, 'status', value, currentStock, currentNbEntry.entryId || '');
+    }
+
+    function saveNbRegalValue(val) {
+      if (!currentNbEntry || !currentStock) return;
+      setBusy(true, 'Speichere Regal…');
+      google.script.run
+        .withSuccessHandler(function(res) {
+          setBusy(false);
+          if (res && res.success) {
+            if (currentNbEntry) currentNbEntry.regal = val;
+            baselineRegal = val || baselineRegal;
+            setStatus(res.message || 'Lagerort gespeichert', '#34D399');
+            beep('ok');
+            renderNbWork();
+          } else {
+            setStatus((res && res.message) || 'Regal fehlgeschlagen', '#f87171');
+            beep('err');
+          }
+        })
+        .withFailureHandler(function(err) {
+          setBusy(false);
+          setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+          beep('err');
+        })
+        .updateNachbestellung(currentNbEntry.row, 'regal', val, currentStock, currentNbEntry.entryId || '');
+    }
+
     function renderOrder(res, id) {
       hideSearchHits();
       currentStock = normalizeStock(id);
+      currentSource = (res && res.source === 'nachbestellung') ? 'nachbestellung' : 'refurbishment';
       currentCarolUrl = String((res && res.carolUrl) || '');
       var regal = String((res && res.regal) || '').trim();
       var comment = String((res && res.kommAnlieferung) || '');
@@ -823,11 +1214,16 @@
       baselineRegal = regal;
       stockVal.textContent = currentStock || '—';
       var bits = [];
-      if (res && res.source === 'nachbestellung') bits.push('Nachbestellung');
+      if (currentSource === 'nachbestellung') bits.push('Nachbestellung');
+      else bits.push('Refurbishment');
+      if (res && res.status) bits.push(String(res.status).trim());
       if (res && res.markeModel) bits.push(String(res.markeModel).trim());
       bits.push(regal ? ('Aktuell: ' + regal) : 'Kein Regal');
       orderMeta.textContent = bits.join(' · ');
       commentEl.value = comment;
+      applyInfoLabels(currentSource);
+      if ($('refurbRegalBlock')) $('refurbRegalBlock').classList.toggle('hidden', currentSource === 'nachbestellung');
+      if ($('btnSave')) $('btnSave').textContent = currentSource === 'nachbestellung' ? 'Kommentar speichern' : 'Kommentar + Regal speichern';
       if (infoSchaeden) infoSchaeden.innerHTML = formatInfo(res && res.schaeden);
       if (infoBestellung) infoBestellung.innerHTML = formatInfo(res && res.kommBestellung);
       shelfSelect.value = regal && shelfSelect.querySelector('option[value="' + regal.replace(/"/g, '') + '"]') ? regal : '';
@@ -838,12 +1234,10 @@
         extra.selected = true;
         shelfSelect.appendChild(extra);
       }
-      btnDymo.disabled = !pcOk || !currentStock;
-      if (btnOpenPc) btnOpenPc.disabled = !pcOk || !currentStock;
-      btnCarol.disabled = !pcOk || !currentStock || !currentCarolUrl || !String(commentEl.value || '').trim();
+      syncActionButtons();
     }
 
-    function loadStock(raw, skipFallback) {
+    function loadStock(raw, skipFallback, source) {
       var id = normalizeStock(raw || scanInput.value);
       if (!looksLikeStock(id)) {
         if (!skipFallback && String(raw || '').replace(/\s+/g, '').length >= 4) {
@@ -857,12 +1251,22 @@
       closeCamNow();
       hideSearchHits();
       if (scanInput) scanInput.value = id;
-      setBusy(true, 'Lade ' + id + '…');
+      if (!source) {
+        dualSource = false;
+        lastNbEntries = [];
+        currentNbEntry = null;
+        hideSourcePick();
+        var nbCard = $('nbWorkCard');
+        if (nbCard) nbCard.classList.add('hidden');
+      }
+      var want = String(source || '');
+      setBusy(true, want === 'nachbestellung' ? ('Lade Nachbestellung ' + id + '…') : ('Lade ' + id + '…'));
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.success) {
             setBusy(false);
             renderOrder(res, id);
+            refreshSourcePick(id, res);
             setStatus('Daten für ' + id + ' geladen' + (res.source === 'nachbestellung' ? ' (Nachbestellung)' : ''), '#34D399');
             beep('ok');
             return;
@@ -880,7 +1284,7 @@
           setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
           beep('err');
         })
-        .fetchWmsData(id);
+        .fetchWmsData(id, want);
     }
 
     function searchBelege(q, prev) {
@@ -977,7 +1381,13 @@
       if (!currentStock) return setStatus('Zuerst Auftrag laden', '#f87171');
       var text = String(commentEl.value || '').trim();
       if (!text) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
-      var regal = String(shelfSelect.value || '').trim();
+      var regal = '';
+      if (currentSource === 'nachbestellung') {
+        var nbReg = $('nbRegalSelect');
+        if (nbReg && $('nbRegalWrap') && !$('nbRegalWrap').classList.contains('hidden')) regal = String(nbReg.value || '').trim();
+      } else {
+        regal = String(shelfSelect.value || '').trim();
+      }
       setBusy(true, 'Speichere…');
       google.script.run
         .withSuccessHandler(function(res) {
@@ -994,7 +1404,11 @@
           if (res && res.success) {
             baselineKommentar = text;
             baselineRegal = regal || baselineRegal;
-            orderMeta.textContent = (currentStock ? currentStock : '') + (baselineRegal ? (' · Aktuell: ' + baselineRegal) : '');
+            var bits = [];
+            if (currentSource === 'nachbestellung') bits.push('Nachbestellung');
+            else if (currentStock) bits.push('Refurbishment');
+            bits.push(baselineRegal ? ('Aktuell: ' + baselineRegal) : 'Kein Regal');
+            orderMeta.textContent = bits.join(' · ');
             setStatus(res.message || 'Gespeichert', '#34D399');
             beep('ok');
           } else {
@@ -1007,27 +1421,32 @@
           setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
           beep('err');
         })
-        .saveKommentarUndRegal(currentStock, text, regal, baselineKommentar, baselineRegal);
+        .saveKommentarUndRegal(currentStock, text, regal, baselineKommentar, baselineRegal, currentSource);
     }
 
-    function enqueue(type) {
+    function enqueue(type, extra) {
+      extra = extra || {};
       if (!pcOk || !wsId) return setStatus('PC nicht verbunden', '#f87171');
       if (!currentStock) return setStatus('Zuerst Auftrag laden', '#f87171');
       var copies = parseInt($('dymoCount').value, 10);
       if (isNaN(copies) || copies < 1) copies = 1;
       var comment = String(commentEl.value || '');
-      if (type === 'carol' && !comment.trim()) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
-      if (type === 'carol' && !currentCarolUrl) return setStatus('Kein Carol-Link', '#f87171');
-      setBusy(true, type === 'dymo' ? 'Sende Druck an PC…' : (type === 'open' ? 'Öffne Auftrag am PC…' : 'Sende Carol an PC…'));
+      if (type === 'carol' && currentSource !== 'nachbestellung' && !comment.trim()) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
+      if (type === 'carol' && currentSource !== 'nachbestellung' && !currentCarolUrl) return setStatus('Kein Carol-Link', '#f87171');
+      var busyTxt = 'Sende an PC…';
+      if (type === 'dymo') busyTxt = 'Sende Druck an PC…';
+      else if (type === 'open') busyTxt = 'Öffne Auftrag am PC…';
+      else if (type === 'carol') busyTxt = 'Sende Carol an PC…';
+      else if (type === 'werkstatt') busyTxt = 'Sende Auftrag-Druck an PC…';
+      else if (type === 'nbprocess') busyTxt = 'Sende Nachbestellung an PC…';
+      setBusy(true, busyTxt);
       google.script.run
         .withSuccessHandler(function(res) {
           setBusy(false);
           if (res && res.success && res.job) {
             waitingJobId = res.job.id;
-            btnDymo.disabled = true;
-            btnCarol.disabled = true;
-            if (btnOpenPc) btnOpenPc.disabled = true;
-            setStatus(type === 'dymo' ? 'Druck läuft am PC…' : (type === 'open' ? 'PC lädt den Auftrag…' : 'Carol startet am PC…'), '#F59E0B');
+            syncActionButtons();
+            setStatus(type === 'dymo' ? 'Druck läuft am PC…' : (type === 'open' ? 'PC lädt den Auftrag…' : (type === 'werkstatt' ? 'Auftrag wird am PC gedruckt…' : 'PC arbeitet…')), '#F59E0B');
             beep('ok');
           } else {
             setStatus((res && res.message) || 'Befehl fehlgeschlagen', '#f87171');
@@ -1045,7 +1464,13 @@
           comment: comment,
           carolUrl: currentCarolUrl,
           expectedKommentar: baselineKommentar,
-          expectedRegal: baselineRegal
+          expectedRegal: baselineRegal,
+          source: currentSource,
+          doCarol: !!extra.doCarol,
+          doDymo: !!extra.doDymo,
+          doWerkstatt: !!extra.doWerkstatt,
+          teil: extra.teil || (currentNbEntry && currentNbEntry.teil) || '',
+          typ: extra.typ || (currentNbEntry && currentNbEntry.typ) || ''
         });
     }
 
@@ -1375,6 +1800,23 @@
     $('btnDymo').addEventListener('click', function() { enqueue('dymo'); });
     if (btnOpenPc) btnOpenPc.addEventListener('click', function() { enqueue('open'); });
     $('btnCarol').addEventListener('click', function() { enqueue('carol'); });
+    if ($('srcRefurb')) $('srcRefurb').addEventListener('click', function() { pickSource('refurbishment'); });
+    if ($('srcNb')) $('srcNb').addEventListener('click', function() { pickSource('nachbestellung'); });
+    if ($('nbStatusSelect')) $('nbStatusSelect').addEventListener('change', function() {
+      if (nbStatusIgnore) return;
+      var val = String(this.value || '').trim();
+      if (!val) return;
+      saveNbStatus(val);
+    });
+    if ($('nbRegalSelect')) $('nbRegalSelect').addEventListener('change', function() {
+      saveNbRegalValue(String(this.value || '').trim());
+    });
+    if ($('btnNbKomplett')) $('btnNbKomplett').addEventListener('click', function() {
+      saveNbStatus(nbKomplettStatusValue());
+    });
+    if ($('btnNbWerkstatt')) $('btnNbWerkstatt').addEventListener('click', function() {
+      enqueue('werkstatt', { doWerkstatt: true });
+    });
     $('qtyMinus').addEventListener('click', function() {
       var n = parseInt($('dymoCount').value, 10);
       if (isNaN(n) || n < 2) n = 1;
@@ -1388,8 +1830,7 @@
       $('dymoCount').value = String(n);
     });
     commentEl.addEventListener('input', function() {
-      var commentOk = String(commentEl.value || '').trim().length > 0;
-      btnCarol.disabled = !pcOk || !currentStock || !currentCarolUrl || !commentOk;
+      syncActionButtons();
     });
     scanInput.addEventListener('input', function() {
       this.value = String(this.value || '').toUpperCase();
