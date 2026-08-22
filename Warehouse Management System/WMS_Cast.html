@@ -397,7 +397,7 @@
 
     <div class="scan-wrap">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
-      <input class="scan" id="scanInput" placeholder="Stock-ID / Bestellnummer…" autocomplete="off" autocapitalize="characters">
+      <input class="scan" id="scanInput" placeholder="Stock-ID / Bestellnummer / Teilenummer…" autocomplete="off" autocapitalize="characters">
     </div>
     <div class="actions">
       <button type="button" class="btn teal" id="btnLoad">Laden</button>
@@ -405,6 +405,11 @@
       <button type="button" class="btn" id="btnPhoto" title="Foto">📷</button>
     </div>
     <input type="file" id="camFile" accept="image/*" capture="environment" class="hidden">
+
+    <section class="card hidden" id="searchHitsCard">
+      <div class="kicker">Treffer — antippen</div>
+      <div id="searchHits" class="ocr-picks"></div>
+    </section>
 
     <section class="card">
       <div class="kicker">Auftrag</div>
@@ -620,7 +625,7 @@
     }
 
     function looksLikeStock(raw) {
-      return /^[A-Z]{2}\d{4,}$/.test(normalizeStock(raw));
+      return /^[A-Z]{2}\d{3,}/i.test(normalizeStock(raw));
     }
 
     function looksLikeOrder(raw) {
@@ -775,7 +780,41 @@
       setStatus('Getrennt', '#F59E0B');
     }
 
+    function hideSearchHits() {
+      var card = $('searchHitsCard');
+      if (card) card.classList.add('hidden');
+      var box = $('searchHits');
+      if (box) box.innerHTML = '';
+    }
+
+    function showSearchHits(entries) {
+      var card = $('searchHitsCard');
+      var box = $('searchHits');
+      if (!card || !box) return;
+      box.innerHTML = '';
+      var seen = {};
+      var n = 0;
+      (entries || []).forEach(function(e) {
+        var sid = normalizeStock(e.stockId);
+        if (!sid || seen[sid]) return;
+        seen[sid] = true;
+        n += 1;
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ocr-pick';
+        var extra = String(e.orderNumber || e.referenceNumber || '').trim();
+        b.textContent = extra ? (sid + ' · ' + extra) : sid;
+        b.addEventListener('click', function() {
+          hideSearchHits();
+          loadStock(sid, true);
+        });
+        box.appendChild(b);
+      });
+      card.classList.toggle('hidden', !n);
+    }
+
     function renderOrder(res, id) {
+      hideSearchHits();
       currentStock = normalizeStock(id);
       currentCarolUrl = String((res && res.carolUrl) || '');
       var regal = String((res && res.regal) || '').trim();
@@ -804,26 +843,37 @@
       btnCarol.disabled = !pcOk || !currentStock || !currentCarolUrl || !String(commentEl.value || '').trim();
     }
 
-    function loadStock(raw) {
+    function loadStock(raw, skipFallback) {
       var id = normalizeStock(raw || scanInput.value);
       if (!looksLikeStock(id)) {
+        if (!skipFallback && String(raw || '').replace(/\s+/g, '').length >= 4) {
+          searchLikeHud(raw);
+          return;
+        }
         setStatus('Keine gültige Stock-ID', '#f87171');
         beep('err');
         return;
       }
       closeCamNow();
+      hideSearchHits();
+      if (scanInput) scanInput.value = id;
       setBusy(true, 'Lade ' + id + '…');
       google.script.run
         .withSuccessHandler(function(res) {
-          setBusy(false);
           if (res && res.success) {
+            setBusy(false);
             renderOrder(res, id);
             setStatus('Daten für ' + id + ' geladen' + (res.source === 'nachbestellung' ? ' (Nachbestellung)' : ''), '#34D399');
             beep('ok');
-          } else {
-            setStatus((res && res.message) || 'Nicht gefunden', '#f87171');
-            beep('err');
+            return;
           }
+          if (!skipFallback) {
+            searchLikeHud(id, res);
+            return;
+          }
+          setBusy(false);
+          setStatus((res && res.message) || 'Nicht gefunden', '#f87171');
+          beep('err');
         })
         .withFailureHandler(function(err) {
           setBusy(false);
@@ -833,21 +883,66 @@
         .fetchWmsData(id);
     }
 
-    function loadByOrder(query) {
-      var q = normalizeStock(query);
+    function searchBelege(q, prev) {
+      setBusy(true, 'Suche in Belegen…');
+      google.script.run
+        .withSuccessHandler(function(pz) {
+          setBusy(false);
+          var entries = (pz && pz.success && pz.entries) ? pz.entries : [];
+          var stocks = {};
+          for (var i = 0; i < entries.length; i++) {
+            var s = normalizeStock(entries[i].stockId);
+            if (s) stocks[s] = true;
+          }
+          var stockList = Object.keys(stocks);
+          var qNorm = normalizeStock(q);
+          if (stockList.length === 1 && stockList[0] !== qNorm) {
+            setStatus('Gefunden via Belege → ' + stockList[0], '#34D399');
+            loadStock(stockList[0], true);
+            return;
+          }
+          if (stockList.length === 1 && looksLikeStock(stockList[0])) {
+            setStatus('Gefunden via Belege → ' + stockList[0], '#34D399');
+            loadStock(stockList[0], true);
+            return;
+          }
+          if (stockList.length > 1) {
+            setStatus(entries.length + ' Belege — Treffer wählen', '#14B8A6');
+            showSearchHits(entries);
+            beep('ok');
+            return;
+          }
+          setStatus((prev && prev.message) || 'Nicht gefunden', '#f87171');
+          beep('err');
+        })
+        .withFailureHandler(function() {
+          setBusy(false);
+          setStatus((prev && prev.message) || 'Nicht gefunden', '#f87171');
+          beep('err');
+        })
+        .getPackzettelList(q);
+    }
+
+    function searchLikeHud(query, prev) {
+      var q = String(query || '').trim();
       if (!q) return;
       closeCamNow();
-      setBusy(true, 'Suche Bestellnummer ' + q + '…');
+      if (scanInput) scanInput.value = q.toUpperCase();
+      if (q.replace(/\s+/g, '').length < 4) {
+        setBusy(false);
+        setStatus((prev && prev.message) || 'Suchanfrage zu kurz', '#f87171');
+        beep('err');
+        return;
+      }
+      setBusy(true, 'Suche Bestellnummer…');
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.found && res.stockId) {
             setStatus((res.message || 'Gefunden') + ' → ' + res.stockId, '#34D399');
-            loadStock(res.stockId);
+            loadStock(res.stockId, true);
             return;
           }
-          setBusy(false);
-          setStatus((res && res.message) || 'Bestellnummer nicht gefunden', '#f87171');
-          beep('err');
+          searchBelege(q, res || prev);
         })
         .withFailureHandler(function(err) {
           setBusy(false);
@@ -855,6 +950,10 @@
           beep('err');
         })
         .searchByOrderNumber(q);
+    }
+
+    function loadByOrder(query) {
+      searchLikeHud(query);
     }
 
     function loadQuery(raw) {
@@ -865,18 +964,13 @@
         beep('ok');
         return;
       }
-      if (hit.type === 'stock') {
-        loadStock(hit.value);
+      var q = String((hit && hit.value) || raw || '').trim();
+      if (!q) return;
+      if (looksLikeStock(q)) {
+        loadStock(normalizeStock(q));
         return;
       }
-      if (hit.type === 'order') {
-        loadByOrder(hit.value);
-        return;
-      }
-      if (String(raw || '').trim()) {
-        setStatus('Unbekannt: ' + String(raw).trim(), '#f87171');
-        beep('err');
-      }
+      searchLikeHud(q);
     }
 
     function saveOrder() {
@@ -1304,6 +1398,7 @@
         var v = String(scanInput.value || '').trim();
         var hit = classifyScan(v);
         if (hit.type === 'stock' || hit.type === 'order' || hit.type === 'regal') handleScan(v);
+        else if (v.replace(/\s+/g, '').length >= 4) handleScan(v);
       }, 140);
     });
     scanInput.addEventListener('keydown', function(e) {
