@@ -407,7 +407,6 @@
 
   function openWmsCastModal() {
     startCastPcPolling();
-    armCastCarolWindow();
     var modal = document.getElementById('wmsCastModal');
     if (modal) {
       modal.classList.add('open');
@@ -470,10 +469,6 @@
   }
 
   startCastPcPolling();
-  document.addEventListener('pointerdown', function() {
-    if (!castWasConnected || castCarolArmed) return;
-    armCastCarolWindow();
-  }, true);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) pollCastPc();
   });
@@ -6861,6 +6856,8 @@
       if (pendingWarning) {
         setStatus(pendingWarning.msg, pendingWarning.color);
         pendingWarning = null;
+      } else if (res.source === 'nachbestellung') {
+        setStatus('✅ Daten für ' + id + ' geladen (Nachbestellung)!', '#56d364');
       } else {
         setStatus('✅ Daten für ' + id + ' geladen!', '#56d364');
       }
@@ -6979,7 +6976,7 @@
       toggleUI(false);
       setHudBusy(true, 'Suche Bestellnummer…');
       var orderLocal = searchByOrderNumberFromCache(id, refurbCache);
-      if (orderLocal !== null) {
+      if (orderLocal && orderLocal.found) {
         handleOrderNumberSearchResult(orderLocal);
         return;
       }
@@ -6992,7 +6989,7 @@
     setHudBusy(true, 'Scanne Datenbank…');
 
     var fromCache = computeWmsFromCache(id, refurbCache);
-    if (fromCache !== null) {
+    if (fromCache && fromCache.success) {
       applyFetchWmsResult(fromCache, id);
       return;
     }

@@ -528,6 +528,10 @@
     var audioCtx = null;
     var ocrStream = null;
     var ocrBusy = false;
+    var ocrWorker = null;
+    var ocrReady = false;
+    var ocrLoading = false;
+    var ocrWaiters = [];
 
     var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
     if (wmsLink) wmsLink.href = base || '#';
@@ -780,6 +784,7 @@
       baselineRegal = regal;
       stockVal.textContent = currentStock || '—';
       var bits = [];
+      if (res && res.source === 'nachbestellung') bits.push('Nachbestellung');
       if (res && res.markeModel) bits.push(String(res.markeModel).trim());
       bits.push(regal ? ('Aktuell: ' + regal) : 'Kein Regal');
       orderMeta.textContent = bits.join(' · ');
@@ -813,7 +818,7 @@
           setBusy(false);
           if (res && res.success) {
             renderOrder(res, id);
-            setStatus('Daten für ' + id + ' geladen', '#34D399');
+            setStatus('Daten für ' + id + ' geladen' + (res.source === 'nachbestellung' ? ' (Nachbestellung)' : ''), '#34D399');
             beep('ok');
           } else {
             setStatus((res && res.message) || 'Nicht gefunden', '#f87171');
@@ -1005,18 +1010,103 @@
       setTimeout(function() { loadQuery(hit.value); }, 40);
     }
 
-    function runOcrOnImage(source, done) {
-      if (typeof Tesseract === 'undefined' || !Tesseract.recognize) {
-        if (done) done('');
+    function scaleOcrSource(source, done) {
+      var maxSide = 1280;
+      function fromImage(img) {
+        var w = img.naturalWidth || img.videoWidth || img.width;
+        var h = img.naturalHeight || img.videoHeight || img.height;
+        if (!w || !h) { done(source); return; }
+        var scale = Math.min(1, maxSide / Math.max(w, h));
+        var cw = Math.max(1, Math.round(w * scale));
+        var ch = Math.max(1, Math.round(h * scale));
+        if (img.tagName === 'CANVAS' && scale === 1) { done(img); return; }
+        var canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        var ctx = canvas.getContext('2d');
+        if (!ctx) { done(source); return; }
+        ctx.drawImage(img, 0, 0, cw, ch);
+        done(canvas);
+      }
+      if (source && source.tagName === 'CANVAS') {
+        fromImage(source);
         return;
       }
-      Tesseract.recognize(source, 'eng', {
+      if (source && source.tagName === 'VIDEO') {
+        fromImage(source);
+        return;
+      }
+      if (typeof Blob !== 'undefined' && source && typeof source.slice === 'function' && source.type) {
+        var url = URL.createObjectURL(source);
+        var img = new Image();
+        img.onload = function() {
+          URL.revokeObjectURL(url);
+          fromImage(img);
+        };
+        img.onerror = function() {
+          URL.revokeObjectURL(url);
+          done(source);
+        };
+        img.src = url;
+        return;
+      }
+      done(source);
+    }
+
+    function ensureOcr(cb) {
+      if (ocrWorker && ocrReady) { cb(true); return; }
+      ocrWaiters.push(cb);
+      if (ocrLoading) return;
+      if (typeof Tesseract === 'undefined' || !Tesseract.createWorker) {
+        while (ocrWaiters.length) ocrWaiters.shift()(false);
+        return;
+      }
+      ocrLoading = true;
+      Tesseract.createWorker('eng', 1, {
         workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
-        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd.wasm.js',
-        langPath: 'https://tessdata.projectnaptha.com/4.0.0'
-      }).then(function(res) {
-        if (done) done(res && res.data && res.data.text ? res.data.text : '');
-      }).catch(function() { if (done) done(''); });
+        corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core-simd-lstm.wasm.js',
+        langPath: 'https://tessdata.projectnaptha.com/4.0.0_fast',
+        logger: function(m) {
+          if (!m) return;
+          if (m.status === 'recognizing text' && m.progress != null) {
+            setBusy(true, 'Lese Text… ' + Math.round(m.progress * 100) + '%');
+          } else if (camOpen && camMode === 'ocr' && m.status && /loading|initializing/i.test(m.status)) {
+            $('camHint').textContent = 'Text-Scanner wird vorbereitet…';
+          }
+        }
+      }).then(function(w) {
+        return w.setParameters({ tessedit_pageseg_mode: '6' }).then(function() {
+          ocrWorker = w;
+          ocrReady = true;
+          ocrLoading = false;
+          if (camOpen && camMode === 'ocr') $('camHint').textContent = 'Auf den Text halten, dann Foto aufnehmen';
+          while (ocrWaiters.length) ocrWaiters.shift()(true);
+        });
+      }).catch(function() {
+        ocrLoading = false;
+        while (ocrWaiters.length) ocrWaiters.shift()(false);
+      });
+    }
+
+    function runOcrOnImage(source, done) {
+      ensureOcr(function(ok) {
+        function finish(text) { if (done) done(text || ''); }
+        scaleOcrSource(source, function(src) {
+          if (ok && ocrWorker) {
+            ocrWorker.recognize(src).then(function(res) {
+              finish(res && res.data && res.data.text ? res.data.text : '');
+            }).catch(function() { finish(''); });
+            return;
+          }
+          if (typeof Tesseract !== 'undefined' && Tesseract.recognize) {
+            Tesseract.recognize(src, 'eng').then(function(res) {
+              finish(res && res.data && res.data.text ? res.data.text : '');
+            }).catch(function() { finish(''); });
+            return;
+          }
+          finish('');
+        });
+      });
     }
 
     function showOcrResult(text) {
@@ -1096,6 +1186,7 @@
         video.srcObject = stream;
         var play = video.play();
         if (play && play.catch) play.catch(function() {});
+        ensureOcr(function() {});
       }).catch(function() {
         setStatus('Kamera blockiert — Foto nutzen', '#F59E0B');
         camFile.click();

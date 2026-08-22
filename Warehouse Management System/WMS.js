@@ -1490,8 +1490,6 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
   function onOpen() {
     SpreadsheetApp.getUi().createMenu('WMS')
       .addItem('Öffne Warehouse Management System', 'openWMS')
-      .addItem('Öffne Regal Scan', 'openRegalScan')
-      .addItem('Öffne Handy Cast', 'openCast')
       .addToUi();
   }
   
@@ -1683,6 +1681,201 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     return result;
   }
 
+function mapNbHeaderCols_(header, layout) {
+  var cols = {
+    stock: -1,
+    url: -1,
+    typ: -1,
+    teil: -1,
+    artikel: -1,
+    kommentar: -1,
+    status: layout.statusCol - 1,
+    lagerort: layout.lagerortCol - 1
+  };
+  for (var c = 0; c < header.length; c++) {
+    var txt = String(header[c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
+    if (cols.stock < 0 && txt.indexOf("stock") !== -1) cols.stock = c;
+    if (cols.url < 0 && (txt.indexOf("carol") !== -1 || txt.indexOf("url") !== -1 || txt.indexOf("link") !== -1)) cols.url = c;
+    if (cols.typ < 0 && (txt === "typ" || txt.indexOf("artder") !== -1 || txt.indexOf("beschreibung") !== -1)) cols.typ = c;
+    if (cols.artikel < 0 && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
+    if (cols.teil < 0 && (txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1 || txt === "teil")) cols.teil = c;
+    if (cols.kommentar < 0 && (txt.indexOf("kommentar") !== -1 || txt.indexOf("notiz") !== -1 || txt.indexOf("bemerkung") !== -1 || txt.indexOf("anmerkung") !== -1)) cols.kommentar = c;
+  }
+  return cols;
+}
+
+function loadNachbestellungGrid_() {
+  var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
+  var sheet = ss.getSheetByName(NACHBESTELL_TAB);
+  if (!sheet) return null;
+  var layout = findNachbestellungSheetLayout(sheet);
+  var lastRow = Math.max(2, sheet.getLastRow());
+  var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
+  var data = sheet.getRange(1, 1, lastRow, lastCol).getValues();
+  var headerIdx = layout.headerRow - 1;
+  var header = data[headerIdx];
+  var cols = mapNbHeaderCols_(header, layout);
+  if (cols.stock < 0) {
+    for (var bc = 0; bc < header.length; bc++) {
+      var sample = String(data[headerIdx + 1] ? data[headerIdx + 1][bc] : "").trim();
+      if (/^[A-Z]{2}\d{4,}/.test(sample)) { cols.stock = bc; break; }
+    }
+  }
+  if (cols.stock < 0) return null;
+  return { ss: ss, sheet: sheet, layout: layout, lastCol: lastCol, data: data, headerIdx: headerIdx, cols: cols };
+}
+
+function getNbCarolUrl_(sheet, row, urlCol1) {
+  if (!sheet || !(row > 0) || !(urlCol1 > 0)) return "";
+  var cell = sheet.getRange(row, urlCol1);
+  return carolUrlFromSheetParts_(cell.getRichTextValue(), cell.getFormula(), cell.getValue());
+}
+
+function searchNachbestellungByQuery_(query) {
+  query = String(query || "").replace(/\s+/g, "").toUpperCase();
+  if (!query || query.length < 4) return { found: false };
+  var cleanQuery = query.replace(/^N4P/i, "");
+  var grid = loadNachbestellungGrid_();
+  if (!grid) return { found: false };
+  var cols = grid.cols;
+  var openHit = null;
+  var anyHit = null;
+  for (var i = grid.headerIdx + 1; i < grid.data.length; i++) {
+    var row = grid.data[i];
+    var stockId = normalizeStockId(row[cols.stock]);
+    if (!stockId) continue;
+    var closed = nachbestellungIsClosedStatus(cols.status >= 0 ? row[cols.status] : "");
+    var hay = "";
+    for (var c = 0; c < row.length; c++) {
+      hay += String(row[c] || "").replace(/\s+/g, "").toUpperCase();
+    }
+    var hit = stockId === query || hay.indexOf(query) !== -1 || (cleanQuery.length >= 4 && hay.indexOf(cleanQuery) !== -1);
+    if (!hit) continue;
+    var pack = { found: true, stockId: stockId, message: "Gefunden in Nachbestellung", source: "nachbestellung" };
+    if (!closed && !openHit) openHit = pack;
+    if (!anyHit) anyHit = pack;
+  }
+  return openHit || anyHit || { found: false };
+}
+
+function fetchWmsDataFromNachbestellung_(stockId) {
+  var want = normalizeStockId(stockId);
+  if (!want) return { success: false };
+  var grid = loadNachbestellungGrid_();
+  if (!grid) return { success: false };
+  var cols = grid.cols;
+  var openRows = [];
+  var anyRows = [];
+  for (var i = grid.headerIdx + 1; i < grid.data.length; i++) {
+    if (!cellMatchesStockId(grid.data[i][cols.stock], want)) continue;
+    var rec = { idx: i, row: i + 1, data: grid.data[i] };
+    anyRows.push(rec);
+    if (!nachbestellungIsClosedStatus(cols.status >= 0 ? grid.data[i][cols.status] : "")) openRows.push(rec);
+  }
+  var use = openRows.length ? openRows : anyRows;
+  if (!use.length) return { success: false };
+
+  var typs = [];
+  var artikels = [];
+  var teils = [];
+  var comments = [];
+  var regal = "";
+  var status = "";
+  var carolUrl = "";
+  var u;
+  for (u = 0; u < use.length; u++) {
+    var d = use[u].data;
+    if (cols.typ >= 0 && String(d[cols.typ] || "").trim()) typs.push(String(d[cols.typ]).trim());
+    if (cols.artikel >= 0 && String(d[cols.artikel] || "").trim()) artikels.push(String(d[cols.artikel]).trim());
+    if (cols.teil >= 0 && String(d[cols.teil] || "").trim()) teils.push(String(d[cols.teil]).trim());
+    if (cols.kommentar >= 0 && String(d[cols.kommentar] || "").trim()) comments.push(String(d[cols.kommentar]).trim());
+    if (!regal && cols.lagerort >= 0) {
+      var rk = normalizeRegalKeyForCount(d[cols.lagerort]);
+      regal = rk || nachbestellungRegalUiFromCell(d[cols.lagerort]);
+    }
+    if (!status && cols.status >= 0) status = String(d[cols.status] || "").trim();
+    if (!carolUrl && cols.url >= 0) carolUrl = getNbCarolUrl_(grid.sheet, use[u].row, cols.url + 1);
+  }
+  var commentText = comments.length ? comments.join("\n") : teils.join("\n");
+  return {
+    success: true,
+    source: "nachbestellung",
+    carolUrl: carolUrl,
+    schaeden: typs.join("\n"),
+    kommBestellung: artikels.join("\n"),
+    kommAnlieferung: commentText,
+    status: status,
+    regal: regal,
+    reifenStatus: "",
+    markeModel: ""
+  };
+}
+
+function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKommentar, expectedRegal) {
+  var want = normalizeStockId(stockId);
+  if (!want) return null;
+  var grid = loadNachbestellungGrid_();
+  if (!grid) return null;
+  var cols = grid.cols;
+  var openRows = [];
+  var anyRows = [];
+  var r;
+  for (r = grid.headerIdx + 1; r < grid.data.length; r++) {
+    if (!cellMatchesStockId(grid.data[r][cols.stock], want)) continue;
+    var rec = { idx: r, row: r + 1, data: grid.data[r] };
+    anyRows.push(rec);
+    if (!nachbestellungIsClosedStatus(cols.status >= 0 ? grid.data[r][cols.status] : "")) openRows.push(rec);
+  }
+  var use = openRows.length ? openRows : anyRows;
+  if (!use.length) return null;
+
+  var currentComments = [];
+  var currentRegal = "";
+  for (r = 0; r < use.length; r++) {
+    var d0 = use[r].data;
+    if (cols.kommentar >= 0 && String(d0[cols.kommentar] || "").trim()) currentComments.push(String(d0[cols.kommentar]).trim());
+    else if (cols.teil >= 0 && String(d0[cols.teil] || "").trim()) currentComments.push(String(d0[cols.teil]).trim());
+    if (!currentRegal && cols.lagerort >= 0) {
+      currentRegal = normalizeRegalKeyForCount(d0[cols.lagerort]) || nachbestellungRegalUiFromCell(d0[cols.lagerort]);
+    }
+  }
+  var joinedComment = currentComments.join("\n");
+  var sheetRegalKey = normalizeRegalKeyForCount(currentRegal) || String(currentRegal || "").trim();
+  var expRegalKey = normalizeRegalKeyForCount(expectedRegal) || String(expectedRegal || "").trim();
+  if (String(joinedComment || "") !== String(expectedKommentar == null ? joinedComment : expectedKommentar)
+      || sheetRegalKey !== expRegalKey) {
+    return buildConcurrencyConflict_(joinedComment, currentRegal);
+  }
+
+  var regalNorm = String(regal || "").trim();
+  if (regalNorm) {
+    var nbRegal = assignRegalToNachbestellungen_(want, regalNorm);
+    if (nbRegal && nbRegal.success === false) {
+      return { success: false, message: nbRegal.message || "Nachbestellung Regal fehlgeschlagen" };
+    }
+  }
+
+  if (cols.kommentar >= 0 && text != null) {
+    for (r = 0; r < use.length; r++) {
+      grid.sheet.getRange(use[r].row, cols.kommentar + 1).setValue(text);
+    }
+    SpreadsheetApp.flush();
+  }
+
+  var msg = regalNorm
+    ? "Nachbestellung gespeichert."
+    : "Nachbestellung gespeichert.";
+  if (regalNorm) msg = "Nachbestellung: Regal gespeichert.";
+  if (cols.kommentar >= 0) msg = regalNorm ? "Nachbestellung: Kommentar und Regal gespeichert." : "Nachbestellung: Kommentar gespeichert.";
+  return {
+    success: true,
+    message: msg,
+    savedKommentar: text,
+    savedRegal: regalNorm || currentRegal,
+    source: "nachbestellung"
+  };
+}
+
   function searchByOrderNumber(query) {
     try {
       query = String(query || "").replace(/\s+/g, '').toUpperCase();
@@ -1713,7 +1906,10 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
       var gmailHit = searchOrderNumberInGmailLookup_(query);
       if (gmailHit && gmailHit.found && gmailHit.stockId) return gmailHit;
 
-      return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet noch in Gmail Lookup gefunden." };
+      var nbHit = searchNachbestellungByQuery_(query);
+      if (nbHit && nbHit.found && nbHit.stockId) return nbHit;
+
+      return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet, Gmail Lookup noch in Nachbestellung gefunden." };
     } catch (err) {
       return { found: false, message: "Fehler: " + err.message };
     }
@@ -1743,6 +1939,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
       if (hitRow > 0) {
         var rowData = sheet.getRange(hitRow, 1, 1, 30).getValues()[0];
         result.success = true;
+        result.source = "refurbishment";
         result.carolUrl = getSheetCarolUrl_(sheet, hitRow) || String(rowData[2] || "").trim();
         result.schaeden = String(rowData[22] || "");
         result.kommBestellung = String(rowData[23] || "");
@@ -1751,10 +1948,13 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
         result.regal = String(rowData[27] || "");
         result.reifenStatus = String(rowData[29] || "");
         result.markeModel = String(rowData[12] || "");
-      } else {
-        result.message = "Stock-ID in Refurbisment List nicht gefunden!";
+        return result;
       }
-  
+
+      var nb = fetchWmsDataFromNachbestellung_(stockId);
+      if (nb && nb.success) return nb;
+
+      result.message = "Stock-ID weder in Refurbisment List noch in Nachbestellung gefunden!";
       return result;
     } catch (err) {
       return { success: false, message: err.message };
@@ -2684,6 +2884,8 @@ function getRefurbishmentCachePayload() {
           };
         }
       }
+      var nbSave = saveNachbestellungKommentarUndRegal_(stockId, text, "", expectedKommentar, expectedRegal);
+      if (nbSave) return nbSave;
       return { success: false, message: "Stock-ID nicht gefunden!" };
     });
   }
@@ -2721,6 +2923,8 @@ function getRefurbishmentCachePayload() {
           };
         }
       }
+      var nbSave = saveNachbestellungKommentarUndRegal_(stockId, expectedKommentar, regal, expectedKommentar, expectedRegal);
+      if (nbSave) return nbSave;
       return { success: false, message: "Stock-ID nicht gefunden!" };
     });
   }
@@ -3010,6 +3214,8 @@ function getRefurbishmentCachePayload() {
         }
       }
 
+      var nbSave = saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKommentar, expectedRegal);
+      if (nbSave) return nbSave;
       return { success: false, message: "Stock-ID nicht gefunden!" };
     });
   }
