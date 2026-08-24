@@ -1165,12 +1165,15 @@
     } catch (e) {}
   }
 
+  var wmsSkipSearchFocusMinimize = 0;
+
   function focusSearchBar(opts) {
     opts = opts || {};
     var search = document.getElementById('searchInput');
     if (!search) return;
     if (opts.clear) search.value = '';
     var delay = typeof opts.delay === 'number' ? opts.delay : 30;
+    wmsSkipSearchFocusMinimize += 1;
     setTimeout(function() {
       try {
         search.focus({ preventScroll: true });
@@ -1178,6 +1181,9 @@
       } catch (e) {
         try { search.focus(); } catch (e2) {}
       }
+      setTimeout(function() {
+        wmsSkipSearchFocusMinimize = Math.max(0, wmsSkipSearchFocusMinimize - 1);
+      }, 80);
     }, delay);
   }
 
@@ -2641,13 +2647,17 @@
     if (!stockId) return;
     if (opts.clearHud && typeof resetWmsHudForNextOrder === 'function') {
       var keep = stockId;
-      resetWmsHudForNextOrder('');
+      resetWmsHudForNextOrder('', { skipFocus: true });
       var inp = document.getElementById('searchInput');
       if (inp) inp.value = keep;
     }
     if (typeof setHudBusy === 'function') setHudBusy(false);
     toggleUI(true);
+    wmsSkipSearchFocusMinimize += 1;
     openNbForStock(stockId);
+    setTimeout(function() {
+      wmsSkipSearchFocusMinimize = Math.max(0, wmsSkipSearchFocusMinimize - 1);
+    }, 500);
     setStatus(opts.status || ('📦 Nachbestellung ' + stockId + ' — nur im Nachbestellung-Fenster'), '#F27420');
   }
 
@@ -7027,7 +7037,8 @@
     wrap.style.display = show ? 'flex' : 'none';
   }
 
-  function resetWmsHudForNextOrder(statusMsg) {
+  function resetWmsHudForNextOrder(statusMsg, opts) {
+    opts = opts || {};
     if (stockLockHeldId) {
       releaseStockEditLockClient(stockLockHeldId);
     } else {
@@ -7078,7 +7089,7 @@
     if (search) {
       search.value = '';
     }
-    focusSearchBar({ clear: true, delay: 40 });
+    if (!opts.skipFocus) focusSearchBar({ clear: true, delay: 40 });
     toggleUI(false);
     if (statusMsg) setStatus(statusMsg, '#56d364');
     else setStatus('Bereit für nächsten Auftrag.', '#3FA0DB');
@@ -8079,6 +8090,7 @@
     var NAV_CLEARANCE = 100;
     var SNAP_EDGE = 60;
     var SNAP_CORNER = 120;
+    var suppressAutoMinUntil = 0;
 
     function warn() { try { console.warn.apply(console, ['[WMS]'].concat([].slice.call(arguments))); } catch(e) {} }
     function lsGet(k, fb) { try { var v = localStorage.getItem(k); return v != null ? JSON.parse(v) : fb; } catch(e) { return fb; } }
@@ -8655,6 +8667,7 @@
             openWindow(cfg);
             opened[cfg.id] = cfg;
             delete active[cfg.id];
+            suppressAutoMinUntil = Date.now() + 800;
             updateAll();
           } catch(e3) { warn('open post-hook failed: ' + cfg.id, e3); }
           return r;
@@ -9031,6 +9044,8 @@
       var inp = byId('searchInput');
       if (!inp) return;
       inp.addEventListener('focus', function() {
+        if (wmsSkipSearchFocusMinimize) return;
+        if (Date.now() < suppressAutoMinUntil) return;
         var openIds = Object.keys(opened);
         if (!openIds.length) return;
         for (var i = 0; i < openIds.length; i++) {
