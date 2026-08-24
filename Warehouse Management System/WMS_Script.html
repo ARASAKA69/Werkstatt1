@@ -1266,65 +1266,185 @@
     loadData();
   }
 
+  function wmsElIsOpen(id) {
+    var el = document.getElementById(id);
+    return !!(el && el.classList.contains('open'));
+  }
+
   function handleWmsEscapeKey(e) {
     if (!e) return;
     var isEsc = (e.key === 'Escape' || e.keyCode === 27);
     var isEnter = (e.key === 'Enter' || e.keyCode === 13);
     if (!isEsc && !isEnter) return;
 
-    var oldRegal = document.getElementById('oldRegalModal');
-    if (oldRegal && oldRegal.classList.contains('open') && (isEsc || isEnter)) {
+    function consumeEsc() {
       e.preventDefault();
       e.stopPropagation();
+    }
+
+    var oldRegal = document.getElementById('oldRegalModal');
+    if (oldRegal && oldRegal.classList.contains('open') && (isEsc || isEnter)) {
+      consumeEsc();
       closeOldRegalModal();
       return;
     }
     if (!isEsc) return;
 
-    var carolPrompt = document.getElementById('castCarolPrompt');
-    if (carolPrompt && !carolPrompt.hidden) {
-      e.preventDefault();
-      dismissCastCarolPrompt();
-      return;
-    }
-    var castModal = document.getElementById('wmsCastModal');
-    if (castModal && castModal.classList.contains('open')) {
-      e.preventDefault();
-      closeWmsCastModal();
+    if (anliefSuggest && commentEditor && document.activeElement === commentEditor) {
+      consumeEsc();
+      clearAnlieferungGhost();
       return;
     }
 
-    var cl = document.getElementById('wmsChangelogModal');
-    if (cl && cl.classList.contains('open')) {
-      e.preventDefault();
+    var langPanel = document.getElementById('wmsLangPanel');
+    if (langPanel && !langPanel.hidden) {
+      consumeEsc();
+      langPanel.hidden = true;
+      var langDd = document.getElementById('wmsLangDd');
+      var langTrig = document.getElementById('wmsLangTrigger');
+      if (langDd) langDd.classList.remove('is-open');
+      if (langTrig) langTrig.setAttribute('aria-expanded', 'false');
+      return;
+    }
+
+    var menuPanel = document.getElementById('wmsMainMenuPanel');
+    if (menuPanel && !menuPanel.hidden) {
+      consumeEsc();
+      closeWmsMainMenu();
+      return;
+    }
+
+    if (typeof shelfDropdownOpen !== 'undefined' && shelfDropdownOpen) {
+      consumeEsc();
+      closeShelfDd();
+      return;
+    }
+
+    if (window.wmsStandalone && typeof window.wmsStandalone.closePillContext === 'function') {
+      var pillMenu = document.querySelector('.wms-context-menu');
+      if (pillMenu) {
+        consumeEsc();
+        window.wmsStandalone.closePillContext();
+        return;
+      }
+    }
+
+    var nbAc = document.getElementById('nbAutocompleteList');
+    if (nbAc && nbAc.style.display === 'block') {
+      consumeEsc();
+      closeNbAutocomplete();
+      return;
+    }
+    var rfAc = document.getElementById('reifenAutocompleteList');
+    if (rfAc && rfAc.style.display === 'block') {
+      consumeEsc();
+      closeReifenAutocomplete();
+      return;
+    }
+
+    if (wmsElIsOpen('reifenQtyConfirmModal')) {
+      consumeEsc();
+      confirmReifenQty(false);
+      return;
+    }
+    if (wmsElIsOpen('reifenConfirmModal')) {
+      consumeEsc();
+      closeReifenConfirm();
+      return;
+    }
+    if (wmsElIsOpen('wssFetchWarnModal')) {
+      consumeEsc();
+      closeWssFetchWarn();
+      return;
+    }
+    if (wmsElIsOpen('kommentarVerlaufModal')) {
+      consumeEsc();
+      closeKommentarVerlauf();
+      return;
+    }
+    if (wmsElIsOpen('wmsShortcutsModal')) {
+      consumeEsc();
+      closeWmsShortcutsModal();
+      return;
+    }
+    if (wmsElIsOpen('nbChooseModal')) {
+      consumeEsc();
+      closeNbChooser();
+      return;
+    }
+
+    var carolPrompt = document.getElementById('castCarolPrompt');
+    if (carolPrompt && !carolPrompt.hidden) {
+      consumeEsc();
+      dismissCastCarolPrompt();
+      return;
+    }
+    if (wmsElIsOpen('wmsCastModal')) {
+      consumeEsc();
+      closeWmsCastModal();
+      return;
+    }
+    if (wmsElIsOpen('wmsChangelogModal')) {
+      consumeEsc();
       closeWmsChangelogModal();
       return;
     }
     if (nbKomplettPending) {
-      e.preventDefault();
+      consumeEsc();
       cancelNbKomplettPending();
       return;
     }
     var regal = document.getElementById('regalScanOverlay');
     if (regal && regal.classList.contains('open')) {
-      e.preventDefault();
+      consumeEsc();
       closeRegalScan();
       focusSearchBar();
       return;
     }
     var busy = document.getElementById('hudBusyOverlay');
     if (busy && busy.classList.contains('open')) {
-      e.preventDefault();
+      consumeEsc();
       setHudBusy(false);
       focusSearchBar();
       return;
     }
     var lock = document.getElementById('stockLockOverlay');
     if (lock && lock.classList.contains('open')) {
-      e.preventDefault();
+      consumeEsc();
       dismissStockLockBlock();
       focusSearchBar();
       return;
+    }
+
+    var ai = document.getElementById('aiChatModal');
+    if (ai && ai.classList.contains('open')) {
+      consumeEsc();
+      closeAiChat();
+      return;
+    }
+
+    if (window.wmsStandalone && typeof window.wmsStandalone.dismissTopWindow === 'function') {
+      if (window.wmsStandalone.dismissTopWindow()) {
+        consumeEsc();
+        return;
+      }
+    }
+
+    var fallbackWindows = [
+      { id: 'wssModal', fn: closeWssModal },
+      { id: 'wssEinbuchenModal', fn: closeWssEinbuchenModal },
+      { id: 'reifenModal', fn: minimizeReifenModal },
+      { id: 'raModal', fn: minimizeRaModal },
+      { id: 'nbModal', fn: minimizeNbModal },
+      { id: 'pzModal', fn: minimizePzModal },
+      { id: 'overviewModal', fn: minimizeStockOverview }
+    ];
+    for (var wi = 0; wi < fallbackWindows.length; wi++) {
+      if (wmsElIsOpen(fallbackWindows[wi].id)) {
+        consumeEsc();
+        try { fallbackWindows[wi].fn(); } catch (errW) {}
+        return;
+      }
     }
   }
   document.addEventListener('keydown', handleWmsEscapeKey, true);
@@ -2575,6 +2695,7 @@
         if(e.regal) meta += '<span><b>Lagerort:</b> ' + escapeHtml(e.regal) + '</span>';
         if(artikel && artikel.toLowerCase() !== teil.toLowerCase()) meta += '<span><b>Artikel:</b> ' + escapeHtml(artikel) + '</span>';
         if(e.date) meta += '<span><b>Datum:</b> ' + escapeHtml(e.date) + '</span>';
+        if(e.kommentar) meta += '<span><b>Kommentar:</b> ' + escapeHtml(e.kommentar) + '</span>';
         html += '<div class="nb-choose-item' + (e.closed ? ' is-closed' : '') + '">'
           + '<div class="nb-choose-item-top">'
           +   '<span class="nb-choose-item-typ">' + escapeHtml(e.typ || desc || 'Nachbestellung') + '</span>'
@@ -2715,6 +2836,24 @@
     return '';
   }
 
+  function nbIsTeilweiseStatus(status) {
+    return String(status || '').toLowerCase() === 'teilweise angeliefert';
+  }
+
+  function nbCommentPreviewHtml(text) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return '';
+    if (t.length > 90) t = t.slice(0, 90) + '…';
+    return '<div class="nb-row-comment">' + escapeHtml(t) + '</div>';
+  }
+
+  function nbSyncCommentHighlight(index, status) {
+    var wrap = document.getElementById('nb-comment-wrap-' + index);
+    if (!wrap) return;
+    if (nbIsTeilweiseStatus(status)) wrap.classList.add('is-teilweise');
+    else wrap.classList.remove('is-teilweise');
+  }
+
   function nbNormalizeRegalCountKey(val) {
     var s = String(val || "").trim().replace(/,/g, ".");
     if(!s) return "";
@@ -2795,7 +2934,8 @@
       var e = entries[i];
       var rowStyle = getNbTypStyle(e.typ);
       var typColor = getNbTypColor(e.typ);
-      var showNbRegal = String(e.status || '').toLowerCase() === 'teilweise angeliefert';
+      var showNbRegal = nbIsTeilweiseStatus(e.status);
+      var kommText = String(e.kommentar || '');
       var showNbVasold = /\bwss\b/i.test(String(e.teil || ''));
       var showNbGummiInVasold = /gummi/i.test(String(e.teil || ''));
       var nbVasoldHtml = '';
@@ -2818,7 +2958,7 @@
         + '<td style="' + typColor + '">' + escapeHtml(e.typ) + '</td>'
         + '<td>' + escapeHtml(e.teil) + '</td>'
         + '<td>' + escapeHtml(e.artikel) + '</td>'
-        + '<td style="font-weight:700;">' + escapeHtml(e.status || '-') + '</td>'
+        + '<td style="font-weight:700;">' + escapeHtml(e.status || '-') + nbCommentPreviewHtml(kommText) + '</td>'
         + '<td style="text-align:right;"><button type="button" onclick="openNbInWms(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:12px;padding:10px 16px;font-size:15px;font-weight:800;cursor:pointer;">WMS</button></td>'
         + '</tr>';
 
@@ -2835,6 +2975,11 @@
         +   '<div class="nb-detail-box"><div class="nb-detail-lbl">Entry-ID</div>'
         +     '<div class="nb-detail-val nb-detail-val--mono">' + escapeHtml(e.entryId || '-') + '</div>'
         +   '</div>'
+        + '</div>'
+        + '<div class="nb-detail-box nb-box-comment' + (showNbRegal ? ' is-teilweise' : '') + '" id="nb-comment-wrap-' + i + '">'
+        +   '<div class="nb-detail-lbl">Kommentar — welche Teile schon da</div>'
+        +   '<textarea class="nb-edit-input nb-comment-input" id="nb-comment-' + i + '" rows="3" placeholder="z.B. Ölfilter da, Dichtung fehlt noch…" onclick="event.stopPropagation();">' + escapeHtml(kommText) + '</textarea>'
+        +   '<button type="button" class="nb-save-btn" id="nb-comment-btn-' + i + '" onclick="saveNbKommentar(event,' + e.row + ',' + i + ')">Kommentar speichern</button>'
         + '</div>'
         + '<div class="nb-detail-actions">'
         +   '<div class="nb-detail-box ' + getNbStatusClass(e.status) + '"><div class="nb-detail-lbl">Status ändern</div>'
@@ -3366,11 +3511,21 @@
         var box = sel ? sel.closest('.nb-detail-box') : null;
         if (box) { box.className = 'nb-detail-box ' + getNbStatusClass(value); }
         var regWrap = document.getElementById('nb-regal-wrap-' + index);
-        if (regWrap) regWrap.style.display = String(value || '').toLowerCase() === 'teilweise angeliefert' ? '' : 'none';
+        if (regWrap) regWrap.style.display = nbIsTeilweiseStatus(value) ? '' : 'none';
+        nbSyncCommentHighlight(index, value);
         var tbNb = document.getElementById('nbTableBody');
         if (tbNb && tbNb.children[2 * index]) {
           var cells = tbNb.children[2 * index].querySelectorAll('td');
-          if (cells.length > 6) cells[6].textContent = value;
+          if (cells.length > 6) {
+            var existingKomm = cells[6].querySelector('.nb-row-comment');
+            cells[6].innerHTML = escapeHtml(value) + (existingKomm ? existingKomm.outerHTML : nbCommentPreviewHtml(nbEnt.kommentar));
+          }
+        }
+        if (nbIsTeilweiseStatus(value)) {
+          var taTeil = document.getElementById('nb-comment-' + index);
+          if (taTeil && !String(taTeil.value || '').trim()) {
+            setTimeout(function() { try { taTeil.focus(); } catch (eF) {} }, 80);
+          }
         }
         if (btn && nbIsKomplettStatus(value)) btn.remove();
         var didDymo = false;
@@ -3378,7 +3533,8 @@
           didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
         }
         if (!didDymo) {
-          if (badge) badge.innerText = res.message || 'Gespeichert!';
+          var hintTeil = nbIsTeilweiseStatus(value) && document.getElementById('nb-comment-' + index) && !String((document.getElementById('nb-comment-' + index).value || '')).trim();
+          if (badge) badge.innerText = hintTeil ? 'Teilweise — bitte eintragen, welche Teile schon da sind' : (res.message || 'Gespeichert!');
         }
         if (res.printB64) {
           sendWerkstattauftragPrint(res.printB64, badge, null);
@@ -3438,6 +3594,50 @@
       if(sel) { sel.disabled = false; sel.style.borderColor = '#f85149'; }
       if(badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
     }).updateNachbestellung(sheetRow, 'regal', val, nbEnt.stockId || '', nbEnt.entryId || '');
+  }
+
+  function saveNbKommentar(event, sheetRow, index) {
+    if (event) { event.stopPropagation(); event.preventDefault(); }
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    var ta = document.getElementById('nb-comment-' + index);
+    var btn = document.getElementById('nb-comment-btn-' + index);
+    var val = ta ? String(ta.value || '') : '';
+    if (ta) ta.disabled = true;
+    if (btn) btn.disabled = true;
+    var badge = document.getElementById('nbTotalBadge');
+    if (badge) badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere Kommentar…</span>';
+    google.script.run.withSuccessHandler(function(res) {
+      if (ta) ta.disabled = false;
+      if (btn) btn.disabled = false;
+      if (res && res.success) {
+        wmsBeep('ok');
+        if (badge) badge.style.color = '';
+        if (ta) { ta.style.borderColor = '#56d364'; setTimeout(function() { ta.style.borderColor = ''; }, 2500); }
+        for (var k = 0; k < nbAllEntries.length; k++) {
+          if (nbAllEntries[k].row === sheetRow) { nbAllEntries[k].kommentar = val; break; }
+        }
+        if (nbDisplayEntries && nbDisplayEntries[index]) nbDisplayEntries[index].kommentar = val;
+        var tbNbK = document.getElementById('nbTableBody');
+        if (tbNbK && tbNbK.children[2 * index]) {
+          var cellsK = tbNbK.children[2 * index].querySelectorAll('td');
+          if (cellsK.length > 6) {
+            var statusTxt = (nbDisplayEntries[index] && nbDisplayEntries[index].status) || (nbEnt.status || '');
+            cellsK[6].innerHTML = escapeHtml(statusTxt) + nbCommentPreviewHtml(val);
+          }
+        }
+        if (badge) badge.innerText = res.message || 'Kommentar gespeichert!';
+        setTimeout(function() { if (badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
+      } else {
+        wmsBeep('err');
+        if (ta) ta.style.borderColor = '#f85149';
+        if (badge) { badge.innerText = (res && res.message) || 'Fehler'; badge.style.color = '#f85149'; }
+      }
+    }).withFailureHandler(function(err) {
+      wmsBeep('err');
+      if (ta) { ta.disabled = false; ta.style.borderColor = '#f85149'; }
+      if (btn) btn.disabled = false;
+      if (badge) badge.innerText = 'Fehler: ' + (err.message || String(err));
+    }).updateNachbestellung(sheetRow, 'kommentar', val, nbEnt.stockId || '', nbEnt.entryId || '');
   }
 
   function refreshNbModal() {
@@ -8406,6 +8606,34 @@
       }
     }
 
+    function dismissTopWindow() {
+      var best = null;
+      var bestZ = -1;
+      function consider(cfg) {
+        if (!cfg) return;
+        var modal = byId(cfg.modalId);
+        if (!modal || !modal.classList.contains('open')) return;
+        var z = parseInt(modal.style.zIndex, 10);
+        if (isNaN(z)) z = 0;
+        if (!best || z >= bestZ) {
+          bestZ = z;
+          best = cfg;
+        }
+      }
+      var openIds = Object.keys(opened);
+      var oi;
+      for (oi = 0; oi < openIds.length; oi++) consider(opened[openIds[oi]]);
+      if (!best) {
+        for (oi = 0; oi < winConfigs.length; oi++) consider(winConfigs[oi]);
+      }
+      if (!best) return false;
+      var fnName = best.minFn || best.closeFn;
+      var fn = fnName && window[fnName];
+      if (typeof fn !== 'function') return false;
+      try { fn(); } catch (errD) { warn('dismissTopWindow failed for ' + best.id, errD); return false; }
+      return true;
+    }
+
     function updateAll() {
       renderTaskbar();
       updateMenuBadge();
@@ -8851,6 +9079,8 @@
 
     window.wmsStandalone = {
       minimizeAll: minimizeAll,
+      dismissTopWindow: dismissTopWindow,
+      closePillContext: closePillContext,
       openWindow: function(id) {
         for (var i = 0; i < winConfigs.length; i++)
           if (winConfigs[i].id === id && winConfigs[i].openFn) {
@@ -8932,7 +9162,7 @@
         '- Du kannst Änderungen im WMS ausführen, indem du die bereitgestellten Funktionen (Tools) aufrufst.',
         '- Wenn der Nutzer eine Änderung oder ein To-do beschreibt (z.B. Kommentar ergänzen, Status setzen, einlagern, Auftrag beenden, Reifen verbuchen), rufe die passende Funktion mit exakten Parametern auf.',
         '- Verwende ausschließlich Stock-IDs, Regale und Status, die in den LIVE-DATEN vorkommen. Erfinde niemals eine Stock-ID.',
-        '- Für updateNachbestellung ist feld eines von: status, regal, teil, artikel. Der Wert für status MUSS aus "ERLAUBTE NACHBESTELLUNG-STATUS" stammen.',
+        '- Für updateNachbestellung ist feld eines von: status, regal, teil, artikel, kommentar. Der Wert für status MUSS aus "ERLAUBTE NACHBESTELLUNG-STATUS" stammen. feld=kommentar schreibt in Spalte P (welche Teile bei teilweise angeliefert schon da sind).',
         '- Gibt es zu einer Stock-ID mehrere offene Nachbestell-Positionen, gib zusätzlich artikelNr mit oder frage den Nutzer, welche Position gemeint ist.',
         '- Für processReifenStock muss tabName ein Wert aus "REIFEN-TABELLENBLÄTTER" sein.',
         '- Jede Aktion wird dem Nutzer VOR der Ausführung zur Bestätigung angezeigt; er kann ablehnen. Führe nur aus, was der Nutzer möchte. Bei Unklarheit frage zuerst nach, statt zu raten.',
@@ -9307,10 +9537,10 @@
     },
     {
       name: 'updateNachbestellung',
-      description: 'Ändert ein Feld einer offenen Nachbestellung. feld ist eines von status, regal, teil, artikel. Bei feld=status muss der Wert aus der Liste ERLAUBTE NACHBESTELLUNG-STATUS stammen.',
+      description: 'Ändert ein Feld einer offenen Nachbestellung. feld ist eines von status, regal, teil, artikel, kommentar. Bei feld=status muss der Wert aus der Liste ERLAUBTE NACHBESTELLUNG-STATUS stammen. feld=kommentar speichert den Hinweis welche Teile schon da sind (Sheet-Spalte P, pro Entry-ID).',
       parameters: { type: 'OBJECT', properties: {
         stockId: { type: 'STRING', description: 'Stock-ID der Nachbestellung' },
-        feld: { type: 'STRING', enum: ['status', 'regal', 'teil', 'artikel'], description: 'Das zu ändernde Feld' },
+        feld: { type: 'STRING', enum: ['status', 'regal', 'teil', 'artikel', 'kommentar'], description: 'Das zu ändernde Feld' },
         wert: { type: 'STRING', description: 'Der neue Wert' },
         artikelNr: { type: 'STRING', description: 'Optional: Artikel-Nr zur Unterscheidung, falls mehrere offene Positionen dieselbe Stock-ID haben' }
       }, required: ['stockId', 'feld', 'wert'] }

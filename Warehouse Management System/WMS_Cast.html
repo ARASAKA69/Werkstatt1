@@ -232,6 +232,10 @@
       outline: none;
     }
     .comment:focus { border-color: var(--color-ring); }
+    .comment.is-teilweise {
+      border-color: rgba(242, 116, 32, 0.55);
+      box-shadow: 0 0 0 3px rgba(242, 116, 32, 0.12);
+    }
     .shelf {
       width: 100%;
       padding: 0.85rem;
@@ -476,7 +480,7 @@
     </section>
 
     <section class="card stack">
-      <div class="kicker">Kommentar</div>
+      <div class="kicker" id="commentKicker">Kommentar</div>
       <textarea class="comment" id="commentEl" placeholder="Notizen…"></textarea>
       <div id="refurbRegalBlock">
         <div class="kicker">Regal</div>
@@ -1115,6 +1119,14 @@
       fillNbRegalSelect(currentNbEntry ? currentNbEntry.regal : '');
       var isTeil = currentNbEntry && String(currentNbEntry.status || '').toLowerCase() === 'teilweise angeliefert';
       if (regalWrap) regalWrap.classList.toggle('hidden', !isTeil);
+      var kommKick = $('commentKicker');
+      if (kommKick) kommKick.textContent = isTeil ? 'Kommentar (welche Teile schon da)' : 'Kommentar';
+      if (commentEl) {
+        commentEl.value = currentNbEntry ? String(currentNbEntry.kommentar || '') : '';
+        commentEl.placeholder = isTeil ? 'z.B. Ölfilter da, Dichtung fehlt noch…' : 'Notizen…';
+        commentEl.classList.toggle('is-teilweise', !!isTeil);
+      }
+      baselineKommentar = commentEl ? String(commentEl.value || '') : '';
       var showKomplett = currentNbEntry && !nbIsExitOrder(currentNbEntry.typ) && !nbIsKomplettStatus(currentNbEntry.status);
       if (btnK) btnK.classList.toggle('hidden', !showKomplett);
       var showWa = currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ);
@@ -1144,6 +1156,10 @@
         }
       }
       renderNbWork();
+      if (String(value || '').toLowerCase() === 'teilweise angeliefert' && commentEl && !String(commentEl.value || '').trim()) {
+        setStatus('Teilweise angeliefert — bitte eintragen, welche Teile schon da sind', '#F59E0B');
+        try { commentEl.focus(); } catch (eF) {}
+      }
       var doCarol = currentNbEntry && nbShouldStartCarol(value, currentNbEntry.typ);
       var doDymo = nbShouldAutoPrintDymo(value);
       var doWerkstatt = !!(res && res.printB64) || (doDymo && currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ));
@@ -1381,13 +1397,34 @@
       if (!currentStock) return setStatus('Zuerst Auftrag laden', '#f87171');
       var text = String(commentEl.value || '').trim();
       if (!text) return setStatus('Bitte erst Kommentar eintragen', '#f87171');
-      var regal = '';
-      if (currentSource === 'nachbestellung') {
-        var nbReg = $('nbRegalSelect');
-        if (nbReg && $('nbRegalWrap') && !$('nbRegalWrap').classList.contains('hidden')) regal = String(nbReg.value || '').trim();
-      } else {
-        regal = String(shelfSelect.value || '').trim();
+      if (currentSource === 'nachbestellung' && currentNbEntry) {
+        setBusy(true, 'Speichere Kommentar…');
+        google.script.run
+          .withSuccessHandler(function(res) {
+            setBusy(false);
+            if (res && res.success) {
+              currentNbEntry.kommentar = text;
+              var i;
+              for (i = 0; i < lastNbEntries.length; i++) {
+                if (sameNbEntry(lastNbEntries[i], currentNbEntry)) lastNbEntries[i].kommentar = text;
+              }
+              baselineKommentar = text;
+              setStatus(res.message || 'Kommentar gespeichert', '#34D399');
+              beep('ok');
+            } else {
+              setStatus((res && res.message) || 'Speichern fehlgeschlagen', '#f87171');
+              beep('err');
+            }
+          })
+          .withFailureHandler(function(err) {
+            setBusy(false);
+            setStatus(err && err.message ? err.message : 'Serverfehler', '#f87171');
+            beep('err');
+          })
+          .updateNachbestellung(currentNbEntry.row, 'kommentar', text, currentStock, currentNbEntry.entryId || '');
+        return;
       }
+      var regal = String(shelfSelect.value || '').trim();
       setBusy(true, 'Speichere…');
       google.script.run
         .withSuccessHandler(function(res) {
@@ -1405,8 +1442,7 @@
             baselineKommentar = text;
             baselineRegal = regal || baselineRegal;
             var bits = [];
-            if (currentSource === 'nachbestellung') bits.push('Nachbestellung');
-            else if (currentStock) bits.push('Refurbishment');
+            if (currentStock) bits.push('Refurbishment');
             bits.push(baselineRegal ? ('Aktuell: ' + baselineRegal) : 'Kein Regal');
             orderMeta.textContent = bits.join(' · ');
             setStatus(res.message || 'Gespeichert', '#34D399');
@@ -1854,6 +1890,12 @@
       else startCam(camMode || 'barcode');
     });
     $('btnCamClose').addEventListener('click', closeCamNow);
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape' && e.keyCode !== 27) return;
+      if (!camOpen) return;
+      e.preventDefault();
+      closeCamNow();
+    });
     $('camModeBarcode').addEventListener('click', function() { setCamMode('barcode'); });
     $('camModeOcr').addEventListener('click', function() { setCamMode('ocr'); });
     $('btnOcrShot').addEventListener('click', captureOcrShot);

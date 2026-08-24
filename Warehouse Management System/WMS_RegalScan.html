@@ -989,6 +989,12 @@
       else startCam();
     });
     $('btnCamClose').addEventListener('click', stopCam);
+    document.addEventListener('keydown', function(e) {
+      if (e.key !== 'Escape' && e.keyCode !== 27) return;
+      if (!camOpen) return;
+      e.preventDefault();
+      stopCam();
+    });
     $('btnStockReady').addEventListener('click', function() {
       if (!currentRegal) return;
       armStock(!stockArmed);

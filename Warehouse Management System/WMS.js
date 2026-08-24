@@ -16,12 +16,20 @@ const VASOLD_WSS_TAB = "Vasold WSS";
 const NACHBESTELL_STATUS_COL = 11;
 const NACHBESTELL_REGAL_COL = 13;
 const NACHBESTELL_ENTRYID_COL = 15;
+const NACHBESTELL_KOMMENTAR_COL = 16;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
+  {
+    version: "2.2.7",
+    date: "24.08.2026",
+    notes:
+      "• ESC schließt jedes offene WMS-Fenster / Overlay (eines nach dem anderen, oben zuerst, bleibt in Session erhalten)\n" +
+      "• Nachbestellung „Teilweise angeliefert“: Jetzt mit Kommentar pro Entry-ID, speichert in Spalte P — jeder sieht später welche Teile schon da sind"
+  },
   {
     version: "2.2.6",
     date: "21.08.2026",
@@ -262,7 +270,8 @@ function findNachbestellungSheetLayout(sheet) {
     headerRow: 2,
     dataStartRow: 3,
     statusCol: NACHBESTELL_STATUS_COL,
-    lagerortCol: NACHBESTELL_REGAL_COL
+    lagerortCol: NACHBESTELL_REGAL_COL,
+    kommentarCol: NACHBESTELL_KOMMENTAR_COL
   };
   if (!sheet) return fallback;
   var lastRow = Math.max(1, sheet.getLastRow());
@@ -288,16 +297,25 @@ function findNachbestellungSheetLayout(sheet) {
   var hdr = headerScan[bestIdx];
   var loCol = getColIndex(hdr, ["lagerort", "regal"]);
   var stCol = getColIndexExact(hdr, ["status"]);
+  var kommCol = getColIndex(hdr, ["kommentar"]);
   return {
     headerRow: bestIdx + 1,
     dataStartRow: bestIdx + 2,
     statusCol: stCol !== -1 ? stCol : NACHBESTELL_STATUS_COL,
-    lagerortCol: loCol !== -1 ? loCol : NACHBESTELL_REGAL_COL
+    lagerortCol: loCol !== -1 ? loCol : NACHBESTELL_REGAL_COL,
+    kommentarCol: kommCol !== -1 ? kommCol : NACHBESTELL_KOMMENTAR_COL
   };
 }
 
 function findNachbestellungLagerortColumn(sheet) {
   return findNachbestellungSheetLayout(sheet).lagerortCol;
+}
+
+function findNachbestellungKommentarCol(sheet, layout) {
+  if (layout && layout.kommentarCol > 0) return layout.kommentarCol;
+  if (!sheet) return NACHBESTELL_KOMMENTAR_COL;
+  var nbLayout = layout || findNachbestellungSheetLayout(sheet);
+  return nbLayout.kommentarCol > 0 ? nbLayout.kommentarCol : NACHBESTELL_KOMMENTAR_COL;
 }
 
 function nachbestellungLagerortFallbackList() {
@@ -3447,6 +3465,7 @@ function getNachbestellungen() {
         if (!cols.teil && (txt.indexOf("teil") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1)) cols.teil = c;
         if (!cols.preis && (txt.indexOf("preis") !== -1 || txt.indexOf("kosten") !== -1 || txt.indexOf("price") !== -1)) cols.preis = c;
         if (!cols.artikel && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
+        if (!cols.kommentar && (txt === "kommentar" || txt.indexOf("kommentar") !== -1 || txt.indexOf("notiz") !== -1 || txt.indexOf("bemerkung") !== -1 || txt.indexOf("anmerkung") !== -1)) cols.kommentar = c;
       }
       cols.status = statusCol - 1;
 
@@ -3460,6 +3479,8 @@ function getNachbestellungen() {
       if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [], lagerortOptions: lagerortOptions, statusOptions: statusOptions };
 
       var entryIdCol = getSheetEntryIdCol(sheet, NACHBESTELL_ENTRYID_COL);
+      var kommCol1 = findNachbestellungKommentarCol(sheet, layout);
+      if (cols.kommentar === undefined && kommCol1 > 0) cols.kommentar = kommCol1 - 1;
 
       var entries = [];
       
@@ -3517,7 +3538,8 @@ function getNachbestellungen() {
           preis: cols.preis !== undefined ? String(data[i][cols.preis] || "").trim() : "",
           artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
           status: cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "",
-          regal: regalVal
+          regal: regalVal,
+          kommentar: cols.kommentar !== undefined ? String(data[i][cols.kommentar] || "").trim() : ""
         });
       }
 
@@ -3567,6 +3589,7 @@ function getNachbestellungenForStock(stockId) {
         if (!cols.typ && (txt.indexOf("typ") !== -1 || txt.indexOf("art") !== -1 || txt.indexOf("bestellung") !== -1 || txt.indexOf("beschreibung") !== -1)) cols.typ = c;
         if (!cols.teil && (txt.indexOf("teil") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("ersatzteil") !== -1 || txt.indexOf("benennung") !== -1)) cols.teil = c;
         if (!cols.artikel && (txt.indexOf("artikelnr") !== -1 || txt.indexOf("artikelnummer") !== -1 || txt.indexOf("article") !== -1 || txt.indexOf("teilenr") !== -1)) cols.artikel = c;
+        if (!cols.kommentar && (txt === "kommentar" || txt.indexOf("kommentar") !== -1 || txt.indexOf("notiz") !== -1 || txt.indexOf("bemerkung") !== -1 || txt.indexOf("anmerkung") !== -1)) cols.kommentar = c;
       }
       cols.status = statusCol - 1;
 
@@ -3579,6 +3602,8 @@ function getNachbestellungenForStock(stockId) {
       if (cols.stock === undefined) return { success: false, message: "Spalte 'Stock ID' nicht gefunden!", entries: [] };
 
       var entryIdCol = getSheetEntryIdCol(sheet, NACHBESTELL_ENTRYID_COL);
+      var kommColStock = findNachbestellungKommentarCol(sheet, layout);
+      if (cols.kommentar === undefined && kommColStock > 0) cols.kommentar = kommColStock - 1;
 
       var entries = [];
       var openCount = 0;
@@ -3613,6 +3638,7 @@ function getNachbestellungenForStock(stockId) {
           artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
           status: rawStatus,
           regal: regalVal,
+          kommentar: cols.kommentar !== undefined ? String(data[i][cols.kommentar] || "").trim() : "",
           closed: isClosed
         });
       }
@@ -3710,6 +3736,19 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
         var nbStock = normalizeStockId(expectedStockId);
         if (nbStock) logRegalVerlauf_(nbStock, oldRegalVal, regalWrite, "speichern+regal");
         return { success: true, message: "Lagerort gespeichert!" };
+      }
+
+      if (fieldName === "kommentar" || fieldName === "comment") {
+        var kommColW = findNachbestellungKommentarCol(sheet, nbLayout);
+        if (!(kommColW > 0)) kommColW = NACHBESTELL_KOMMENTAR_COL;
+        var kommText = String(value == null ? "" : value);
+        sheet.getRange(sheetRow, kommColW).setValue(kommText);
+        SpreadsheetApp.flush();
+        var kommCheck = String(sheet.getRange(sheetRow, kommColW).getValue() || "");
+        if (kommCheck.replace(/\r\n/g, "\n") !== kommText.replace(/\r\n/g, "\n")) {
+          return { success: false, message: "Kommentar konnte nicht verifiziert werden!" };
+        }
+        return { success: true, message: "Kommentar gespeichert!" };
       }
 
       if (fieldName === "status") {
