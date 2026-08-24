@@ -1963,15 +1963,7 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
         return result;
       }
 
-      if (source === "refurbishment") {
-        result.message = "Stock-ID in Refurbisment List nicht gefunden!";
-        return result;
-      }
-
-      var nb = fetchWmsDataFromNachbestellung_(stockId, true);
-      if (nb && nb.success) return nb;
-
-      result.message = "Stock-ID weder in Refurbisment List noch in Nachbestellung gefunden!";
+      result.message = "Stock-ID in Refurbisment List nicht gefunden!";
       return result;
     } catch (err) {
       return { success: false, message: err.message };

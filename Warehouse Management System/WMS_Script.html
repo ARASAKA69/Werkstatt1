@@ -283,9 +283,9 @@
 
   function launchCastCarol(job) {
     if (job && job.source === 'nachbestellung' && typeof startNbCarol === 'function') {
-      applyCastJobToHud(job);
       startNbCarol(job.stockId, null);
-      if (typeof openNbForStock === 'function') openNbForStock(job.stockId);
+      if (typeof openNachbestellungOnly === 'function') openNachbestellungOnly(job.stockId, { clearHud: false });
+      else if (typeof openNbForStock === 'function') openNbForStock(job.stockId);
       ackCastJob(job, true, 'Carol gestartet');
       showStickyToast('ok', 'Handy: Carol', (job.stockId || '') + ' gestartet');
       return;
@@ -372,10 +372,21 @@
       if (inp) inp.value = sid;
       if (typeof setHudBusy === 'function') setHudBusy(true, 'Handy: öffne ' + sid + '…');
       setStatus('📱 Handy: öffne ' + sid, '#3FA0DB');
+      if (job.source === 'nachbestellung') {
+        openNachbestellungOnly(sid, { clearHud: false });
+        ackCastJob(job, true, 'Nachbestellung geöffnet');
+        showStickyToast('ok', 'Handy: Nachbestellung', sid + ' im Fenster');
+        return;
+      }
       google.script.run
         .withSuccessHandler(function(res) {
+          if (res && res.source === 'nachbestellung') {
+            openNachbestellungOnly(sid, { clearHud: true });
+            ackCastJob(job, true, 'Nachbestellung geöffnet');
+            showStickyToast('ok', 'Handy: Nachbestellung', sid + ' im Fenster');
+            return;
+          }
           if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, sid);
-          if (job.source === 'nachbestellung' && typeof openNbForStock === 'function') openNbForStock(sid);
           if (job.comment) setCommentText(job.comment);
           var ok = !!(res && res.success);
           ackCastJob(job, ok, ok ? 'Auftrag geöffnet' : ((res && res.message) || 'Nicht gefunden'));
@@ -2504,18 +2515,27 @@
     if(m) m.classList.remove('open');
   }
 
+  function openNachbestellungOnly(stockId, opts) {
+    opts = opts || {};
+    closeNbChooser();
+    if (!stockId) return;
+    if (opts.clearHud && typeof resetWmsHudForNextOrder === 'function') {
+      var keep = stockId;
+      resetWmsHudForNextOrder('');
+      var inp = document.getElementById('searchInput');
+      if (inp) inp.value = keep;
+    }
+    if (typeof setHudBusy === 'function') setHudBusy(false);
+    toggleUI(true);
+    openNbForStock(stockId);
+    setStatus(opts.status || ('📦 Nachbestellung ' + stockId + ' — nur im Nachbestellung-Fenster'), '#F27420');
+  }
+
   function openNbFromChooser() {
     var stock = nbChooserStock;
     closeNbChooser();
     if(!stock) return;
-    if (typeof setHudBusy === 'function') setHudBusy(true, 'Lade Nachbestellung…');
-    google.script.run.withSuccessHandler(function(res) {
-      if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, stock);
-      openNbForStock(stock);
-    }).withFailureHandler(function() {
-      if (typeof setHudBusy === 'function') setHudBusy(false);
-      openNbForStock(stock);
-    }).fetchWmsData(stock, 'nachbestellung');
+    openNachbestellungOnly(stock, { clearHud: false });
   }
 
   function nbChooserStatusClass(status) {
@@ -2622,30 +2642,13 @@
 
   function loadNbIntoHud(stockId, alsoOpenModal) {
     if(!stockId) return;
-    if (typeof setHudBusy === 'function') setHudBusy(true, 'Lade Nachbestellung…');
-    google.script.run.withSuccessHandler(function(res) {
-      if (res && res.success) {
-        if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, stockId);
-        if (alsoOpenModal) openNbForStock(stockId);
-      } else {
-        if (typeof setHudBusy === 'function') setHudBusy(false);
-        toggleUI(true);
-        if (alsoOpenModal) openNbForStock(stockId);
-        else setStatus((res && res.message) || 'Nachbestellung nicht geladen', '#f85149');
-      }
-    }).withFailureHandler(function() {
-      if (typeof setHudBusy === 'function') setHudBusy(false);
-      toggleUI(true);
-      if (alsoOpenModal) openNbForStock(stockId);
-    }).fetchWmsData(stockId, 'nachbestellung');
+    openNachbestellungOnly(stockId, { clearHud: true });
   }
 
   function handleNotFoundNbCheck(stockId, errMsg) {
     var local = nbEntriesForStock(stockId);
     if(local.length) {
-      setStatus('📦 Nicht in Refurbishment – Nachbestellung gefunden.', '#F27420');
-      showNbChooser(stockId, local, { onlyNb: true });
-      loadNbIntoHud(stockId, true);
+      openNachbestellungOnly(stockId, { clearHud: true, status: '📦 Nachbestellung gefunden — Haupt-HUD bleibt leer' });
       return;
     }
     if(nbChooserCacheReady) {
@@ -2655,9 +2658,7 @@
     loadNbChooserCache(false);
     google.script.run.withSuccessHandler(function(res) {
       if(res && res.success && res.entries && res.entries.length) {
-        setStatus('📦 Nicht in Refurbishment – Nachbestellung gefunden.', '#F27420');
-        showNbChooser(stockId, res.entries, { onlyNb: true });
-        loadNbIntoHud(stockId, true);
+        openNachbestellungOnly(stockId, { clearHud: true, status: '📦 Nachbestellung gefunden — Haupt-HUD bleibt leer' });
       } else {
         searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
       }
@@ -6897,6 +6898,10 @@
 
   function applyFetchWmsResult(res, id) {
     try {
+    if (res && res.success && res.source === 'nachbestellung') {
+      openNachbestellungOnly(id, { clearHud: true });
+      return;
+    }
     if (res && res.success) {
       var prevStock = normalizeStockIdJs(currentStock);
       currentStock = normalizeStockInput(id);
@@ -7001,17 +7006,13 @@
       if (pendingWarning) {
         setStatus(pendingWarning.msg, pendingWarning.color);
         pendingWarning = null;
-      } else if (res.source === 'nachbestellung') {
-        setStatus('✅ Daten für ' + id + ' geladen (Nachbestellung)!', '#56d364');
       } else {
         setStatus('✅ Daten für ' + id + ' geladen!', '#56d364');
       }
       toggleUI(true);
 
       updatePzContext(id, res.kommBestellung);
-      if (currentWmsSource !== 'nachbestellung') {
-        maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
-      }
+      maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
       claimStockEditLockForCurrent(loadedStock);
     } else {
       skipRecentStockPush = false;
@@ -7145,55 +7146,26 @@
 
     var fromCache = computeWmsFromCache(id, refurbCache);
     var nbHits = nbEntriesForStock(id);
+    var refurbCacheReady = !!(refurbCache && refurbCache.rows);
     if (fromCache && fromCache.success) {
       applyFetchWmsResult(fromCache, id);
       return;
     }
 
-    if (nbHits.length) {
-      setHudBusy(true, 'Lade Nachbestellung…');
-      google.script.run.withSuccessHandler(function(res) {
-        if (seq !== wmsLoadSeq) return;
-        if (res && res.success) {
-          applyFetchWmsResult(res, id);
-          openNbForStock(id);
-        } else {
-          handleNotFoundNbCheck(id, res && res.message);
-        }
-      }).withFailureHandler(function(err) {
-        if (seq !== wmsLoadSeq) return;
-        skipRecentStockPush = false;
-        toggleUI(true);
-        showNbChooser(id, nbHits, { onlyNb: true });
-        openNbForStock(id);
-        setStatus('📦 Nachbestellung gefunden — Liste geöffnet', '#F27420');
-      }).fetchWmsData(id, 'nachbestellung');
+    if (refurbCacheReady && nbHits.length) {
+      openNachbestellungOnly(id, { clearHud: true });
       return;
     }
 
-    var waitNb = setTimeout(function() {
-      if (seq !== wmsLoadSeq) return;
-      var lateHits = nbEntriesForStock(id);
-      if (!lateHits.length) return;
-      toggleUI(true);
-      showNbChooser(id, lateHits, { onlyNb: !fromCache || !fromCache.success });
-      setStatus('📦 Nachbestellung gefunden — Quelle wählen', '#F27420');
-    }, 5000);
-
     google.script.run.withSuccessHandler(function(res) {
       if (seq !== wmsLoadSeq) return;
-      clearTimeout(waitNb);
       applyFetchWmsResult(res, id);
     }).withFailureHandler(function(err) {
       if (seq !== wmsLoadSeq) return;
-      clearTimeout(waitNb);
       skipRecentStockPush = false;
       var failHits = nbEntriesForStock(id);
       if (failHits.length) {
-        toggleUI(true);
-        showNbChooser(id, failHits, { onlyNb: true });
-        openNbForStock(id);
-        setStatus('📦 Nachbestellung gefunden — Liste geöffnet', '#F27420');
+        openNachbestellungOnly(id, { clearHud: true });
         return;
       }
       setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
