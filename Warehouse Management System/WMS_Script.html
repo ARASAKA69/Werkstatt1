@@ -2525,10 +2525,23 @@
     return '';
   }
 
-  function showNbChooser(stockId, entries) {
+  function showNbChooser(stockId, entries, opts) {
+    opts = opts || {};
     nbChooserStock = stockId;
     var stockEl = document.getElementById('nbChooseStock');
     if(stockEl) stockEl.innerText = stockId;
+    var sub = document.getElementById('nbChooseSub');
+    if(sub) {
+      if(opts.onlyNb) {
+        sub.innerHTML = 'Für <span class="nb-choose-stock" id="nbChooseStock">' + escapeHtml(stockId) + '</span> gibt es eine Nachbestellung, aber keinen offenen Refurbishment-Auftrag.';
+      } else if(opts.tagesliste) {
+        sub.innerHTML = '<span class="nb-choose-stock" id="nbChooseStock">' + escapeHtml(stockId) + '</span> steht auf der Tagesliste — und es gibt eine Nachbestellung.<br>Wo möchtest du weiterarbeiten?';
+      } else {
+        sub.innerHTML = 'Für <span class="nb-choose-stock" id="nbChooseStock">' + escapeHtml(stockId) + '</span> existiert auch eine Nachbestellung.<br>Wo möchtest du weiterarbeiten?';
+      }
+    }
+    var refurbBtn = document.querySelector('#nbChooseModal .nb-choose-btn--refurb');
+    if(refurbBtn) refurbBtn.style.display = opts.onlyNb ? 'none' : '';
     var prev = document.getElementById('nbChoosePreview');
     if(prev) {
       var html = '';
@@ -2564,32 +2577,90 @@
     });
   }
 
-  function maybeShowNbChooser(stockId) {
+  function maybeShowNbChooser(stockId, opts) {
     if(!stockId) return;
     if(currentWmsSource === 'nachbestellung') return;
+    opts = opts || {};
+    var local = nbEntriesForStock(stockId);
+    if(local.length) {
+      showNbChooser(stockId, local, opts);
+      return;
+    }
+    function askServer() {
+      google.script.run.withSuccessHandler(function(res) {
+        if(res && res.success && res.entries && res.entries.length
+          && normalizeStockInput(stockId) === normalizeStockInput(currentStock)
+          && currentWmsSource !== 'nachbestellung') {
+          showNbChooser(stockId, res.entries, opts);
+        }
+      }).withFailureHandler(function() {}).getNachbestellungenForStock(stockId);
+    }
+    if(!nbChooserCacheReady) {
+      loadNbChooserCache(false);
+      var tries = 0;
+      var timer = setInterval(function() {
+        tries += 1;
+        if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
+          clearInterval(timer);
+          return;
+        }
+        var later = nbEntriesForStock(stockId);
+        if(later.length) {
+          clearInterval(timer);
+          showNbChooser(stockId, later, opts);
+          return;
+        }
+        if(nbChooserCacheReady || tries >= 15) {
+          clearInterval(timer);
+          if(!nbEntriesForStock(stockId).length) askServer();
+        }
+      }, 400);
+      return;
+    }
+    askServer();
+  }
+
+  function loadNbIntoHud(stockId, alsoOpenModal) {
+    if(!stockId) return;
+    if (typeof setHudBusy === 'function') setHudBusy(true, 'Lade Nachbestellung…');
     google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success && res.entries && res.entries.length
-        && normalizeStockInput(stockId) === normalizeStockInput(currentStock)
-        && currentWmsSource !== 'nachbestellung') {
-        showNbChooser(stockId, res.entries);
+      if (res && res.success) {
+        if (typeof applyFetchWmsResult === 'function') applyFetchWmsResult(res, stockId);
+        if (alsoOpenModal) openNbForStock(stockId);
+      } else {
+        if (typeof setHudBusy === 'function') setHudBusy(false);
+        toggleUI(true);
+        if (alsoOpenModal) openNbForStock(stockId);
+        else setStatus((res && res.message) || 'Nachbestellung nicht geladen', '#f85149');
       }
-    }).getNachbestellungenForStock(stockId);
+    }).withFailureHandler(function() {
+      if (typeof setHudBusy === 'function') setHudBusy(false);
+      toggleUI(true);
+      if (alsoOpenModal) openNbForStock(stockId);
+    }).fetchWmsData(stockId, 'nachbestellung');
   }
 
   function handleNotFoundNbCheck(stockId, errMsg) {
-    function openIt() {
-      setStatus('📦 Nicht in Refurbishment – in Nachbestellung gefunden.', '#F27420');
-      openNbForStock(stockId);
+    var local = nbEntriesForStock(stockId);
+    if(local.length) {
+      setStatus('📦 Nicht in Refurbishment – Nachbestellung gefunden.', '#F27420');
+      showNbChooser(stockId, local, { onlyNb: true });
+      loadNbIntoHud(stockId, true);
+      return;
     }
     if(nbChooserCacheReady) {
-      if(nbEntriesForStock(stockId).length) { openIt(); return; }
       searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
       return;
     }
     loadNbChooserCache(false);
     google.script.run.withSuccessHandler(function(res) {
-      if(res && res.success && res.entries && res.entries.length) openIt();
-      else searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
+      if(res && res.success && res.entries && res.entries.length) {
+        setStatus('📦 Nicht in Refurbishment – Nachbestellung gefunden.', '#F27420');
+        showNbChooser(stockId, res.entries, { onlyNb: true });
+        loadNbIntoHud(stockId, true);
+      } else {
+        searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
+      }
     }).withFailureHandler(function() {
       searchBelegeFallback({ message: 'FEHLER: ' + errMsg });
     }).getNachbestellungenForStock(stockId);
@@ -6428,6 +6499,7 @@
     if (hitIdx >= 0) {
       var rowData = rows[hitIdx];
       result.success = true;
+      result.source = 'refurbishment';
       result.carolUrl = String(rowData[1] || '');
       result.schaeden = String(rowData[2] || '');
       result.kommBestellung = String(rowData[3] || '');
@@ -6824,7 +6896,8 @@
   }
 
   function applyFetchWmsResult(res, id) {
-    if (res.success) {
+    try {
+    if (res && res.success) {
       var prevStock = normalizeStockIdJs(currentStock);
       currentStock = normalizeStockInput(id);
       if (skipRecentStockPush) {
@@ -6936,7 +7009,9 @@
       toggleUI(true);
 
       updatePzContext(id, res.kommBestellung);
-      if (currentWmsSource !== 'nachbestellung') maybeShowNbChooser(id);
+      if (currentWmsSource !== 'nachbestellung') {
+        maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
+      }
       claimStockEditLockForCurrent(loadedStock);
     } else {
       skipRecentStockPush = false;
@@ -6945,7 +7020,12 @@
       toggleUI(true);
       var btnVerlaufFail = document.getElementById('btnVerlauf');
       if (btnVerlaufFail) btnVerlaufFail.disabled = true;
-      handleNotFoundNbCheck(id, res.message);
+      handleNotFoundNbCheck(id, res && res.message);
+    }
+    } catch (applyErr) {
+      skipRecentStockPush = false;
+      toggleUI(true);
+      setStatus('❌ Anzeige-Fehler: ' + (applyErr && applyErr.message ? applyErr.message : String(applyErr)), '#f85149');
     }
   }
 
@@ -7034,6 +7114,8 @@
     }).searchByOrderNumber(id);
   }
 
+  var wmsLoadSeq = 0;
+
   function loadData() {
     var id = document.getElementById('searchInput').value.trim();
     if(!id) return;
@@ -7056,20 +7138,64 @@
       return;
     }
 
+    var seq = ++wmsLoadSeq;
     setStatus("Scanne Datenbank...", "#F27420");
     toggleUI(false);
     setHudBusy(true, 'Scanne Datenbank…');
 
     var fromCache = computeWmsFromCache(id, refurbCache);
+    var nbHits = nbEntriesForStock(id);
     if (fromCache && fromCache.success) {
       applyFetchWmsResult(fromCache, id);
       return;
     }
 
+    if (nbHits.length) {
+      setHudBusy(true, 'Lade Nachbestellung…');
+      google.script.run.withSuccessHandler(function(res) {
+        if (seq !== wmsLoadSeq) return;
+        if (res && res.success) {
+          applyFetchWmsResult(res, id);
+          openNbForStock(id);
+        } else {
+          handleNotFoundNbCheck(id, res && res.message);
+        }
+      }).withFailureHandler(function(err) {
+        if (seq !== wmsLoadSeq) return;
+        skipRecentStockPush = false;
+        toggleUI(true);
+        showNbChooser(id, nbHits, { onlyNb: true });
+        openNbForStock(id);
+        setStatus('📦 Nachbestellung gefunden — Liste geöffnet', '#F27420');
+      }).fetchWmsData(id, 'nachbestellung');
+      return;
+    }
+
+    var waitNb = setTimeout(function() {
+      if (seq !== wmsLoadSeq) return;
+      var lateHits = nbEntriesForStock(id);
+      if (!lateHits.length) return;
+      toggleUI(true);
+      showNbChooser(id, lateHits, { onlyNb: !fromCache || !fromCache.success });
+      setStatus('📦 Nachbestellung gefunden — Quelle wählen', '#F27420');
+    }, 5000);
+
     google.script.run.withSuccessHandler(function(res) {
+      if (seq !== wmsLoadSeq) return;
+      clearTimeout(waitNb);
       applyFetchWmsResult(res, id);
     }).withFailureHandler(function(err) {
+      if (seq !== wmsLoadSeq) return;
+      clearTimeout(waitNb);
       skipRecentStockPush = false;
+      var failHits = nbEntriesForStock(id);
+      if (failHits.length) {
+        toggleUI(true);
+        showNbChooser(id, failHits, { onlyNb: true });
+        openNbForStock(id);
+        setStatus('📦 Nachbestellung gefunden — Liste geöffnet', '#F27420');
+        return;
+      }
       setStatus("❌ Serverfehler: " + (err.message || String(err)), "#f85149");
       toggleUI(true);
     }).fetchWmsData(id);

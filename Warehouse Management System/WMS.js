@@ -23,6 +23,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.6",
+    date: "21.08.2026",
+    notes:
+      "• Fixed: Nachbestellung"
+  },
+  {
     version: "2.2.5",
     date: "21.08.2026",
     notes:
@@ -1794,7 +1800,7 @@ function fetchWmsDataFromNachbestellung_(stockId, includeClosed) {
       regal = rk || nachbestellungRegalUiFromCell(d[cols.lagerort]);
     }
     if (!status && cols.status >= 0) status = String(d[cols.status] || "").trim();
-    if (!carolUrl && cols.url >= 0) carolUrl = getNbCarolUrl_(grid.sheet, use[u].row, cols.url + 1);
+    if (!carolUrl && cols.url >= 0) carolUrl = String(d[cols.url] || "").trim();
   }
   var commentText = comments.length ? comments.join("\n") : teils.join("\n");
   return {
@@ -1962,7 +1968,7 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
         return result;
       }
 
-      var nb = fetchWmsDataFromNachbestellung_(stockId);
+      var nb = fetchWmsDataFromNachbestellung_(stockId, true);
       if (nb && nb.success) return nb;
 
       result.message = "Stock-ID weder in Refurbisment List noch in Nachbestellung gefunden!";
@@ -3586,8 +3592,7 @@ function getNachbestellungenForStock(stockId) {
       var openCount = 0;
       var closedCount = 0;
       for (var i = headerIdx + 1; i < data.length; i++) {
-        var rowStock = normalizeStockId(data[i][cols.stock]);
-        if (!rowStock || rowStock !== wantStock) continue;
+        if (!cellMatchesStockId(data[i][cols.stock], wantStock)) continue;
 
         var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
         var isClosed = nachbestellungIsClosedStatus(rawStatus);
