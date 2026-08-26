@@ -97,6 +97,49 @@ function readExistingLookupRows_(sheet) {
   return rowMap;
 }
 
+function extractStockIdFromText_(text) {
+  var t = String(text || "");
+  var m = t.match(/STOCK[\s_-]*ID\s*[:.]?\s*([A-Z]{2}\d{3,})/i);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/\/([A-Z]{2}\d{4,})\b/);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  return "";
+}
+
+function extractSearchKeysFromText_(text) {
+  var keys = {};
+  var subjectText = String(text || "");
+  var i;
+
+  var trackRe = /\b(\d{8,}[A-Z][A-Z0-9]{3,})\b/gi;
+  var tm;
+  while ((tm = trackRe.exec(subjectText))) {
+    var track = String(tm[1] || "").replace(/\s+/g, "").toUpperCase();
+    if (track.length >= 16 && track.length <= 40) keys[track] = true;
+  }
+
+  var nums = subjectText.match(/\b\d{7,14}\b/g) || [];
+  for (i = 0; i < nums.length; i++) {
+    var n = String(nums[i] || "");
+    if (!n || n.length < 7) continue;
+    keys[n] = true;
+    var n0 = n.replace(/^0+/, "");
+    if (n0.length >= 6) keys[n0] = true;
+  }
+
+  var n4All = subjectText.match(/N4P\d{4,}/gi) || [];
+  for (i = 0; i < n4All.length; i++) {
+    var n4 = String(n4All[i] || "").replace(/\s+/g, "").toUpperCase();
+    keys[n4] = true;
+    var n4n = n4.replace(/^N4P/, "");
+    if (n4n.length >= 4) keys[n4n] = true;
+  }
+
+  return Object.keys(keys);
+}
+
 function extractSearchKeysFromSubject_(subject) {
   var keys = {};
   var subjectText = String(subject || "");
@@ -114,7 +157,7 @@ function extractSearchKeysFromSubject_(subject) {
   var parts = subjectText.split("---");
   if (parts.length > 0) {
     var orderNum = String(parts[0]).replace(/\s+/g, "").toUpperCase();
-    if (orderNum.length >= 4) keys[orderNum] = true;
+    if (orderNum.length >= 4 && orderNum.length <= 40) keys[orderNum] = true;
   }
 
   return Object.keys(keys);
@@ -127,13 +170,27 @@ function addThreadToRowMap_(thread, cutoff, rowMap) {
     if (msgDate.getTime() < cutoff.getTime()) continue;
 
     var subject = String(messages[m].getSubject() || "");
-    var stockMatch = subject.match(/STOCK_ID\s*:\s*([A-Z]{2}\d{3,})/i);
-    if (!stockMatch || !stockMatch[1]) continue;
+    var stockId = extractStockIdFromText_(subject);
+    var body = "";
+    try {
+      body = String(messages[m].getPlainBody() || "").substring(0, 12000);
+    } catch (e) {
+      body = "";
+    }
+    if (!stockId) stockId = extractStockIdFromText_(body);
+    if (!stockId) continue;
 
-    var stockId = String(stockMatch[1]).replace(/\s+/g, "").toUpperCase();
     var keys = extractSearchKeysFromSubject_(subject);
-    for (var k = 0; k < keys.length; k++) {
-      var searchKey = keys[k];
+    var extra = extractSearchKeysFromText_(subject + "\n" + body);
+    var seenKey = {};
+    var merged = [];
+    var ki;
+    for (ki = 0; ki < keys.length; ki++) merged.push(keys[ki]);
+    for (ki = 0; ki < extra.length; ki++) merged.push(extra[ki]);
+    for (var k = 0; k < merged.length; k++) {
+      var searchKey = merged[k];
+      if (!searchKey || seenKey[searchKey]) continue;
+      seenKey[searchKey] = true;
       var mapKey = searchKey + "|" + stockId;
       if (!rowMap[mapKey] || msgDate.getTime() > rowMap[mapKey].msgTime) {
         rowMap[mapKey] = {
@@ -177,7 +234,7 @@ function collectGmailLookupRows_(existingRowMap, incrementalSince) {
   }
 
   var afterQuery = getGmailSyncAfterQuery_(searchAfter);
-  var query = "(STOCK_ID OR label:N4P) after:" + afterQuery;
+  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO) after:" + afterQuery;
   var maxPages = isIncremental ? 5 : 15;
   var seenThreads = {};
   var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages);
@@ -274,9 +331,11 @@ function searchOrderInGmail_(query) {
   if (!cleanQuery || cleanQuery.length < 4) {
     return { found: false, message: "Suchanfrage zu kurz (min. 4 Zeichen)" };
   }
+  var zeroQuery = cleanQuery.replace(/^0+/, "");
 
   var searchTerms = ['"' + cleanQuery + '"'];
   if (query !== cleanQuery) searchTerms.push('"' + query + '"');
+  if (zeroQuery && zeroQuery !== cleanQuery && zeroQuery.length >= 6) searchTerms.push('"' + zeroQuery + '"');
   searchTerms.push("N4PARTS:N4P" + cleanQuery);
   if (query.indexOf("N4P") === 0) searchTerms.push("N4PARTS:" + query);
 
@@ -293,19 +352,27 @@ function searchOrderInGmail_(query) {
   }
 
   var best = null;
-  for (var t = 0; t < threads.length; t++) {
+  var read = 0;
+  for (var t = 0; t < threads.length && read < 12; t++) {
     var messages = threads[t].getMessages();
-    for (var m = messages.length - 1; m >= 0; m--) {
+    for (var m = messages.length - 1; m >= 0 && read < 12; m--) {
+      read++;
       var subject = String(messages[m].getSubject() || "");
-      var subjectNorm = subject.replace(/\s+/g, "").toUpperCase();
-      if (subjectNorm.indexOf(cleanQuery) === -1 && subjectNorm.indexOf(query) === -1) continue;
+      var body = "";
+      try {
+        body = String(messages[m].getPlainBody() || "").substring(0, 12000);
+      } catch (e) {
+        body = "";
+      }
+      var hayNorm = (subject + "\n" + body).replace(/\s+/g, "").toUpperCase();
+      if (hayNorm.indexOf(cleanQuery) === -1 && hayNorm.indexOf(query) === -1 && !(zeroQuery && hayNorm.indexOf(zeroQuery) !== -1)) continue;
 
-      var stockMatch = subject.match(/STOCK_ID\s*:\s*([A-Z]{2}\d{3,})/i);
-      if (!stockMatch || !stockMatch[1]) continue;
+      var stockId = extractStockIdFromText_(subject + "\n" + body);
+      if (!stockId) continue;
 
       var hit = {
         found: true,
-        stockId: String(stockMatch[1]).replace(/\s+/g, "").toUpperCase(),
+        stockId: stockId,
         message: "Gefunden via Gmail",
         subject: subject,
         date: messages[m].getDate().getTime()

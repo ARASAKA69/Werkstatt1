@@ -6733,10 +6733,11 @@
     if (!cleanQuery || cleanQuery.length < 4) return { found: false, message: 'Suchanfrage zu kurz (min. 4 Zeichen)' };
 
     var rows = cache.rows || [];
+    var q0sheet = cleanQuery.replace(/^0+/, '');
     for (var i = 0; i < rows.length; i++) {
       var cellText = String(rows[i][3] || '').replace(/\s+/g, '').toUpperCase();
       if (!cellText) continue;
-      if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
+      if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1 || (q0sheet.length >= 4 && cellText.indexOf(q0sheet) !== -1)) {
         var st = String(rows[i][0] || '').trim();
         if (st) {
           return { found: true, stockId: st, message: 'Gefunden via Bestellnummer in Kommentar Ersatzteile Bestellung', source: 'sheet' };
@@ -6745,9 +6746,14 @@
     }
 
     var gmailRows = cache.gmailLookup || [];
+    var matchFn = (typeof lookupKeyMatchesQuery === 'function') ? lookupKeyMatchesQuery : null;
+    var q0 = cleanQuery.replace(/^0+/, '');
     for (var g = 0; g < gmailRows.length; g++) {
       var key = String(gmailRows[g][0] || '').replace(/\s+/g, '').toUpperCase();
-      if (!key || (key !== query && key !== cleanQuery)) continue;
+      var hit = matchFn
+        ? matchFn(key, query)
+        : (key === query || key === cleanQuery || (q0.length >= 4 && key.replace(/^0+/, '') === q0));
+      if (!key || !hit) continue;
       var stockId = String(gmailRows[g][1] || '').trim();
       if (!stockId) continue;
       return { found: true, stockId: stockId, message: 'Gefunden via Gmail Lookup', source: 'gmail' };
@@ -7334,6 +7340,25 @@
 
     if (isTireSizeQuery(id)) {
       openReifenModalWithSizeSearch(id);
+      return;
+    }
+
+    var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(id) : null;
+    if (stel && stel.stockId && isStockIdFormat(stel.stockId)) {
+      setStatus('Stellantis-Label → ' + stel.stockId, '#3FA0DB');
+      document.getElementById('searchInput').value = stel.stockId;
+      id = stel.stockId;
+    } else if (stel && !isStockIdFormat(id)) {
+      var stelQ = stel.tracking || (stel.keys && stel.keys[0]) || id;
+      setStatus("🔍 Stellantis-Paket, suche '" + stelQ + "'…", "#F27420");
+      toggleUI(false);
+      setHudBusy(true, 'Suche Stellantis-Paket…');
+      var stelLocal = searchByOrderNumberFromCache(stelQ, refurbCache);
+      if (stelLocal && stelLocal.found) {
+        handleOrderNumberSearchResult(stelLocal);
+        return;
+      }
+      requestOrderNumberSearch(id);
       return;
     }
 

@@ -24,6 +24,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.8",
+    date: "26.08.2026",
+    notes:
+      "• Stellantis-Pakete: Inneres Label (QR mit Stock-ID) lädt den Auftrag direkt, äußeres Paket-Label/Barcode sucht Sendungsnummer in Sheet, Gmail-Lookup und E-Mail-Inhalt\n" +
+      "• Bestellnummern-Suche erkennt führende Nullen und findet Treffer auch im E-Mail-Body, nicht nur im Betreff"
+  },
+  {
     version: "2.2.7",
     date: "24.08.2026",
     notes:
@@ -1666,6 +1673,144 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     return { success: false, updated: false, message: "Stock-ID in Stock ID extern Tracking nicht gefunden!" };
   }
   
+  function stelPushLookupKey_(keys, seen, raw) {
+    var s = String(raw == null ? "" : raw).replace(/\s+/g, "").toUpperCase();
+    if (!s || s.length < 6 || s.length > 40) return;
+    if (/^(NEX|NLX|NEXIVE|HEMAU|AUTOHERO|STELLANTIS|DISTRIGO|DEUTSCHLAND|GMBH)$/.test(s)) return;
+    if (/^\d{5}$/.test(s) || /^\d{1,2}:\d{2}$/.test(s)) return;
+    if (seen[s]) return;
+    seen[s] = true;
+    keys.push(s);
+    var noZero = s.replace(/^0+/, "");
+    if (noZero && noZero.length >= 6 && noZero !== s && !seen[noZero]) {
+      seen[noZero] = true;
+      keys.push(noZero);
+    }
+    var intPart = s.split(/[.,]/)[0].replace(/^0+/, "");
+    if (/^\d{6,14}$/.test(intPart) && !seen[intPart]) {
+      seen[intPart] = true;
+      keys.push(intPart);
+    }
+  }
+
+  function stelLooksTracking_(v) {
+    var t = String(v || "").replace(/\s+/g, "").toUpperCase();
+    return t.length >= 16 && t.length <= 40 && /^\d{8,}[A-Z][A-Z0-9]{3,}$/.test(t);
+  }
+
+  function stelStripPrefix_(s) {
+    s = String(s || "").trim();
+    s = s.replace(/^[\x1d\x1e]+/, "");
+    s = s.replace(/^\\[0-9]{1,8}/, "");
+    s = s.replace(/^\][A-Za-z0-9]{1,3}/, "");
+    return s.trim();
+  }
+
+  function parseStellantisPayload_(raw) {
+    var original = String(raw == null ? "" : raw).trim();
+    if (!original) return null;
+    var s = stelStripPrefix_(original);
+    var upper = s.toUpperCase();
+    var looksStel = /STELLANTIS|DISTRIGO|NEXIVE/.test(upper);
+
+    var jsonStart = s.indexOf("[");
+    var jsonEnd = s.lastIndexOf("]");
+    if (jsonStart !== -1 && jsonEnd > jsonStart) {
+      try {
+        var arr = JSON.parse(s.substring(jsonStart, jsonEnd + 1));
+        if (Object.prototype.toString.call(arr) === "[object Array]" && arr.length) {
+          var hay = arr.join("|").toUpperCase();
+          var tracking = String(arr[0] || "").replace(/\s+/g, "").toUpperCase();
+          if (looksStel || /AUTOHERO/.test(hay) || stelLooksTracking_(tracking)) {
+            var keys = [];
+            var seen = {};
+            stelPushLookupKey_(keys, seen, tracking);
+            return { kind: "package", stockId: "", tracking: tracking, keys: keys };
+          }
+        }
+      } catch (e0) {}
+    }
+
+    if (s.indexOf("|") !== -1 && (looksStel || /AUTOHERO/.test(upper))) {
+      var parts = s.split("|");
+      var stockId = "";
+      var i;
+      for (i = parts.length - 1; i >= 0; i--) {
+        var p = String(parts[i] || "");
+        var m = p.match(/\/\s*([A-Z]{2}\d{4,})\b/i) || p.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
+        if (m && m[1]) { stockId = String(m[1]).toUpperCase(); break; }
+      }
+      var keys2 = [];
+      var seen2 = {};
+      var pick = [13, 14, 18, 19, 20];
+      for (i = 0; i < pick.length; i++) {
+        if (parts[pick[i]] != null) stelPushLookupKey_(keys2, seen2, parts[pick[i]]);
+      }
+      var lastBits = String(parts[parts.length - 1] || parts[parts.length - 2] || "").split("/")[0];
+      stelPushLookupKey_(keys2, seen2, lastBits);
+      return { kind: "label", stockId: stockId, tracking: "", keys: keys2 };
+    }
+
+    var compact = original.replace(/\s+/g, "").toUpperCase();
+    if (stelLooksTracking_(compact)) {
+      return { kind: "barcode", stockId: "", tracking: compact, keys: [compact] };
+    }
+    return null;
+  }
+
+  function lookupKeyMatchesQuery_(key, query) {
+    var k = String(key || "").replace(/\s+/g, "").toUpperCase();
+    var q = String(query || "").replace(/\s+/g, "").toUpperCase();
+    if (!k || !q) return false;
+    var k2 = k.replace(/^N4P/, "");
+    var q2 = q.replace(/^N4P/, "");
+    var k0 = k2.replace(/^0+/, "");
+    var q0 = q2.replace(/^0+/, "");
+    if (k === q || k2 === q2) return true;
+    if (k0 && q0 && k0 === q0) return true;
+    if (q0.length >= 6 && (k.indexOf(q) !== -1 || k.indexOf(q2) !== -1 || (k0 && k0.indexOf(q0) !== -1))) return true;
+    if (k0.length >= 6 && q0.length >= 6 && q.indexOf(k0) !== -1) return true;
+    return false;
+  }
+
+  function extractStockIdFromEmailText_(text) {
+    var t = String(text || "");
+    var m = t.match(/STOCK[\s_-]*ID\s*[:.]?\s*([A-Z]{2}\d{3,})/i);
+    if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+    m = t.match(/\/([A-Z]{2}\d{4,})\b/);
+    if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+    m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
+    if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+    return "";
+  }
+
+  function collectSearchQueries_(query) {
+    var out = [];
+    var seen = {};
+    function add(v) {
+      var s = String(v || "").replace(/\s+/g, "").toUpperCase();
+      if (!s || s.length < 4 || s.length > 40 || seen[s]) return;
+      seen[s] = true;
+      out.push(s);
+    }
+    var parsed = parseStellantisPayload_(query);
+    if (parsed) {
+      if (parsed.stockId) add(parsed.stockId);
+      if (parsed.tracking) add(parsed.tracking);
+      if (parsed.keys) {
+        var k;
+        for (k = 0; k < parsed.keys.length; k++) add(parsed.keys[k]);
+      }
+      return { parsed: parsed, queries: out };
+    }
+    add(query);
+    var compact = String(query || "").replace(/\s+/g, "").toUpperCase();
+    add(compact);
+    add(compact.replace(/^N4P/i, ""));
+    add(compact.replace(/^N4P/i, "").replace(/^0+/, ""));
+    return { parsed: parsed, queries: out };
+  }
+
   function searchOrderNumberInGmailLookup_(query) {
     query = String(query || "").replace(/\s+/g, "").toUpperCase();
     if (!query) return { found: false, message: "Keine Suchanfrage" };
@@ -1682,10 +1827,12 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     }
 
     var lastRow = sheet.getLastRow();
-    var data = sheet.getRange(2, 1, lastRow, 2).getValues();
+    var lastCol = Math.max(2, Math.min(4, sheet.getLastColumn()));
+    var data = sheet.getRange(2, 1, lastRow, lastCol).getValues();
     for (var i = 0; i < data.length; i++) {
-      var key = String(data[i][0] || "").replace(/\s+/g, "").toUpperCase();
-      if (!key || (key !== query && key !== cleanQuery)) continue;
+      var key = String(data[i][0] || "");
+      var subject = lastCol >= 3 ? String(data[i][2] || "") : "";
+      if (!lookupKeyMatchesQuery_(key, query) && !(subject && lookupKeyMatchesQuery_(subject.replace(/\s+/g, ""), query))) continue;
       var stockId = String(data[i][1] || "").trim();
       if (!stockId) continue;
       return {
@@ -1697,6 +1844,81 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     }
 
     return { found: false, message: "Bestellnummer '" + query + "' nicht in Gmail Lookup gefunden." };
+  }
+
+  function searchOrderNumberInGmailLive_(query) {
+    query = String(query || "").replace(/\s+/g, "").toUpperCase();
+    if (!query || query.length < 6) return { found: false };
+    if (typeof GmailApp === "undefined") return { found: false };
+    try {
+      var threads = GmailApp.search('"' + query + '" newer_than:90d', 0, 8);
+      if (!threads || !threads.length) {
+        var q0 = query.replace(/^N4P/i, "").replace(/^0+/, "");
+        if (q0 && q0 !== query && q0.length >= 6) {
+          threads = GmailApp.search('"' + q0 + '" newer_than:90d', 0, 8);
+        }
+      }
+      if (!threads || !threads.length) return { found: false };
+
+      var best = null;
+      var extraKeys = [];
+      var seenKey = {};
+      var read = 0;
+      var t, m, messages, subject, body, hay, stockId, hitDate, n4, nums, ni;
+      for (t = 0; t < threads.length && read < 12; t++) {
+        messages = threads[t].getMessages();
+        for (m = messages.length - 1; m >= 0 && read < 12; m--) {
+          read++;
+          subject = String(messages[m].getSubject() || "");
+          try {
+            body = String(messages[m].getPlainBody() || "").substring(0, 12000);
+          } catch (bodyErr) {
+            body = "";
+          }
+          hay = subject + "\n" + body;
+          var hayNorm = hay.toUpperCase().replace(/\s+/g, "");
+          if (hayNorm.indexOf(query) === -1) {
+            var qStrip = query.replace(/^0+/, "");
+            if (!qStrip || hayNorm.indexOf(qStrip) === -1) continue;
+          }
+          stockId = extractStockIdFromEmailText_(hay);
+          hitDate = messages[m].getDate() ? messages[m].getDate().getTime() : 0;
+          if (stockId && (!best || hitDate > best.date)) {
+            best = {
+              found: true,
+              stockId: normalizeStockId(stockId),
+              message: "Gefunden via Gmail",
+              source: "gmail-live",
+              date: hitDate
+            };
+          }
+          n4 = hay.match(/N4P\d{4,}/i);
+          if (n4 && n4[0] && !seenKey[n4[0].toUpperCase()]) {
+            seenKey[n4[0].toUpperCase()] = true;
+            extraKeys.push(String(n4[0]).toUpperCase());
+          }
+          nums = hay.match(/\b\d{7,14}\b/g) || [];
+          for (ni = 0; ni < nums.length && extraKeys.length < 8; ni++) {
+            if (!seenKey[nums[ni]]) {
+              seenKey[nums[ni]] = true;
+              extraKeys.push(nums[ni]);
+            }
+          }
+        }
+      }
+      if (best) return best;
+      for (t = 0; t < extraKeys.length; t++) {
+        var viaLookup = searchOrderNumberInGmailLookup_(extraKeys[t]);
+        if (viaLookup && viaLookup.found && viaLookup.stockId) {
+          viaLookup.message = "Gefunden via Gmail (Bestellnummer in Mail)";
+          viaLookup.source = "gmail-live";
+          return viaLookup;
+        }
+      }
+      return { found: false };
+    } catch (err) {
+      return { found: false };
+    }
   }
 
   function testGmailLookupFromWms() {
@@ -1902,11 +2124,28 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
 
   function searchByOrderNumber(query) {
     try {
-      query = String(query || "").replace(/\s+/g, '').toUpperCase();
-      if (!query) return { found: false, message: "Keine Suchanfrage" };
+      var pack = collectSearchQueries_(query);
+      var parsed = pack.parsed;
+      if (parsed && parsed.stockId && /^[A-Z]{2}\d{3,}/i.test(parsed.stockId)) {
+        return {
+          found: true,
+          stockId: normalizeStockId(parsed.stockId),
+          message: "Gefunden im Stellantis-Label",
+          source: "stellantis-label"
+        };
+      }
 
-      var cleanQuery = query.replace(/^N4P/i, '');
-      if (!cleanQuery || cleanQuery.length < 4) return { found: false, message: "Suchanfrage zu kurz (min. 4 Zeichen)" };
+      var queries = pack.queries || [];
+      if (!queries.length) {
+        var raw = String(query || "").replace(/\s+/g, "").toUpperCase();
+        if (raw) queries = [raw];
+      }
+      var minLenOk = false;
+      var qi;
+      for (qi = 0; qi < queries.length; qi++) {
+        if (queries[qi] && queries[qi].length >= 4) { minLenOk = true; break; }
+      }
+      if (!minLenOk) return { found: false, message: "Suchanfrage zu kurz (min. 4 Zeichen)" };
 
       var ss = SpreadsheetApp.getActiveSpreadsheet();
       var sheet = ss.getSheetByName("Refurbisment List");
@@ -1916,24 +2155,45 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
       var kommData = sheet.getRange(1, 24, lastRow, 1).getValues();
       var stockData = sheet.getRange(1, 2, lastRow, 1).getValues();
 
-      for (var i = 1; i < kommData.length; i++) {
-        var cellText = String(kommData[i][0] || "").replace(/\s+/g, '').toUpperCase();
-        if (!cellText) continue;
-        if (cellText.indexOf(cleanQuery) !== -1 || cellText.indexOf(query) !== -1) {
-          var stockId = String(stockData[i][0] || "").trim();
-          if (stockId) {
-            return { found: true, stockId: stockId, message: "Gefunden via Bestellnummer in Zeile " + (i + 1), source: "sheet" };
+      for (qi = 0; qi < queries.length; qi++) {
+        var q = queries[qi];
+        if (!q || q.length < 4) continue;
+        var q0 = q.replace(/^N4P/i, "").replace(/^0+/, "");
+        for (var i = 1; i < kommData.length; i++) {
+          var cellText = String(kommData[i][0] || "").replace(/\s+/g, "").toUpperCase();
+          if (!cellText) continue;
+          if (cellText.indexOf(q) !== -1 || (q0.length >= 4 && cellText.indexOf(q0) !== -1) || lookupKeyMatchesQuery_(cellText, q)) {
+            var stockId = String(stockData[i][0] || "").trim();
+            if (stockId) {
+              return { found: true, stockId: stockId, message: "Gefunden via Bestellnummer in Zeile " + (i + 1), source: "sheet" };
+            }
           }
         }
       }
 
-      var gmailHit = searchOrderNumberInGmailLookup_(query);
-      if (gmailHit && gmailHit.found && gmailHit.stockId) return gmailHit;
+      for (qi = 0; qi < queries.length; qi++) {
+        if (!queries[qi] || queries[qi].length < 4) continue;
+        var gmailHit = searchOrderNumberInGmailLookup_(queries[qi]);
+        if (gmailHit && gmailHit.found && gmailHit.stockId) return gmailHit;
+      }
 
-      var nbHit = searchNachbestellungByQuery_(query);
-      if (nbHit && nbHit.found && nbHit.stockId) return nbHit;
+      for (qi = 0; qi < queries.length; qi++) {
+        if (!queries[qi] || queries[qi].length < 4) continue;
+        var nbHit = searchNachbestellungByQuery_(queries[qi]);
+        if (nbHit && nbHit.found && nbHit.stockId) return nbHit;
+      }
 
-      return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet, Gmail Lookup noch in Nachbestellung gefunden." };
+      var liveTried = 0;
+      for (qi = 0; qi < queries.length; qi++) {
+        if (!queries[qi] || queries[qi].length < 6) continue;
+        liveTried++;
+        if (liveTried > 3) break;
+        var liveHit = searchOrderNumberInGmailLive_(queries[qi]);
+        if (liveHit && liveHit.found && liveHit.stockId) return liveHit;
+      }
+
+      var shown = queries[0] || String(query || "");
+      return { found: false, message: "Bestellnummer '" + shown + "' weder im Sheet, Gmail Lookup, Nachbestellung noch in Gmail gefunden." };
     } catch (err) {
       return { found: false, message: "Fehler: " + err.message };
     }

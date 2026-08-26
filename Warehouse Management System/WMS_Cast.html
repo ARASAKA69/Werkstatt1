@@ -536,6 +536,7 @@
   </div>
 
   <script type="application/json" id="castBoot"><?!= JSON.stringify({ bind: String(bindCode || ""), appUrl: String(appUrl || "") }) ?></script>
+  <?!= include('WMS_ScanParse') ?>
   <script>
   (function() {
     window.CAST_BIND = '';
@@ -729,6 +730,12 @@
     }
 
     function classifyScan(raw) {
+      var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(raw) : null;
+      if (stel) {
+        if (stel.stockId && looksLikeStock(stel.stockId)) return { type: 'stock', value: stel.stockId };
+        if (stel.tracking) return { type: 'order', value: stel.tracking };
+        if (stel.keys && stel.keys[0]) return { type: 'order', value: stel.keys[0] };
+      }
       var regal = normalizeRegal(raw);
       if (regal) return { type: 'regal', value: regal };
       var compact = normalizeStock(raw);
