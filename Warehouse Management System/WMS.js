@@ -24,6 +24,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.10",
+    date: "26.08.2026",
+    notes:
+      "• Gmail-Suche läuft nicht mehr direkt im WMS (keine Mail-Berechtigung nötig) — Sendungen kommen über Gmail Lookup + Belege vom lager.hemau Sync"
+  },
+  {
     version: "2.2.9",
     date: "26.08.2026",
     notes:
@@ -1790,36 +1796,6 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     return "";
   }
 
-  function emailPlainFromMessage_(msg) {
-    var subject = "";
-    var plain = "";
-    var html = "";
-    try { subject = String(msg.getSubject() || ""); } catch (e0) {}
-    try { plain = String(msg.getPlainBody() || ""); } catch (e1) {}
-    try { html = String(msg.getBody() || "").replace(/<[^>]+>/g, " "); } catch (e2) {}
-    return (subject + "\n" + plain + "\n" + html).substring(0, 20000);
-  }
-
-  function extractOrderLikeKeysFromText_(text) {
-    var keys = [];
-    var seen = {};
-    function add(v) {
-      var s = String(v || "").replace(/\s+/g, "").toUpperCase();
-      if (!s || s.length < 6 || s.length > 40 || seen[s]) return;
-      seen[s] = true;
-      keys.push(s);
-    }
-    var hay = String(text || "");
-    var n4 = hay.match(/N4P\d{4,}/gi) || [];
-    var i;
-    for (i = 0; i < n4.length; i++) add(n4[i]);
-    var nums = hay.match(/\b\d{7,14}\b/g) || [];
-    for (i = 0; i < nums.length; i++) add(nums[i]);
-    var track = hay.match(/\b\d{8,}[A-Z][A-Z0-9]{3,}\b/gi) || [];
-    for (i = 0; i < track.length; i++) add(track[i]);
-    return keys;
-  }
-
   function hayContainsQuery_(hay, query) {
     var h = String(hay || "").toUpperCase().replace(/\s+/g, "");
     var q = String(query || "").toUpperCase().replace(/\s+/g, "");
@@ -1919,89 +1895,6 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     }
 
     return { found: false, message: "Bestellnummer '" + query + "' nicht in Gmail Lookup gefunden." };
-  }
-
-  function searchOrderNumberInGmailLive_(query) {
-    query = String(query || "").replace(/\s+/g, "").toUpperCase();
-    if (!query || query.length < 6) return { found: false };
-    if (typeof GmailApp === "undefined") return { found: false, message: "Gmail nicht verfügbar" };
-    try {
-      var terms = ['"' + query + '" newer_than:90d', query + " newer_than:90d"];
-      var q0 = query.replace(/^N4P/i, "").replace(/^0+/, "");
-      if (q0 && q0 !== query && q0.length >= 6) {
-        terms.push('"' + q0 + '" newer_than:90d');
-        terms.push(q0 + " newer_than:90d");
-      }
-      var dPart = query.match(/D(\d{6,})$/i);
-      if (dPart && dPart[1] && dPart[1].length >= 6) {
-        terms.push('"' + dPart[1] + '" newer_than:90d');
-      }
-
-      var threads = [];
-      var seenTid = {};
-      var s;
-      for (s = 0; s < terms.length && threads.length < 12; s++) {
-        var batch = GmailApp.search(terms[s], 0, 8);
-        var b;
-        for (b = 0; b < batch.length; b++) {
-          var tid = batch[b].getId();
-          if (seenTid[tid]) continue;
-          seenTid[tid] = true;
-          threads.push(batch[b]);
-        }
-      }
-      if (!threads.length) return { found: false };
-
-      var best = null;
-      var extraKeys = [];
-      var seenKey = {};
-      var read = 0;
-      var t, m, messages, hay, stockId, hitDate, ek, ki;
-      for (t = 0; t < threads.length && read < 14; t++) {
-        messages = threads[t].getMessages();
-        for (m = messages.length - 1; m >= 0 && read < 14; m--) {
-          read++;
-          hay = emailPlainFromMessage_(messages[m]);
-          if (!hayContainsQuery_(hay, query) && !(dPart && hayContainsQuery_(hay, dPart[1]))) continue;
-          stockId = extractStockIdFromEmailText_(hay);
-          hitDate = messages[m].getDate() ? messages[m].getDate().getTime() : 0;
-          if (stockId && (!best || hitDate > best.date)) {
-            best = {
-              found: true,
-              stockId: normalizeStockId(stockId),
-              message: "Gefunden via Gmail",
-              source: "gmail-live",
-              date: hitDate
-            };
-          }
-          ek = extractOrderLikeKeysFromText_(hay);
-          for (ki = 0; ki < ek.length; ki++) {
-            if (seenKey[ek[ki]] || ek[ki] === query) continue;
-            seenKey[ek[ki]] = true;
-            extraKeys.push(ek[ki]);
-          }
-        }
-      }
-      if (best) return best;
-      for (t = 0; t < extraKeys.length; t++) {
-        if (extraKeys[t] === query) continue;
-        var viaLookup = searchOrderNumberInGmailLookup_(extraKeys[t]);
-        if (viaLookup && viaLookup.found && viaLookup.stockId) {
-          viaLookup.message = "Gefunden via Gmail (Bestellnummer in Mail)";
-          viaLookup.source = "gmail-live";
-          return viaLookup;
-        }
-        var viaNb = searchNachbestellungByQuery_(extraKeys[t]);
-        if (viaNb && viaNb.found && viaNb.stockId) {
-          viaNb.message = "Gefunden via Gmail → Nachbestellung";
-          viaNb.source = "gmail-live";
-          return viaNb;
-        }
-      }
-      return { found: false };
-    } catch (err) {
-      return { found: false, message: "Gmail-Suche fehlgeschlagen: " + String(err.message || err) };
-    }
   }
 
   function testGmailLookupFromWms() {
@@ -2272,21 +2165,8 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
         if (pzHit && pzHit.found && pzHit.stockId) return pzHit;
       }
 
-      var liveTried = 0;
-      var gmailErr = "";
-      for (qi = 0; qi < queries.length; qi++) {
-        if (!queries[qi] || queries[qi].length < 6) continue;
-        liveTried++;
-        if (liveTried > 3) break;
-        var liveHit = searchOrderNumberInGmailLive_(queries[qi]);
-        if (liveHit && liveHit.found && liveHit.stockId) return liveHit;
-        if (liveHit && liveHit.message && String(liveHit.message).indexOf("Gmail") === 0) gmailErr = liveHit.message;
-      }
-
       var shown = queries[0] || String(query || "");
-      var msg = "Sendung/Bestellnummer '" + shown + "' weder im Sheet, Gmail Lookup, Nachbestellung noch in Belegen/Gmail gefunden.";
-      if (gmailErr) msg += " " + gmailErr;
-      return { found: false, message: msg };
+      return { found: false, message: "Sendung/Bestellnummer '" + shown + "' weder im Sheet, Gmail Lookup, Nachbestellung noch in Belegen gefunden." };
     } catch (err) {
       return { found: false, message: "Fehler: " + err.message };
     }
