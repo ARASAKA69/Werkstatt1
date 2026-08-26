@@ -574,6 +574,8 @@
     var pcOk = false;
     var busy = false;
     var currentStock = '';
+    var pendingStelTrack = '';
+    var pendingStelAt = 0;
     var currentSource = '';
     var dualSource = false;
     var lastNbEntries = [];
@@ -1292,6 +1294,13 @@
             refreshSourcePick(id, res);
             setStatus('Daten für ' + id + ' geladen' + (res.source === 'nachbestellung' ? ' (Nachbestellung)' : ''), '#34D399');
             beep('ok');
+            if (pendingStelTrack && (Date.now() - pendingStelAt) < 300000) {
+              var track = pendingStelTrack;
+              pendingStelTrack = '';
+              pendingStelAt = 0;
+              google.script.run.rememberStellantisTracking(track, id);
+              setStatus('Sendung ' + track + ' → ' + id + ' gemerkt', '#34D399');
+            }
             return;
           }
           if (!skipFallback) {
@@ -1367,6 +1376,16 @@
           if (res && res.found && res.stockId) {
             setStatus((res.message || 'Gefunden') + ' → ' + res.stockId, '#34D399');
             loadStock(res.stockId, true);
+            return;
+          }
+          var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(q) : null;
+          if (stel && (stel.tracking || stel.kind === 'package' || stel.kind === 'barcode')) {
+            pendingStelTrack = stel.tracking || q.replace(/\s+/g, '').toUpperCase();
+            pendingStelAt = Date.now();
+            setBusy(false);
+            if (scanInput) scanInput.value = '';
+            setStatus('Stellantis-Paket: inneres Label oder Stock-ID scannen — Sendung wird verknüpft', '#F59E0B');
+            beep('err');
             return;
           }
           searchBelege(q, res || prev);

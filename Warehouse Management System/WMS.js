@@ -24,6 +24,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.11",
+    date: "26.08.2026",
+    notes:
+      "• Stellantis Paket-Barcode steht nicht in Mails: HUD merkt die Sendung und verknüpft sie mit der nächsten Stock-ID (inneres Label) — danach findet der gleiche Barcode den Auftrag"
+  },
+  {
     version: "2.2.10",
     date: "26.08.2026",
     notes:
@@ -1895,6 +1901,36 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     }
 
     return { found: false, message: "Bestellnummer '" + query + "' nicht in Gmail Lookup gefunden." };
+  }
+
+  function rememberStellantisTracking(tracking, stockId) {
+    tracking = String(tracking || "").replace(/\s+/g, "").toUpperCase();
+    stockId = normalizeStockId(stockId);
+    if (!tracking || tracking.length < 10 || !stockId) return { success: false, message: "Keine Sendung/Stock-ID" };
+    try {
+      var ss = SpreadsheetApp.openById(GMAIL_LOOKUP_SHEET_ID);
+      var sheet = ss.getSheetByName(GMAIL_LOOKUP_TAB);
+      if (!sheet) return { success: false, message: "Gmail Lookup Tab fehlt" };
+      var lastRow = sheet.getLastRow();
+      if (lastRow >= 2) {
+        var data = sheet.getRange(2, 1, lastRow, 2).getValues();
+        var i;
+        for (i = 0; i < data.length; i++) {
+          var key = String(data[i][0] || "").replace(/\s+/g, "").toUpperCase();
+          if (key !== tracking) continue;
+          sheet.getRange(i + 2, 2).setValue(stockId);
+          sheet.getRange(i + 2, 3).setValue("Stellantis Scan");
+          sheet.getRange(i + 2, 4).setValue(new Date());
+          SpreadsheetApp.flush();
+          return { success: true, updated: true, tracking: tracking, stockId: stockId };
+        }
+      }
+      sheet.appendRow([tracking, stockId, "Stellantis Scan", new Date()]);
+      SpreadsheetApp.flush();
+      return { success: true, updated: false, tracking: tracking, stockId: stockId };
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
   }
 
   function testGmailLookupFromWms() {

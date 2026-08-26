@@ -2659,6 +2659,7 @@
       wmsSkipSearchFocusMinimize = Math.max(0, wmsSkipSearchFocusMinimize - 1);
     }, 500);
     setStatus(opts.status || ('📦 Nachbestellung ' + stockId + ' — nur im Nachbestellung-Fenster'), '#F27420');
+    rememberPendingStellantisTracking(stockId);
   }
 
   function openNbFromChooser() {
@@ -7227,6 +7228,7 @@
         setStatus('✅ Daten für ' + id + ' geladen!', '#56d364');
       }
       toggleUI(true);
+      rememberPendingStellantisTracking(id);
 
       updatePzContext(id, res.kommBestellung);
       maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
@@ -7253,6 +7255,8 @@
       document.getElementById('searchInput').value = res.stockId;
       setHudBusy(true, 'Lade Auftrag…');
       setTimeout(function() { loadData(); }, 600);
+    } else if (pendingStellantisTracking) {
+      showStellantisPackageWait();
     } else {
       searchBelegeFallback(res);
     }
@@ -7333,6 +7337,42 @@
   }
 
   var wmsLoadSeq = 0;
+  var pendingStellantisTracking = '';
+  var pendingStellantisAt = 0;
+
+  function setPendingStellantisTracking(tracking) {
+    var t = String(tracking || '').replace(/\s+/g, '').toUpperCase();
+    pendingStellantisTracking = t;
+    pendingStellantisAt = t ? Date.now() : 0;
+  }
+
+  function showStellantisPackageWait() {
+    setHudBusy(false);
+    toggleUI(true);
+    setStatus('Stellantis-Paket: Sendungsnummer steht nicht in Mails. Inneres Label (Stock-ID) scannen oder Stock-ID / Bestellnummer eingeben — wird mit dieser Sendung verknüpft.', '#F27420');
+    var inp = document.getElementById('searchInput');
+    if (inp) inp.value = '';
+    focusSearchBar({ clear: true, delay: 40 });
+  }
+
+  function rememberPendingStellantisTracking(stockId) {
+    var track = pendingStellantisTracking;
+    if (!track) return;
+    if (Date.now() - pendingStellantisAt > 5 * 60 * 1000) {
+      pendingStellantisTracking = '';
+      pendingStellantisAt = 0;
+      return;
+    }
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid || !isStockIdFormat(sid)) return;
+    pendingStellantisTracking = '';
+    pendingStellantisAt = 0;
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success) return;
+      if (refurbCache && refurbCache.gmailLookup) refurbCache.gmailLookup.unshift([track, sid]);
+      if (typeof showStickyToast === 'function') showStickyToast('ok', 'Stellantis-Sendung gemerkt', track + ' → ' + sid);
+    }).rememberStellantisTracking(track, sid);
+  }
 
   function loadData() {
     var id = document.getElementById('searchInput').value.trim();
@@ -7350,6 +7390,7 @@
       id = stel.stockId;
     } else if (stel && !isStockIdFormat(id)) {
       var stelQ = stel.tracking || (stel.keys && stel.keys[0]) || id;
+      setPendingStellantisTracking(stelQ);
       setStatus("🔍 Stellantis-Paket, suche '" + stelQ + "'…", "#F27420");
       toggleUI(false);
       setHudBusy(true, 'Suche Stellantis-Paket…');
