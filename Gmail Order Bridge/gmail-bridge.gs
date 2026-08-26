@@ -163,7 +163,54 @@ function extractSearchKeysFromSubject_(subject) {
   return Object.keys(keys);
 }
 
-function addThreadToRowMap_(thread, cutoff, rowMap) {
+function addKeysToRowMap_(rowMap, keys, stockId, subject, msgDate) {
+  if (!stockId || !keys || !keys.length) return;
+  var msgTime = msgDate && msgDate.getTime ? msgDate.getTime() : 0;
+  var seenKey = {};
+  var k;
+  for (k = 0; k < keys.length; k++) {
+    var searchKey = String(keys[k] || "").replace(/\s+/g, "").toUpperCase();
+    if (!searchKey || searchKey.length < 4 || searchKey.length > 40 || seenKey[searchKey]) continue;
+    seenKey[searchKey] = true;
+    var mapKey = searchKey + "|" + stockId;
+    if (!rowMap[mapKey] || msgTime > rowMap[mapKey].msgTime) {
+      rowMap[mapKey] = {
+        searchKey: searchKey,
+        stockId: stockId,
+        subject: subject,
+        msgDate: msgDate,
+        msgTime: msgTime
+      };
+    }
+  }
+}
+
+function resolveStockIdFromRowMap_(rowMap, keys) {
+  if (!keys || !keys.length) return "";
+  var sorted = keys.slice().sort(function(a, b) {
+    return String(b || "").length - String(a || "").length;
+  });
+  var i;
+  for (i = 0; i < sorted.length; i++) {
+    var q = String(sorted[i] || "").replace(/\s+/g, "").toUpperCase();
+    if (!q || q.length < 6) continue;
+    if (/^\d{8,}[A-Z]/.test(q) && q.length >= 16) continue;
+    var q0 = q.replace(/^N4P/, "").replace(/^0+/, "");
+    var mk;
+    for (mk in rowMap) {
+      if (!Object.prototype.hasOwnProperty.call(rowMap, mk)) continue;
+      var item = rowMap[mk];
+      var sk = String(item.searchKey || "").replace(/\s+/g, "").toUpperCase();
+      if (!sk) continue;
+      if (sk === q) return item.stockId;
+      var sk0 = sk.replace(/^N4P/, "").replace(/^0+/, "");
+      if (q0 && sk0 && q0 === sk0 && q0.length >= 6) return item.stockId;
+    }
+  }
+  return "";
+}
+
+function addThreadToRowMap_(thread, cutoff, rowMap, pending) {
   var messages = thread.getMessages();
   for (var m = messages.length - 1; m >= 0; m--) {
     var msgDate = messages[m].getDate();
@@ -177,31 +224,20 @@ function addThreadToRowMap_(thread, cutoff, rowMap) {
     } catch (e) {
       body = "";
     }
+    try {
+      var html = String(messages[m].getBody() || "").replace(/<[^>]+>/g, " ");
+      if (html) body += "\n" + html.substring(0, 8000);
+    } catch (e2) {}
     if (!stockId) stockId = extractStockIdFromText_(body);
-    if (!stockId) continue;
 
     var keys = extractSearchKeysFromSubject_(subject);
     var extra = extractSearchKeysFromText_(subject + "\n" + body);
-    var seenKey = {};
-    var merged = [];
-    var ki;
-    for (ki = 0; ki < keys.length; ki++) merged.push(keys[ki]);
-    for (ki = 0; ki < extra.length; ki++) merged.push(extra[ki]);
-    for (var k = 0; k < merged.length; k++) {
-      var searchKey = merged[k];
-      if (!searchKey || seenKey[searchKey]) continue;
-      seenKey[searchKey] = true;
-      var mapKey = searchKey + "|" + stockId;
-      if (!rowMap[mapKey] || msgDate.getTime() > rowMap[mapKey].msgTime) {
-        rowMap[mapKey] = {
-          searchKey: searchKey,
-          stockId: stockId,
-          subject: subject,
-          msgDate: msgDate,
-          msgTime: msgDate.getTime()
-        };
-      }
+    var merged = keys.concat(extra);
+    if (!stockId) {
+      if (pending && merged.length) pending.push({ keys: merged, subject: subject, msgDate: msgDate });
+      continue;
     }
+    addKeysToRowMap_(rowMap, merged, stockId, subject, msgDate);
   }
 }
 
@@ -234,13 +270,26 @@ function collectGmailLookupRows_(existingRowMap, incrementalSince) {
   }
 
   var afterQuery = getGmailSyncAfterQuery_(searchAfter);
-  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO) after:" + afterQuery;
+  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO OR NEXIVE) after:" + afterQuery;
   var maxPages = isIncremental ? 5 : 15;
   var seenThreads = {};
   var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages);
+  var pending = [];
 
   for (var t = 0; t < threads.length; t++) {
-    addThreadToRowMap_(threads[t], cutoff, rowMap);
+    addThreadToRowMap_(threads[t], cutoff, rowMap, pending);
+  }
+
+  var extraQuery = "(nexive OR Sendungsnr OR Sendungsnummer OR \"&YOU\") after:" + afterQuery;
+  var extraThreads = fetchGmailThreadsSince_(extraQuery, cutoff, seenThreads, isIncremental ? 2 : 6);
+  for (t = 0; t < extraThreads.length; t++) {
+    addThreadToRowMap_(extraThreads[t], cutoff, rowMap, pending);
+  }
+
+  for (var p = 0; p < pending.length; p++) {
+    var sid = resolveStockIdFromRowMap_(rowMap, pending[p].keys);
+    if (!sid) continue;
+    addKeysToRowMap_(rowMap, pending[p].keys, sid, pending[p].subject, pending[p].msgDate);
   }
 
   return rowMapToSortedRows_(rowMap, cutoff);

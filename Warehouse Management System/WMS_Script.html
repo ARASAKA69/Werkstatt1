@@ -7353,6 +7353,7 @@
       setStatus("🔍 Stellantis-Paket, suche '" + stelQ + "'…", "#F27420");
       toggleUI(false);
       setHudBusy(true, 'Suche Stellantis-Paket…');
+      document.getElementById('searchInput').value = stelQ;
       var stelLocal = searchByOrderNumberFromCache(stelQ, refurbCache);
       if (stelLocal && stelLocal.found) {
         handleOrderNumberSearchResult(stelLocal);
