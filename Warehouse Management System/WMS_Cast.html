@@ -1379,7 +1379,7 @@
             return;
           }
           var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(q) : null;
-          if (stel && (stel.tracking || stel.kind === 'package' || stel.kind === 'barcode')) {
+          if (stel && stel.kind !== 'nox' && (stel.tracking || stel.kind === 'package' || stel.kind === 'barcode')) {
             pendingStelTrack = stel.tracking || q.replace(/\s+/g, '').toUpperCase();
             pendingStelAt = Date.now();
             setBusy(false);

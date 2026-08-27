@@ -24,31 +24,6 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.11",
-    date: "26.08.2026",
-    notes:
-      "• Stellantis Paket-Barcode steht nicht in Mails: HUD merkt die Sendung und verknüpft sie mit der nächsten Stock-ID (inneres Label) — danach findet der gleiche Barcode den Auftrag"
-  },
-  {
-    version: "2.2.10",
-    date: "26.08.2026",
-    notes:
-      "• Gmail-Suche läuft nicht mehr direkt im WMS (keine Mail-Berechtigung nötig) — Sendungen kommen über Gmail Lookup + Belege vom lager.hemau Sync"
-  },
-  {
-    version: "2.2.9",
-    date: "26.08.2026",
-    notes:
-      "• Stellantis Paket-QR/Barcode: Sendungsnummer wird jetzt gegen Belege, Gmail-Body (auch HTML) und Lookup-Bestellnummern aus derselben Mail aufgelöst — nicht mehr als Bestellnummer behandelt"
-  },
-  {
-    version: "2.2.8",
-    date: "26.08.2026",
-    notes:
-      "• Stellantis-Pakete: Inneres Label (QR mit Stock-ID) lädt den Auftrag direkt, äußeres Paket-Label/Barcode sucht Sendungsnummer in Sheet, Gmail-Lookup und E-Mail-Inhalt\n" +
-      "• Bestellnummern-Suche erkennt führende Nullen und findet Treffer auch im E-Mail-Body, nicht nur im Betreff"
-  },
-  {
     version: "2.2.7",
     date: "24.08.2026",
     notes:
@@ -1693,7 +1668,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
   
   function stelPushLookupKey_(keys, seen, raw) {
     var s = String(raw == null ? "" : raw).replace(/\s+/g, "").toUpperCase();
-    if (!s || s.length < 6 || s.length > 40) return;
+    if (!s || s.length < 6 || s.length > 48) return;
     if (/^(NEX|NLX|NEXIVE|HEMAU|AUTOHERO|STELLANTIS|DISTRIGO|DEUTSCHLAND|GMBH)$/.test(s)) return;
     if (/^\d{5}$/.test(s) || /^\d{1,2}:\d{2}$/.test(s)) return;
     if (seen[s]) return;
@@ -1714,6 +1689,11 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
   function stelLooksTracking_(v) {
     var t = String(v || "").replace(/\s+/g, "").toUpperCase();
     return t.length >= 16 && t.length <= 40 && /^\d{8,}[A-Z][A-Z0-9]{3,}$/.test(t);
+  }
+
+  function looksLikeNoxTracking_(v) {
+    var t = String(v || "").replace(/\s+/g, "");
+    return /^\d{18,28}$/.test(t);
   }
 
   function stelStripPrefix_(s) {
@@ -1772,6 +1752,9 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     var compact = original.replace(/\s+/g, "").toUpperCase();
     if (stelLooksTracking_(compact)) {
       return { kind: "barcode", stockId: "", tracking: compact, keys: [compact] };
+    }
+    if (looksLikeNoxTracking_(compact)) {
+      return { kind: "nox", stockId: "", tracking: compact, keys: [compact] };
     }
     return null;
   }
@@ -1846,7 +1829,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     var seen = {};
     function add(v) {
       var s = String(v || "").replace(/\s+/g, "").toUpperCase();
-      if (!s || s.length < 4 || s.length > 40 || seen[s]) return;
+      if (!s || s.length < 4 || s.length > 48 || seen[s]) return;
       seen[s] = true;
       out.push(s);
     }

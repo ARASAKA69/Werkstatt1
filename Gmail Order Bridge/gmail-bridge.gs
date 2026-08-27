@@ -120,6 +120,9 @@ function extractSearchKeysFromText_(text) {
     if (track.length >= 16 && track.length <= 40) keys[track] = true;
   }
 
+  var longNums = subjectText.match(/\b\d{18,28}\b/g) || [];
+  for (i = 0; i < longNums.length; i++) keys[String(longNums[i])] = true;
+
   var nums = subjectText.match(/\b\d{7,14}\b/g) || [];
   for (i = 0; i < nums.length; i++) {
     var n = String(nums[i] || "");
@@ -135,6 +138,14 @@ function extractSearchKeysFromText_(text) {
     keys[n4] = true;
     var n4n = n4.replace(/^N4P/, "");
     if (n4n.length >= 4) keys[n4n] = true;
+  }
+
+  var vk = subjectText.match(/VK-?(AU|LI)\d{6,}/gi) || [];
+  for (i = 0; i < vk.length; i++) {
+    var vkFull = String(vk[i] || "").replace(/\s+/g, "").toUpperCase();
+    keys[vkFull] = true;
+    var vkNum = vkFull.replace(/^VK-?(AU|LI)/, "");
+    if (vkNum.length >= 6) keys[vkNum] = true;
   }
 
   return Object.keys(keys);
@@ -154,6 +165,13 @@ function extractSearchKeysFromSubject_(subject) {
     if (n4Num.length >= 4) keys[n4Num] = true;
   }
 
+  var vkSub = subjectText.match(/VK-?(AU|LI)\d{6,}/gi) || [];
+  var v;
+  for (v = 0; v < vkSub.length; v++) {
+    var vkFull = String(vkSub[v] || "").replace(/\s+/g, "").toUpperCase();
+    if (vkFull.length >= 4 && vkFull.length <= 40) keys[vkFull] = true;
+  }
+
   var parts = subjectText.split("---");
   if (parts.length > 0) {
     var orderNum = String(parts[0]).replace(/\s+/g, "").toUpperCase();
@@ -170,7 +188,7 @@ function addKeysToRowMap_(rowMap, keys, stockId, subject, msgDate) {
   var k;
   for (k = 0; k < keys.length; k++) {
     var searchKey = String(keys[k] || "").replace(/\s+/g, "").toUpperCase();
-    if (!searchKey || searchKey.length < 4 || searchKey.length > 40 || seenKey[searchKey]) continue;
+    if (!searchKey || searchKey.length < 4 || searchKey.length > 48 || seenKey[searchKey]) continue;
     seenKey[searchKey] = true;
     var mapKey = searchKey + "|" + stockId;
     if (!rowMap[mapKey] || msgTime > rowMap[mapKey].msgTime) {
@@ -210,7 +228,32 @@ function resolveStockIdFromRowMap_(rowMap, keys) {
   return "";
 }
 
-function addThreadToRowMap_(thread, cutoff, rowMap, pending) {
+function looksLikeNoraMail_(subject, body) {
+  var h = String(subject || "").toUpperCase() + " " + String(body || "").toUpperCase();
+  return /TEILESERVICE|NORA|VK-AU|VK-LI|UNSERE LIEFERUNG/.test(h);
+}
+
+function attachmentTextFromMessage_(msg, ocrBudget) {
+  var text = "";
+  if (!ocrBudget || ocrBudget.left <= 0) return text;
+  try {
+    var atts = msg.getAttachments() || [];
+    var i;
+    for (i = 0; i < atts.length && ocrBudget.left > 0; i++) {
+      var name = String(atts[i].getName() || "").toLowerCase();
+      var ct = String(atts[i].getContentType() || "").toLowerCase();
+      if (name.indexOf(".pdf") === -1 && ct.indexOf("pdf") === -1) continue;
+      ocrBudget.left--;
+      try {
+        var extracted = pzOcrPdfText_(atts[i].copyBlob());
+        if (extracted) text += "\n" + extracted;
+      } catch (e) {}
+    }
+  } catch (e2) {}
+  return text.substring(0, 20000);
+}
+
+function addThreadToRowMap_(thread, cutoff, rowMap, pending, ocrBudget) {
   var messages = thread.getMessages();
   for (var m = messages.length - 1; m >= 0; m--) {
     var msgDate = messages[m].getDate();
@@ -229,6 +272,10 @@ function addThreadToRowMap_(thread, cutoff, rowMap, pending) {
       if (html) body += "\n" + html.substring(0, 8000);
     } catch (e2) {}
     if (!stockId) stockId = extractStockIdFromText_(body);
+
+    if (stockId && looksLikeNoraMail_(subject, body)) {
+      body += "\n" + attachmentTextFromMessage_(messages[m], ocrBudget);
+    }
 
     var keys = extractSearchKeysFromSubject_(subject);
     var extra = extractSearchKeysFromText_(subject + "\n" + body);
@@ -270,20 +317,21 @@ function collectGmailLookupRows_(existingRowMap, incrementalSince) {
   }
 
   var afterQuery = getGmailSyncAfterQuery_(searchAfter);
-  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO OR NEXIVE) after:" + afterQuery;
+  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO OR NEXIVE OR from:teileservice.de OR \"Unsere Lieferung\") after:" + afterQuery;
   var maxPages = isIncremental ? 5 : 15;
   var seenThreads = {};
   var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages);
   var pending = [];
+  var ocrBudget = { left: isIncremental ? 4 : 12 };
 
   for (var t = 0; t < threads.length; t++) {
-    addThreadToRowMap_(threads[t], cutoff, rowMap, pending);
+    addThreadToRowMap_(threads[t], cutoff, rowMap, pending, ocrBudget);
   }
 
-  var extraQuery = "(nexive OR Sendungsnr OR Sendungsnummer OR \"&YOU\") after:" + afterQuery;
+  var extraQuery = "(nexive OR Sendungsnr OR Sendungsnummer OR \"&YOU\" OR NORA OR teileservice) after:" + afterQuery;
   var extraThreads = fetchGmailThreadsSince_(extraQuery, cutoff, seenThreads, isIncremental ? 2 : 6);
   for (t = 0; t < extraThreads.length; t++) {
-    addThreadToRowMap_(extraThreads[t], cutoff, rowMap, pending);
+    addThreadToRowMap_(extraThreads[t], cutoff, rowMap, pending, ocrBudget);
   }
 
   for (var p = 0; p < pending.length; p++) {
@@ -460,7 +508,7 @@ var PACKZETTEL_TIME_BUDGET_MS = 1200000;
 var PACKZETTEL_ENABLE_OCR = true;
 var PACKZETTEL_SYNC_PROPERTY_KEY = "PACKZETTEL_LAST_SYNC_MS";
 var PACKZETTEL_QUERY =
-  '(from:noreply@n4.parts OR from:alfah.de OR filename:Details.pdf OR subject:Packzettel OR subject:"Auftragsbestätigung") -from:noreply@wm.de -subject:"Online Bestellung" -subject:"Rückgabeantrag"';
+  '(from:noreply@n4.parts OR from:alfah.de OR from:teileservice.de OR filename:Details.pdf OR subject:Packzettel OR subject:"Auftragsbestätigung" OR subject:"Unsere Lieferung") -from:noreply@wm.de -subject:"Online Bestellung" -subject:"Rückgabeantrag"';
 
 function pzGetSyncCutoff_() {
   var cutoff = new Date();
@@ -530,6 +578,8 @@ function pzExtractOrderNumber_(text) {
   if (v) return v.replace(/\s+/g, "");
   var m = t.match(/(N4P\s?\d{5,})/i);
   if (m && m[1]) return m[1].replace(/\s+/g, "");
+  m = t.match(/(VK-?(?:AU|LI)\d{6,})/i);
+  if (m && m[1]) return m[1].replace(/\s+/g, "").toUpperCase();
   return "";
 }
 
@@ -588,6 +638,8 @@ function pzExtractOrderDate_(text) {
 function pzExtractStockId_(text) {
   var t = String(text || "");
   var m = t.match(/STOCK_?ID\s*[:\-]?\s*([A-Z]{2}\d{3,})/i);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
   if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
   m = t.match(/Kommission[:\s]+([A-Z]{2,3}\d{3,})\b/i);
   if (m && m[1] && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) {

@@ -2,7 +2,7 @@
 (function(root) {
   function stelPushKey_(keys, seen, raw) {
     var s = String(raw == null ? '' : raw).replace(/\s+/g, '').toUpperCase();
-    if (!s || s.length < 6 || s.length > 40) return;
+    if (!s || s.length < 6 || s.length > 48) return;
     if (/^(NEX|NLX|NEXIVE|HEMAU|AUTOHERO|STELLANTIS|DISTRIGO|DEUTSCHLAND|GMBH)$/.test(s)) return;
     if (/^\d{5}$/.test(s) || /^\d{1,2}:\d{2}$/.test(s)) return;
     if (seen[s]) return;
@@ -23,6 +23,11 @@
   function stelLooksTracking_(v) {
     var t = String(v || '').replace(/\s+/g, '').toUpperCase();
     return t.length >= 16 && t.length <= 40 && /^\d{8,}[A-Z][A-Z0-9]{3,}$/.test(t);
+  }
+
+  function looksLikeNoxTracking_(v) {
+    var t = String(v || '').replace(/\s+/g, '');
+    return /^\d{18,28}$/.test(t);
   }
 
   function stelStripPrefix_(s) {
@@ -99,6 +104,15 @@
     if (stelLooksTracking_(compact)) {
       return {
         kind: 'barcode',
+        stockId: '',
+        tracking: compact,
+        keys: [compact],
+        part: ''
+      };
+    }
+    if (looksLikeNoxTracking_(compact)) {
+      return {
+        kind: 'nox',
         stockId: '',
         tracking: compact,
         keys: [compact],
