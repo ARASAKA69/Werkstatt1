@@ -105,6 +105,13 @@ function extractStockIdFromText_(text) {
   if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
   m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
   if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
+  if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
+  if (m && m[1]) {
+    var ref = String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
+    if (/^[A-Z]{2,3}\d{4,8}$/.test(ref)) return ref;
+  }
   return "";
 }
 
@@ -147,6 +154,19 @@ function extractSearchKeysFromText_(text) {
     var vkNum = vkFull.replace(/^VK-?(AU|LI)/, "");
     if (vkNum.length >= 6) keys[vkNum] = true;
   }
+
+  var compactHay = subjectText.replace(/\s+/g, "").toUpperCase();
+  var upsRe = /1Z[A-Z0-9]{16}/g;
+  var um;
+  while ((um = upsRe.exec(compactHay))) keys[um[0]] = true;
+
+  var ir = subjectText.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})/i);
+  if (ir && ir[1]) {
+    var irn = String(ir[1]).replace(/[\s-]+/g, "").toUpperCase();
+    if (/^[A-Z]{2,3}\d{4,8}$/.test(irn)) keys[irn] = true;
+  }
+  var eb = subjectText.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})/i);
+  if (eb && eb[1]) keys[String(eb[1]).replace(/\s+/g, "").toUpperCase()] = true;
 
   return Object.keys(keys);
 }
@@ -273,8 +293,9 @@ function addThreadToRowMap_(thread, cutoff, rowMap, pending, ocrBudget) {
     } catch (e2) {}
     if (!stockId) stockId = extractStockIdFromText_(body);
 
-    if (stockId && looksLikeNoraMail_(subject, body)) {
+    if (looksLikeNoraMail_(subject, body)) {
       body += "\n" + attachmentTextFromMessage_(messages[m], ocrBudget);
+      if (!stockId) stockId = extractStockIdFromText_(body);
     }
 
     var keys = extractSearchKeysFromSubject_(subject);
@@ -317,18 +338,18 @@ function collectGmailLookupRows_(existingRowMap, incrementalSince) {
   }
 
   var afterQuery = getGmailSyncAfterQuery_(searchAfter);
-  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO OR NEXIVE OR from:teileservice.de OR \"Unsere Lieferung\") after:" + afterQuery;
+  var query = "(STOCK_ID OR label:N4P OR STELLANTIS OR DISTRIGO OR NEXIVE OR from:teileservice.de OR \"Unsere Lieferung\" OR UPS OR Sendungsverfolgung) after:" + afterQuery;
   var maxPages = isIncremental ? 5 : 15;
   var seenThreads = {};
   var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, maxPages);
   var pending = [];
-  var ocrBudget = { left: isIncremental ? 4 : 12 };
+  var ocrBudget = { left: isIncremental ? 8 : 24 };
 
   for (var t = 0; t < threads.length; t++) {
     addThreadToRowMap_(threads[t], cutoff, rowMap, pending, ocrBudget);
   }
 
-  var extraQuery = "(nexive OR Sendungsnr OR Sendungsnummer OR \"&YOU\" OR NORA OR teileservice) after:" + afterQuery;
+  var extraQuery = "(nexive OR Sendungsnr OR Sendungsnummer OR \"&YOU\" OR NORA OR teileservice OR UPS OR Sendungsverfolgung) after:" + afterQuery;
   var extraThreads = fetchGmailThreadsSince_(extraQuery, cutoff, seenThreads, isIncremental ? 2 : 6);
   for (t = 0; t < extraThreads.length; t++) {
     addThreadToRowMap_(extraThreads[t], cutoff, rowMap, pending, ocrBudget);
@@ -591,7 +612,17 @@ function pzExtractReference_(text, orderNumber) {
   var t = String(text || "");
   var order = String(orderNumber || "").toUpperCase().replace(/\s+/g, "");
 
-  var m = t.match(/Kunden-?Referenz[:\s]+([A-Z]{1,4}\d{3,})/i);
+  var m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
+    return String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
+  }
+
+  m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
+  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
+    return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  }
+
+  m = t.match(/Kunden-?Referenz[:\s]+([A-Z]{1,4}\d{3,})/i);
   if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
 
   m = t.match(/Referenznummer[:\s]*[\r\n: ]+([A-Z]{1,3}\d{3,})/i);
@@ -641,6 +672,15 @@ function pzExtractStockId_(text) {
   if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
   m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
   if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
+  if (m && m[1] && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) {
+    return String(m[1]).replace(/\s+/g, "").toUpperCase();
+  }
+  m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
+  if (m && m[1]) {
+    var ir = String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
+    if (/^[A-Z]{2,3}\d{4,8}$/.test(ir) && !pzIsRejectedRef_(ir) && !/^N4P/i.test(ir)) return ir;
+  }
   m = t.match(/Kommission[:\s]+([A-Z]{2,3}\d{3,})\b/i);
   if (m && m[1] && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) {
     return String(m[1]).replace(/\s+/g, "").toUpperCase();
@@ -650,8 +690,8 @@ function pzExtractStockId_(text) {
 
 function pzDeriveStockFromRef_(stockId, reference) {
   if (stockId) return stockId;
-  var ref = String(reference || "").trim();
-  if (/^[A-Z]{2,3}\d{3,}$/i.test(ref) && !/^N4P/i.test(ref)) return ref.toUpperCase();
+  var ref = String(reference || "").replace(/[\s-]+/g, "").toUpperCase();
+  if (/^[A-Z]{2,3}\d{3,}$/.test(ref) && !/^N4P/.test(ref)) return ref;
   return "";
 }
 

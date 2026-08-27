@@ -30,6 +30,11 @@
     return /^\d{18,28}$/.test(t);
   }
 
+  function looksLikeUpsTracking_(v) {
+    var t = String(v || '').replace(/\s+/g, '').toUpperCase();
+    return /^1Z[A-Z0-9]{16}$/.test(t);
+  }
+
   function stelStripPrefix_(s) {
     s = String(s || '').trim();
     s = s.replace(/^[\x1d\x1e]+/, '');
@@ -113,6 +118,15 @@
     if (looksLikeNoxTracking_(compact)) {
       return {
         kind: 'nox',
+        stockId: '',
+        tracking: compact,
+        keys: [compact],
+        part: ''
+      };
+    }
+    if (looksLikeUpsTracking_(compact)) {
+      return {
+        kind: 'ups',
         stockId: '',
         tracking: compact,
         keys: [compact],

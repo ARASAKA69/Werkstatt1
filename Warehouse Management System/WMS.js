@@ -24,6 +24,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.8",
+    date: "27.08.2026",
+    notes:
+      "• UPS + NORA Pakete: Tracking-Nummer aufm Paket scannen geht jetzt, lädt den Auftrag direkt. Stock-ID nicht mehr suchen/abtippen."
+  },
+  {
     version: "2.2.7",
     date: "24.08.2026",
     notes:
@@ -1696,6 +1702,11 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     return /^\d{18,28}$/.test(t);
   }
 
+  function looksLikeUpsTracking_(v) {
+    var t = String(v || "").replace(/\s+/g, "").toUpperCase();
+    return /^1Z[A-Z0-9]{16}$/.test(t);
+  }
+
   function stelStripPrefix_(s) {
     s = String(s || "").trim();
     s = s.replace(/^[\x1d\x1e]+/, "");
@@ -1756,6 +1767,9 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     if (looksLikeNoxTracking_(compact)) {
       return { kind: "nox", stockId: "", tracking: compact, keys: [compact] };
     }
+    if (looksLikeUpsTracking_(compact)) {
+      return { kind: "ups", stockId: "", tracking: compact, keys: [compact] };
+    }
     return null;
   }
 
@@ -1782,6 +1796,13 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
     m = t.match(/\b([A-Z]{2}\d{4,})\s+HEMAU\b/i);
     if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+    m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
+    if (m && m[1]) return String(m[1]).replace(/\s+/g, "").toUpperCase();
+    m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
+    if (m && m[1]) {
+      var ref = String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
+      if (/^[A-Z]{2,3}\d{4,8}$/.test(ref)) return ref;
+    }
     return "";
   }
 

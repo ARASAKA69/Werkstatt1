@@ -7390,11 +7390,12 @@
       id = stel.stockId;
     } else if (stel && !isStockIdFormat(id)) {
       var stelQ = stel.tracking || (stel.keys && stel.keys[0]) || id;
-      var isNox = stel.kind === 'nox';
-      if (!isNox) setPendingStellantisTracking(stelQ);
-      setStatus(isNox ? ("🔍 NOX-Sendung '" + stelQ + "'…") : ("🔍 Stellantis-Paket, suche '" + stelQ + "'…"), "#F27420");
+      var isMailTrack = stel.kind === 'nox' || stel.kind === 'ups';
+      var mailLabel = stel.kind === 'ups' ? 'UPS' : (stel.kind === 'nox' ? 'NOX' : 'Stellantis');
+      if (!isMailTrack) setPendingStellantisTracking(stelQ);
+      setStatus("🔍 " + mailLabel + "-Sendung '" + stelQ + "'…", "#F27420");
       toggleUI(false);
-      setHudBusy(true, isNox ? 'Suche NOX-Sendung…' : 'Suche Stellantis-Paket…');
+      setHudBusy(true, 'Suche ' + mailLabel + '-Sendung…');
       document.getElementById('searchInput').value = stelQ;
       var stelLocal = searchByOrderNumberFromCache(stelQ, refurbCache);
       if (stelLocal && stelLocal.found) {
