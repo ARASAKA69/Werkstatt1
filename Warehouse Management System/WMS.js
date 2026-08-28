@@ -35,11 +35,15 @@ const WMS_CHANGELOG_HISTORY = [
     date: "28.08.2026",
     notes:
       "• Reifensuche nach Größe (Paketdienst): EAN-Barcode vom Reifen scannen reicht jetzt — Größe + Last/GW Index werden automatisch geholt und die Suche läuft direkt los\n" +
-      "• Neue EAN wird einmal nachgeschlagen und im Sheet „Reifen Kontrolle“ → Tab „EAN Cache“ gemerkt, danach geht es sofort ohne Internet\n" +
-      "• reifen.de sperrt Google-Server aus, deshalb läuft die Abfrage über die Print-Bridge (v1.4 nötig, bitte einmal neu runterladen)\n" +
-      "• EAN nirgends gefunden: Größe einmal eintippen, wird gemerkt — beim nächsten Scan läuft es automatisch\n" +
-      "• EAN Sammel-Liste: alle gescannten EANs landen in einer Liste mit „X bestellt / Y gescannt“ — kein Zettel und kein TEMP-Blatt mehr zum Sortieren. Position antippen zeigt die passenden Stock-IDs\n" +
-      "• Reifen-Etikett: kein Barcode mehr drauf, dafür Reifenname unter der Größe (nur Text)"
+      "• Neue EAN wird einmal nachgeschlagen und im Sheet „Reifen Kontrolle“ → Tab „EAN Cache“ gemerkt, danach geht es sofort auch ohne Internet\n" +
+      "• reifen.de sperrt Google-Server aus, deshalb läuft die Abfrage über die Print-Bridge (v1.4, was ich bei euch bereits aktualisiert habe)\n" +
+      "• EAN nirgends gefunden: Größe einmal manuel eintippen, wird gemerkt — beim nächsten Scan läuft es automatisch\n" +
+      "• EAN Sammel-Liste: alle gescannten EANs landen in einer Liste mit „X bestellt / Y gescannt“ — kein Zettel und keine fotos mehr nötig. Position antippen zeigt die passenden Stock-IDs\n" +
+      "• EANs am Stück durchscannen: jeder Scan geht sofort in die Liste und wird der Reihe nach nachgeschlagen (Ladekringel pro Position), nichts geht verloren wenn ihr schneller scannt als geladen wird\n" +
+      "• Nicht gefundene EANs blockieren nicht mehr — sie bleiben orange in der Liste, Größe könnt ihr danach in Ruhe nachtragen\n" +
+      "• Gebuchte Positionen verschwinden automatisch aus der EAN-Liste, sobald nichts mehr offen ist\n" +
+      "• Reifen-Etikett: kein Barcode mehr drauf, dafür Reifenname unter der Größe (nur Text)\n\n" +
+      "• Bitte drauf achten das wir die richtigen Reifen nehmen (stückzahl + Datum abgleichen -- älteste IMMER zuerst, außer Auto ist bereits fertiggestellt)"
   },
   {
     version: "2.2.8",

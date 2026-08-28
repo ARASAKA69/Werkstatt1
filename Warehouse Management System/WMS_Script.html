@@ -4157,6 +4157,8 @@
           if (pres && pres.success) {
             reifenHudCache.paketdienstRows = pres.paketdienstRows || [];
             reifenHudCache.paketVersion = pres.version || Date.now();
+            pruneBookedEanBatchItems();
+            renderEanBatchList();
           }
         })
         .withFailureHandler(function() {})
@@ -5163,6 +5165,9 @@
   var lastEanTire = null;
   var eanBatch = { date: '', items: [] };
   var activeEanBatchKey = '';
+  var eanScanQueue = [];
+  var eanQueueBusy = false;
+  var reifenSizeAutofill = '';
 
   function tireModelForSize(groesse) {
     if (!lastEanTire || !lastEanTire.modell) return '';
@@ -5171,7 +5176,14 @@
   }
 
   document.getElementById('reifenSizeInput').addEventListener('keypress', function(e) {
-    if(e.key === 'Enter') searchTireBySize();
+    if(e.key === 'Enter') { e.preventDefault(); searchTireBySize(); }
+  });
+
+  document.getElementById('reifenSizeInput').addEventListener('input', function() {
+    if (reifenSizeAutofill && this.value.length > reifenSizeAutofill.length && this.value.indexOf(reifenSizeAutofill) === 0) {
+      this.value = this.value.slice(reifenSizeAutofill.length);
+    }
+    reifenSizeAutofill = '';
   });
 
   document.getElementById('reifenEanManualInput').addEventListener('keypress', function(e) {
@@ -5256,6 +5268,10 @@
       var obj = raw ? JSON.parse(raw) : null;
       if (obj && obj.date === today && obj.items && obj.items.length !== undefined) {
         eanBatch = obj;
+        for (var i = 0; i < eanBatch.items.length; i++) {
+          var it = eanBatch.items[i];
+          if (it.status === 'pending' || !it.status) it.status = it.groesse ? 'ok' : 'needsSize';
+        }
       } else {
         eanBatch = { date: today, items: [] };
         saveEanBatch();
@@ -5277,30 +5293,88 @@
     return null;
   }
 
-  function upsertEanBatchItem(tire) {
+  function applyTireToEanBatchItem(item, res) {
+    item.groesse = res.groesse || '';
+    item.lastIndex = res.lastIndex || '';
+    item.gwIndex = res.gwIndex || '';
+    item.display = res.display || '';
+    item.searchQuery = res.searchQuery || res.display || '';
+    item.modell = res.modell || '';
+    item.hersteller = res.hersteller || '';
+    item.source = res.source || '';
+    item.status = 'ok';
+    item.message = '';
+  }
+
+  function enqueueEanScan(ean) {
     if (!eanBatch || !eanBatch.items) loadEanBatch();
-    var item = findEanBatchItem(tire.ean);
+    var item = findEanBatchItem(ean);
     if (item) {
       item.scanned = (parseInt(item.scanned, 10) || 0) + 1;
-      if (tire.modell && !item.modell) item.modell = tire.modell;
-    } else {
-      item = {
-        ean: tire.ean,
-        groesse: tire.groesse,
-        lastIndex: tire.lastIndex,
-        gwIndex: tire.gwIndex,
-        display: tire.display,
-        searchQuery: tire.searchQuery || tire.display,
-        modell: tire.modell || '',
-        hersteller: tire.hersteller || '',
-        scanned: 1,
-        addedAt: Date.now()
-      };
-      eanBatch.items.push(item);
+      saveEanBatch();
+      renderEanBatchList();
+      if (item.status === 'ok') {
+        activeEanBatchKey = ean;
+        runTireSearchForEan(item);
+        renderEanBatchList();
+      }
+      return;
     }
+    eanBatch.items.push({
+      ean: ean, groesse: '', lastIndex: '', gwIndex: '', display: '', searchQuery: '',
+      modell: '', hersteller: '', source: '', scanned: 1,
+      status: 'pending', message: '', addedAt: Date.now()
+    });
     saveEanBatch();
     renderEanBatchList();
-    return item;
+    eanScanQueue.push(ean);
+    processEanQueue();
+  }
+
+  function setEanQueueStatus() {
+    var statusEl = document.getElementById('reifenSizeStatus');
+    if (!statusEl) return;
+    var open = eanScanQueue.length + (eanQueueBusy ? 1 : 0);
+    if (!open) return;
+    statusEl.style.display = 'block';
+    statusEl.style.color = '#F27420';
+    statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('EANs werden geladen… (noch ' + open + ')') + '</span></span>';
+  }
+
+  function processEanQueue() {
+    if (eanQueueBusy) return;
+    var ean = eanScanQueue.shift();
+    if (!ean) return;
+    eanQueueBusy = true;
+    setEanQueueStatus();
+    lookupEan(ean, function(res) {
+      var item = findEanBatchItem(ean);
+      if (item) {
+        if (res && res.found) applyTireToEanBatchItem(item, res);
+        else {
+          item.status = 'needsSize';
+          item.message = (res && res.message) || 'EAN unbekannt.';
+        }
+        saveEanBatch();
+      }
+      eanQueueBusy = false;
+      renderEanBatchList();
+      if (eanScanQueue.length) {
+        processEanQueue();
+        return;
+      }
+      var statusEl = document.getElementById('reifenSizeStatus');
+      if (statusEl) statusEl.style.display = 'none';
+      if (item && item.status === 'ok') {
+        activeEanBatchKey = ean;
+        runTireSearchForEan(item);
+        renderEanBatchList();
+      } else if (item) {
+        activeEanBatchKey = ean;
+        renderEanBatchList();
+        showReifenEanManual(ean, item.message || 'EAN unbekannt.');
+      }
+    });
   }
 
   function removeEanBatchItem(ean, ev) {
@@ -5323,12 +5397,51 @@
   }
 
   function eanBatchOrderedCount(item) {
+    if (!item || item.status !== 'ok') return null;
     var rows = (reifenHudCache && reifenHudCache.paketdienstRows) ? reifenHudCache.paketdienstRows : null;
-    if (!rows || !rows.length) return null;
+    if (!rows) return null;
     var matches = filterPaketdienstRowsByTire(rows, item);
     var total = 0;
     for (var i = 0; i < matches.length; i++) total += (parseInt(matches[i].menge, 10) || 0);
     return total;
+  }
+
+  function markEanBatchBooked(tire) {
+    if (!eanBatch || !eanBatch.items || !eanBatch.items.length || !tire) return;
+    var changed = false;
+    for (var i = 0; i < eanBatch.items.length; i++) {
+      var it = eanBatch.items[i];
+      if (it.status !== 'ok') continue;
+      if (!filterPaketdienstRowsByTire([tire], it).length) continue;
+      it.booked = (parseInt(it.booked, 10) || 0) + 1;
+      changed = true;
+    }
+    if (changed) saveEanBatch();
+  }
+
+  function dropPaketdienstRowFromCache(tire) {
+    if (!reifenHudCache || !reifenHudCache.paketdienstRows || !tire) return;
+    reifenHudCache.paketdienstRows = reifenHudCache.paketdienstRows.filter(function(r) {
+      return !(r.tabName === tire.tabName && r.row === tire.row);
+    });
+  }
+
+  function pruneBookedEanBatchItems() {
+    if (!eanBatch || !eanBatch.items || !eanBatch.items.length) return;
+    if (!reifenHudCache || !reifenHudCache.paketdienstRows) return;
+    var kept = [];
+    var dropped = 0;
+    for (var i = 0; i < eanBatch.items.length; i++) {
+      var it = eanBatch.items[i];
+      var ordered = eanBatchOrderedCount(it);
+      if (ordered === null || ordered > 0 || !(parseInt(it.booked, 10) > 0)) { kept.push(it); continue; }
+      if (activeEanBatchKey === it.ean) activeEanBatchKey = '';
+      dropped++;
+    }
+    if (!dropped) return;
+    eanBatch.items = kept;
+    saveEanBatch();
+    renderEanBatchList();
   }
 
   function renderEanBatchList() {
@@ -5343,26 +5456,39 @@
     panel.style.display = 'flex';
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
+      var pending = it.status === 'pending';
+      var needsSize = it.status === 'needsSize';
       var ordered = eanBatchOrderedCount(it);
       var scanned = parseInt(it.scanned, 10) || 0;
-      var short = ordered !== null && scanned < ordered;
+      var short = !pending && (needsSize || (ordered !== null && scanned < ordered));
       var row = document.createElement('div');
       row.className = 'reifen-batch-row';
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'reifen-batch-item' + (short ? ' is-warn' : '') + (activeEanBatchKey === it.ean ? ' is-active' : '');
+      btn.className = 'reifen-batch-item' + (short ? ' is-warn' : '') + (pending ? ' is-pending' : '') + (activeEanBatchKey === it.ean ? ' is-active' : '');
       var numSpan = document.createElement('span');
       numSpan.className = 'reifen-batch-num';
       numSpan.textContent = '#' + (i + 1);
       var sizeSpan = document.createElement('span');
       sizeSpan.className = 'reifen-batch-stock';
-      sizeSpan.textContent = it.display || it.groesse;
+      sizeSpan.textContent = pending ? 'EAN ' + it.ean : (it.display || it.groesse || ('EAN ' + it.ean));
       var metaSpan = document.createElement('span');
       metaSpan.className = 'reifen-batch-meta';
-      metaSpan.textContent = (it.modell ? it.modell + ' · ' : '') + 'EAN ' + it.ean;
+      if (pending) metaSpan.textContent = 'wird geladen…';
+      else if (needsSize) metaSpan.textContent = 'Größe fehlt – antippen zum Eintragen';
+      else metaSpan.textContent = (it.modell ? it.modell + ' · ' : '') + 'EAN ' + it.ean;
       var qtySpan = document.createElement('span');
-      qtySpan.className = 'reifen-batch-qty' + (short ? ' is-warn' : ' is-ok');
-      qtySpan.textContent = (ordered === null ? '?' : ordered) + ' bestellt / ' + scanned + ' gescannt';
+      qtySpan.className = 'reifen-batch-qty' + (pending ? ' is-loading' : (short ? ' is-warn' : ' is-ok'));
+      if (pending) {
+        qtySpan.innerHTML = '<span class="hud-spin hud-spin--sm"></span>';
+      } else if (needsSize) {
+        qtySpan.textContent = '? bestellt / ' + scanned + ' gescannt';
+      } else {
+        var qtyText = (ordered === null ? '?' : ordered) + ' bestellt / ' + scanned + ' gescannt';
+        var bookedN = parseInt(it.booked, 10) || 0;
+        if (bookedN) qtyText += ' · ' + bookedN + ' gebucht';
+        qtySpan.textContent = qtyText;
+      }
       btn.appendChild(numSpan);
       btn.appendChild(sizeSpan);
       btn.appendChild(metaSpan);
@@ -5387,8 +5513,13 @@
 
   function selectEanBatchItem(ean) {
     var item = findEanBatchItem(ean);
-    if (!item) return;
+    if (!item || item.status === 'pending') return;
     activeEanBatchKey = ean;
+    if (item.status === 'needsSize') {
+      renderEanBatchList();
+      showReifenEanManual(ean, item.message || 'EAN unbekannt.');
+      return;
+    }
     document.getElementById('reifenEanManual').style.display = 'none';
     runTireSearchForEan(item);
     renderEanBatchList();
@@ -5431,12 +5562,8 @@
     renderTireResults();
   }
 
-  function runTireSearchForEan(tire, fromScan) {
+  function runTireSearchForEan(tire) {
     lastEanTire = tire;
-    if (fromScan) {
-      activeEanBatchKey = tire.ean;
-      upsertEanBatchItem(tire);
-    }
     var statusEl = document.getElementById('reifenSizeStatus');
     var resultsEl = document.getElementById('reifenSizeResults');
     var badge = document.getElementById('reifenSizeBadge');
@@ -5447,7 +5574,10 @@
       + (name ? ' · ' + escapeHtml(name) : '')
       + ' <span style="color:#8b949e;">(' + escapeHtml(origin) + ')</span>';
     info.style.display = 'block';
-    document.getElementById('reifenSizeInput').value = tire.searchQuery || tire.display;
+    if (!eanQueueBusy && !eanScanQueue.length) {
+      reifenSizeAutofill = tire.searchQuery || tire.display;
+      document.getElementById('reifenSizeInput').value = reifenSizeAutofill;
+    }
 
     if (reifenHudCache && reifenHudCache.paketdienstRows && reifenHudCache.paketdienstRows.length) {
       applyTireSearchResults(filterPaketdienstRowsByTire(reifenHudCache.paketdienstRows, tire), tire.display);
@@ -5471,12 +5601,7 @@
     }).searchReifenBySize(tire.searchQuery || tire.display);
   }
 
-  function resolveTireEanViaBridge(ean, fallbackMessage) {
-    var statusEl = document.getElementById('reifenSizeStatus');
-    statusEl.style.display = 'block';
-    statusEl.style.color = '#F27420';
-    statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('EAN ' + ean + ' über lokale Bridge…') + '</span></span>';
-
+  function lookupEanViaBridge(ean, fallbackMessage, cb) {
     var bridgeDown = fallbackMessage + ' Lokale Print-Bridge läuft nicht – bitte Größe eintragen.';
     var notListed = 'EAN ' + ean + ' ist bei reifen.de nicht hinterlegt – bitte Größe eintragen.';
 
@@ -5484,8 +5609,7 @@
     function giveUp(msg) {
       if (settled) return;
       settled = true;
-      statusEl.style.display = 'none';
-      showReifenEanManual(ean, msg);
+      cb({ found: false, message: msg });
     }
     var timer = setTimeout(function() { giveUp(bridgeDown); }, 30000);
 
@@ -5501,8 +5625,7 @@
         clearTimeout(timer);
         if (!res || !res.success) { giveUp((res && res.message) || notListed); return; }
         settled = true;
-        statusEl.style.display = 'none';
-        runTireSearchForEan(res, true);
+        cb(res);
       }).withFailureHandler(function() {
         clearTimeout(timer);
         giveUp(notListed);
@@ -5513,28 +5636,19 @@
     });
   }
 
-  function resolveTireEan(ean) {
-    var statusEl = document.getElementById('reifenSizeStatus');
-    statusEl.style.display = 'block';
-    statusEl.style.color = '#F27420';
-    statusEl.innerHTML = '<span class="hud-load-inline hud-load-inline--compact"><span class="hud-spin hud-spin--sm"></span><span class="hud-load-label">' + escapeHtml('EAN ' + ean + ' nachschlagen…') + '</span></span>';
-    document.getElementById('reifenSizeResults').style.display = 'none';
-    document.getElementById('reifenSizeBadge').style.display = 'none';
+  function lookupEan(ean, cb) {
     google.script.run.withSuccessHandler(function(res) {
       if(!res || !res.success) {
-        statusEl.style.color = '#f85149';
-        statusEl.innerText = (res && res.message) || 'EAN-Abfrage fehlgeschlagen.';
+        cb({ found: false, message: (res && res.message) || 'EAN-Abfrage fehlgeschlagen.' });
         return;
       }
       if(!res.found) {
-        resolveTireEanViaBridge(res.ean || ean, res.message || 'EAN unbekannt.');
+        lookupEanViaBridge(res.ean || ean, res.message || 'EAN unbekannt.', cb);
         return;
       }
-      statusEl.style.display = 'none';
-      runTireSearchForEan(res, true);
+      cb(res);
     }).withFailureHandler(function(err) {
-      statusEl.style.color = '#f85149';
-      statusEl.innerText = 'Serverfehler: ' + (err.message || String(err));
+      cb({ found: false, message: 'Serverfehler: ' + (err.message || String(err)) });
     }).lookupTireByEan(ean);
   }
 
@@ -5551,18 +5665,43 @@
       }
       document.getElementById('reifenEanManual').style.display = 'none';
       pendingEanForManual = '';
-      runTireSearchForEan(res, true);
+      var item = findEanBatchItem(ean);
+      if (item) {
+        applyTireToEanBatchItem(item, res);
+        saveEanBatch();
+      } else {
+        eanBatch.items.push({
+          ean: ean, groesse: res.groesse || '', lastIndex: res.lastIndex || '', gwIndex: res.gwIndex || '',
+          display: res.display || '', searchQuery: res.searchQuery || res.display || '',
+          modell: res.modell || '', hersteller: res.hersteller || '', source: res.source || '',
+          scanned: 1, status: 'ok', message: '', addedAt: Date.now()
+        });
+        saveEanBatch();
+        item = findEanBatchItem(ean);
+      }
+      activeEanBatchKey = ean;
+      runTireSearchForEan(item || res);
+      renderEanBatchList();
+      document.getElementById('reifenSizeInput').focus();
     }).withFailureHandler(function(err) {
       titleEl.innerText = 'Fehler: ' + (err.message || String(err));
     }).saveTireEanManual(ean, sizeText);
   }
 
   function searchTireBySize() {
-    var query = document.getElementById('reifenSizeInput').value.trim();
+    var input = document.getElementById('reifenSizeInput');
+    var query = input.value.trim();
     if(!query) return;
     var statusEl = document.getElementById('reifenSizeStatus');
     var resultsEl = document.getElementById('reifenSizeResults');
     var badge = document.getElementById('reifenSizeBadge');
+    if (looksLikeTireEan(query)) {
+      input.value = '';
+      reifenSizeAutofill = '';
+      hideReifenEanBoxes();
+      enqueueEanScan(query);
+      return;
+    }
     hideReifenEanBoxes();
     if(query.length < 3) {
       statusEl.style.display = 'block';
@@ -5573,16 +5712,7 @@
       return;
     }
     if (reifenHudCache && reifenHudCache.paketdienstRows && reifenHudCache.paketdienstRows.length) {
-      var local = filterPaketdienstRowsLocal(reifenHudCache.paketdienstRows, query);
-      if (!local.length && looksLikeTireEan(query)) {
-        resolveTireEan(query);
-        return;
-      }
-      applyTireSearchResults(local, query);
-      return;
-    }
-    if (looksLikeTireEan(query)) {
-      resolveTireEan(query);
+      applyTireSearchResults(filterPaketdienstRowsLocal(reifenHudCache.paketdienstRows, query), query);
       return;
     }
     statusEl.style.display = 'block';
@@ -5656,7 +5786,10 @@
       statusEl.innerText = finalMessage;
       showReifenInfo(res);
       loadRefurbishmentCache(true);
+      markEanBatchBooked(tire);
+      dropPaketdienstRowFromCache(tire);
       refreshReifenAfterMutation();
+      pruneBookedEanBatchItems();
       renderEanBatchList();
       tireSearchResults.splice(index, 1);
       var badge = document.getElementById('reifenSizeBadge');
