@@ -640,6 +640,13 @@
           </div>
           <div style="font-size:12px;color:#8b949e;margin-top:6px;">Wird gespeichert – beim nächsten Scan dieser EAN geht es automatisch.</div>
         </div>
+        <div class="reifen-batch" id="reifenEanBatchPanel" style="display:none;margin-bottom:10px;">
+          <div class="reifen-batch-head">
+            <span class="reifen-batch-title">🏷️ EAN Sammel-Liste <span id="reifenEanBatchCount">(0)</span></span>
+            <button type="button" class="reifen-batch-clear" onclick="clearEanBatch()">Liste leeren</button>
+          </div>
+          <div class="reifen-batch-list" id="reifenEanBatchList"></div>
+        </div>
         <div id="reifenSizeStatus" style="text-align:center;font-size:14px;color:#8b949e;margin-bottom:10px;display:none;"></div>
         <div class="reifen-size-results" id="reifenSizeResults" style="display:none;">
           <table class="reifen-size-table">

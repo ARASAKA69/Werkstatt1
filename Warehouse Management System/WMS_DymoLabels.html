@@ -163,6 +163,53 @@ function getDymoLabelDateString() {
   return new Date().toLocaleDateString('de-DE');
 }
 
+function dymoTextObjectXml(name, text, x, y, w, h, fontSize, bold, align) {
+  var safe = String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return '<TextObject><Name>' + name + '</Name>'
+    + '<Brushes><BackgroundBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></BackgroundBrush>'
+    + '<BorderBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></BorderBrush>'
+    + '<StrokeBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></StrokeBrush>'
+    + '<FillBrush><SolidColorBrush><Color A="0" R="0" G="0" B="0"></Color></SolidColorBrush></FillBrush></Brushes>'
+    + '<Rotation>Rotation0</Rotation><OutlineThickness>1</OutlineThickness><IsOutlined>False</IsOutlined><BorderStyle>SolidLine</BorderStyle>'
+    + '<Margin><DYMOThickness Left="0" Top="0" Right="0" Bottom="0" /></Margin>'
+    + '<HorizontalAlignment>' + align + '</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><FitMode>AlwaysFit</FitMode><IsVertical>False</IsVertical>'
+    + '<FormattedText><FitMode>AlwaysFit</FitMode><HorizontalAlignment>' + align + '</HorizontalAlignment><VerticalAlignment>Middle</VerticalAlignment><IsVertical>False</IsVertical>'
+    + '<LineTextSpan><TextSpan><Text>' + safe + '</Text>'
+    + '<FontInfo><FontName>Arial</FontName><FontSize>' + fontSize + '</FontSize><IsBold>' + (bold ? 'True' : 'False') + '</IsBold><IsItalic>False</IsItalic><IsUnderline>False</IsUnderline>'
+    + '<FontBrush><SolidColorBrush><Color A="1" R="0" G="0" B="0"></Color></SolidColorBrush></FontBrush></FontInfo>'
+    + '</TextSpan></LineTextSpan></FormattedText>'
+    + '<ObjectLayout><DYMOPoint><X>' + x + '</X><Y>' + y + '</Y></DYMOPoint><Size><Width>' + w + '</Width><Height>' + h + '</Height></Size></ObjectLayout></TextObject>';
+}
+
+function buildReifenInfoLabelXml(tireInfo, tireModel, footerText, variant) {
+  var is450 = variant === '450';
+  var hasModel = String(tireModel || '').trim() !== '';
+  var x = 0.25;
+  var w = is450 ? 3.16 : 3.15;
+  var objs = '';
+  if (is450) {
+    objs += dymoTextObjectXml('TireSize', tireInfo, x, 0.10, w, hasModel ? 0.46 : 0.64, 30, true, 'Center');
+    if (hasModel) objs += dymoTextObjectXml('TireModel', tireModel, x, 0.58, w, 0.24, 12, false, 'Center');
+    objs += dymoTextObjectXml('TireFoot', footerText, x, 0.84, w, 0.14, 8, false, 'Center');
+  } else {
+    objs += dymoTextObjectXml('TireSize', tireInfo, x, 0.14, w, hasModel ? 0.60 : 0.82, 36, true, 'Center');
+    if (hasModel) objs += dymoTextObjectXml('TireModel', tireModel, x, 0.78, w, 0.28, 14, false, 'Center');
+    objs += dymoTextObjectXml('TireFoot', footerText, x, 1.10, w, 0.16, 8, false, 'Center');
+  }
+  return getDymoStockLabelTemplate(variant).replace(/<LabelObjects>[\s\S]*<\/LabelObjects>/, '<LabelObjects>' + objs + '</LabelObjects>');
+}
+
+function printReifenInfoLabelToPrinter(tireInfo, tireModel, initials, printerName, variant) {
+  var footer = getDymoLabelDateString() + '   ' + String(initials || '');
+  var payload = prepareDymoLabelXmlForOpen(buildReifenInfoLabelXml(tireInfo, tireModel, footer, variant), variant);
+  var printParams = dymo.label.framework.createLabelWriterPrintParamsXml({ copies: 1 });
+  var label = dymo.label.framework.openLabelXml(payload);
+  if (label && typeof label.isValidLabel === 'function' && !label.isValidLabel()) {
+    throw new Error('Label-XML wird von DYMO Connect abgelehnt.');
+  }
+  label.print(printerName, printParams);
+}
+
 function printDymoLabelToPrinter(stockId, initials, copies, printerName, variant) {
   var xml = buildDymoStockLabelXml(stockId, getDymoLabelDateString(), initials, variant);
   var payload = prepareDymoLabelXmlForOpen(xml, variant);

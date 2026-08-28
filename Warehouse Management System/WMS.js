@@ -37,7 +37,9 @@ const WMS_CHANGELOG_HISTORY = [
       "• Reifensuche nach Größe (Paketdienst): EAN-Barcode vom Reifen scannen reicht jetzt — Größe + Last/GW Index werden automatisch geholt und die Suche läuft direkt los\n" +
       "• Neue EAN wird einmal nachgeschlagen und im Sheet „Reifen Kontrolle“ → Tab „EAN Cache“ gemerkt, danach geht es sofort ohne Internet\n" +
       "• reifen.de sperrt Google-Server aus, deshalb läuft die Abfrage über die Print-Bridge (v1.4 nötig, bitte einmal neu runterladen)\n" +
-      "• EAN nirgends gefunden: Größe einmal eintippen, wird gemerkt — beim nächsten Scan läuft es automatisch"
+      "• EAN nirgends gefunden: Größe einmal eintippen, wird gemerkt — beim nächsten Scan läuft es automatisch\n" +
+      "• EAN Sammel-Liste: alle gescannten EANs landen in einer Liste mit „X bestellt / Y gescannt“ — kein Zettel und kein TEMP-Blatt mehr zum Sortieren. Position antippen zeigt die passenden Stock-IDs\n" +
+      "• Reifen-Etikett: kein Barcode mehr drauf, dafür Reifenname unter der Größe (nur Text)"
   },
   {
     version: "2.2.8",

@@ -5106,8 +5106,10 @@
   function openReifenModal() {
     document.getElementById('reifenModal').classList.add('open');
     loadReifenBatch();
+    loadEanBatch();
     applyReifenModeUi();
     renderReifenBatchList();
+    renderEanBatchList();
     renderReifenScanPanel();
     if (reifenHudCacheLoading) {
       setReifenModalBusy(true, 'Lade Tabellen & Stock-IDs (heute + 7 Tage)…');
@@ -5158,6 +5160,15 @@
 
   var tireSearchResults = [];
   var pendingEanForManual = '';
+  var lastEanTire = null;
+  var eanBatch = { date: '', items: [] };
+  var activeEanBatchKey = '';
+
+  function tireModelForSize(groesse) {
+    if (!lastEanTire || !lastEanTire.modell) return '';
+    if (canonicalTireSize(lastEanTire.groesse) !== canonicalTireSize(groesse)) return '';
+    return lastEanTire.modell;
+  }
 
   document.getElementById('reifenSizeInput').addEventListener('keypress', function(e) {
     if(e.key === 'Enter') searchTireBySize();
@@ -5238,7 +5249,157 @@
     return out;
   }
 
+  function loadEanBatch() {
+    var today = reifenTodayKey();
+    try {
+      var raw = localStorage.getItem('arasaka_ean_batch');
+      var obj = raw ? JSON.parse(raw) : null;
+      if (obj && obj.date === today && obj.items && obj.items.length !== undefined) {
+        eanBatch = obj;
+      } else {
+        eanBatch = { date: today, items: [] };
+        saveEanBatch();
+      }
+    } catch (e) {
+      eanBatch = { date: today, items: [] };
+    }
+  }
+
+  function saveEanBatch() {
+    try { localStorage.setItem('arasaka_ean_batch', JSON.stringify(eanBatch)); } catch (e) {}
+  }
+
+  function findEanBatchItem(ean) {
+    if (!eanBatch || !eanBatch.items) return null;
+    for (var i = 0; i < eanBatch.items.length; i++) {
+      if (eanBatch.items[i].ean === ean) return eanBatch.items[i];
+    }
+    return null;
+  }
+
+  function upsertEanBatchItem(tire) {
+    if (!eanBatch || !eanBatch.items) loadEanBatch();
+    var item = findEanBatchItem(tire.ean);
+    if (item) {
+      item.scanned = (parseInt(item.scanned, 10) || 0) + 1;
+      if (tire.modell && !item.modell) item.modell = tire.modell;
+    } else {
+      item = {
+        ean: tire.ean,
+        groesse: tire.groesse,
+        lastIndex: tire.lastIndex,
+        gwIndex: tire.gwIndex,
+        display: tire.display,
+        searchQuery: tire.searchQuery || tire.display,
+        modell: tire.modell || '',
+        hersteller: tire.hersteller || '',
+        scanned: 1,
+        addedAt: Date.now()
+      };
+      eanBatch.items.push(item);
+    }
+    saveEanBatch();
+    renderEanBatchList();
+    return item;
+  }
+
+  function removeEanBatchItem(ean, ev) {
+    if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+    if (!eanBatch || !eanBatch.items) return;
+    if (!window.confirm('EAN ' + ean + ' aus der Liste entfernen?')) return;
+    eanBatch.items = eanBatch.items.filter(function(it) { return it.ean !== ean; });
+    if (activeEanBatchKey === ean) activeEanBatchKey = '';
+    saveEanBatch();
+    renderEanBatchList();
+  }
+
+  function clearEanBatch() {
+    if (!eanBatch || !eanBatch.items || !eanBatch.items.length) return;
+    if (!window.confirm('EAN Sammel-Liste komplett leeren (' + eanBatch.items.length + ' Positionen)?')) return;
+    eanBatch.items = [];
+    activeEanBatchKey = '';
+    saveEanBatch();
+    renderEanBatchList();
+  }
+
+  function eanBatchOrderedCount(item) {
+    var rows = (reifenHudCache && reifenHudCache.paketdienstRows) ? reifenHudCache.paketdienstRows : null;
+    if (!rows || !rows.length) return null;
+    var matches = filterPaketdienstRowsByTire(rows, item);
+    var total = 0;
+    for (var i = 0; i < matches.length; i++) total += (parseInt(matches[i].menge, 10) || 0);
+    return total;
+  }
+
+  function renderEanBatchList() {
+    var panel = document.getElementById('reifenEanBatchPanel');
+    var list = document.getElementById('reifenEanBatchList');
+    var count = document.getElementById('reifenEanBatchCount');
+    if (!panel || !list) return;
+    var items = (eanBatch && eanBatch.items) ? eanBatch.items : [];
+    if (count) count.textContent = '(' + items.length + ')';
+    list.innerHTML = '';
+    if (!items.length) { panel.style.display = 'none'; return; }
+    panel.style.display = 'flex';
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var ordered = eanBatchOrderedCount(it);
+      var scanned = parseInt(it.scanned, 10) || 0;
+      var short = ordered !== null && scanned < ordered;
+      var row = document.createElement('div');
+      row.className = 'reifen-batch-row';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'reifen-batch-item' + (short ? ' is-warn' : '') + (activeEanBatchKey === it.ean ? ' is-active' : '');
+      var numSpan = document.createElement('span');
+      numSpan.className = 'reifen-batch-num';
+      numSpan.textContent = '#' + (i + 1);
+      var sizeSpan = document.createElement('span');
+      sizeSpan.className = 'reifen-batch-stock';
+      sizeSpan.textContent = it.display || it.groesse;
+      var metaSpan = document.createElement('span');
+      metaSpan.className = 'reifen-batch-meta';
+      metaSpan.textContent = (it.modell ? it.modell + ' · ' : '') + 'EAN ' + it.ean;
+      var qtySpan = document.createElement('span');
+      qtySpan.className = 'reifen-batch-qty' + (short ? ' is-warn' : ' is-ok');
+      qtySpan.textContent = (ordered === null ? '?' : ordered) + ' bestellt / ' + scanned + ' gescannt';
+      btn.appendChild(numSpan);
+      btn.appendChild(sizeSpan);
+      btn.appendChild(metaSpan);
+      btn.appendChild(qtySpan);
+      (function(ean) {
+        btn.addEventListener('click', function() { selectEanBatchItem(ean); });
+      })(it.ean);
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'reifen-batch-del';
+      delBtn.title = 'Entfernen';
+      delBtn.setAttribute('aria-label', 'Entfernen');
+      delBtn.textContent = '×';
+      (function(ean) {
+        delBtn.addEventListener('click', function(ev) { removeEanBatchItem(ean, ev); });
+      })(it.ean);
+      row.appendChild(btn);
+      row.appendChild(delBtn);
+      list.appendChild(row);
+    }
+  }
+
+  function selectEanBatchItem(ean) {
+    var item = findEanBatchItem(ean);
+    if (!item) return;
+    activeEanBatchKey = ean;
+    document.getElementById('reifenEanManual').style.display = 'none';
+    runTireSearchForEan(item);
+    renderEanBatchList();
+  }
+
   function hideReifenEanBoxes() {
+    lastEanTire = null;
+    if (activeEanBatchKey) {
+      activeEanBatchKey = '';
+      renderEanBatchList();
+    }
     document.getElementById('reifenEanInfo').style.display = 'none';
     document.getElementById('reifenEanManual').style.display = 'none';
   }
@@ -5270,7 +5431,12 @@
     renderTireResults();
   }
 
-  function runTireSearchForEan(tire) {
+  function runTireSearchForEan(tire, fromScan) {
+    lastEanTire = tire;
+    if (fromScan) {
+      activeEanBatchKey = tire.ean;
+      upsertEanBatchItem(tire);
+    }
     var statusEl = document.getElementById('reifenSizeStatus');
     var resultsEl = document.getElementById('reifenSizeResults');
     var badge = document.getElementById('reifenSizeBadge');
@@ -5336,7 +5502,7 @@
         if (!res || !res.success) { giveUp((res && res.message) || notListed); return; }
         settled = true;
         statusEl.style.display = 'none';
-        runTireSearchForEan(res);
+        runTireSearchForEan(res, true);
       }).withFailureHandler(function() {
         clearTimeout(timer);
         giveUp(notListed);
@@ -5365,7 +5531,7 @@
         return;
       }
       statusEl.style.display = 'none';
-      runTireSearchForEan(res);
+      runTireSearchForEan(res, true);
     }).withFailureHandler(function(err) {
       statusEl.style.color = '#f85149';
       statusEl.innerText = 'Serverfehler: ' + (err.message || String(err));
@@ -5385,7 +5551,7 @@
       }
       document.getElementById('reifenEanManual').style.display = 'none';
       pendingEanForManual = '';
-      runTireSearchForEan(res);
+      runTireSearchForEan(res, true);
     }).withFailureHandler(function(err) {
       titleEl.innerText = 'Fehler: ' + (err.message || String(err));
     }).saveTireEanManual(ean, sizeText);
@@ -5485,12 +5651,13 @@
       currentReifenResult = res;
       statusEl.style.color = '#56d364';
       var finalMessage = '✅ ' + res.message;
-      printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge, res.regal || '');
+      printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge, res.regal || '', tireModelForSize(tire.groesse));
       if (res.reifenKontrolleAdded) finalMessage += ' → Reifen Kontrolle.';
       statusEl.innerText = finalMessage;
       showReifenInfo(res);
       loadRefurbishmentCache(true);
       refreshReifenAfterMutation();
+      renderEanBatchList();
       tireSearchResults.splice(index, 1);
       var badge = document.getElementById('reifenSizeBadge');
       badge.innerText = tireSearchResults.length + ' gefunden';
@@ -7946,7 +8113,7 @@
     return String(text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  function printReifenDymoLabels(stockId, tireInfo, mengeStr, regalHint) {
+  function printReifenDymoLabels(stockId, tireInfo, mengeStr, regalHint, tireModel) {
     var typedInitials = document.getElementById('dymoInitials').value.trim();
     var initials = (typedInitials || "LAGER").toUpperCase();
     stockId = normalizeStockInput(stockId);
@@ -7967,7 +8134,7 @@
       if (isNaN(menge) || menge < 1) menge = 1;
 
       printDymoLabelToPrinter(stockId, initials, menge, printerName, variant);
-      if (tireInfo) printDymoLabelToPrinter(tireInfo, initials, 1, printerName, variant);
+      if (tireInfo) printReifenInfoLabelToPrinter(tireInfo, String(tireModel || '').trim(), initials, printerName, variant);
       var extraXml = buildReifenExtraLabelXml(resolveReifenRegalForLabel(stockId, regalHint), variant);
       if (extraXml) {
         var extraLabel = dymo.label.framework.openLabelXml(prepareDymoLabelXmlForOpen(extraXml, variant));
