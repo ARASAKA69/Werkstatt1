@@ -2,6 +2,13 @@ const TRACKING_SHEET_URL = "https://docs.google.com/spreadsheets/d/1PuCLw8UmDjB_
 const REIFEN_SHEET_ID = "1NTWkl4r40VUb8hM3Zk5BYWofdxn0FgtZh4DJpOufSd8";
 const REIFEN_KONTROLLE_SHEET_ID = "1dlmZuWfJ3xiJ-LCtNYioVdTTtDN1nrR78p63mDwW18M";
 const REIFEN_KONTROLLE_TAB = "Reifen Kontrolle";
+const REIFEN_EAN_CACHE_SHEET_ID = "1dlmZuWfJ3xiJ-LCtNYioVdTTtDN1nrR78p63mDwW18M";
+const REIFEN_EAN_CACHE_TAB = "EAN Cache";
+const REIFEN_EAN_CACHE_KEY = "wms_reifen_ean_map_v1";
+const REIFEN_EAN_CACHE_TTL_SEC = 21600;
+const REIFEN_DE_SEARCH_URL = "https://www.reifen.de/reifen/pkw?freeTextSearch=true&text=";
+const REIFEN_DE_BLOCKED_KEY = "wms_reifen_de_blocked_v1";
+const REIFEN_DE_BLOCKED_TTL_SEC = 3600;
 const NACHBESTELL_SHEET_ID = "1VGCAHUbOPgsInQICA1GnrtKg1EPK1d1zWB-GkLi6iVE";
 const NACHBESTELL_TAB = "Nachbestellung";
 const NACHBESTELL_GID = 130741593;
@@ -23,6 +30,15 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
+  {
+    version: "2.2.9",
+    date: "28.08.2026",
+    notes:
+      "• Reifensuche nach Größe (Paketdienst): EAN-Barcode vom Reifen scannen reicht jetzt — Größe + Last/GW Index werden automatisch geholt und die Suche läuft direkt los\n" +
+      "• Neue EAN wird einmal nachgeschlagen und im Sheet „Reifen Kontrolle“ → Tab „EAN Cache“ gemerkt, danach geht es sofort ohne Internet\n" +
+      "• reifen.de sperrt Google-Server aus, deshalb läuft die Abfrage über die Print-Bridge (v1.4 nötig, bitte einmal neu runterladen)\n" +
+      "• EAN nirgends gefunden: Größe einmal eintippen, wird gemerkt — beim nächsten Scan läuft es automatisch"
+  },
   {
     version: "2.2.8",
     date: "27.08.2026",
@@ -811,6 +827,324 @@ function searchReifenBySize(query) {
       return { success: true, results: results, message: results.length + " Reifen gefunden" };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message, results: [] };
+    }
+  }
+
+function normalizeEan_(raw) {
+    return String(raw == null ? "" : raw).replace(/\D/g, "");
+  }
+
+function isPlausibleEanLength_(ean) {
+    return ean.length === 8 || ean.length === 12 || ean.length === 13 || ean.length === 14;
+  }
+
+function eanCheckDigitValid_(ean) {
+    if (!isPlausibleEanLength_(ean)) return false;
+    var digits = ean.split("");
+    var check = parseInt(digits.pop(), 10);
+    digits.reverse();
+    var sum = 0;
+    for (var i = 0; i < digits.length; i++) {
+      var d = parseInt(digits[i], 10);
+      sum += (i % 2 === 0) ? (d * 3) : d;
+    }
+    return ((10 - (sum % 10)) % 10) === check;
+  }
+
+function parseTireSizeText_(raw) {
+    var s = String(raw || "").toUpperCase().replace(/\s+/g, " ").trim();
+    var m = s.match(/(\d{2,3})\s*\/\s*(\d{2})\s*(ZR|R)\s*(\d{2})\s*(C)?(?:\s*(\d{2,3}(?:\/\d{2,3})?)\s*([A-Z]{1,2})(?![A-Z0-9]))?/);
+    if (!m) return null;
+    var groesse = m[1] + "/" + m[2] + " " + m[3] + m[4] + (m[5] || "");
+    var lastIndex = m[6] ? String(m[6]) : "";
+    var gwIndex = m[7] ? String(m[7]) : "";
+    var lastPrimary = lastIndex.split("/")[0];
+    var query = groesse;
+    if (lastPrimary) query += " " + lastPrimary;
+    if (gwIndex) query += " " + gwIndex;
+    return {
+      groesse: groesse,
+      lastIndex: lastIndex,
+      gwIndex: gwIndex,
+      display: (groesse + " " + lastIndex + gwIndex).replace(/\s+/g, " ").trim(),
+      searchQuery: query
+    };
+  }
+
+function getReifenEanCacheSheet_() {
+    var ss = SpreadsheetApp.openById(REIFEN_EAN_CACHE_SHEET_ID);
+    var sheet = ss.getSheetByName(REIFEN_EAN_CACHE_TAB);
+    if (!sheet) sheet = ss.insertSheet(REIFEN_EAN_CACHE_TAB);
+    if (sheet.getLastRow() < 1) {
+      sheet.getRange(1, 1, 1, 8).setValues([["EAN", "Größe", "Last Index", "GW Index", "Hersteller", "Modell", "Quelle", "Erfasst am"]]);
+      sheet.setFrozenRows(1);
+      sheet.setColumnWidth(1, 140);
+      sheet.setColumnWidth(6, 260);
+    }
+    return sheet;
+  }
+
+function readReifenEanCacheRows_() {
+    var sheet = getReifenEanCacheSheet_();
+    var last = sheet.getLastRow();
+    if (last < 2) return [];
+    var values = sheet.getRange(2, 1, last - 1, 8).getDisplayValues();
+    var out = [];
+    for (var i = 0; i < values.length; i++) {
+      var ean = normalizeEan_(values[i][0]);
+      if (!ean) continue;
+      out.push({
+        row: i + 2,
+        ean: ean,
+        groesse: String(values[i][1] || "").trim(),
+        lastIndex: String(values[i][2] || "").trim(),
+        gwIndex: String(values[i][3] || "").trim(),
+        hersteller: String(values[i][4] || "").trim(),
+        modell: String(values[i][5] || "").trim(),
+        quelle: String(values[i][6] || "").trim()
+      });
+    }
+    return out;
+  }
+
+function invalidateReifenEanCache_() {
+    try {
+      CacheService.getScriptCache().remove(REIFEN_EAN_CACHE_KEY);
+    } catch (err) {}
+  }
+
+function loadReifenEanCacheMap_() {
+    var cache = null;
+    try {
+      cache = CacheService.getScriptCache();
+      var raw = cache.get(REIFEN_EAN_CACHE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (err) {}
+    var rows = readReifenEanCacheRows_();
+    var map = {};
+    for (var i = 0; i < rows.length; i++) map[rows[i].ean] = rows[i];
+    if (cache) {
+      try {
+        var payload = JSON.stringify(map);
+        if (payload.length < 90000) cache.put(REIFEN_EAN_CACHE_KEY, payload, REIFEN_EAN_CACHE_TTL_SEC);
+      } catch (err2) {}
+    }
+    return map;
+  }
+
+function upsertReifenEanCacheRow_(rec) {
+    var sheet = getReifenEanCacheSheet_();
+    var rows = readReifenEanCacheRows_();
+    var existing = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].ean === rec.ean) { existing = rows[i]; break; }
+    }
+    var stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd.MM.yyyy HH:mm");
+    var values = [[
+      rec.ean, rec.groesse, rec.lastIndex, rec.gwIndex,
+      rec.hersteller || "", rec.modell || "", rec.quelle || "", stamp
+    ]];
+    if (existing) sheet.getRange(existing.row, 1, 1, 8).setValues(values);
+    else sheet.getRange(sheet.getLastRow() + 1, 1, 1, 8).setValues(values);
+    invalidateReifenEanCache_();
+  }
+
+function lastRegexCapture_(text, re) {
+    var found = "";
+    var m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      found = String(m[1] || "").trim();
+      if (m.index === re.lastIndex) re.lastIndex++;
+    }
+    return found;
+  }
+
+function parseReifenDeResult_(html, ean) {
+    var marker = 'itemprop="mpn">' + ean + '<';
+    var idx = String(html || "").indexOf(marker);
+    if (idx === -1) return null;
+
+    var head = html.substring(Math.max(0, idx - 4000), idx);
+    var articleIdx = head.lastIndexOf('<article itemprop="item"');
+    if (articleIdx !== -1) head = head.substring(articleIdx);
+
+    var size = null;
+    var titleRe = /search-result-desc-list-item"\s+title="([^"]+)"/g;
+    var tm;
+    while ((tm = titleRe.exec(head)) !== null) {
+      var parsed = parseTireSizeText_(tm[1]);
+      if (parsed && parsed.lastIndex && parsed.gwIndex) { size = parsed; break; }
+    }
+    if (!size) return null;
+
+    var tail = html.substring(idx, idx + 400);
+    var brand = tail.match(/itemprop="brand"[^>]*>\s*([^<]+?)\s*</);
+
+    return {
+      ean: ean,
+      groesse: size.groesse,
+      lastIndex: size.lastIndex,
+      gwIndex: size.gwIndex,
+      display: size.display,
+      searchQuery: size.searchQuery,
+      hersteller: brand ? String(brand[1]).trim() : "",
+      modell: lastRegexCapture_(head, /itemprop="name">\s*([^<]+?)\s*</g),
+      quelle: "reifen.de"
+    };
+  }
+
+function isReifenDeBlocked_() {
+    try {
+      return !!CacheService.getScriptCache().get(REIFEN_DE_BLOCKED_KEY);
+    } catch (err) {
+      return false;
+    }
+  }
+
+function markReifenDeBlocked_() {
+    try {
+      CacheService.getScriptCache().put(REIFEN_DE_BLOCKED_KEY, "1", REIFEN_DE_BLOCKED_TTL_SEC);
+    } catch (err) {}
+  }
+
+function fetchTireFromReifenDe_(ean) {
+    var response = UrlFetchApp.fetch(REIFEN_DE_SEARCH_URL + encodeURIComponent(ean), {
+      method: "get",
+      muteHttpExceptions: true,
+      followRedirects: true,
+      headers: {
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "de-DE,de;q=0.9"
+      }
+    });
+    var code = response.getResponseCode();
+    if (code !== 200) return { ok: false, blocked: (code === 403 || code === 429), code: code };
+    return { ok: true, html: response.getContentText() };
+  }
+
+function lookupTireByEan(ean) {
+    try {
+      var clean = normalizeEan_(ean);
+      if (!clean) return { success: false, message: "Kein Barcode erkannt." };
+      if (!isPlausibleEanLength_(clean)) {
+        return { success: false, message: "Kein gültiger EAN-Barcode (" + clean.length + " Ziffern)." };
+      }
+      if (!eanCheckDigitValid_(clean)) {
+        return { success: false, message: "Barcode falsch gelesen (Prüfziffer stimmt nicht). Bitte nochmal scannen." };
+      }
+
+      var map = loadReifenEanCacheMap_();
+      var hit = map[clean];
+      if (hit && hit.groesse) {
+        var cachedSize = parseTireSizeText_(hit.groesse + " " + hit.lastIndex + hit.gwIndex);
+        return {
+          success: true,
+          found: true,
+          source: "cache",
+          ean: clean,
+          groesse: hit.groesse,
+          lastIndex: hit.lastIndex,
+          gwIndex: hit.gwIndex,
+          display: (hit.groesse + " " + hit.lastIndex + hit.gwIndex).replace(/\s+/g, " ").trim(),
+          searchQuery: cachedSize ? cachedSize.searchQuery : hit.groesse,
+          hersteller: hit.hersteller,
+          modell: hit.modell
+        };
+      }
+
+      if (isReifenDeBlocked_()) {
+        return {
+          success: true, found: false, needsManual: true, blocked: true, ean: clean,
+          message: "reifen.de blockiert Google-Server."
+        };
+      }
+
+      var fetched;
+      try {
+        fetched = fetchTireFromReifenDe_(clean);
+      } catch (netErr) {
+        return {
+          success: true, found: false, needsManual: true, blocked: true, ean: clean,
+          message: "reifen.de nicht erreichbar."
+        };
+      }
+      if (!fetched.ok) {
+        if (fetched.blocked) markReifenDeBlocked_();
+        return {
+          success: true, found: false, needsManual: true, blocked: true, ean: clean,
+          message: fetched.blocked
+            ? "reifen.de blockiert die Abfrage (HTTP " + fetched.code + ")."
+            : "reifen.de antwortet nicht (HTTP " + fetched.code + ")."
+        };
+      }
+
+      var rec = parseReifenDeResult_(fetched.html, clean);
+      if (!rec) {
+        return {
+          success: true, found: false, needsManual: true, ean: clean,
+          message: "EAN " + clean + " ist bei reifen.de nicht hinterlegt."
+        };
+      }
+
+      try {
+        upsertReifenEanCacheRow_(rec);
+      } catch (writeErr) {}
+
+      rec.success = true;
+      rec.found = true;
+      rec.source = "reifen.de";
+      return rec;
+    } catch (err) {
+      return { success: false, message: "Fehler: " + (err && err.message ? err.message : String(err)) };
+    }
+  }
+
+function storeTireEanRecord_(ean, sizeText, hersteller, modell, quelle, source) {
+    var clean = normalizeEan_(ean);
+    if (!clean || !isPlausibleEanLength_(clean)) return { success: false, message: "Kein gültiger EAN-Barcode." };
+    var size = parseTireSizeText_(sizeText);
+    if (!size) return { success: false, message: "Größe nicht lesbar. Beispiel: 225/50 R17 103 H" };
+
+    var rec = {
+      ean: clean,
+      groesse: size.groesse,
+      lastIndex: size.lastIndex,
+      gwIndex: size.gwIndex,
+      hersteller: String(hersteller || "").trim(),
+      modell: String(modell || "").trim(),
+      quelle: quelle
+    };
+    upsertReifenEanCacheRow_(rec);
+
+    return {
+      success: true,
+      found: true,
+      source: source,
+      ean: clean,
+      groesse: size.groesse,
+      lastIndex: size.lastIndex,
+      gwIndex: size.gwIndex,
+      display: size.display,
+      searchQuery: size.searchQuery,
+      hersteller: rec.hersteller,
+      modell: rec.modell
+    };
+  }
+
+function saveTireEanManual(ean, sizeText) {
+    try {
+      return storeTireEanRecord_(ean, sizeText, "", "", "manuell", "manuell");
+    } catch (err) {
+      return { success: false, message: "Fehler: " + (err && err.message ? err.message : String(err)) };
+    }
+  }
+
+function saveTireEanFromBridge(ean, sizeText, hersteller, modell) {
+    try {
+      return storeTireEanRecord_(ean, sizeText, hersteller, modell, "reifen.de (Bridge)", "reifen.de");
+    } catch (err) {
+      return { success: false, message: "Fehler: " + (err && err.message ? err.message : String(err)) };
     }
   }
 

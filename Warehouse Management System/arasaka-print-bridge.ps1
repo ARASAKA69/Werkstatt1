@@ -1,4 +1,4 @@
-# ARASAKA PRINT BRIDGE v1.3
+# ARASAKA PRINT BRIDGE v1.4
 # Commands:
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1
 #   powershell -ExecutionPolicy Bypass -File .\arasaka-print-bridge.ps1 stop
@@ -194,6 +194,45 @@ function Invoke-PdfPrint($filePath, $printerName, $copies) {
     return $null
 }
 
+function Get-TyreByEan($ean) {
+    $curl = Join-Path $env:SystemRoot "System32\curl.exe"
+    if (-not (Test-Path $curl)) { return @{ success=$false; error="curl.exe not found" } }
+    $url = "https://www.reifen.de/reifen/pkw?freeTextSearch=true&text=$ean"
+    $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+    try {
+        $out = & $curl -s --compressed --max-time 25 -A $ua -H "Accept-Language: de-DE,de;q=0.9" $url 2>$null
+    } catch {
+        return @{ success=$false; error="fetch: $($_.Exception.Message)" }
+    }
+    $html = ($out -join "`n")
+    if (-not $html) { return @{ success=$false; error="empty response" } }
+
+    $marker = 'itemprop="mpn">' + $ean + '<'
+    $idx = $html.IndexOf($marker)
+    if ($idx -lt 0) { return @{ success=$true; found=$false } }
+
+    $start = [Math]::Max(0, $idx - 4000)
+    $head = $html.Substring($start, $idx - $start)
+    $ai = $head.LastIndexOf('<article itemprop="item"')
+    if ($ai -ge 0) { $head = $head.Substring($ai) }
+
+    $size = ""
+    foreach ($mm in [regex]::Matches($head, 'search-result-desc-list-item"\s+title="([^"]+)"')) {
+        $t = $mm.Groups[1].Value
+        if ($t -match '\d{2,3}\s*/\s*\d{2}\s*(ZR|R)\s*\d{2}\s*C?\s*\d{2,3}(/\d{2,3})?\s*[A-Z]{1,2}') { $size = $t; break }
+    }
+    if (-not $size) { return @{ success=$true; found=$false } }
+
+    $tail = $html.Substring($idx, [Math]::Min(400, $html.Length - $idx))
+    $brand = ""
+    $bm = [regex]::Match($tail, 'itemprop="brand"[^>]*>\s*([^<]+?)\s*<')
+    if ($bm.Success) { $brand = $bm.Groups[1].Value.Trim() }
+    $name = ""
+    foreach ($nm in [regex]::Matches($head, 'itemprop="name">\s*([^<]+?)\s*<')) { $name = $nm.Groups[1].Value.Trim() }
+
+    return @{ success=$true; found=$true; ean=$ean; size=$size; hersteller=$brand; modell=$name }
+}
+
 function Send-Response($stream, $code, $status, $body) {
     $b = [System.Text.Encoding]::UTF8.GetBytes($body)
     $h = "HTTP/1.1 $code $status`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: $($b.Length)`r`nAccess-Control-Allow-Origin: *`r`nAccess-Control-Allow-Methods: GET, POST, OPTIONS`r`nAccess-Control-Allow-Headers: Content-Type`r`nConnection: close`r`n`r`n"
@@ -222,7 +261,7 @@ $config = Import-Config
 $running = $true
 
 Write-Host ""
-Write-Host "  ARASAKA PRINT BRIDGE v1.3" -ForegroundColor Cyan
+Write-Host "  ARASAKA PRINT BRIDGE v1.4" -ForegroundColor Cyan
 Write-Host "  Port $Port | Chrome headless" -ForegroundColor Cyan
 
 $allPrinters = Get-PrinterList
@@ -284,7 +323,16 @@ try {
             if ($m -eq "OPTIONS") { Send-Response $st 204 "No Content" "" }
             elseif ($m -eq "GET" -and $pa -eq "/status") {
                 Log "GET /status"
-                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.3"; printer=$config.printer; configured=[bool]$config.printer }
+                Ok $st @{ success=$true; service="arasaka-print-bridge"; version="1.4"; printer=$config.printer; configured=[bool]$config.printer }
+            }
+            elseif ($m -eq "GET" -and $pa -like "/tyre-ean*") {
+                $ean = ""
+                if ($pa -match 'ean=(\d{6,14})') { $ean = $matches[1] }
+                if (-not $ean) { Err $st 400 "Missing ean"; $client.Close(); continue }
+                Log "TYRE-EAN $ean"
+                $tr = Get-TyreByEan $ean
+                if ($tr.found) { Log "TYRE-EAN $ean -> $($tr.size)" } else { Log "TYRE-EAN $ean -> miss" }
+                Ok $st $tr
             }
             elseif ($m -eq "GET" -and $pa -eq "/printers") {
                 Log "GET /printers"

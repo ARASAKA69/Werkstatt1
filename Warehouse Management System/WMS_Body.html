@@ -628,8 +628,17 @@
       <div class="reifen-size-section">
         <div class="reifen-size-title">Reifensuche nach Größe (Paketdienst)<span class="reifen-size-badge" id="reifenSizeBadge" style="display:none;">0</span></div>
         <div class="reifen-size-search">
-          <input type="text" class="reifen-size-input" id="reifenSizeInput" placeholder="z.B. 225/50 R17 103 H" autocomplete="off">
+          <input type="text" class="reifen-size-input" id="reifenSizeInput" placeholder="EAN scannen oder z.B. 225/50 R17 103 H" autocomplete="off">
           <button class="reifen-size-btn" onclick="searchTireBySize()">Suchen</button>
+        </div>
+        <div id="reifenEanInfo" style="text-align:center;font-size:13px;color:#3FA0DB;margin-bottom:8px;display:none;"></div>
+        <div id="reifenEanManual" style="display:none;margin-bottom:10px;padding:10px;border:1px solid #F27420;border-radius:8px;background:rgba(242,116,32,0.08);">
+          <div style="font-size:13px;color:#F27420;font-weight:700;margin-bottom:8px;" id="reifenEanManualTitle"></div>
+          <div class="reifen-size-search">
+            <input type="text" class="reifen-size-input" id="reifenEanManualInput" placeholder="Größe vom Reifen, z.B. 255/45 ZR20 105 W" autocomplete="off">
+            <button class="reifen-size-btn" onclick="saveTireEanFromUi()">Merken &amp; suchen</button>
+          </div>
+          <div style="font-size:12px;color:#8b949e;margin-top:6px;">Wird gespeichert – beim nächsten Scan dieser EAN geht es automatisch.</div>
         </div>
         <div id="reifenSizeStatus" style="text-align:center;font-size:14px;color:#8b949e;margin-bottom:10px;display:none;"></div>
         <div class="reifen-size-results" id="reifenSizeResults" style="display:none;">
