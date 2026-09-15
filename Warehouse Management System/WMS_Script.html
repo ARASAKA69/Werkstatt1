@@ -122,6 +122,10 @@
     var w = window.open(REIFEN_KONTROLLE_URL, '_blank', 'noopener,noreferrer');
     if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
   }
+  function openReifenAussenScan() {
+    var w = window.open(REIFEN_KONTROLLE_URL + '?page=aussen', '_blank', 'noopener,noreferrer');
+    if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
+  }
   function openRegalScanHud() {
     var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
     if (!base) {
