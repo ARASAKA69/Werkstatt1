@@ -21,9 +21,11 @@ var HOT_CACHE_CHUNK = 90000;
 var HOT_CACHE_TTL_SEC = 300;
 var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
 
-function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Reifen Kontrolle')
+function doGet(e) {
+  var page = String((e && e.parameter && e.parameter.page) || '').toLowerCase();
+  var isAussen = page === 'aussen' || page === 'scan';
+  return HtmlService.createHtmlOutputFromFile(isAussen ? 'Aussen' : 'Index')
+    .setTitle(isAussen ? 'Reifen Aussen Scan' : 'Reifen Kontrolle')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -32,6 +34,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Reifen Kontrolle')
     .addItem('App öffnen', 'openReifenApp')
+    .addItem('Aussen Scan öffnen', 'openAussenApp')
     .addItem('Cache neu bauen', 'menuRebuildCache')
     .addItem('Cache-Trigger einrichten', 'installCacheTrigger')
     .addToUi();
@@ -46,6 +49,17 @@ function openReifenApp() {
     '</body></html>'
   ).setWidth(280).setHeight(80);
   SpreadsheetApp.getUi().showModalDialog(html, 'Reifen Kontrolle');
+}
+
+function openAussenApp() {
+  var url = WEB_APP_URL + (WEB_APP_URL.indexOf('?') === -1 ? '?' : '&') + 'page=aussen';
+  var html = HtmlService.createHtmlOutput(
+    '<!DOCTYPE html><html><body style="margin:0;font:14px sans-serif;padding:16px;background:#111;color:#eee">' +
+    '<div>Öffne Reifen Aussen Scan…</div>' +
+    '<script>window.onload=function(){window.open(' + JSON.stringify(url) + ',"_blank");google.script.host.close();};</script>' +
+    '</body></html>'
+  ).setWidth(280).setHeight(80);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Reifen Aussen Scan');
 }
 
 function menuRebuildCache() {
@@ -543,40 +557,159 @@ function buildTageslisteMap_(onlyIds) {
   return map;
 }
 
+function gmailMailbox_() {
+  return String(GMAIL_ACCOUNT || '').trim();
+}
+
+function gmailLoggedInAccount_() {
+  try { return String(Session.getEffectiveUser().getEmail() || ''); } catch (e0) { return ''; }
+}
+
+function gmailApiUserPath_(mailbox) {
+  return encodeURIComponent(String(mailbox || gmailMailbox_() || 'me'));
+}
+
+function gmailHeader_(meta, name) {
+  var headers = (((meta || {}).payload) || {}).headers || [];
+  var want = String(name || '').toLowerCase();
+  for (var i = 0; i < headers.length; i++) {
+    if (String(headers[i].name || '').toLowerCase() === want) return String(headers[i].value || '');
+  }
+  return '';
+}
+
+function isReturnToAuto1Text_(subject, body, stockId) {
+  var sid = normalizeStockId_(stockId);
+  if (!sid) return false;
+  var sub = String(subject || '');
+  var blob = sub + ' ' + sub.replace(/[-–—_./]+/g, ' ') + ' ' + String(body || '');
+  var up = blob.toUpperCase();
+  if (up.indexOf(sid) === -1) return false;
+  return /return\s*to\s*auto\s*1|zurück\s*zu\s*auto\s*1|zurueck\s*zu\s*auto\s*1|\bb2a1\b|geht\s+zurück\s+zu\s+auto\s*1/i.test(blob);
+}
+
+function gmailApiList_(query, maxResults) {
+  maxResults = Math.max(1, Math.min(50, Number(maxResults) || 10));
+  var mailbox = gmailMailbox_();
+  if (typeof Gmail !== 'undefined' && Gmail.Users && Gmail.Users.Messages && Gmail.Users.Messages.list) {
+    try {
+      var listed = Gmail.Users.Messages.list(mailbox, { q: query, maxResults: maxResults, includeSpamTrash: true });
+      return (listed && listed.messages) || [];
+    } catch (eAdv) {}
+  }
+  var url = 'https://gmail.googleapis.com/gmail/v1/users/' + gmailApiUserPath_(mailbox) +
+    '/messages?includeSpamTrash=true&maxResults=' + maxResults + '&q=' + encodeURIComponent(String(query || ''));
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode();
+  var body = {};
+  try { body = JSON.parse(resp.getContentText() || '{}'); } catch (e1) { body = {}; }
+  if (code >= 300) {
+    throw new Error('Gmail API ' + code + ': ' + ((body.error && body.error.message) || String(resp.getContentText() || '').slice(0, 180)));
+  }
+  return body.messages || [];
+}
+
+function gmailApiMeta_(messageId) {
+  if (!messageId) return null;
+  var mailbox = gmailMailbox_();
+  if (typeof Gmail !== 'undefined' && Gmail.Users && Gmail.Users.Messages && Gmail.Users.Messages.get) {
+    try {
+      return Gmail.Users.Messages.get(mailbox, messageId, { format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] });
+    } catch (eAdv) {}
+  }
+  var url = 'https://gmail.googleapis.com/gmail/v1/users/' + gmailApiUserPath_(mailbox) +
+    '/messages/' + encodeURIComponent(messageId) +
+    '?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date';
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    muteHttpExceptions: true
+  });
+  if (resp.getResponseCode() >= 300) return null;
+  try { return JSON.parse(resp.getContentText() || '{}'); } catch (e0) { return null; }
+}
+
+function fillReturnMailFromMsg_(result, msg) {
+  var thread = msg.getThread();
+  result.found = true;
+  result.subject = String(msg.getSubject() || thread.getFirstMessageSubject() || '');
+  result.from = String(msg.getFrom() || '');
+  result.date = Utilities.formatDate(msg.getDate(), 'Europe/Berlin', 'dd.MM.yyyy HH:mm');
+  result.permalink = gmailThreadUrl_(thread.getId());
+  result.message = '';
+}
+
+function fillReturnMailFromMeta_(result, meta, fallbackId) {
+  result.found = true;
+  result.subject = gmailHeader_(meta, 'Subject');
+  result.from = gmailHeader_(meta, 'From');
+  var internal = meta && meta.internalDate ? Number(meta.internalDate) : 0;
+  result.date = internal ? Utilities.formatDate(new Date(internal), 'Europe/Berlin', 'dd.MM.yyyy HH:mm') : '';
+  result.permalink = gmailThreadUrl_((meta && meta.threadId) || fallbackId || '');
+  result.message = '';
+}
+
 function searchReturnMail_(stockId) {
   var result = { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
   try {
+    stockId = normalizeStockId_(stockId);
+    if (!stockId) return result;
+    var mailbox = gmailMailbox_();
+    var loggedIn = gmailLoggedInAccount_();
     var queries = [
       '"Return to Auto1" "' + stockId + '"',
-      '"' + stockId + '---Return to Auto1"'
+      '"' + stockId + '---Return to Auto1"',
+      '"' + stockId + '" "Return to Auto1"',
+      stockId + '---Return to Auto1',
+      'in:anywhere "' + stockId + '" "Return to Auto1"',
+      '"' + stockId + '" (B2A1 OR "zurück zu Auto1" OR "zurueck zu Auto1")'
     ];
-    var seen = {};
-    var best = null;
-    for (var q = 0; q < queries.length; q++) {
-      var threads = GmailApp.search(queries[q], 0, 5);
-      for (var i = 0; i < threads.length; i++) {
-        var id = threads[i].getId();
-        if (seen[id]) continue;
-        seen[id] = true;
-        if (!best || threads[i].getLastMessageDate().getTime() > best.getLastMessageDate().getTime()) {
-          best = threads[i];
+    var apiHits = 0;
+    var apiErr = '';
+    try {
+      for (var q = 0; q < queries.length; q++) {
+        var list = gmailApiList_(queries[q], 15);
+        apiHits += list.length;
+        for (var i = 0; i < list.length; i++) {
+          var meta = gmailApiMeta_(list[i].id);
+          var sub = gmailHeader_(meta, 'Subject');
+          var snip = (meta && meta.snippet) || '';
+          if (!isReturnToAuto1Text_(sub, snip, stockId) && sub.toUpperCase().indexOf(stockId) === -1) continue;
+          fillReturnMailFromMeta_(result, meta, list[i].threadId || list[i].id);
+          return result;
         }
       }
-      if (best) break;
+    } catch (eApi) {
+      apiErr = String(eApi.message || eApi);
     }
-    if (best) {
-      var msgs = best.getMessages();
-      var last = msgs[msgs.length - 1];
-      result.found = true;
-      result.subject = String(best.getFirstMessageSubject() || '');
-      result.from = String(last.getFrom() || '');
-      result.date = Utilities.formatDate(last.getDate(), 'Europe/Berlin', 'dd.MM.yyyy HH:mm');
-      result.permalink = gmailThreadUrl_(best.getId());
-    }
+    result.message = 'keine Mail in ' + mailbox +
+      (loggedIn && loggedIn.toLowerCase() !== mailbox.toLowerCase() ? ' (eingeloggt: ' + loggedIn + ')' : '') +
+      (apiHits ? ' · API ' + apiHits + ' Treffer, kein Subject-Match' : ' · API 0 Treffer') +
+      (apiErr ? ' · ' + apiErr : '');
   } catch (err) {
     result.message = 'Gmail: ' + String(err.message || err);
   }
   return result;
+}
+
+function isReturnToAuto1Thread_(thread, stockId) {
+  try {
+    var msgs = thread.getMessages();
+    var n = Math.min(msgs.length, 5);
+    for (var i = 0; i < n; i++) {
+      var sub = String(msgs[i].getSubject() || '');
+      var body = '';
+      try { body = String(msgs[i].getPlainBody() || '').slice(0, 4000); } catch (eBody) {}
+      if (isReturnToAuto1Text_(sub, body, stockId)) return true;
+    }
+  } catch (e0) {
+    if (isReturnToAuto1Text_(String(thread.getFirstMessageSubject() || ''), '', stockId)) return true;
+  }
+  return false;
 }
 
 function hasReifenDaComment_(refurb) {
@@ -1574,4 +1707,702 @@ function addStockIds(ids) {
 
 function forceRebuildCache() {
   return rebuildCacheChunk(0, 5000);
+}
+
+var AUSSEN_TAB = 'Reifen Aussen Scan';
+var AUSSEN_HEADERS = ['Batch', 'Gescannt', 'Stock-ID', 'Marke', 'Carol Status', 'Carol fertig', 'Tagesliste', 'Gestellt', 'Gestellt am', 'Reifen', 'Schicht', 'B2A1', 'Mail Betreff', 'Mail Datum', 'Mail URL', 'Aktion', 'Carol URL', 'TL URL'];
+var AUSSEN_MAP_PREFIX = 'aussen_maps_';
+
+function getAussenSheet_() {
+  var ss = SpreadsheetApp.openById(REIFEN_SHEET_ID);
+  var sh = ss.getSheetByName(AUSSEN_TAB);
+  if (!sh) {
+    sh = ss.insertSheet(AUSSEN_TAB);
+    sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setValues([AUSSEN_HEADERS]);
+    sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setFontWeight('bold');
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 150);
+    sh.setColumnWidth(3, 110);
+  } else if (sh.getLastRow() < 1) {
+    sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setValues([AUSSEN_HEADERS]);
+    sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function looksLikeAussenStockId_(value) {
+  return /^[A-Z]{2}\d{5}$/.test(normalizeStockId_(value));
+}
+
+function parseAussenIds_(raw) {
+  var arr = Object.prototype.toString.call(raw) === '[object Array]' ? raw : String(raw || '').split(/[\s,;]+/);
+  var out = [];
+  var seen = {};
+  for (var i = 0; i < arr.length; i++) {
+    var sid = normalizeStockId_(arr[i]);
+    if (!sid || !looksLikeAussenStockId_(sid) || seen[sid]) continue;
+    seen[sid] = true;
+    out.push(sid);
+  }
+  return out;
+}
+
+function isAussenDumpToken_(value) {
+  var s = String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+  if (!s) return true;
+  if (looksLikeAussenStockId_(s)) return false;
+  if (/OUTPUT\s*ALL\s*STORED\s*DATA/.test(s)) return true;
+  if (/SEND\s*ALL/.test(s)) return true;
+  if (/DUMP\s*ALL/.test(s)) return true;
+  if (s === 'OUTPUT' || s === 'STORED' || s === 'DATA') return true;
+  return false;
+}
+
+function aussenAction_(item) {
+  if (!item) return 'BEHALTEN';
+  if (item.mailFound) return 'B2A1';
+  if (item.carolDone) return 'RAUS';
+  if (item.tlGestellt) return 'GESTELLT';
+  if (item.tlFound) return 'TAGESLISTE';
+  return 'BEHALTEN';
+}
+
+function aussenActionKey_(action) {
+  var a = String(action || '').toUpperCase();
+  if (a === 'B2A1') return 'b2a1';
+  if (a === 'RAUS') return 'raus';
+  if (a === 'GESTELLT') return 'gestellt';
+  if (a === 'TAGESLISTE') return 'tagesliste';
+  return 'behalten';
+}
+
+function applyAussenManual_(item, maps) {
+  if (!item || !maps || !maps.manual) return item;
+  var forced = maps.manual[item.stockId];
+  if (!forced) return item;
+  item.action = forced;
+  item.actionKey = aussenActionKey_(forced);
+  item.manual = true;
+  return item;
+}
+
+function splitAussenItems_(items) {
+  var visible = [];
+  var gestellt = [];
+  for (var i = 0; i < (items || []).length; i++) {
+    var it = items[i];
+    if (it && it.tlGestellt) gestellt.push(it);
+    else visible.push(it);
+  }
+  return { items: visible, gestelltItems: gestellt, gestelltCount: gestellt.length };
+}
+
+function aussenMailIds_(maps, storedItems) {
+  if (maps && maps.checkIds) return maps.checkIds.slice();
+  var ids = (maps && maps.ids) ? maps.ids.slice() : [];
+  if (!ids.length && storedItems && storedItems.length) {
+    ids = storedItems.map(function(it) { return it.stockId; });
+  }
+  if (maps && maps.tl) {
+    return ids.filter(function(sid) {
+      return !resolveTlGestellt_(maps.tl[sid] || []).gestellt;
+    });
+  }
+  if (storedItems && storedItems.length) {
+    var skip = {};
+    for (var i = 0; i < storedItems.length; i++) {
+      if (storedItems[i].tlGestellt) skip[storedItems[i].stockId] = true;
+    }
+    return ids.filter(function(sid) { return !skip[sid]; });
+  }
+  return ids;
+}
+
+function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail) {
+  var refurb = (refurbMap && refurbMap[stockId]) || { found: false };
+  var tl = (tlMap && tlMap[stockId]) || [];
+  var tlRes = resolveTlGestellt_(tl);
+  var statusLow = String(refurb.status || '').toLowerCase();
+  var carolDone = !!refurb.found && /herausgegeben|handed\s*out|complete/i.test(statusLow);
+  var mail = returnMail || { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
+  var gEntry = tlRes.gestelltEntry || null;
+  var latest = tlRes.latest || null;
+  var item = {
+    stockId: stockId,
+    markeModel: refurb.markeModel || '',
+    carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
+    refurbFound: !!refurb.found,
+    carolStatus: refurb.status || '',
+    carolDone: carolDone,
+    regal: refurb.regal || '',
+    reifenStatus: refurb.reifenStatus || '',
+    reifenStatusRaw: refurb.reifenStatusRaw || '',
+    tlFound: tl.length > 0,
+    tlCount: tl.length,
+    tlGestellt: !!tlRes.gestellt,
+    tlGestelltEarlier: !!tlRes.fromEarlier,
+    tlDatum: tlRes.datum || '',
+    tlReifen: tlRes.reifen || '',
+    tlSchicht: (gEntry && gEntry.schicht) || (latest && latest.schicht) || '',
+    tlUrl: tlRes.url || '',
+    mailFound: !!mail.found,
+    mailSubject: mail.subject || '',
+    mailFrom: mail.from || '',
+    mailDate: mail.date || '',
+    mailUrl: mail.permalink || '',
+    mailMessage: mail.message || '',
+    gmailSearchUrl: gmailSearchUrl_('"Return to Auto1" "' + stockId + '"'),
+    checkedAt: nowStamp_()
+  };
+  item.action = aussenAction_(item);
+  item.actionKey = aussenActionKey_(item.action);
+  return item;
+}
+
+function aussenRowFromItem_(batchId, scannedAt, item) {
+  return [
+    batchId,
+    scannedAt,
+    item.stockId,
+    item.markeModel || '',
+    item.carolStatus || '',
+    item.carolDone ? 'JA' : '',
+    item.tlFound ? 'JA' : '',
+    item.tlGestellt ? 'JA' : '',
+    item.tlDatum || '',
+    item.tlReifen || '',
+    item.tlSchicht || '',
+    item.mailFound ? 'JA' : '',
+    item.mailSubject || '',
+    item.mailDate || '',
+    item.mailUrl || '',
+    item.action || '',
+    item.carolUrl || '',
+    item.tlUrl || ''
+  ];
+}
+
+function aussenItemFromRow_(row) {
+  var action = String(row[15] || '').trim().toUpperCase();
+  var item = {
+    stockId: normalizeStockId_(row[2]),
+    markeModel: String(row[3] || '').trim(),
+    carolStatus: String(row[4] || '').trim(),
+    carolDone: String(row[5] || '').trim().toUpperCase() === 'JA',
+    tlFound: String(row[6] || '').trim().toUpperCase() === 'JA',
+    tlGestellt: String(row[7] || '').trim().toUpperCase() === 'JA',
+    tlGestelltEarlier: false,
+    tlDatum: String(row[8] || '').trim(),
+    tlReifen: String(row[9] || '').trim(),
+    tlSchicht: String(row[10] || '').trim(),
+    mailFound: String(row[11] || '').trim().toUpperCase() === 'JA',
+    mailSubject: String(row[12] || '').trim(),
+    mailDate: String(row[13] || '').trim(),
+    mailUrl: String(row[14] || '').trim(),
+    action: action || 'BEHALTEN',
+    carolUrl: String(row[16] || '').trim(),
+    tlUrl: String(row[17] || '').trim(),
+    refurbFound: !!String(row[4] || '').trim(),
+    tlCount: String(row[6] || '').trim().toUpperCase() === 'JA' ? 1 : 0,
+    mailFrom: '',
+    mailMessage: '',
+    gmailSearchUrl: gmailSearchUrl_('"Return to Auto1" "' + normalizeStockId_(row[2]) + '"'),
+    checkedAt: String(row[1] || '').trim()
+  };
+  if (!item.action) item.action = aussenAction_(item);
+  item.actionKey = aussenActionKey_(item.action);
+  if (!item.carolUrl) item.carolUrl = carolUrlFor_(item.stockId, '');
+  return item;
+}
+
+function writeAussenItems_(batchId, scannedAt, items) {
+  if (!items || !items.length) return;
+  var sh = getAussenSheet_();
+  var last = sh.getLastRow();
+  var rowMap = {};
+  if (last >= 2) {
+    var existing = sh.getRange(2, 1, last, 3).getDisplayValues();
+    for (var i = 0; i < existing.length; i++) {
+      if (String(existing[i][0] || '') !== batchId) continue;
+      var sid = normalizeStockId_(existing[i][2]);
+      if (sid) rowMap[sid] = i + 2;
+    }
+  }
+  var toAppend = [];
+  for (var j = 0; j < items.length; j++) {
+    var it = items[j];
+    var vals = aussenRowFromItem_(batchId, scannedAt, it);
+    var row = rowMap[it.stockId];
+    if (row) {
+      sh.getRange(row, 1, 1, AUSSEN_HEADERS.length).setValues([vals]);
+    } else {
+      toAppend.push(vals);
+    }
+  }
+  if (toAppend.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, toAppend.length, AUSSEN_HEADERS.length).setValues(toAppend);
+  }
+  SpreadsheetApp.flush();
+}
+
+function aussenMapsPrefix_(batchId) {
+  return AUSSEN_MAP_PREFIX + String(batchId || '') + '_';
+}
+
+function aussenNeedSet_(ids) {
+  return stockIdSetFromList_((ids || []).map(function(sid) { return { stockId: sid }; }));
+}
+
+function aussenStepOk_(opt) {
+  return {
+    success: true,
+    batchId: opt.batchId || '',
+    scannedAt: opt.scannedAt || '',
+    items: opt.items || [],
+    gestelltItems: opt.gestelltItems || [],
+    count: opt.count || 0,
+    gestelltCount: opt.gestelltCount || 0,
+    checkCount: opt.checkCount || 0,
+    done: !!opt.done,
+    nextStep: opt.nextStep || '',
+    cursor: opt.cursor || 0,
+    percent: opt.percent || 0,
+    phase: opt.phase || '',
+    currentSid: opt.currentSid || '',
+    message: opt.message || ''
+  };
+}
+
+function aussenBuildTlMapFast_(ids) {
+  var map = {};
+  try {
+    var sheet = getTageslisteSheet_();
+    if (!sheet) return map;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return map;
+    var want = {};
+    var left = 0;
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      if (!id || want[id]) continue;
+      want[id] = true;
+      left++;
+    }
+    if (!left) return map;
+    var width = Math.max(TL_STOCK_COL, TL_REIFEN_COL, TL_DATUM_COL, TL_SCHICHT_COL);
+    var data = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
+    for (var r = data.length - 1; r >= 0; r--) {
+      var sid = normalizeStockId_(data[r][TL_STOCK_COL - 1]);
+      if (!want[sid]) continue;
+      if (map[sid] && map[sid].length >= TL_MAX_ENTRIES) continue;
+      var reifen = String(data[r][TL_REIFEN_COL - 1] || '').trim();
+      var entry = {
+        row: r + 2,
+        datum: String(data[r][TL_DATUM_COL - 1] || '').trim(),
+        schicht: String(data[r][TL_SCHICHT_COL - 1] || '').trim(),
+        reifen: reifen,
+        reifenGreen: isReifenGestelltText_(reifen),
+        url: tageslisteUrl_(r + 2)
+      };
+      if (!map[sid]) map[sid] = [];
+      map[sid].push(entry);
+      if (map[sid].length >= TL_MAX_ENTRIES) {
+        left--;
+        if (left <= 0) break;
+      }
+    }
+  } catch (e1) {}
+  return map;
+}
+
+function aussenPing() {
+  return { success: true, version: '1.1.9', ts: nowStamp_() };
+}
+
+function startAussenCheck(ids) {
+  try {
+    var list = parseAussenIds_(ids);
+    if (!list.length) return { success: false, message: 'Keine gültigen Stock-IDs — nur 2 Buchstaben + 5 Zahlen (AA12345)', items: [], done: true };
+    var batchId = 'A' + Utilities.formatDate(new Date(), 'Europe/Berlin', 'yyyyMMddHHmmss');
+    var scannedAt = nowStamp_();
+    putCacheJson_(aussenMapsPrefix_(batchId), {
+      ids: list,
+      scannedAt: scannedAt,
+      refurb: null,
+      tl: {},
+      tlEnd: 0,
+      tlRows: 0,
+      tlScanned: 0,
+      checkIds: [],
+      gestelltIds: [],
+      manual: {}
+    });
+    return aussenStepOk_({
+      batchId: batchId,
+      scannedAt: scannedAt,
+      count: list.length,
+      done: false,
+      nextStep: 'tl',
+      percent: 8,
+      phase: 'Dump',
+      currentSid: list[0],
+      message: list.length + ' Stock-IDs übernommen'
+    });
+  } catch (err) {
+    return { success: false, message: String(err.message || err), items: [], done: true };
+  }
+}
+
+function aussenCheckStep(batchId, step, cursor) {
+  try {
+    batchId = String(batchId || '');
+    step = String(step || 'tl').toLowerCase();
+    cursor = Math.max(0, Number(cursor) || 0);
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId));
+    if (!maps || !maps.ids || !maps.ids.length) {
+      return { success: false, message: 'Batch weg — Dump nochmal ausgeben', items: [], done: true };
+    }
+    var total = maps.ids.length;
+    if (step === 'tl') {
+      var t0 = Date.now();
+      maps.tl = aussenBuildTlMapFast_(maps.ids);
+      maps.checkIds = [];
+      maps.gestelltIds = [];
+      maps.manual = maps.manual || {};
+      for (var t = 0; t < maps.ids.length; t++) {
+        var sidT = maps.ids[t];
+        var tlRes = resolveTlGestellt_(maps.tl[sidT] || []);
+        if (tlRes.gestellt) maps.gestelltIds.push(sidT);
+        else maps.checkIds.push(sidT);
+      }
+      putCacheJson_(aussenMapsPrefix_(batchId), maps);
+      return aussenStepOk_({
+        batchId: batchId,
+        scannedAt: maps.scannedAt,
+        count: total,
+        done: false,
+        nextStep: maps.checkIds.length ? 'refurb' : 'items',
+        percent: 22,
+        phase: 'Tagesliste',
+        currentSid: 'Tagesliste ✓',
+        message: maps.gestelltIds.length + ' gestellt übersprungen · ' + maps.checkIds.length + ' prüfen · ' + (Date.now() - t0) + 'ms'
+      });
+    }
+    if (step === 'refurb') {
+      var checkNeed = aussenNeedSet_(maps.checkIds && maps.checkIds.length ? maps.checkIds : maps.ids);
+      maps.refurb = filterMapToIds_(buildRefurbMap_(), checkNeed);
+      putCacheJson_(aussenMapsPrefix_(batchId), maps);
+      var hits = Object.keys(maps.refurb).length;
+      return aussenStepOk_({
+        batchId: batchId,
+        scannedAt: maps.scannedAt,
+        count: total,
+        done: false,
+        nextStep: 'items',
+        percent: 55,
+        phase: 'Carol / Refurbishment',
+        currentSid: 'Refurbishment ✓',
+        message: hits + '/' + (maps.checkIds ? maps.checkIds.length : total) + ' in Carol · ' + (maps.gestelltIds ? maps.gestelltIds.length : 0) + ' gestellt skip'
+      });
+    }
+    var tlMap = maps.tl || {};
+    if (tlMap._meta) delete tlMap._meta;
+    var gestelltSet = {};
+    var gids = maps.gestelltIds || [];
+    for (var g = 0; g < gids.length; g++) gestelltSet[gids[g]] = true;
+    var allItems = [];
+    for (var i = 0; i < maps.ids.length; i++) {
+      var sid = maps.ids[i];
+      var it = aussenItemFromMaps_(sid, gestelltSet[sid] ? {} : (maps.refurb || {}), tlMap, null);
+      applyAussenManual_(it, maps);
+      allItems.push(it);
+    }
+    writeAussenItems_(batchId, maps.scannedAt, allItems);
+    var split = splitAussenItems_(allItems);
+    return aussenStepOk_({
+      batchId: batchId,
+      scannedAt: maps.scannedAt,
+      items: split.items,
+      gestelltItems: split.gestelltItems,
+      count: allItems.length,
+      gestelltCount: split.gestelltCount,
+      checkCount: split.items.length,
+      done: true,
+      percent: 78,
+      phase: 'Liste',
+      currentSid: split.items.length ? split.items[0].stockId : 'Fertig',
+      message: split.items.length + ' prüfen · ' + split.gestelltCount + ' gestellt skip'
+    });
+  } catch (err) {
+    return { success: false, message: String(err.message || err), items: [], done: true };
+  }
+}
+
+function checkAussenMailChunk(batchId, offset, size) {
+  try {
+    batchId = String(batchId || '');
+    offset = Math.max(0, Number(offset) || 0);
+    size = Math.max(1, Math.min(12, Number(size) || 8));
+    if (!batchId) return { success: false, message: 'Kein Batch', items: [], done: true };
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId));
+    var storedItems = [];
+    var stored = null;
+    if (!maps || !maps.checkIds) {
+      stored = getAussenBatch(batchId);
+      storedItems = stored && stored.success
+        ? ((stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []))
+        : [];
+    }
+    var ids = aussenMailIds_(maps, storedItems);
+    var scannedAt = (maps && maps.scannedAt) || (stored && stored.scannedAt) || nowStamp_();
+    if (!ids.length) {
+      return {
+        success: true,
+        items: [],
+        offset: 0,
+        nextOffset: 0,
+        total: 0,
+        done: true,
+        batchId: batchId,
+        scannedAt: scannedAt,
+        gestelltCount: maps && maps.gestelltIds ? maps.gestelltIds.length : (stored && stored.gestelltCount) || 0,
+        message: 'Mails übersprungen — gestellt oder leer'
+      };
+    }
+    if (!maps || !maps.refurb || !maps.tl) {
+      var need = stockIdSetFromList_(ids.map(function(sid) { return { stockId: sid }; }));
+      maps = maps || {};
+      maps.refurb = filterMapToIds_(buildRefurbMap_(), need);
+      maps.tl = buildTageslisteMap_(need);
+      if (maps.tl && maps.tl._meta) delete maps.tl._meta;
+      maps.ids = maps.ids || ids;
+      maps.scannedAt = scannedAt;
+      maps.manual = maps.manual || {};
+      putCacheJson_(aussenMapsPrefix_(batchId), maps);
+    }
+    var total = ids.length;
+    if (offset >= total) {
+      return { success: true, items: [], offset: offset, nextOffset: offset, total: total, done: true, batchId: batchId };
+    }
+    var end = Math.min(offset + size, total);
+    var updated = [];
+    for (var i = offset; i < end; i++) {
+      var sid = ids[i];
+      var mail = searchReturnMail_(sid);
+      var item = aussenItemFromMaps_(sid, maps.refurb, maps.tl, mail);
+      applyAussenManual_(item, maps);
+      updated.push(item);
+    }
+    writeAussenItems_(batchId, scannedAt, updated);
+    return {
+      success: true,
+      batchId: batchId,
+      scannedAt: scannedAt,
+      items: updated,
+      offset: offset,
+      nextOffset: end,
+      total: total,
+      done: end >= total,
+      currentSid: updated.length ? updated[updated.length - 1].stockId : '',
+      message: end + '/' + total + ' Mails geprüft'
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), items: [], done: true };
+  }
+}
+
+function setAussenAction(batchId, stockId, action) {
+  try {
+    batchId = String(batchId || '');
+    stockId = normalizeStockId_(stockId);
+    action = String(action || '').trim().toUpperCase();
+    var allowed = { B2A1: 1, RAUS: 1, BEHALTEN: 1, TAGESLISTE: 1, GESTELLT: 1 };
+    if (!batchId || !stockId) return { success: false, message: 'Batch/ID fehlt' };
+    if (!allowed[action]) return { success: false, message: 'Ungültige Aktion' };
+    var stored = getAussenBatch(batchId);
+    if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
+    var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
+    var found = false;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].stockId === stockId) {
+        pool[i].action = action;
+        pool[i].actionKey = aussenActionKey_(action);
+        pool[i].manual = true;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return { success: false, message: 'ID nicht im Batch' };
+    writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), pool);
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    maps.manual = maps.manual || {};
+    maps.manual[stockId] = action;
+    putCacheJson_(aussenMapsPrefix_(batchId), maps);
+    var split = splitAussenItems_(pool);
+    return {
+      success: true,
+      items: split.items,
+      gestelltItems: split.gestelltItems,
+      gestelltCount: split.gestelltCount,
+      message: stockId + ' → ' + action
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function recheckAussenMail(batchId, stockId) {
+  try {
+    batchId = String(batchId || '');
+    stockId = normalizeStockId_(stockId);
+    if (!batchId || !stockId) return { success: false, message: 'Batch/ID fehlt' };
+    var stored = getAussenBatch(batchId);
+    if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    var pool = (stored.allItems && stored.allItems.length)
+      ? stored.allItems
+      : (stored.items || []).concat(stored.gestelltItems || []);
+    var prev = null;
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].stockId === stockId) {
+        prev = pool[i];
+        break;
+      }
+    }
+    var mail = searchReturnMail_(stockId);
+    var item;
+    if (maps.refurb || maps.tl) {
+      item = aussenItemFromMaps_(stockId, maps.refurb || {}, maps.tl || {}, mail);
+      if (prev && prev.manual) {
+        item.action = prev.action;
+        item.actionKey = prev.actionKey;
+        item.manual = true;
+      }
+    } else if (prev) {
+      prev.mailFound = !!mail.found;
+      prev.mailSubject = mail.subject || '';
+      prev.mailFrom = mail.from || '';
+      prev.mailDate = mail.date || '';
+      prev.mailUrl = mail.permalink || '';
+      prev.mailMessage = mail.message || '';
+      if (!prev.manual) {
+        prev.action = aussenAction_(prev);
+        prev.actionKey = aussenActionKey_(prev.action);
+      }
+      item = prev;
+    } else {
+      item = aussenItemFromMaps_(stockId, {}, {}, mail);
+    }
+    applyAussenManual_(item, maps);
+    writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), [item]);
+    return {
+      success: true,
+      item: item,
+      items: [item],
+      message: mail.found
+        ? (stockId + ' Mail gefunden')
+        : (stockId + ' keine Mail' + (mail.message ? ' — ' + mail.message : ''))
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
+}
+
+function listAussenBatches() {
+  try {
+    var sh = getAussenSheet_();
+    var last = sh.getLastRow();
+    var batches = [];
+    var map = {};
+    if (last < 2) return { success: true, batches: batches };
+    var data = sh.getRange(2, 1, last, AUSSEN_HEADERS.length).getDisplayValues();
+    for (var i = 0; i < data.length; i++) {
+      var id = String(data[i][0] || '').trim();
+      if (!id) continue;
+      if (!map[id]) {
+        map[id] = {
+          batchId: id,
+          scannedAt: String(data[i][1] || '').trim(),
+          count: 0,
+          b2a1: 0,
+          raus: 0,
+          gestellt: 0,
+          tagesliste: 0,
+          behalten: 0
+        };
+        batches.push(map[id]);
+      }
+      map[id].count++;
+      var action = String(data[i][15] || '').trim().toUpperCase();
+      if (action === 'B2A1') map[id].b2a1++;
+      else if (action === 'RAUS') map[id].raus++;
+      else if (action === 'GESTELLT') map[id].gestellt++;
+      else if (action === 'TAGESLISTE') map[id].tagesliste++;
+      else map[id].behalten++;
+    }
+    batches.sort(function(a, b) {
+      return String(b.batchId).localeCompare(String(a.batchId));
+    });
+    return { success: true, batches: batches };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), batches: [] };
+  }
+}
+
+function getAussenBatch(batchId) {
+  try {
+    batchId = String(batchId || '').trim();
+    if (!batchId) return { success: false, message: 'Kein Batch', items: [] };
+    var sh = getAussenSheet_();
+    var last = sh.getLastRow();
+    var items = [];
+    var scannedAt = '';
+    if (last >= 2) {
+      var data = sh.getRange(2, 1, last, AUSSEN_HEADERS.length).getDisplayValues();
+      for (var i = 0; i < data.length; i++) {
+        if (String(data[i][0] || '').trim() !== batchId) continue;
+        if (!scannedAt) scannedAt = String(data[i][1] || '').trim();
+        var it = aussenItemFromRow_(data[i]);
+        if (it.stockId) items.push(it);
+      }
+    }
+    var split = splitAussenItems_(items);
+    return {
+      success: true,
+      batchId: batchId,
+      scannedAt: scannedAt,
+      items: split.items,
+      gestelltItems: split.gestelltItems,
+      gestelltCount: split.gestelltCount,
+      allItems: items,
+      count: items.length
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), items: [] };
+  }
+}
+
+function deleteAussenBatch(batchId) {
+  try {
+    batchId = String(batchId || '').trim();
+    if (!batchId) return { success: false, message: 'Kein Batch' };
+    var sh = getAussenSheet_();
+    var last = sh.getLastRow();
+    var removed = 0;
+    if (last >= 2) {
+      var data = sh.getRange(2, 1, last, 1).getDisplayValues();
+      for (var i = data.length - 1; i >= 0; i--) {
+        if (String(data[i][0] || '').trim() === batchId) {
+          sh.deleteRow(i + 2);
+          removed++;
+        }
+      }
+    }
+    if (removed) SpreadsheetApp.flush();
+    clearCacheJson_(aussenMapsPrefix_(batchId));
+    return { success: true, message: removed + ' Zeilen gelöscht', deleted: removed };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
 }

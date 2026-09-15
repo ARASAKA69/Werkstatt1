@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reifen Aussen Scan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-primary: #0D9488;
+      --color-on-primary: #FFFFFF;
+      --color-secondary: #14B8A6;
+      --color-accent: #3a2419;
+      --color-destructive: #DC2626;
+      --color-ring: #0D9488;
+      --bg-deep: #0a0a0f;
+      --bg-base: #050506;
+      --bg-elevated: #0e1014;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-2: rgba(255, 255, 255, 0.08);
+      --foreground: #EDEDEF;
+      --foreground-muted: #8A8F98;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --warn: #FBBF24;
+      --ok: #34D399;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 999px;
+      --space-sm: 5px;
+      --space-md: 12px;
+      --space-lg: 16px;
+      --space-xl: 21px;
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.28);
+      --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35);
+      --easing: cubic-bezier(0.16, 1, 0.3, 1);
+      --font: "Plus Jakarta Sans", system-ui, sans-serif;
+      --blur: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    html { font-size: 20px; }
+    body {
+      font-family: var(--font);
+      color: var(--foreground);
+      background: linear-gradient(180deg, #0a0a0f 0%, #050506 100%);
+      color-scheme: dark;
+      overflow: hidden;
+    }
+    .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .blob {
+      position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.11;
+      animation: drift 18s var(--easing) infinite alternate;
+    }
+    .blob.a { width: 420px; height: 420px; background: #0D9488; top: -80px; left: -60px; }
+    .blob.b { width: 360px; height: 360px; background: #EA580C; bottom: 10%; right: -80px; animation-duration: 22s; }
+    .blob.c { width: 280px; height: 280px; background: #14B8A6; top: 40%; left: 45%; opacity: 0.07; }
+    @keyframes drift { from { transform: translate(0, 0); } to { transform: translate(28px, -18px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .blob { animation: none; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    .app {
+      position: relative; z-index: 1;
+      --side-w: 440px;
+      display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr);
+      height: 100%; min-height: 0; zoom: 1.12;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 38vh) 1fr; zoom: 1; --side-w: auto; }
+    }
+    .side, .main { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+    .side {
+      border-right: 1px solid var(--border);
+      background: rgba(10, 10, 15, 0.72);
+      backdrop-filter: blur(var(--blur));
+    }
+    .glass-bar {
+      border-bottom: 1px solid var(--border);
+      background: rgba(14, 16, 20, 0.65);
+      backdrop-filter: blur(var(--blur));
+    }
+    .top { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .brand-row { display: flex; align-items: center; gap: var(--space-md); }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: rgba(13, 148, 136, 0.16);
+      border: 1px solid rgba(13, 148, 136, 0.4);
+      box-shadow: 0 0 18px rgba(13, 148, 136, 0.35);
+      flex-shrink: 0; color: var(--color-secondary);
+    }
+    .brand-mark svg { width: 26px; height: 26px; }
+    .brand-text { min-width: 0; flex: 1; }
+    .brand-text strong { display: block; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-text span {
+      display: block; font-size: 0.65rem; color: var(--foreground-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+    }
+    .chip {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground-muted);
+      border-radius: var(--radius-pill); padding: 0.4rem 0.55rem; min-height: 1.9rem;
+      font: 600 0.72rem/1 var(--font); cursor: pointer;
+      transition: background 180ms var(--easing), color 180ms var(--easing), border-color 180ms var(--easing);
+    }
+    .chip:hover { color: var(--foreground); border-color: var(--border-strong); background: var(--surface); }
+    .chip.active { background: rgba(13, 148, 136, 0.2); border-color: var(--color-primary); color: var(--color-secondary); }
+    .dump-wrap { position: relative; }
+    .dump {
+      width: 100%; min-height: 5.2rem; resize: none;
+      padding: 0.7rem 0.85rem; border-radius: var(--radius-sm);
+      border: 1px dashed var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 600 0.95rem/1.35 var(--font); outline: none;
+      transition: border-color 200ms var(--easing), box-shadow 200ms var(--easing);
+    }
+    .dump:focus { border-color: var(--color-ring); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28); border-style: solid; }
+    .dump.hot { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.12); }
+    .dump-hint {
+      margin-top: 4px; font-size: 0.72rem; color: var(--foreground-muted); font-weight: 600;
+    }
+    .dump-hint.hot { color: var(--color-secondary); }
+    .filters { display: flex; flex-wrap: wrap; gap: 4px; }
+    .meta {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      color: var(--foreground-muted); font-size: 0.82rem; font-weight: 500;
+    }
+    .stats {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px;
+    }
+    .stat {
+      border: 1px solid var(--border); border-radius: 10px; padding: 6px 4px; text-align: center;
+      background: var(--surface); cursor: pointer;
+    }
+    .stat .n { font-size: 1.05rem; font-weight: 800; line-height: 1.1; }
+    .stat .l { font-size: 0.58rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+    .stat.b2a1 .n { color: #fca5a5; }
+    .stat.raus .n { color: #67e8f9; }
+    .stat.gestellt .n { color: #86efac; }
+    .stat.tagesliste .n { color: #fde047; }
+    .stat.behalten .n { color: var(--foreground-muted); }
+    .stat.active { border-color: var(--color-primary); background: rgba(13, 148, 136, 0.16); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+      border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.7rem 1rem; min-height: 3rem;
+      font: 600 1.05rem/1 var(--font); cursor: pointer;
+      transition: background 180ms var(--easing), border-color 180ms var(--easing), opacity 180ms var(--easing), transform 150ms var(--easing);
+    }
+    .btn svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
+    .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.primary { background: var(--color-accent); border-color: transparent; color: #fff; }
+    .btn.teal { background: rgba(13, 148, 136, 0.18); border-color: var(--color-primary); color: var(--color-secondary); }
+    .btn.ghost { background: transparent; }
+    .btn.icon { width: 52px; padding: 0; color: var(--foreground-muted); }
+    .btn.danger { border-color: rgba(255, 80, 80, 0.45); color: #fca5a5; background: rgba(255, 0, 0, 0.1); }
+    .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row-btns .btn { min-height: 2.4rem; padding: 0.45rem 0.75rem; font-size: 0.85rem; flex: 1; }
+    .sel {
+      width: 100%; padding: 0.45rem 0.6rem; border-radius: 8px;
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 600 0.78rem/1.3 var(--font);
+    }
+    .list { overflow: auto; flex: 1; padding: var(--space-md); scrollbar-gutter: stable; }
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+    .item {
+      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
+      color: inherit; border-radius: 10px; padding: 8px 10px; cursor: pointer; margin-bottom: 4px;
+    }
+    .item:hover { filter: brightness(1.08); }
+    .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
+    .item.st-raus { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
+    .item.st-gestellt { background: rgba(52, 168, 83, 0.16); border-color: rgba(52, 168, 83, 0.5); }
+    .item.st-tagesliste { background: rgba(255, 255, 0, 0.12); border-color: rgba(255, 255, 0, 0.4); }
+    .item.st-behalten { background: rgba(255,255,255,0.04); border-color: var(--border); }
+    .item.active {
+      position: relative;
+      background: rgba(13, 148, 136, 0.28);
+      border-color: #2dd4bf;
+      box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.55);
+    }
+    .item-top { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+    .sid { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; }
+    .status-pill {
+      display: inline-block; font-size: 0.68rem; font-weight: 700;
+      padding: 0.15rem 0.4rem; border-radius: 999px; white-space: nowrap; color: #fff;
+    }
+    .status-pill.b2a1 { background: #ff0000; }
+    .status-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .status-pill.gestellt { background: #34A853; }
+    .status-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
+    .status-pill.behalten { background: rgba(255,255,255,0.16); color: var(--foreground-muted); }
+    .sub { margin-top: 3px; font-size: 0.78rem; color: var(--foreground-muted); font-weight: 600; }
+    .main-top {
+      padding: var(--space-md) var(--space-lg);
+      display: flex; flex-wrap: wrap; gap: var(--space-md);
+      align-items: center; justify-content: space-between;
+    }
+    .main-title h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+    .main-title span { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--foreground-muted); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .content { flex: 1; min-height: 0; overflow: auto; padding: var(--space-lg); }
+    .empty { height: 100%; display: grid; place-items: center; }
+    .empty.hide { display: none; }
+    .empty-card {
+      max-width: 460px; text-align: center; padding: var(--space-xl);
+      border: 1px dashed var(--border-strong); border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .empty-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+    .empty-card p { margin: 0; color: var(--foreground-muted); font-size: 0.9rem; line-height: 1.5; }
+    #detail { display: none; }
+    #detail.show { display: block; }
+    .why {
+      margin: 0 0 12px; font-size: 0.92rem; font-weight: 600; line-height: 1.4;
+      padding: 10px 12px; border-radius: 10px; background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .reasons { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .reasons li {
+      font-size: 0.88rem; color: var(--foreground); line-height: 1.35;
+      padding: 6px 10px; border-radius: 8px; background: var(--surface);
+      border-left: 3px solid var(--border-strong);
+    }
+    .check-row.state-none { border-left-color: var(--border-strong); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-md); }
+    .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+    .card {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.6); box-shadow: var(--shadow-md);
+      padding: var(--space-lg);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 0.95rem; font-weight: 700; }
+    .verdict {
+      display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap;
+      padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--surface); margin-bottom: 12px;
+    }
+    .verdict-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+    .verdict .big-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      align-self: flex-start;
+      font-size: 1.05rem; font-weight: 800; padding: 0.45rem 0.95rem; border-radius: 999px;
+      line-height: 1.2; white-space: nowrap;
+    }
+    .verdict .big-pill.b2a1 { background: #ff0000; color: #fff; }
+    .verdict .big-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .verdict .big-pill.gestellt { background: #34A853; color: #fff; }
+    .verdict .big-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
+    .verdict .big-pill.behalten { background: rgba(255,255,255,0.12); color: var(--foreground-muted); }
+    .vlabel { display: block; font-size: 0.75rem; color: var(--foreground-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    .status-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    .sbtn {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground);
+      border-radius: 999px; padding: 0.55rem 0.9rem; min-height: 2.4rem; font: 700 0.82rem/1 var(--font);
+      cursor: pointer; transition: 160ms var(--easing);
+    }
+    .sbtn:hover { filter: brightness(1.15); }
+    .sbtn:active { transform: scale(0.96); }
+    .sbtn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; transform: none; }
+    .sbtn.b2a1 { border-color: rgba(255,0,0,0.5); color: #fca5a5; background: rgba(255,0,0,0.1); }
+    .sbtn.b2a1.set, .sbtn.b2a1:hover { background: #ff0000; color: #fff; }
+    .sbtn.raus { border-color: rgba(0,255,255,0.5); color: #a5f3fc; background: rgba(0,255,255,0.08); }
+    .sbtn.raus.set, .sbtn.raus:hover { background: #00ffff; color: #1a1a1a; }
+    .sbtn.tagesliste { border-color: rgba(255,255,0,0.5); color: #fde047; background: rgba(255,255,0,0.08); }
+    .sbtn.tagesliste.set, .sbtn.tagesliste:hover { background: #ffff00; color: #1a1a1a; }
+    .sbtn.behalten { border-color: var(--border-strong); color: var(--foreground-muted); }
+    .sbtn.behalten.set, .sbtn.behalten:hover { background: var(--surface-2); color: var(--foreground); }
+    .skip-banner {
+      margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+      border: 1px dashed rgba(52, 168, 83, 0.45);
+      background: rgba(52, 168, 83, 0.1);
+      color: #86efac; font-size: 0.78rem; font-weight: 700; line-height: 1.35;
+    }
+    .mail-again { color: #7dd3fc; text-decoration: none; font-weight: 700; cursor: pointer; }
+    .checklist { display: flex; flex-direction: column; gap: 8px; }
+    .check-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+    }
+    .check-row.state-ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
+    .check-row.state-warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
+    .check-row.state-bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
+    .check-row.state-info { border-left-color: #00ffff; background: rgba(0,255,255,0.06); }
+    .check-ico { width: 1.4rem; height: 1.4rem; flex-shrink: 0; color: var(--foreground-muted); }
+    .check-row.state-ok .check-ico { color: #4ade80; }
+    .check-row.state-warn .check-ico { color: #fde047; }
+    .check-row.state-bad .check-ico { color: #f87171; }
+    .check-row.state-info .check-ico { color: #67e8f9; }
+    .ct { font-weight: 700; font-size: 0.92rem; }
+    .cm { margin-top: 2px; font-size: 0.82rem; color: var(--foreground-muted); line-height: 1.4; }
+    .cm a { color: #7dd3fc; text-decoration: none; font-weight: 600; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .fact { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+    .fact.wide { grid-column: 1 / -1; }
+    .fk { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--foreground-muted); margin-bottom: 3px; }
+    .fv { font-size: 0.92rem; font-weight: 600; word-break: break-word; }
+    .fv.green { color: #86efac; }
+    .fv.yellow { color: #fde047; }
+    .fv.red { color: #fca5a5; }
+    .fv.cyan { color: #a5f3fc; }
+    .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
+    .nb-empty {
+      text-align: center; color: var(--foreground-muted); font-size: 0.9rem;
+      padding: 1.2rem; border: 1px dashed var(--border); border-radius: 12px;
+    }
+    .toast {
+      position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(8px);
+      background: rgba(14, 16, 20, 0.92); border: 1px solid var(--border-strong);
+      color: var(--foreground); border-radius: 12px; padding: 0.7rem 1.1rem;
+      font-size: 0.92rem; font-weight: 600; box-shadow: var(--shadow-lg);
+      opacity: 0; pointer-events: none; transition: opacity 220ms var(--easing), transform 220ms var(--easing);
+      z-index: 60; max-width: min(90vw, 560px); text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { border-color: rgba(220, 38, 38, 0.55); }
+    .load-overlay {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+      background: rgba(5, 5, 6, 0.72); backdrop-filter: blur(6px);
+      opacity: 0; pointer-events: none; transition: opacity 200ms var(--easing);
+    }
+    .load-overlay.show { opacity: 1; pointer-events: auto; }
+    .load-card {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      padding: 26px 34px; border-radius: 18px; min-width: 280px;
+      background: rgba(14, 16, 20, 0.9); border: 1px solid var(--border-strong);
+    }
+    .load-card.wide { min-width: min(420px, calc(100vw - 40px)); align-items: stretch; text-align: center; }
+    .load-sid { font-size: 1.45rem; font-weight: 800; color: var(--color-secondary); }
+    .load-count { font-size: 0.85rem; color: var(--foreground-muted); font-weight: 600; }
+    .load-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.1); overflow: hidden; width: 100%; }
+    .load-bar > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--color-secondary), #5eead4);
+      border-radius: inherit; transition: width 280ms var(--easing);
+    }
+    .spinner {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 4px solid rgba(13, 148, 136, 0.25); border-top-color: var(--color-secondary);
+      animation: spin 0.9s linear infinite; margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .load-elapsed { font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted); }
+    .log-card {
+      position: fixed; right: 16px; bottom: 16px; z-index: 80;
+      width: min(380px, calc(100vw - 24px));
+      border: 1px solid var(--border-strong); border-radius: 14px;
+      background: rgba(14, 16, 20, 0.96); box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(12px);
+      display: flex; flex-direction: column; max-height: 42vh;
+    }
+    .log-card.min { max-height: none; }
+    .log-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-bottom: 1px solid var(--border);
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--foreground-muted);
+    }
+    .log-card.has-err .log-head { color: #fca5a5; }
+    .log-head span { flex: 1; }
+    .log-head button {
+      border: 0; background: transparent; color: inherit; cursor: pointer;
+      font: 700 0.72rem/1 var(--font); padding: 4px 6px; border-radius: 6px;
+    }
+    .log-head button:hover { background: var(--surface); color: var(--foreground); }
+    .log-body {
+      overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 5px;
+    }
+    .log-card.min .log-body { display: none; }
+    .log-row {
+      font-size: 0.7rem; font-weight: 600; line-height: 1.35;
+      padding: 6px 8px; border-radius: 8px; border-left: 3px solid var(--border-strong);
+      background: var(--surface); color: var(--foreground);
+      word-break: break-word;
+    }
+    .log-row .t { color: var(--foreground-muted); font-weight: 700; margin-right: 6px; }
+    .log-row.ok { border-left-color: #34d399; }
+    .log-row.err { border-left-color: #ff4d4d; background: rgba(255,0,0,0.1); color: #fecaca; }
+    .log-row.wait { border-left-color: #14b8a6; }
+    .log-empty { color: var(--foreground-muted); font-size: 0.7rem; padding: 6px; }
+    .load-esc kbd {
+      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 6px;
+      border: 1px solid var(--border-strong); background: rgba(255,255,255,0.06);
+      font: inherit; font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="blob a"></div>
+    <div class="blob b"></div>
+    <div class="blob c"></div>
+  </div>
+  <div class="load-overlay" id="loadOverlay">
+    <div class="load-card" id="loadCard">
+      <div class="spinner"></div>
+      <span class="load-title" id="loadLabel">Lädt…</span>
+      <div class="load-sid" id="loadSid" style="display:none"></div>
+      <div class="load-count" id="loadCount" style="display:none"></div>
+      <div class="load-bar" id="loadBar" style="display:none"><i id="loadBarFill"></i></div>
+      <div class="load-elapsed" id="loadElapsed" style="display:none"></div>
+      <div class="load-esc" id="loadEsc" style="display:none"><kbd>ESC</kbd> Abbrechen</div>
+    </div>
+  </div>
+  <div class="app">
+    <aside class="side">
+      <div class="top glass-bar">
+        <div class="brand-row">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><path d="M7 8h2M7 12h4"/></svg>
+          </div>
+          <div class="brand-text">
+            <strong>Reifen Aussen Scan</strong>
+            <span>Store-Mode Dump</span>
+          </div>
+          <button class="chip" type="button" id="btnKontrolle">Kontrolle</button>
+        </div>
+        <div class="dump-wrap">
+          <textarea class="dump" id="dump" placeholder="Hier klicken, dann „Output all stored data“ scannen… nur AA12345" autocomplete="off" spellcheck="false"></textarea>
+          <div class="dump-hint" id="dumpHint">Bereit — nur 2 Buchstaben + 5 Zahlen, alles andere wird ignoriert</div>
+        </div>
+        <div class="row-btns">
+          <button class="btn teal" type="button" id="btnCheck">Prüfen</button>
+          <button class="btn ghost" type="button" id="btnNew">Neue Runde</button>
+        </div>
+        <select class="sel" id="batchSel" aria-label="Vorherige Dumps"></select>
+        <div class="stats" id="stats"></div>
+        <div class="filters" id="filters">
+          <button class="chip active" data-f="alle" type="button">Alle</button>
+          <button class="chip" data-f="sort" type="button">Raus + B2A1</button>
+          <button class="chip" data-f="b2a1" type="button">B2A1</button>
+          <button class="chip" data-f="raus" type="button">Raus</button>
+          <button class="chip" data-f="gestellt" type="button">Gestellt</button>
+          <button class="chip" data-f="tagesliste" type="button">Tagesliste</button>
+          <button class="chip" data-f="behalten" type="button">Behalten</button>
+        </div>
+        <div class="meta">
+          <span id="countLabel">—</span>
+          <button class="btn icon ghost" id="btnDelBatch" type="button" title="Diesen Dump löschen" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+    <section class="main">
+      <div class="main-top glass-bar">
+        <div class="main-title">
+          <h1 id="detailSid">—</h1>
+          <span id="detailSub">Draussen alle Reifen scannen, drinnen Dump ausgeben, Liste drucken</span>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnPrintSort" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            PDF Raus + B2A1
+          </button>
+          <button class="btn" id="btnPrintAll" type="button" disabled>PDF Alles</button>
+          <button class="btn teal" id="btnCarol" type="button" disabled>Carol</button>
+          <button class="btn" id="btnGmail" type="button" disabled>Gmail</button>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="empty" id="emptyState">
+          <div class="empty-card">
+            <h2>Aussen-Reifen sortieren</h2>
+            <p>Draussen jeden Reifen mit dem Scanner im Store-Mode erfassen. Zurückkommen, Feld fokussieren, Barcode „Output all stored data“ scannen. Danach prüft die Seite Carol fertig, Tagesliste / Gestellt inkl. Datum und B2A1-Mails — PDF mitnehmen und raussorieren.</p>
+          </div>
+        </div>
+        <div id="detail">
+          <div class="grid">
+            <div class="stack">
+              <div class="card">
+                <h2>Aktion</h2>
+                <div class="verdict">
+                  <div class="verdict-col">
+                    <span class="vlabel">Sortierung</span>
+                    <span class="big-pill behalten" id="actionPill">—</span>
+                  </div>
+                </div>
+                <div class="status-btns" id="actionBtns">
+                  <button type="button" class="sbtn b2a1" data-a="B2A1">B2A1</button>
+                  <button type="button" class="sbtn raus" data-a="RAUS">RAUS</button>
+                  <button type="button" class="sbtn tagesliste" data-a="TAGESLISTE">NICHT GESTELLT</button>
+                  <button type="button" class="sbtn behalten" data-a="BEHALTEN">BEHALTEN</button>
+                </div>
+                <p class="why" id="actionWhy"></p>
+                <ul class="reasons" id="reasonList"></ul>
+                <div class="checklist" id="checkList"></div>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="card">
+                <h2>Fahrzeug</h2>
+                <div class="facts">
+                  <div class="fact"><div class="fk">Marke &amp; Model</div><div class="fv" id="fMarke">—</div></div>
+                  <div class="fact"><div class="fk">Carol Status</div><div class="fv" id="fStatus">—</div></div>
+                  <div class="fact"><div class="fk">Reifen (Refurb)</div><div class="fv" id="fReifen">—</div></div>
+                  <div class="fact"><div class="fk">Regal</div><div class="fv" id="fRegal">—</div></div>
+                  <div class="fact"><div class="fk">Tagesliste</div><div class="fv" id="fTl">—</div></div>
+                  <div class="fact"><div class="fk">Gestellt</div><div class="fv" id="fGestellt">—</div></div>
+                  <div class="fact wide"><div class="fk">B2A1 Mail</div><div class="fv" id="fMail">—</div></div>
+                  <div class="fact wide"><div class="fk">Geprüft</div><div class="fv" id="fChecked">—</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+  <aside class="log-card" id="logCard">
+    <div class="log-head">
+      <span id="logTitle">Ablauf</span>
+      <button type="button" id="logCopy">Copy</button>
+      <button type="button" id="logMin">–</button>
+    </div>
+    <div class="log-body" id="logBody"><div class="log-empty">Bereit — Fehler und Schritte erscheinen hier</div></div>
+  </aside>
+  <script>
+    var APP_BASE = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
+    var CALL_WAIT = {
+      aussenPing: 12000,
+      startAussenCheck: 35000,
+      aussenCheckStep: 90000,
+      checkAussenMailChunk: 90000,
+      getAussenBatch: 25000,
+      deleteAussenBatch: 25000,
+      setAussenAction: 25000,
+      recheckAussenMail: 90000
+    };
+    var state = {
+      busy: false,
+      cancelled: false,
+      opId: 0,
+      items: [],
+      gestelltItems: [],
+      gestelltCount: 0,
+      batchId: '',
+      scannedAt: '',
+      selected: '',
+      filter: 'alle',
+      pending: [],
+      dumpTimer: null,
+      elapsedStart: 0,
+      logLines: [],
+      logErr: 0
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function toast(msg, err) {
+      var el = $('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (err ? ' err' : '');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(function() { el.className = 'toast'; }, 2800);
+    }
+
+    function logTime() {
+      var d = new Date();
+      return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+    }
+
+    function logLine(kind, msg) {
+      kind = kind === 'err' || kind === 'ok' || kind === 'wait' ? kind : 'info';
+      var row = { kind: kind, t: logTime(), msg: String(msg || '') };
+      state.logLines.push(row);
+      if (state.logLines.length > 40) state.logLines.shift();
+      if (kind === 'err') {
+        state.logErr++;
+        $('logCard').classList.add('has-err');
+        $('logCard').classList.remove('min');
+        $('logMin').textContent = '–';
+      }
+      var box = $('logBody');
+      if (state.logLines.length === 1) box.innerHTML = '';
+      var el = document.createElement('div');
+      el.className = 'log-row ' + kind;
+      el.innerHTML = '<span class="t">' + esc(row.t) + '</span>' + esc(row.msg);
+      box.appendChild(el);
+      box.scrollTop = box.scrollHeight;
+      $('logTitle').textContent = state.logErr ? ('Ablauf · ' + state.logErr + ' Fehler') : 'Ablauf';
+    }
+
+    function startElapsed() {
+      state.elapsedStart = Date.now();
+      $('loadElapsed').style.display = '';
+      if (startElapsed._iv) clearInterval(startElapsed._iv);
+      function tick() {
+        if (!state.elapsedStart) return;
+        var s = Math.max(0, Math.floor((Date.now() - state.elapsedStart) / 1000));
+        $('loadElapsed').textContent = 'läuft seit ' + s + 's';
+      }
+      tick();
+      startElapsed._iv = setInterval(tick, 500);
+    }
+
+    function stopElapsed() {
+      state.elapsedStart = 0;
+      if (startElapsed._iv) {
+        clearInterval(startElapsed._iv);
+        startElapsed._iv = null;
+      }
+      $('loadElapsed').style.display = 'none';
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function beginOp() {
+      state.busy = true;
+      state.cancelled = false;
+      state.opId += 1;
+      return state.opId;
+    }
+
+    function isOpActive(opId) {
+      return !!opId && state.opId === opId && state.busy && !state.cancelled;
+    }
+
+    function cancelBusyOp(silent) {
+      if (!state.busy && !$('loadOverlay').classList.contains('show')) return false;
+      state.cancelled = true;
+      state.busy = false;
+      state.opId += 1;
+      hideLoad();
+      logLine('info', 'Abgebrochen');
+      if (!silent) toast('Abgebrochen');
+      return true;
+    }
+
+    function showLoad(label) {
+      $('loadCard').classList.remove('wide');
+      $('loadSid').style.display = 'none';
+      $('loadCount').style.display = 'none';
+      $('loadBar').style.display = 'none';
+      $('loadEsc').style.display = '';
+      $('loadBarFill').style.width = '0%';
+      $('loadLabel').textContent = label || 'Lädt…';
+      $('loadOverlay').classList.add('show');
+      startElapsed();
+    }
+
+    function showLoadProgress(label, sid, count, pct) {
+      $('loadCard').classList.add('wide');
+      $('loadLabel').textContent = label || 'Prüft…';
+      $('loadSid').style.display = sid ? '' : 'none';
+      $('loadSid').textContent = sid || '';
+      $('loadCount').style.display = count ? '' : 'none';
+      $('loadCount').textContent = count || '';
+      $('loadBar').style.display = '';
+      $('loadBarFill').style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+      $('loadEsc').style.display = '';
+      $('loadOverlay').classList.add('show');
+      if (!state.elapsedStart) startElapsed();
+    }
+
+    function hideLoad() {
+      $('loadOverlay').classList.remove('show');
+      $('loadEsc').style.display = 'none';
+      stopElapsed();
+    }
+
+    function runFn(opId, onOk, name) {
+      var args = Array.prototype.slice.call(arguments, 3);
+      var wait = CALL_WAIT[name] || 45000;
+      var t0 = Date.now();
+      var finished = false;
+      var extra = '';
+      if (name === 'aussenCheckStep' && args[1]) extra = ' · ' + args[1];
+      else if (typeof args[0] === 'string' && args[0]) extra = ' · ' + args[0];
+      else if (Object.prototype.toString.call(args[0]) === '[object Array]') extra = ' · ' + args[0].length + ' IDs';
+      logLine('wait', name + extra);
+      var timer = setTimeout(function() {
+        if (finished) return;
+        finished = true;
+        if (opId != null && state.opId !== opId) return;
+        hideLoad();
+        state.busy = false;
+        state.opId += 1;
+        logLine('err', name + ' keine Antwort nach ' + Math.round(wait / 1000) + 's. Oft hängt noch eine alte Ausführung — Apps Script → Ausführungen → laufende abbrechen, dann Seite neu laden.');
+        toast(name + ' Timeout nach ' + Math.round(wait / 1000) + 's', true);
+      }, wait);
+      try {
+        var runner = google.script.run.withFailureHandler(function(err) {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          if (opId != null && state.opId !== opId) return;
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', name + ' ' + msg + ' · ' + (Date.now() - t0) + 'ms');
+          hideLoad();
+          state.busy = false;
+          toast(msg, true);
+        }).withSuccessHandler(function(res) {
+          if (finished) {
+            logLine('info', name + ' späte Antwort ignoriert');
+            return;
+          }
+          finished = true;
+          clearTimeout(timer);
+          if (opId != null && state.opId !== opId) return;
+          var ms = Date.now() - t0;
+          if (!res || res.success === false) {
+            logLine('err', name + ' ' + ((res && res.message) || 'fehlgeschlagen') + ' · ' + ms + 'ms');
+          } else {
+            logLine('ok', name + ' ' + ms + 'ms' + (res.message ? ' · ' + res.message : '') + (res.phase ? ' · ' + res.phase : '') + (res.version ? ' · v' + res.version : ''));
+          }
+          onOk(res);
+        });
+        var fn = runner[name];
+        if (typeof fn !== 'function') {
+          finished = true;
+          clearTimeout(timer);
+          throw new Error(name + ' fehlt im Backend — App.js speichern und Web-App neu deployen');
+        }
+        return fn.apply(runner, args);
+      } catch (err) {
+        finished = true;
+        clearTimeout(timer);
+        if (opId != null && state.opId !== opId) return;
+        hideLoad();
+        state.busy = false;
+        var msg = String(err && err.message ? err.message : err);
+        logLine('err', msg);
+        toast(msg, true);
+      }
+    }
+
+    function quietRun(name, args, onOk) {
+      logLine('wait', name);
+      try {
+        var runner = google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', name + ' ' + msg);
+          toast(msg, true);
+        }).withSuccessHandler(function(res) {
+          if (!res || res.success === false) {
+            logLine('err', name + ' ' + ((res && res.message) || 'fehlgeschlagen'));
+            toast((res && res.message) || (name + ' fehlgeschlagen'), true);
+            return;
+          }
+          logLine('ok', name + (res.message ? ' · ' + res.message : ''));
+          if (onOk) onOk(res);
+        });
+        var fn = runner[name];
+        if (typeof fn !== 'function') throw new Error(name + ' fehlt im Backend — App.js speichern und Web-App neu deployen');
+        fn.apply(runner, args || []);
+      } catch (err) {
+        var msg = String(err && err.message ? err.message : err);
+        logLine('err', msg);
+        toast(msg, true);
+      }
+    }
+
+    function looksLikeStockId(value) {
+      return /^[A-Z]{2}\d{5}$/.test(String(value || '').replace(/\s+/g, '').toUpperCase());
+    }
+
+    function isDumpToken(value) {
+      var s = String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      if (!s) return true;
+      if (looksLikeStockId(s)) return false;
+      if (/OUTPUT\s*ALL\s*STORED\s*DATA/.test(s)) return true;
+      if (/SEND\s*ALL/.test(s)) return true;
+      if (/DUMP\s*ALL/.test(s)) return true;
+      return false;
+    }
+
+    function parseDumpText(text) {
+      var parts = String(text || '').split(/[\s,;]+/);
+      var out = [];
+      var seen = {};
+      var ignored = 0;
+      for (var i = 0; i < parts.length; i++) {
+        var sid = String(parts[i] || '').replace(/\s+/g, '').toUpperCase();
+        if (!sid) continue;
+        if (isDumpToken(sid)) {
+          ignored++;
+          continue;
+        }
+        if (!looksLikeStockId(sid)) {
+          ignored++;
+          continue;
+        }
+        if (seen[sid]) continue;
+        seen[sid] = true;
+        out.push(sid);
+      }
+      return { ids: out, ignored: ignored };
+    }
+
+    function applyBatchPayload(res, merge) {
+      if (!res) return;
+      if (res.batchId) state.batchId = res.batchId;
+      if (res.scannedAt) state.scannedAt = res.scannedAt;
+      if (res.gestelltItems) state.gestelltItems = res.gestelltItems;
+      if (res.gestelltCount != null) state.gestelltCount = res.gestelltCount;
+      else if (res.gestelltItems) state.gestelltCount = res.gestelltItems.length;
+      if (merge) mergeItems(res.items || []);
+      else if (res.items) state.items = res.items;
+      if (!state.selected && state.items.length) state.selected = state.items[0].stockId;
+    }
+
+    function countsOf(items) {
+      var c = { all: items.length, b2a1: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0 };
+      for (var i = 0; i < items.length; i++) {
+        var k = items[i].actionKey || 'behalten';
+        if (k === 'gestellt') continue;
+        if (c[k] != null) c[k]++;
+        if (k === 'b2a1' || k === 'raus') c.sort++;
+      }
+      return c;
+    }
+
+    function visibleItems() {
+      var f = String(state.filter || 'alle').toLowerCase();
+      if (f === 'gestellt') return state.gestelltItems || [];
+      return state.items.filter(function(it) {
+        var k = it.actionKey || 'behalten';
+        if (it.tlGestellt) return false;
+        if (f === 'alle') return true;
+        if (f === 'sort') return k === 'b2a1' || k === 'raus';
+        return k === f;
+      });
+    }
+
+    function actionLabel(key) {
+      if (key === 'b2a1') return 'B2A1';
+      if (key === 'raus') return 'RAUS';
+      if (key === 'gestellt') return 'GESTELLT';
+      if (key === 'tagesliste') return 'TAGESLISTE';
+      return 'BEHALTEN';
+    }
+
+    function actionHint(it) {
+      if (it.actionKey === 'b2a1') return 'Zurück zu Auto1';
+      if (it.actionKey === 'raus') return 'Auto fertig in Carol — nicht mehr nötig';
+      if (it.actionKey === 'gestellt') return 'Gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + ' — bei Mechanik';
+      if (it.actionKey === 'tagesliste') return 'Auf Tagesliste, nicht gestellt';
+      return 'Noch behalten';
+    }
+
+    function renderStats() {
+      var c = countsOf(state.items);
+      var keys = [
+        ['b2a1', 'B2A1'],
+        ['raus', 'Raus'],
+        ['gestellt', 'Gestellt'],
+        ['tagesliste', 'TL'],
+        ['behalten', 'Behalten']
+      ];
+      var html = '';
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i][0];
+        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'raus'));
+        html += '<button type="button" class="stat ' + k + (on ? ' active' : '') + '" data-f="' + k + '"><div class="n">' + c[k] + '</div><div class="l">' + keys[i][1] + '</div></button>';
+      }
+      $('stats').innerHTML = html;
+      $('btnPrintSort').disabled = !c.sort;
+      $('btnPrintAll').disabled = !c.all;
+      $('btnDelBatch').disabled = !state.batchId;
+    }
+
+    function renderList() {
+      var box = $('list');
+      var items = visibleItems();
+      var total = state.items.length + (state.gestelltCount || 0);
+      $('countLabel').textContent = items.length + ' / ' + total + (state.scannedAt ? ' · ' + state.scannedAt : '');
+      renderStats();
+      var html = '';
+      if (!items.length) {
+        html = '<div class="nb-empty">' + (total ? (state.filter === 'gestellt' ? 'Gestellt sind aus der Liste genommen' : 'Kein Treffer in diesem Filter') : 'Noch kein Dump') + '</div>';
+      } else {
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var k = it.actionKey || 'behalten';
+          html += '<button type="button" class="item st-' + k + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
+            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + k + '">' + esc(actionLabel(k)) + '</span></div>' +
+            '<div class="sub">' + esc(it.markeModel || actionHint(it)) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
+            '</button>';
+        }
+      }
+      if (state.gestelltCount) {
+        html += '<div class="skip-banner">' + state.gestelltCount + ' bereits gestellt — nicht in der Liste, schon bei Mechanik. Kein Carol/Mail-Check.</div>';
+      }
+      box.innerHTML = html;
+    }
+
+    function ico(stateName) {
+      if (stateName === 'ok') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>';
+      if (stateName === 'bad') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
+      if (stateName === 'warn') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01"/><path d="M10.3 4.7L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.7a2 2 0 0 0-3.4 0z"/></svg>';
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>';
+    }
+
+    function checkRow(st, title, msg) {
+      return '<div class="check-row state-' + st + '"><div class="check-ico">' + ico(st) + '</div><div><div class="ct">' + esc(title) + '</div><div class="cm">' + msg + '</div></div></div>';
+    }
+
+    function selectedItem() {
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId === state.selected) return state.items[i];
+      }
+      var g = state.gestelltItems || [];
+      for (var j = 0; j < g.length; j++) {
+        if (g[j].stockId === state.selected) return g[j];
+      }
+      return null;
+    }
+
+    function actionWhy(it) {
+      var k = it.actionKey || 'behalten';
+      if (k === 'b2a1') return 'B2A1 — Return-to-Auto1 Mail gefunden. Reifen gehen zurück zu Auto1.';
+      if (k === 'raus') return 'Raus — Auto in Carol fertig (herausgegeben). Reifen draußen nicht mehr nötig.';
+      if (k === 'gestellt') return 'Gestellt — Reifen stehen auf der Tagesliste als gestellt, also bei der Mechanik, nicht mehr im Aussenlager.';
+      if (k === 'tagesliste') return 'Tagesliste — Auto war auf der Tagesliste, Reifen aber nicht gestellt. Noch im Lager, nicht raus.';
+      return 'Behalten — kein B2A1, Auto nicht fertig in Carol, nicht gestellt. Reifen bleiben draußen.';
+    }
+
+    function reasonLines(it) {
+      var rows = [];
+      if (it.mailFound) rows.push('B2A1-Mail: ' + (it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + it.mailDate : ''));
+      else rows.push('Keine Return-to-Auto1 Mail');
+      if (it.carolDone) rows.push('Carol fertig: ' + (it.carolStatus || 'herausgegeben'));
+      else if (it.refurbFound) rows.push('Carol noch offen: ' + (it.carolStatus || 'ohne Status') + ' — Auto nicht herausgegeben');
+      else rows.push('Nicht in der Refurbishment List — in Carol gegenprüfen');
+      if (it.tlGestellt) {
+        rows.push('Tagesliste gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : '') + ' — bei Mechanik');
+      } else if (it.tlFound) {
+        rows.push('Auf Tagesliste, nicht gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : ''));
+      } else {
+        rows.push('Kein Tagesliste-Eintrag');
+      }
+      return rows;
+    }
+
+    function renderDetail() {
+      var it = selectedItem();
+      if (!it) {
+        $('detail').classList.remove('show');
+        $('emptyState').classList.remove('hide');
+        $('detailSid').textContent = '—';
+        $('detailSub').textContent = 'Draussen alle Reifen scannen, drinnen Dump ausgeben, Liste drucken';
+        $('btnCarol').disabled = true;
+        $('btnGmail').disabled = true;
+        return;
+      }
+      $('emptyState').classList.add('hide');
+      $('detail').classList.add('show');
+      $('detailSid').textContent = it.stockId;
+      $('detailSub').textContent = (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
+      var k = it.actionKey || 'behalten';
+      $('actionPill').className = 'big-pill ' + k;
+      $('actionPill').textContent = actionLabel(k);
+      $('actionWhy').textContent = actionWhy(it);
+      var sbtns = $('actionBtns').querySelectorAll('.sbtn');
+      for (var b = 0; b < sbtns.length; b++) {
+        sbtns[b].classList.toggle('set', (sbtns[b].getAttribute('data-a') || '') === (it.action || ''));
+        sbtns[b].disabled = !!it.tlGestellt;
+      }
+      $('reasonList').innerHTML = reasonLines(it).map(function(r) {
+        return '<li>' + esc(r) + '</li>';
+      }).join('');
+      var carolSt = it.carolDone ? 'info' : (it.refurbFound ? 'ok' : 'warn');
+      var carolMsg = it.refurbFound
+        ? ('Status: <b>' + esc(it.carolStatus || '—') + '</b>' + (it.carolDone
+          ? ' — Auftrag herausgegeben, Reifen nicht mehr nötig.'
+          : ' — noch nicht herausgegeben, Reifen können noch gebraucht werden.') +
+          (it.carolUrl ? ' · <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''))
+        : 'Nicht (mehr) in der Refurbishment List. <a href="' + esc(it.carolUrl || '#') + '" target="_blank" rel="noopener">In Carol checken</a>';
+      var gSt = it.tlGestellt ? 'ok' : (it.tlFound ? 'warn' : 'none');
+      var gMsg = it.tlFound
+        ? (it.tlGestellt
+          ? ('Reifen <b>gestellt</b>' + (it.tlDatum ? ' am <b>' + esc(it.tlDatum) + '</b>' : '') + (it.tlSchicht ? ' · ' + esc(it.tlSchicht) : '') + (it.tlReifen ? ' · Wert: <b>' + esc(it.tlReifen) + '</b>' : '') + ' — bei Mechanik, nicht mehr im Aussenlager' + (it.tlGestelltEarlier ? ' · früherer Eintrag' : '') + (it.tlUrl ? ' · <a href="' + esc(it.tlUrl) + '" target="_blank" rel="noopener">Tagesliste</a>' : ''))
+          : ('Auf Tagesliste, <b>nicht gestellt</b>' + (it.tlDatum ? ' am ' + esc(it.tlDatum) : '') + (it.tlReifen ? ' · ' + esc(it.tlReifen) : '') + ' — noch im Lager'))
+        : 'Kein Eintrag auf der Tagesliste';
+      var mSt = it.mailFound ? 'bad' : 'ok';
+      var mMsg = it.mailFound
+        ? ('Mail gefunden: <b>' + esc(it.mailSubject || 'Return to Auto1') + '</b>' + (it.mailFrom ? '<br>' + esc(it.mailFrom) : '') + (it.mailDate ? ' · ' + esc(it.mailDate) : '') + (it.mailUrl ? ' · <a href="' + esc(it.mailUrl) + '" target="_blank" rel="noopener">Mail öffnen</a>' : ''))
+        : ('Keine Return-to-Auto1 Mail' + (it.mailMessage ? ' · ' + esc(it.mailMessage) : '') + (it.gmailSearchUrl ? ' · <a href="' + esc(it.gmailSearchUrl) + '" target="_blank" rel="noopener">In Gmail prüfen</a>' : ''));
+      mMsg += ' · <a href="#" class="mail-again" id="btnMailRecheck">Mail neu</a>';
+      $('checkList').innerHTML =
+        checkRow(mSt, 'B2A1 Mail', mMsg) +
+        checkRow(carolSt, 'Carol / Refurbishment', carolMsg) +
+        checkRow(gSt, 'Tagesliste / Gestellt', gMsg);
+      $('fMarke').textContent = it.markeModel || '—';
+      $('fStatus').textContent = it.carolStatus || (it.refurbFound ? '—' : 'nicht in Refurb');
+      $('fStatus').className = 'fv' + (it.carolDone ? ' cyan' : (it.refurbFound ? ' green' : ' red'));
+      $('fReifen').textContent = it.reifenStatus || it.reifenStatusRaw || '—';
+      $('fRegal').textContent = it.regal || '—';
+      $('fTl').textContent = it.tlFound
+        ? ((it.tlDatum || 'ja') + (it.tlSchicht ? ' · ' + it.tlSchicht : '') + (it.tlCount > 1 ? ' · ' + it.tlCount + '×' : ''))
+        : 'nein';
+      $('fGestellt').textContent = it.tlGestellt
+        ? ('ja' + (it.tlDatum ? ' · ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : ''))
+        : (it.tlFound ? 'nein — noch im Lager' : '—');
+      $('fMail').innerHTML = it.mailFound
+        ? (esc(it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + esc(it.mailDate) : ''))
+        : 'keine';
+      $('fChecked').textContent = it.checkedAt || '—';
+      $('btnCarol').disabled = !it.carolUrl;
+      $('btnGmail').disabled = !it.gmailSearchUrl && !it.mailUrl;
+    }
+
+    function selectStock(sid) {
+      state.selected = sid || '';
+      renderList();
+      renderDetail();
+    }
+
+    function mergeItems(chunk) {
+      var map = {};
+      for (var i = 0; i < state.items.length; i++) map[state.items[i].stockId] = i;
+      for (var j = 0; j < chunk.length; j++) {
+        var it = chunk[j];
+        if (map[it.stockId] != null) state.items[map[it.stockId]] = it;
+        else state.items.push(it);
+      }
+    }
+
+    function updateDumpHint(parsed) {
+      var el = $('dumpHint');
+      var dump = $('dump');
+      var ids = (parsed && parsed.ids) || [];
+      var ignored = (parsed && parsed.ignored) || 0;
+      if (!ids.length && !ignored) {
+        el.textContent = 'Bereit — nur 2 Buchstaben + 5 Zahlen, alles andere wird ignoriert';
+        el.className = 'dump-hint';
+        dump.classList.remove('hot');
+        return;
+      }
+      if (!ids.length) {
+        el.textContent = ignored + ' Code' + (ignored === 1 ? '' : 's') + ' ignoriert — nur AA12345 zählt';
+        el.className = 'dump-hint';
+        dump.classList.remove('hot');
+        return;
+      }
+      el.textContent = ids.length + ' Stock-ID' + (ids.length === 1 ? '' : 's') +
+        (ignored ? ' · ' + ignored + ' ignoriert' : '') +
+        ' — Pause = automatisch prüfen';
+      el.className = 'dump-hint hot';
+      dump.classList.add('hot');
+    }
+
+    function startCheck(ids) {
+      var parsed = parseDumpText($('dump').value);
+      ids = ids || parsed.ids;
+      if (!ids.length) {
+        toast(parsed.ignored ? (parsed.ignored + ' Codes ignoriert — keine gültige Stock-ID (AA12345)') : 'Keine Stock-IDs im Dump', true);
+        return;
+      }
+      if (state.busy) return;
+      var opId = beginOp();
+      showLoadProgress('Dump wird übernommen…', ids[0], '0 / ' + ids.length, 4);
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          toast((res && res.message) || 'Check fehlgeschlagen', true);
+          return;
+        }
+        state.batchId = res.batchId || '';
+        state.scannedAt = res.scannedAt || '';
+        $('dump').value = '';
+        updateDumpHint({ ids: [], ignored: 0 });
+        showLoadProgress(res.phase || 'Tagesliste…', res.currentSid || '', res.message || '', res.percent || 8);
+        runAussenStep(opId, res.nextStep || 'tl', 0, ids.length);
+      }, 'startAussenCheck', ids);
+    }
+
+    function runAussenStep(opId, step, cursor, total) {
+      if (!isOpActive(opId)) return;
+      var label = 'Prüft…';
+      if (step === 'tl') label = 'Tagesliste…';
+      else if (step === 'refurb') label = 'Carol / Refurbishment…';
+      else if (step === 'items') label = 'Liste wird gebaut…';
+      showLoadProgress(label, '', total ? ('0 / ' + total) : '', step === 'tl' ? 16 : (step === 'refurb' ? 50 : 75));
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          toast((res && res.message) || 'Check fehlgeschlagen', true);
+          return;
+        }
+        showLoadProgress(res.phase || label, res.currentSid || '', res.message || '', res.percent || 0);
+        if (!res.done) {
+          runAussenStep(opId, res.nextStep || 'items', res.cursor || 0, total);
+          return;
+        }
+        applyBatchPayload(res, false);
+        if (state.items.length) state.selected = state.items[0].stockId;
+        renderList();
+        renderDetail();
+        loadBatches(state.batchId);
+        checkMails(opId, 0);
+      }, 'aussenCheckStep', state.batchId, step, cursor);
+    }
+
+    function checkMails(opId, offset) {
+      if (!isOpActive(opId)) return;
+      var mailTotal = state.items.length;
+      var sid = state.items[offset] ? state.items[offset].stockId : '';
+      showLoadProgress('B2A1 Mails…', sid, offset + ' / ' + mailTotal, mailTotal ? (82 + Math.round((offset / Math.max(1, mailTotal)) * 16)) : 90);
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          toast((res && res.message) || 'Mail-Check fehlgeschlagen', true);
+          renderList();
+          renderDetail();
+          return;
+        }
+        mergeItems(res.items || []);
+        renderList();
+        renderDetail();
+        var total = res.total != null ? res.total : mailTotal;
+        if (res.done) {
+          state.busy = false;
+          hideLoad();
+          var c = countsOf(state.items);
+          toast(c.sort + ' zum Sortieren · ' + c.b2a1 + ' B2A1 · ' + c.raus + ' Raus · ' + (state.gestelltCount || 0) + ' gestellt skip');
+          loadBatches(state.batchId);
+          $('dump').focus();
+          return;
+        }
+        checkMails(opId, res.nextOffset || (offset + (res.items ? res.items.length : 8)));
+      }, 'checkAussenMailChunk', state.batchId, offset, 8);
+    }
+
+    function loadBatches(selectId) {
+      try {
+        google.script.run.withFailureHandler(function(err) {
+          logLine('err', 'listAussenBatches ' + String(err && err.message ? err.message : err));
+        }).withSuccessHandler(function(res) {
+          if (!res || res.success === false) {
+            logLine('err', 'listAussenBatches ' + ((res && res.message) || 'fehlgeschlagen'));
+            return;
+          }
+          var sel = $('batchSel');
+          var batches = (res && res.batches) || [];
+          var html = '<option value="">Aktueller / neuer Dump</option>';
+          for (var i = 0; i < batches.length; i++) {
+            var b = batches[i];
+            html += '<option value="' + esc(b.batchId) + '"' + (selectId && selectId === b.batchId ? ' selected' : '') + '>' +
+              esc(b.scannedAt || b.batchId) + ' · ' + b.count + ' IDs · ' + (b.b2a1 || 0) + ' B2A1 · ' + (b.raus || 0) + ' Raus</option>';
+          }
+          sel.innerHTML = html;
+          if (selectId) sel.value = selectId;
+        }).listAussenBatches();
+      } catch (e0) {
+        logLine('err', 'listAussenBatches ' + String(e0 && e0.message ? e0.message : e0));
+      }
+    }
+
+    function loadBatch(id) {
+      if (!id) return;
+      if (state.busy) return;
+      var opId = beginOp();
+      showLoad('Dump wird geladen…');
+      runFn(opId, function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        applyBatchPayload(res, false);
+        state.selected = state.items.length ? state.items[0].stockId : '';
+        renderList();
+        renderDetail();
+        $('dump').focus();
+      }, 'getAussenBatch', id);
+    }
+
+    function printItems(items, title) {
+      items = items || [];
+      if (!items.length) {
+        toast('Nichts zu drucken', true);
+        return;
+      }
+      var groups = [
+        { key: 'b2a1', title: 'B2A1 — zurück zu Auto1', items: [] },
+        { key: 'raus', title: 'Raus — Auto fertig in Carol', items: [] },
+        { key: 'tagesliste', title: 'Tagesliste — nicht gestellt', items: [] },
+        { key: 'behalten', title: 'Behalten', items: [] }
+      ];
+      var map = {};
+      for (var g = 0; g < groups.length; g++) map[groups[g].key] = groups[g];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].tlGestellt) continue;
+        var k = items[i].actionKey || 'behalten';
+        if (!map[k]) k = 'behalten';
+        map[k].items.push(items[i]);
+      }
+      var now = new Date();
+      var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
+        ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+      var body = '';
+      for (var gi = 0; gi < groups.length; gi++) {
+        var grp = groups[gi];
+        if (!grp.items.length) continue;
+        body += '<h2>' + esc(grp.title) + ' (' + grp.items.length + ')</h2>';
+        for (var j = 0; j < grp.items.length; j++) {
+          var it = grp.items[j];
+          var bits = [];
+          if (it.markeModel) bits.push(it.markeModel);
+          if (it.carolStatus) bits.push(it.carolStatus);
+          if (it.tlGestellt) bits.push('Gestellt' + (it.tlDatum ? ' ' + it.tlDatum : ''));
+          else if (it.tlFound) bits.push('TL' + (it.tlDatum ? ' ' + it.tlDatum : ''));
+          if (it.mailFound) bits.push(it.mailSubject || 'Return to Auto1');
+          body += '<div class="entry ' + esc(it.actionKey || 'behalten') + '">' +
+            '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
+            '<span class="st">' + esc(actionLabel(it.actionKey)) + '</span></div>' +
+            (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
+            '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></div>';
+        }
+      }
+      var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
+        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
+        '<style>' +
+        '@page{size:A4 portrait;margin:12mm}' +
+        'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:18px;font-size:12px}' +
+        'h1{font-size:18px;margin:0 0 2px;text-align:center}' +
+        'h2{font-size:14px;margin:16px 0 8px;border-bottom:2px solid #111;padding-bottom:4px}' +
+        '.head{color:#555;font-size:11px;margin-bottom:12px;text-align:center}' +
+        '.entry{width:72mm;margin:0 auto 12px;page-break-inside:avoid;padding:6px 8px;border:1px solid #ccc;border-radius:6px}' +
+        '.entry.b2a1{background:#f7c5c5;border-color:#c00}' +
+        '.entry.raus{background:#c5f0f7;border-color:#088}' +
+        '.entry.gestellt{background:#d4edda;border-color:#2a7}' +
+        '.entry.tagesliste{background:#fff3b0;border-color:#aa0}' +
+        '.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
+        '.sid{font-weight:bold;font-size:16px;letter-spacing:0.03em}' +
+        '.st{font-weight:bold;font-size:11px}' +
+        '.meta2{font-size:11px;color:#333;margin:3px 0 4px}' +
+        '.bc{display:block;height:36px;margin:0 auto;width:100%}' +
+        '@media print{body{margin:0}}' +
+        '</style></head><body>' +
+        '<h1>' + esc(title) + '</h1>' +
+        '<div class="head">Stand: ' + esc(dateStr) + (state.scannedAt ? ' · Dump ' + esc(state.scannedAt) : '') + ' · ' + items.length + ' Reifen</div>' +
+        body +
+        '<script>window.onload=function(){' +
+        'var els=document.querySelectorAll("svg.bc");' +
+        'for(var i=0;i<els.length;i++){' +
+        'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:30,width:1.4,displayValue:false,margin:0});}catch(e){}' +
+        '}' +
+        'setTimeout(function(){window.print();},250);' +
+        '};<\/script></body></html>';
+      var win = window.open('', '_blank');
+      if (!win) {
+        toast('Popup blockiert — bitte Popups erlauben', true);
+        return;
+      }
+      win.document.open();
+      win.document.write(doc);
+      win.document.close();
+      win.focus();
+    }
+
+    function newRound() {
+      state.items = [];
+      state.gestelltItems = [];
+      state.gestelltCount = 0;
+      state.batchId = '';
+      state.scannedAt = '';
+      state.selected = '';
+      state.pending = [];
+      $('dump').value = '';
+      $('batchSel').value = '';
+      updateDumpHint({ ids: [], ignored: 0 });
+      renderList();
+      renderDetail();
+      $('dump').focus();
+    }
+
+    $('dump').addEventListener('input', function() {
+      var parsed = parseDumpText(this.value);
+      state.pending = parsed.ids;
+      updateDumpHint(parsed);
+      clearTimeout(state.dumpTimer);
+      if (!parsed.ids.length || state.busy) return;
+      state.dumpTimer = setTimeout(function() {
+        startCheck(parsed.ids);
+      }, 2000);
+    });
+
+    $('btnCheck').addEventListener('click', function() {
+      clearTimeout(state.dumpTimer);
+      startCheck();
+    });
+    $('btnNew').addEventListener('click', newRound);
+    $('btnKontrolle').addEventListener('click', function() {
+      window.open(APP_BASE, '_blank', 'noopener,noreferrer');
+    });
+    $('btnPrintSort').addEventListener('click', function() {
+      printItems(state.items.filter(function(it) {
+        return it.actionKey === 'b2a1' || it.actionKey === 'raus';
+      }), 'Reifen Aussen — Raus + B2A1');
+    });
+    $('btnPrintAll').addEventListener('click', function() {
+      printItems(state.items, 'Reifen Aussen Scan');
+    });
+    $('btnCarol').addEventListener('click', function() {
+      var it = selectedItem();
+      if (it && it.carolUrl) window.open(it.carolUrl, '_blank', 'noopener,noreferrer');
+    });
+    $('btnGmail').addEventListener('click', function() {
+      var it = selectedItem();
+      if (!it) return;
+      window.open(it.mailUrl || it.gmailSearchUrl, '_blank', 'noopener,noreferrer');
+    });
+    $('actionBtns').addEventListener('click', function(e) {
+      var btn = e.target.closest('.sbtn');
+      if (!btn) return;
+      var it = selectedItem();
+      var action = btn.getAttribute('data-a') || '';
+      if (!it || !state.batchId || !action || it.tlGestellt) return;
+      it.action = action;
+      it.actionKey = action === 'B2A1' ? 'b2a1' : (action === 'RAUS' ? 'raus' : (action === 'TAGESLISTE' ? 'tagesliste' : 'behalten'));
+      it.manual = true;
+      renderList();
+      renderDetail();
+      quietRun('setAussenAction', [state.batchId, it.stockId, action], function(res) {
+        toast((res && res.message) || (it.stockId + ' → ' + action));
+      });
+    });
+    $('checkList').addEventListener('click', function(e) {
+      var a = e.target.closest('#btnMailRecheck');
+      if (!a) return;
+      e.preventDefault();
+      var it = selectedItem();
+      if (!it || !state.batchId) return;
+      toast('Mail wird neu geprüft…');
+      quietRun('recheckAussenMail', [state.batchId, it.stockId], function(res) {
+        if (res && res.item) mergeItems([res.item]);
+        else if (res && res.items) mergeItems(res.items);
+        renderList();
+        renderDetail();
+        toast((res && res.message) || 'Mail geprüft');
+      });
+    });
+    $('filters').addEventListener('click', function(e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      var chips = this.querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+      chip.classList.add('active');
+      state.filter = chip.getAttribute('data-f');
+      renderList();
+    });
+    $('stats').addEventListener('click', function(e) {
+      var st = e.target.closest('.stat');
+      if (!st) return;
+      state.filter = st.getAttribute('data-f');
+      var chips = $('filters').querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle('active', chips[i].getAttribute('data-f') === state.filter);
+      }
+      renderList();
+    });
+    $('list').addEventListener('click', function(e) {
+      var item = e.target.closest('.item');
+      if (!item) return;
+      selectStock(item.getAttribute('data-sid'));
+    });
+    $('batchSel').addEventListener('change', function() {
+      if (this.value) loadBatch(this.value);
+      else newRound();
+    });
+    $('btnDelBatch').addEventListener('click', function() {
+      if (!state.batchId || state.busy) return;
+      if (!confirm('Diesen Dump aus dem Sheet löschen?')) return;
+      var opId = beginOp();
+      showLoad('Dump wird gelöscht…');
+      runFn(opId, function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Löschen fehlgeschlagen', true);
+          return;
+        }
+        toast(res.message || 'Gelöscht');
+        newRound();
+        loadBatches();
+      }, 'deleteAussenBatch', state.batchId);
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        if ($('loadOverlay').classList.contains('show') || state.busy) {
+          e.preventDefault();
+          cancelBusyOp();
+        }
+        return;
+      }
+      if (e.target === $('dump') || e.target === $('batchSel')) return;
+      if (e.key === '/' || (e.key.length === 1 && /[a-z0-9]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        $('dump').focus();
+        if (e.key === '/') e.preventDefault();
+      }
+    });
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('button, a, select, textarea, input')) return;
+      $('dump').focus();
+    });
+
+    renderList();
+    renderDetail();
+    $('logCopy').addEventListener('click', function() {
+      var txt = state.logLines.map(function(r) { return r.t + ' [' + r.kind + '] ' + r.msg; }).join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt || '').then(function() { toast('Log kopiert'); }, function() { toast('Copy fehlgeschlagen', true); });
+      } else toast('Clipboard nicht verfügbar', true);
+    });
+    $('logMin').addEventListener('click', function() {
+      $('logCard').classList.toggle('min');
+      $('logMin').textContent = $('logCard').classList.contains('min') ? '+' : '–';
+    });
+    logLine('info', 'Seite geladen — Backend-Check…');
+    try {
+      google.script.run.withFailureHandler(function(err) {
+        logLine('err', 'aussenPing ' + String(err && err.message ? err.message : err) + ' — App.js / Deploy prüfen');
+      }).withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          logLine('err', 'aussenPing ' + ((res && res.message) || 'fehlgeschlagen') + ' — alte App.js?');
+          return;
+        }
+        logLine('ok', 'Backend da · v' + (res.version || '?') + ' · ' + (res.ts || ''));
+      }).aussenPing();
+    } catch (e1) {
+      logLine('err', 'aussenPing ' + String(e1 && e1.message ? e1.message : e1));
+    }
+    loadBatches();
+    $('dump').focus();
+  </script>
+</body>
+</html>

@@ -707,6 +707,7 @@
             <strong>Reifen Kontrolle</strong>
             <span>Lager Check</span>
           </div>
+          <button class="chip" type="button" id="btnAussenPage">Aussen Scan</button>
         </div>
         <div class="search-wrap">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -2372,6 +2373,10 @@
     setInterval(function() {
       if (!state.busy && !(state.inventur && $('invLayer').classList.contains('show'))) loadQueue(true);
     }, 120000);
+
+    $('btnAussenPage').addEventListener('click', function() {
+      window.open('https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec?page=aussen', '_blank', 'noopener,noreferrer');
+    });
 
     loadQueue();
     updateSelectBar();
