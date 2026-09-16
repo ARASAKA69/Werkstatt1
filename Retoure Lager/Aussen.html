@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Reifen Aussen Scan</title>
+  <title>Retoure Scan</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -136,7 +136,7 @@
     .stat .n { font-size: 1.05rem; font-weight: 800; line-height: 1.1; }
     .stat .l { font-size: 0.58rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
     .stat.b2a1 .n { color: #fca5a5; }
-    .stat.raus .n { color: #67e8f9; }
+    .stat.fertig .n, .stat.raus .n { color: #67e8f9; }
     .stat.gestellt .n { color: #86efac; }
     .stat.tagesliste .n { color: #fde047; }
     .stat.behalten .n { color: var(--foreground-muted); }
@@ -173,7 +173,7 @@
     }
     .item:hover { filter: brightness(1.08); }
     .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
-    .item.st-raus { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
+    .item.st-fertig, .item.st-raus { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
     .item.st-gestellt { background: rgba(52, 168, 83, 0.16); border-color: rgba(52, 168, 83, 0.5); }
     .item.st-tagesliste { background: rgba(255, 255, 0, 0.12); border-color: rgba(255, 255, 0, 0.4); }
     .item.st-behalten { background: rgba(255,255,255,0.04); border-color: var(--border); }
@@ -190,7 +190,7 @@
       padding: 0.15rem 0.4rem; border-radius: 999px; white-space: nowrap; color: #fff;
     }
     .status-pill.b2a1 { background: #ff0000; }
-    .status-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .status-pill.fertig, .status-pill.raus { background: #00ffff; color: #1a1a1a; }
     .status-pill.gestellt { background: #34A853; }
     .status-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
     .status-pill.behalten { background: rgba(255,255,255,0.16); color: var(--foreground-muted); }
@@ -248,7 +248,7 @@
       line-height: 1.2; white-space: nowrap;
     }
     .verdict .big-pill.b2a1 { background: #ff0000; color: #fff; }
-    .verdict .big-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .verdict .big-pill.fertig, .verdict .big-pill.raus { background: #00ffff; color: #1a1a1a; }
     .verdict .big-pill.gestellt { background: #34A853; color: #fff; }
     .verdict .big-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
     .verdict .big-pill.behalten { background: rgba(255,255,255,0.12); color: var(--foreground-muted); }
@@ -264,8 +264,8 @@
     .sbtn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; transform: none; }
     .sbtn.b2a1 { border-color: rgba(255,0,0,0.5); color: #fca5a5; background: rgba(255,0,0,0.1); }
     .sbtn.b2a1.set, .sbtn.b2a1:hover { background: #ff0000; color: #fff; }
-    .sbtn.raus { border-color: rgba(0,255,255,0.5); color: #a5f3fc; background: rgba(0,255,255,0.08); }
-    .sbtn.raus.set, .sbtn.raus:hover { background: #00ffff; color: #1a1a1a; }
+    .sbtn.fertig, .sbtn.raus { border-color: rgba(0,255,255,0.5); color: #a5f3fc; background: rgba(0,255,255,0.08); }
+    .sbtn.fertig.set, .sbtn.fertig:hover, .sbtn.raus.set, .sbtn.raus:hover { background: #00ffff; color: #1a1a1a; }
     .sbtn.tagesliste { border-color: rgba(255,255,0,0.5); color: #fde047; background: rgba(255,255,0,0.08); }
     .sbtn.tagesliste.set, .sbtn.tagesliste:hover { background: #ffff00; color: #1a1a1a; }
     .sbtn.behalten { border-color: var(--border-strong); color: var(--foreground-muted); }
@@ -415,28 +415,29 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><path d="M7 8h2M7 12h4"/></svg>
           </div>
           <div class="brand-text">
-            <strong>Reifen Aussen Scan</strong>
-            <span>Store-Mode Dump</span>
+            <strong>Retoure Scan</strong>
+            <span>Reifen + Box Inventur</span>
           </div>
-          <button class="chip" type="button" id="btnKontrolle">Kontrolle</button>
+          <button class="chip" type="button" id="btnKontrolle">Retoure Lager</button>
         </div>
         <div class="dump-wrap">
-          <textarea class="dump" id="dump" placeholder="Hier klicken, dann „Output all stored data“ scannen… nur AA12345" autocomplete="off" spellcheck="false"></textarea>
-          <div class="dump-hint" id="dumpHint">Bereit — nur 2 Buchstaben + 5 Zahlen, alles andere wird ignoriert</div>
+          <textarea class="dump" id="dump" placeholder="Hier klicken, dann Dump scannen oder Stock-IDs einfügen…" autocomplete="off" spellcheck="false"></textarea>
+          <div class="dump-hint" id="dumpHint">Bereit — Stock-IDs Reifen und Lagerboxen, 2 Buchstaben + 4–8 Zahlen</div>
         </div>
         <div class="row-btns">
           <button class="btn teal" type="button" id="btnCheck">Prüfen</button>
+          <button class="btn ghost" type="button" id="btnCarolCheck">Carol prüfen</button>
           <button class="btn ghost" type="button" id="btnNew">Neue Runde</button>
         </div>
         <select class="sel" id="batchSel" aria-label="Vorherige Dumps"></select>
         <div class="stats" id="stats"></div>
         <div class="filters" id="filters">
           <button class="chip active" data-f="alle" type="button">Alle</button>
-          <button class="chip" data-f="sort" type="button">Raus + B2A1</button>
+          <button class="chip" data-f="sort" type="button">B2A1 + Fertig</button>
           <button class="chip" data-f="b2a1" type="button">B2A1</button>
-          <button class="chip" data-f="raus" type="button">Raus</button>
-          <button class="chip" data-f="gestellt" type="button">Gestellt</button>
-          <button class="chip" data-f="tagesliste" type="button">Tagesliste</button>
+          <button class="chip" data-f="fertig" type="button">Fertig</button>
+          <button class="chip" data-f="reifen" type="button">Reifen</button>
+          <button class="chip" data-f="lagerbox" type="button">Lagerbox</button>
           <button class="chip" data-f="behalten" type="button">Behalten</button>
         </div>
         <div class="meta">
@@ -452,12 +453,12 @@
       <div class="main-top glass-bar">
         <div class="main-title">
           <h1 id="detailSid">—</h1>
-          <span id="detailSub">Draussen alle Reifen scannen, drinnen Dump ausgeben, Liste drucken</span>
+          <span id="detailSub">Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen</span>
         </div>
         <div class="actions">
           <button class="btn primary" id="btnPrintSort" type="button" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            PDF Raus + B2A1
+            PDF B2A1 + Fertig
           </button>
           <button class="btn" id="btnPrintAll" type="button" disabled>PDF Alles</button>
           <button class="btn teal" id="btnCarol" type="button" disabled>Carol</button>
@@ -467,8 +468,8 @@
       <div class="content" id="content">
         <div class="empty" id="emptyState">
           <div class="empty-card">
-            <h2>Aussen-Reifen sortieren</h2>
-            <p>Draussen jeden Reifen mit dem Scanner im Store-Mode erfassen. Zurückkommen, Feld fokussieren, Barcode „Output all stored data“ scannen. Danach prüft die Seite Carol fertig, Tagesliste / Gestellt inkl. Datum und B2A1-Mails — PDF mitnehmen und raussorieren.</p>
+            <h2>Retoure Inventur</h2>
+            <p>Alle Stock-IDs dumpen (Reifen und Lagerboxen). Die Seite prüft automatisch B2A1-Mail, Carol „Als B2A1 markiert“ und Fertiggestellt / Herausgegeben — PDF für die rauszuziehenden IDs.</p>
           </div>
         </div>
         <div id="detail">
@@ -484,8 +485,7 @@
                 </div>
                 <div class="status-btns" id="actionBtns">
                   <button type="button" class="sbtn b2a1" data-a="B2A1">B2A1</button>
-                  <button type="button" class="sbtn raus" data-a="RAUS">RAUS</button>
-                  <button type="button" class="sbtn tagesliste" data-a="TAGESLISTE">NICHT GESTELLT</button>
+                  <button type="button" class="sbtn fertig" data-a="FERTIG">Fertiggestellt</button>
                   <button type="button" class="sbtn behalten" data-a="BEHALTEN">BEHALTEN</button>
                 </div>
                 <p class="why" id="actionWhy"></p>
@@ -497,6 +497,7 @@
               <div class="card">
                 <h2>Fahrzeug</h2>
                 <div class="facts">
+                  <div class="fact"><div class="fk">Typ</div><div class="fv" id="fTyp">—</div></div>
                   <div class="fact"><div class="fk">Marke &amp; Model</div><div class="fv" id="fMarke">—</div></div>
                   <div class="fact"><div class="fk">Carol Status</div><div class="fv" id="fStatus">—</div></div>
                   <div class="fact"><div class="fk">Reifen (Refurb)</div><div class="fv" id="fReifen">—</div></div>
@@ -532,7 +533,8 @@
       getAussenBatch: 25000,
       deleteAussenBatch: 25000,
       setAussenAction: 25000,
-      recheckAussenMail: 90000
+      recheckAussenMail: 90000,
+      aussenCarolQueue: 25000
     };
     var state = {
       busy: false,
@@ -549,7 +551,8 @@
       dumpTimer: null,
       elapsedStart: 0,
       logLines: [],
-      logErr: 0
+      logErr: 0,
+      carolPoll: null
     };
 
     function $(id) { return document.getElementById(id); }
@@ -763,7 +766,7 @@
     }
 
     function looksLikeStockId(value) {
-      return /^[A-Z]{2}\d{5}$/.test(String(value || '').replace(/\s+/g, '').toUpperCase());
+      return /^[A-Z]{2}\d{4,8}$/.test(String(value || '').replace(/\s+/g, '').toUpperCase());
     }
 
     function isDumpToken(value) {
@@ -811,14 +814,26 @@
       if (!state.selected && state.items.length) state.selected = state.items[0].stockId;
     }
 
+    function actionKeyOf(it) {
+      var k = (it && it.actionKey) || 'behalten';
+      if (k === 'raus') return 'fertig';
+      return k;
+    }
+
     function countsOf(items) {
-      var c = { all: items.length, b2a1: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0 };
+      var c = { all: items.length, b2a1: 0, fertig: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0, reifen: 0, box: 0 };
       for (var i = 0; i < items.length; i++) {
-        var k = items[i].actionKey || 'behalten';
+        var it = items[i];
+        var k = actionKeyOf(it);
         if (k === 'gestellt') continue;
-        if (c[k] != null) c[k]++;
-        if (k === 'b2a1' || k === 'raus') c.sort++;
+        if (k === 'fertig') c.fertig++;
+        else if (c[k] != null) c[k]++;
+        if (k === 'b2a1' || k === 'fertig') c.sort++;
+        var typ = String(it.itemTyp || '');
+        if (typ === 'Reifen' || typ === 'Reifen + Box') c.reifen++;
+        if (typ === 'Lagerbox' || typ === 'Reifen + Box') c.box++;
       }
+      c.raus = c.fertig;
       return c;
     }
 
@@ -826,25 +841,33 @@
       var f = String(state.filter || 'alle').toLowerCase();
       if (f === 'gestellt') return state.gestelltItems || [];
       return state.items.filter(function(it) {
-        var k = it.actionKey || 'behalten';
+        var k = actionKeyOf(it);
+        var typ = String(it.itemTyp || '');
         if (it.tlGestellt) return false;
         if (f === 'alle') return true;
-        if (f === 'sort') return k === 'b2a1' || k === 'raus';
+        if (f === 'sort') return k === 'b2a1' || k === 'fertig';
+        if (f === 'fertig' || f === 'raus') return k === 'fertig';
+        if (f === 'reifen') return typ === 'Reifen' || typ === 'Reifen + Box';
+        if (f === 'lagerbox') return typ === 'Lagerbox' || typ === 'Reifen + Box';
         return k === f;
       });
     }
 
     function actionLabel(key) {
       if (key === 'b2a1') return 'B2A1';
-      if (key === 'raus') return 'RAUS';
+      if (key === 'fertig' || key === 'raus') return 'Fertiggestellt';
       if (key === 'gestellt') return 'GESTELLT';
       if (key === 'tagesliste') return 'TAGESLISTE';
       return 'BEHALTEN';
     }
 
     function actionHint(it) {
-      if (it.actionKey === 'b2a1') return 'Zurück zu Auto1';
-      if (it.actionKey === 'raus') return 'Auto fertig in Carol — nicht mehr nötig';
+      if (actionKeyOf(it) === 'b2a1') {
+        if (it.carolB2a1) return 'Carol: Als B2A1 markiert';
+        if (it.nbB2a1) return 'Nachbestellung B2A1';
+        return 'Zurück zu Auto1';
+      }
+      if (actionKeyOf(it) === 'fertig') return 'Fertiggestellt — rausziehen';
       if (it.actionKey === 'gestellt') return 'Gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + ' — bei Mechanik';
       if (it.actionKey === 'tagesliste') return 'Auf Tagesliste, nicht gestellt';
       return 'Noch behalten';
@@ -854,15 +877,15 @@
       var c = countsOf(state.items);
       var keys = [
         ['b2a1', 'B2A1'],
-        ['raus', 'Raus'],
-        ['gestellt', 'Gestellt'],
-        ['tagesliste', 'TL'],
+        ['fertig', 'Fertig'],
+        ['reifen', 'Reifen'],
+        ['box', 'Box'],
         ['behalten', 'Behalten']
       ];
       var html = '';
       for (var i = 0; i < keys.length; i++) {
         var k = keys[i][0];
-        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'raus'));
+        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'fertig'));
         html += '<button type="button" class="stat ' + k + (on ? ' active' : '') + '" data-f="' + k + '"><div class="n">' + c[k] + '</div><div class="l">' + keys[i][1] + '</div></button>';
       }
       $('stats').innerHTML = html;
@@ -883,10 +906,10 @@
       } else {
         for (var i = 0; i < items.length; i++) {
           var it = items[i];
-          var k = it.actionKey || 'behalten';
+          var k = actionKeyOf(it);
           html += '<button type="button" class="item st-' + k + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
             '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + k + '">' + esc(actionLabel(k)) + '</span></div>' +
-            '<div class="sub">' + esc(it.markeModel || actionHint(it)) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
+            '<div class="sub">' + esc((it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel || actionHint(it))) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
             '</button>';
         }
       }
@@ -919,27 +942,33 @@
     }
 
     function actionWhy(it) {
-      var k = it.actionKey || 'behalten';
-      if (k === 'b2a1') return 'B2A1 — Return-to-Auto1 Mail gefunden. Reifen gehen zurück zu Auto1.';
-      if (k === 'raus') return 'Raus — Auto in Carol fertig (herausgegeben). Reifen draußen nicht mehr nötig.';
-      if (k === 'gestellt') return 'Gestellt — Reifen stehen auf der Tagesliste als gestellt, also bei der Mechanik, nicht mehr im Aussenlager.';
-      if (k === 'tagesliste') return 'Tagesliste — Auto war auf der Tagesliste, Reifen aber nicht gestellt. Noch im Lager, nicht raus.';
-      return 'Behalten — kein B2A1, Auto nicht fertig in Carol, nicht gestellt. Reifen bleiben draußen.';
+      var k = actionKeyOf(it);
+      if (k === 'b2a1') {
+        if (it.carolB2a1) return 'B2A1 — Carol zeigt „Als B2A1 markiert“. Rausziehen.';
+        if (it.nbB2a1) return 'B2A1 — Nachbestellung Status B2A1. Rausziehen.';
+        return 'B2A1 — Return-to-Auto1 Mail gefunden. Rausziehen.';
+      }
+      if (k === 'fertig') return 'Fertiggestellt — Carol / Nachbestellung fertig. Rausziehen.';
+      if (k === 'gestellt') return 'Gestellt — bei der Mechanik, nicht mehr im Lager.';
+      if (k === 'tagesliste') return 'Tagesliste — nicht gestellt, noch im Lager.';
+      return 'Behalten — kein B2A1, nicht Fertiggestellt.';
     }
 
     function reasonLines(it) {
       var rows = [];
+      if (it.itemTyp && it.itemTyp !== '—') rows.push('Typ: ' + it.itemTyp);
       if (it.mailFound) rows.push('B2A1-Mail: ' + (it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + it.mailDate : ''));
       else rows.push('Keine Return-to-Auto1 Mail');
-      if (it.carolDone) rows.push('Carol fertig: ' + (it.carolStatus || 'herausgegeben'));
-      else if (it.refurbFound) rows.push('Carol noch offen: ' + (it.carolStatus || 'ohne Status') + ' — Auto nicht herausgegeben');
-      else rows.push('Nicht in der Refurbishment List — in Carol gegenprüfen');
+      if (it.carolB2a1) rows.push('Carol: Als B2A1 markiert' + (it.carolStatus ? ' · ' + it.carolStatus : ''));
+      else if (it.carolFertig || it.carolDone) rows.push('Carol Fertiggestellt: ' + (it.carolStatus || 'herausgegeben'));
+      else if (it.refurbFound) rows.push('Carol Status: ' + (it.carolStatus || 'ohne Status'));
+      else rows.push('Nicht in der Refurbishment List');
+      if (it.nbB2a1) rows.push('Nachbestellung: B2A1' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
+      else if (it.nbFertig) rows.push('Nachbestellung: Fertiggestellt' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
       if (it.tlGestellt) {
         rows.push('Tagesliste gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : '') + ' — bei Mechanik');
       } else if (it.tlFound) {
         rows.push('Auf Tagesliste, nicht gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : ''));
-      } else {
-        rows.push('Kein Tagesliste-Eintrag');
       }
       return rows;
     }
@@ -950,7 +979,7 @@
         $('detail').classList.remove('show');
         $('emptyState').classList.remove('hide');
         $('detailSid').textContent = '—';
-        $('detailSub').textContent = 'Draussen alle Reifen scannen, drinnen Dump ausgeben, Liste drucken';
+        $('detailSub').textContent = 'Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen';
         $('btnCarol').disabled = true;
         $('btnGmail').disabled = true;
         return;
@@ -958,26 +987,31 @@
       $('emptyState').classList.add('hide');
       $('detail').classList.add('show');
       $('detailSid').textContent = it.stockId;
-      $('detailSub').textContent = (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
-      var k = it.actionKey || 'behalten';
+      $('detailSub').textContent = (it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
+      var k = actionKeyOf(it);
       $('actionPill').className = 'big-pill ' + k;
       $('actionPill').textContent = actionLabel(k);
       $('actionWhy').textContent = actionWhy(it);
       var sbtns = $('actionBtns').querySelectorAll('.sbtn');
       for (var b = 0; b < sbtns.length; b++) {
-        sbtns[b].classList.toggle('set', (sbtns[b].getAttribute('data-a') || '') === (it.action || ''));
+        var da = sbtns[b].getAttribute('data-a') || '';
+        var dk = da === 'B2A1' ? 'b2a1' : (da === 'FERTIG' || da === 'RAUS' ? 'fertig' : 'behalten');
+        sbtns[b].classList.toggle('set', dk === k);
         sbtns[b].disabled = !!it.tlGestellt;
       }
       $('reasonList').innerHTML = reasonLines(it).map(function(r) {
         return '<li>' + esc(r) + '</li>';
       }).join('');
-      var carolSt = it.carolDone ? 'info' : (it.refurbFound ? 'ok' : 'warn');
-      var carolMsg = it.refurbFound
-        ? ('Status: <b>' + esc(it.carolStatus || '—') + '</b>' + (it.carolDone
-          ? ' — Auftrag herausgegeben, Reifen nicht mehr nötig.'
-          : ' — noch nicht herausgegeben, Reifen können noch gebraucht werden.') +
+      var carolSt = it.carolB2a1 ? 'bad' : ((it.carolFertig || it.carolDone) ? 'ok' : (it.refurbFound ? 'ok' : 'warn'));
+      var carolMsg = it.carolB2a1
+        ? ('Carol: <b>Als B2A1 markiert</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') +
           (it.carolUrl ? ' · <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''))
-        : 'Nicht (mehr) in der Refurbishment List. <a href="' + esc(it.carolUrl || '#') + '" target="_blank" rel="noopener">In Carol checken</a>';
+        : (it.refurbFound
+        ? ('Status: <b>' + esc(it.carolStatus || '—') + '</b>' + ((it.carolFertig || it.carolDone)
+          ? ' — Fertiggestellt / herausgegeben.'
+          : ' — nicht Fertiggestellt.') +
+          (it.carolUrl ? ' · <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''))
+        : 'Nicht (mehr) in der Refurbishment List.' + (it.carolUrl ? ' <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''));
       var gSt = it.tlGestellt ? 'ok' : (it.tlFound ? 'warn' : 'none');
       var gMsg = it.tlFound
         ? (it.tlGestellt
@@ -991,11 +1025,19 @@
       mMsg += ' · <a href="#" class="mail-again" id="btnMailRecheck">Mail neu</a>';
       $('checkList').innerHTML =
         checkRow(mSt, 'B2A1 Mail', mMsg) +
-        checkRow(carolSt, 'Carol / Refurbishment', carolMsg) +
+        checkRow(carolSt, 'Carol', carolMsg) +
+        checkRow(it.nbB2a1 ? 'bad' : (it.nbFertig ? 'ok' : (it.nbReifenCount || it.nbBoxCount ? 'info' : 'none')),
+          'Nachbestellung',
+          it.nbB2a1 ? ('Status <b>B2A1</b>' + (it.nbLabel ? ' — ' + esc(it.nbLabel) : ''))
+            : (it.nbFertig ? ('Status <b>Fertiggestellt</b>' + (it.nbLabel ? ' — ' + esc(it.nbLabel) : ''))
+            : ((it.nbReifenCount || it.nbBoxCount)
+              ? ((it.nbReifenCount ? it.nbReifenCount + '× Reifen' : '') + (it.nbReifenCount && it.nbBoxCount ? ' · ' : '') + (it.nbBoxCount ? it.nbBoxCount + '× Box' : ''))
+              : 'Keine Nachbestellung'))) +
         checkRow(gSt, 'Tagesliste / Gestellt', gMsg);
+      $('fTyp').textContent = it.itemTyp || '—';
       $('fMarke').textContent = it.markeModel || '—';
       $('fStatus').textContent = it.carolStatus || (it.refurbFound ? '—' : 'nicht in Refurb');
-      $('fStatus').className = 'fv' + (it.carolDone ? ' cyan' : (it.refurbFound ? ' green' : ' red'));
+      $('fStatus').className = 'fv' + (it.carolB2a1 ? ' red' : ((it.carolFertig || it.carolDone) ? ' cyan' : (it.refurbFound ? ' green' : ' red')));
       $('fReifen').textContent = it.reifenStatus || it.reifenStatusRaw || '—';
       $('fRegal').textContent = it.regal || '—';
       $('fTl').textContent = it.tlFound
@@ -1034,13 +1076,13 @@
       var ids = (parsed && parsed.ids) || [];
       var ignored = (parsed && parsed.ignored) || 0;
       if (!ids.length && !ignored) {
-        el.textContent = 'Bereit — nur 2 Buchstaben + 5 Zahlen, alles andere wird ignoriert';
+        el.textContent = 'Bereit — Stock-IDs Reifen und Lagerboxen, 2 Buchstaben + 4–8 Zahlen';
         el.className = 'dump-hint';
         dump.classList.remove('hot');
         return;
       }
       if (!ids.length) {
-        el.textContent = ignored + ' Code' + (ignored === 1 ? '' : 's') + ' ignoriert — nur AA12345 zählt';
+        el.textContent = ignored + ' Code' + (ignored === 1 ? '' : 's') + ' ignoriert — nur Stock-IDs zählen';
         el.className = 'dump-hint';
         dump.classList.remove('hot');
         return;
@@ -1131,13 +1173,61 @@
           state.busy = false;
           hideLoad();
           var c = countsOf(state.items);
-          toast(c.sort + ' zum Sortieren · ' + c.b2a1 + ' B2A1 · ' + c.raus + ' Raus · ' + (state.gestelltCount || 0) + ' gestellt skip');
+          toast(c.sort + ' rausziehen · ' + c.b2a1 + ' B2A1 · ' + c.fertig + ' Fertig · ' + (state.gestelltCount || 0) + ' gestellt skip');
           loadBatches(state.batchId);
+          startCarolBridge();
           $('dump').focus();
           return;
         }
         checkMails(opId, res.nextOffset || (offset + (res.items ? res.items.length : 8)));
       }, 'checkAussenMailChunk', state.batchId, offset, 8);
+    }
+
+    function stopCarolPoll() {
+      if (state.carolPoll) {
+        clearInterval(state.carolPoll);
+        state.carolPoll = null;
+      }
+    }
+
+    function startCarolPoll() {
+      if (state.carolPoll || !state.batchId) return;
+      state.carolPoll = setInterval(function() {
+        google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          applyBatchPayload(res, false);
+          renderList();
+          renderDetail();
+          if (!res.carolPending) {
+            stopCarolPoll();
+            toast('Carol-Check fertig');
+            loadBatches(state.batchId);
+          }
+        }).getAussenBatch(state.batchId);
+      }, 3000);
+    }
+
+    function startCarolBridge() {
+      if (!state.batchId) {
+        toast('Kein Dump geladen', true);
+        return;
+      }
+      google.script.run.withFailureHandler(function(err) {
+        toast(String(err && err.message ? err.message : err), true);
+      }).withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Carol-Queue fehlgeschlagen', true);
+          return;
+        }
+        if (!res.pending) {
+          toast('Carol schon geprüft');
+          return;
+        }
+        var url = res.carolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextId || '') + '&retoure_batch=' + encodeURIComponent(state.batchId));
+        window.open(url, '_blank', 'noopener,noreferrer');
+        startCarolPoll();
+        toast('Carol prüfen: Tampermonkey-Script „Carol Retoure Bridge“ muss aktiv sein · ' + res.pending + ' IDs');
+      }).aussenCarolQueue(state.batchId);
     }
 
     function loadBatches(selectId) {
@@ -1155,7 +1245,7 @@
           for (var i = 0; i < batches.length; i++) {
             var b = batches[i];
             html += '<option value="' + esc(b.batchId) + '"' + (selectId && selectId === b.batchId ? ' selected' : '') + '>' +
-              esc(b.scannedAt || b.batchId) + ' · ' + b.count + ' IDs · ' + (b.b2a1 || 0) + ' B2A1 · ' + (b.raus || 0) + ' Raus</option>';
+              esc(b.scannedAt || b.batchId) + ' · ' + b.count + ' IDs · ' + (b.b2a1 || 0) + ' B2A1 · ' + (b.fertig || b.raus || 0) + ' Fertig</option>';
           }
           sel.innerHTML = html;
           if (selectId) sel.value = selectId;
@@ -1192,16 +1282,15 @@
         return;
       }
       var groups = [
-        { key: 'b2a1', title: 'B2A1 — zurück zu Auto1', items: [] },
-        { key: 'raus', title: 'Raus — Auto fertig in Carol', items: [] },
-        { key: 'tagesliste', title: 'Tagesliste — nicht gestellt', items: [] },
+        { key: 'b2a1', title: 'B2A1 — Als B2A1 markiert / Mail', items: [] },
+        { key: 'fertig', title: 'Fertiggestellt', items: [] },
         { key: 'behalten', title: 'Behalten', items: [] }
       ];
       var map = {};
       for (var g = 0; g < groups.length; g++) map[groups[g].key] = groups[g];
       for (var i = 0; i < items.length; i++) {
         if (items[i].tlGestellt) continue;
-        var k = items[i].actionKey || 'behalten';
+        var k = actionKeyOf(items[i]);
         if (!map[k]) k = 'behalten';
         map[k].items.push(items[i]);
       }
@@ -1216,14 +1305,16 @@
         for (var j = 0; j < grp.items.length; j++) {
           var it = grp.items[j];
           var bits = [];
+          if (it.itemTyp && it.itemTyp !== '—') bits.push(it.itemTyp);
           if (it.markeModel) bits.push(it.markeModel);
-          if (it.carolStatus) bits.push(it.carolStatus);
-          if (it.tlGestellt) bits.push('Gestellt' + (it.tlDatum ? ' ' + it.tlDatum : ''));
-          else if (it.tlFound) bits.push('TL' + (it.tlDatum ? ' ' + it.tlDatum : ''));
+          if (it.carolB2a1) bits.push('Als B2A1 markiert');
+          else if (it.carolStatus) bits.push(it.carolStatus);
+          if (it.nbB2a1) bits.push('NB B2A1');
+          else if (it.nbFertig) bits.push('NB Fertiggestellt');
           if (it.mailFound) bits.push(it.mailSubject || 'Return to Auto1');
-          body += '<div class="entry ' + esc(it.actionKey || 'behalten') + '">' +
+          body += '<div class="entry ' + esc(actionKeyOf(it)) + '">' +
             '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
-            '<span class="st">' + esc(actionLabel(it.actionKey)) + '</span></div>' +
+            '<span class="st">' + esc(actionLabel(actionKeyOf(it))) + '</span></div>' +
             (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
             '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></div>';
         }
@@ -1238,7 +1329,7 @@
         '.head{color:#555;font-size:11px;margin-bottom:12px;text-align:center}' +
         '.entry{width:72mm;margin:0 auto 12px;page-break-inside:avoid;padding:6px 8px;border:1px solid #ccc;border-radius:6px}' +
         '.entry.b2a1{background:#f7c5c5;border-color:#c00}' +
-        '.entry.raus{background:#c5f0f7;border-color:#088}' +
+        '.entry.fertig,.entry.raus{background:#c5f0f7;border-color:#088}' +
         '.entry.gestellt{background:#d4edda;border-color:#2a7}' +
         '.entry.tagesliste{background:#fff3b0;border-color:#aa0}' +
         '.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
@@ -1249,7 +1340,7 @@
         '@media print{body{margin:0}}' +
         '</style></head><body>' +
         '<h1>' + esc(title) + '</h1>' +
-        '<div class="head">Stand: ' + esc(dateStr) + (state.scannedAt ? ' · Dump ' + esc(state.scannedAt) : '') + ' · ' + items.length + ' Reifen</div>' +
+        '<div class="head">Stand: ' + esc(dateStr) + (state.scannedAt ? ' · Dump ' + esc(state.scannedAt) : '') + ' · ' + items.length + ' Stock-IDs</div>' +
         body +
         '<script>window.onload=function(){' +
         'var els=document.querySelectorAll("svg.bc");' +
@@ -1270,6 +1361,7 @@
     }
 
     function newRound() {
+      stopCarolPoll();
       state.items = [];
       state.gestelltItems = [];
       state.gestelltCount = 0;
@@ -1300,17 +1392,19 @@
       clearTimeout(state.dumpTimer);
       startCheck();
     });
+    $('btnCarolCheck').addEventListener('click', startCarolBridge);
     $('btnNew').addEventListener('click', newRound);
     $('btnKontrolle').addEventListener('click', function() {
       window.open(APP_BASE, '_blank', 'noopener,noreferrer');
     });
     $('btnPrintSort').addEventListener('click', function() {
       printItems(state.items.filter(function(it) {
-        return it.actionKey === 'b2a1' || it.actionKey === 'raus';
-      }), 'Reifen Aussen — Raus + B2A1');
+        var k = actionKeyOf(it);
+        return k === 'b2a1' || k === 'fertig';
+      }), 'Retoure — B2A1 + Fertiggestellt');
     });
     $('btnPrintAll').addEventListener('click', function() {
-      printItems(state.items, 'Reifen Aussen Scan');
+      printItems(state.items, 'Retoure Scan');
     });
     $('btnCarol').addEventListener('click', function() {
       var it = selectedItem();
@@ -1328,7 +1422,7 @@
       var action = btn.getAttribute('data-a') || '';
       if (!it || !state.batchId || !action || it.tlGestellt) return;
       it.action = action;
-      it.actionKey = action === 'B2A1' ? 'b2a1' : (action === 'RAUS' ? 'raus' : (action === 'TAGESLISTE' ? 'tagesliste' : 'behalten'));
+      it.actionKey = action === 'B2A1' ? 'b2a1' : (action === 'FERTIG' || action === 'RAUS' ? 'fertig' : 'behalten');
       it.manual = true;
       renderList();
       renderDetail();

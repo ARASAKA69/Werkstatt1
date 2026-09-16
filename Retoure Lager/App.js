@@ -23,18 +23,35 @@ var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1
 
 function doGet(e) {
   var page = String((e && e.parameter && e.parameter.page) || '').toLowerCase();
+  if (page === 'carolq' || page === 'carolqueue') {
+    return jsonOut_(aussenCarolQueue(e.parameter.batch));
+  }
+  if (page === 'carolreport') {
+    return jsonOut_(applyAussenCarolFlags({
+      batchId: e.parameter.batch,
+      stockId: e.parameter.sid,
+      carolB2a1: String(e.parameter.b2a1 || '') === '1',
+      carolFertig: String(e.parameter.fertig || '') === '1',
+      carolLabel: e.parameter.label || ''
+    }));
+  }
   var isAussen = page === 'aussen' || page === 'scan';
   return HtmlService.createHtmlOutputFromFile(isAussen ? 'Aussen' : 'Index')
-    .setTitle(isAussen ? 'Reifen Aussen Scan' : 'Reifen Kontrolle')
+    .setTitle(isAussen ? 'Retoure Scan' : 'Retoure Lager')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
+function jsonOut_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj || {}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
-    .createMenu('Reifen Kontrolle')
+    .createMenu('Retoure Lager')
     .addItem('App öffnen', 'openReifenApp')
-    .addItem('Aussen Scan öffnen', 'openAussenApp')
+    .addItem('Retoure Scan öffnen', 'openAussenApp')
     .addItem('Cache neu bauen', 'menuRebuildCache')
     .addItem('Cache-Trigger einrichten', 'installCacheTrigger')
     .addToUi();
@@ -44,22 +61,22 @@ function openReifenApp() {
   try { ensureCacheTrigger_(); } catch (e0) {}
   var html = HtmlService.createHtmlOutput(
     '<!DOCTYPE html><html><body style="margin:0;font:14px sans-serif;padding:16px;background:#111;color:#eee">' +
-    '<div>Öffne Reifen Kontrolle…</div>' +
+    '<div>Öffne Retoure Lager…</div>' +
     '<script>window.onload=function(){window.open(' + JSON.stringify(WEB_APP_URL) + ',"_blank");google.script.host.close();};</script>' +
     '</body></html>'
   ).setWidth(280).setHeight(80);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Reifen Kontrolle');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Retoure Lager');
 }
 
 function openAussenApp() {
   var url = WEB_APP_URL + (WEB_APP_URL.indexOf('?') === -1 ? '?' : '&') + 'page=aussen';
   var html = HtmlService.createHtmlOutput(
     '<!DOCTYPE html><html><body style="margin:0;font:14px sans-serif;padding:16px;background:#111;color:#eee">' +
-    '<div>Öffne Reifen Aussen Scan…</div>' +
+    '<div>Öffne Retoure Scan…</div>' +
     '<script>window.onload=function(){window.open(' + JSON.stringify(url) + ',"_blank");google.script.host.close();};</script>' +
     '</body></html>'
   ).setWidth(280).setHeight(80);
-  SpreadsheetApp.getUi().showModalDialog(html, 'Reifen Aussen Scan');
+  SpreadsheetApp.getUi().showModalDialog(html, 'Retoure Scan');
 }
 
 function menuRebuildCache() {
@@ -283,11 +300,19 @@ function buildRefurbMap_() {
     if (!sheet) return map;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var data = sheet.getRange(2, 1, lastRow, 30).getValues();
+    var lastCol = Math.min(45, Math.max(30, sheet.getLastColumn()));
+    var data = sheet.getRange(2, 1, lastRow, lastCol).getValues();
     var formulas = sheet.getRange(2, 3, lastRow, 3).getFormulas();
     for (var i = 0; i < data.length; i++) {
       var stockId = normalizeStockId_(data[i][1]);
       if (!stockId || map[stockId]) continue;
+      var rowText = '';
+      for (var c = 0; c < data[i].length; c++) {
+        var cell = data[i][c];
+        if (cell == null || cell === '') continue;
+        if (Object.prototype.toString.call(cell) === '[object Date]') continue;
+        rowText += ' ' + String(cell);
+      }
       map[stockId] = {
         found: true,
         row: i + 2,
@@ -299,7 +324,8 @@ function buildRefurbMap_() {
         status: String(data[i][25] || '').trim(),
         regal: String(data[i][27] || '').trim(),
         reifenStatusRaw: String(data[i][29] || '').trim(),
-        reifenStatus: formatReifenLabel_(data[i][29])
+        reifenStatus: formatReifenLabel_(data[i][29]),
+        rowText: rowText
       };
     }
   } catch (e) {}
@@ -1710,8 +1736,20 @@ function forceRebuildCache() {
 }
 
 var AUSSEN_TAB = 'Reifen Aussen Scan';
-var AUSSEN_HEADERS = ['Batch', 'Gescannt', 'Stock-ID', 'Marke', 'Carol Status', 'Carol fertig', 'Tagesliste', 'Gestellt', 'Gestellt am', 'Reifen', 'Schicht', 'B2A1', 'Mail Betreff', 'Mail Datum', 'Mail URL', 'Aktion', 'Carol URL', 'TL URL'];
+var AUSSEN_HEADERS = ['Batch', 'Gescannt', 'Stock-ID', 'Marke', 'Carol Status', 'Carol fertig', 'Tagesliste', 'Gestellt', 'Gestellt am', 'Reifen', 'Schicht', 'B2A1', 'Mail Betreff', 'Mail Datum', 'Mail URL', 'Aktion', 'Carol URL', 'TL URL', 'Typ', 'NB'];
 var AUSSEN_MAP_PREFIX = 'aussen_maps_';
+
+function isB2A1Status_(val) {
+  var s = String(val || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return false;
+  return /als\s*b2a1\s*markiert|b2a1\s*markiert|\bb2a1\b|flagged\s*for\s*return(\s*to\s*auto\s*1)?|return\s*to\s*auto\s*1/i.test(s);
+}
+
+function isFertigStatus_(val) {
+  var s = String(val || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s || isB2A1Status_(s)) return false;
+  return /fertiggestellt|herausgegeben|handed\s*out|completed\s+on|\bcompleted\b/i.test(s);
+}
 
 function getAussenSheet_() {
   var ss = SpreadsheetApp.openById(REIFEN_SHEET_ID);
@@ -1727,12 +1765,14 @@ function getAussenSheet_() {
     sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setValues([AUSSEN_HEADERS]);
     sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setFontWeight('bold');
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < AUSSEN_HEADERS.length) {
+    sh.getRange(1, 1, 1, AUSSEN_HEADERS.length).setValues([AUSSEN_HEADERS]);
   }
   return sh;
 }
 
 function looksLikeAussenStockId_(value) {
-  return /^[A-Z]{2}\d{5}$/.test(normalizeStockId_(value));
+  return looksLikeStockId_(value);
 }
 
 function parseAussenIds_(raw) {
@@ -1761,8 +1801,8 @@ function isAussenDumpToken_(value) {
 
 function aussenAction_(item) {
   if (!item) return 'BEHALTEN';
-  if (item.mailFound) return 'B2A1';
-  if (item.carolDone) return 'RAUS';
+  if (item.mailFound || item.carolB2a1 || item.nbB2a1) return 'B2A1';
+  if (item.carolFertig || item.carolDone || item.nbFertig) return 'FERTIG';
   if (item.tlGestellt) return 'GESTELLT';
   if (item.tlFound) return 'TAGESLISTE';
   return 'BEHALTEN';
@@ -1771,7 +1811,7 @@ function aussenAction_(item) {
 function aussenActionKey_(action) {
   var a = String(action || '').toUpperCase();
   if (a === 'B2A1') return 'b2a1';
-  if (a === 'RAUS') return 'raus';
+  if (a === 'FERTIG' || a === 'FERTIGGESTELLT' || a === 'RAUS' || a === 'COMPLETE') return 'fertig';
   if (a === 'GESTELLT') return 'gestellt';
   if (a === 'TAGESLISTE') return 'tagesliste';
   return 'behalten';
@@ -1819,22 +1859,49 @@ function aussenMailIds_(maps, storedItems) {
   return ids;
 }
 
-function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail) {
+function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail, nbMap) {
   var refurb = (refurbMap && refurbMap[stockId]) || { found: false };
   var tl = (tlMap && tlMap[stockId]) || [];
+  var nbs = (nbMap && nbMap[stockId]) || [];
   var tlRes = resolveTlGestellt_(tl);
-  var statusLow = String(refurb.status || '').toLowerCase();
-  var carolDone = !!refurb.found && /herausgegeben|handed\s*out|complete/i.test(statusLow);
+  var carolBlob = [refurb.status, refurb.kommBestellung, refurb.kommAnlieferung, refurb.rowText].join(' ');
+  var carolB2a1 = !!refurb.found && isB2A1Status_(carolBlob);
+  var carolFertig = !!refurb.found && isFertigStatus_(refurb.status);
   var mail = returnMail || { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
   var gEntry = tlRes.gestelltEntry || null;
   var latest = tlRes.latest || null;
+  var nbB2a1 = false;
+  var nbFertig = false;
+  var nbReifen = 0;
+  var nbBox = 0;
+  var nbLabel = '';
+  for (var n = 0; n < nbs.length; n++) {
+    var st = nbs[n].status || '';
+    if (isB2A1Status_(st)) {
+      nbB2a1 = true;
+      if (!nbLabel) nbLabel = st;
+    }
+    if (isFertigStatus_(st)) {
+      nbFertig = true;
+      if (!nbLabel) nbLabel = st;
+    }
+    if (nbs[n].reifen) nbReifen++;
+    else nbBox++;
+  }
+  var itemTyp = '—';
+  if (nbReifen && nbBox) itemTyp = 'Reifen + Box';
+  else if (nbReifen || (refurb.reifenStatus === 'Reifen da')) itemTyp = 'Reifen';
+  else if (nbBox) itemTyp = 'Lagerbox';
+  else if (refurb.found) itemTyp = 'Fahrzeug';
   var item = {
     stockId: stockId,
     markeModel: refurb.markeModel || '',
     carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
     refurbFound: !!refurb.found,
     carolStatus: refurb.status || '',
-    carolDone: carolDone,
+    carolDone: carolFertig,
+    carolB2a1: carolB2a1,
+    carolFertig: carolFertig,
     regal: refurb.regal || '',
     reifenStatus: refurb.reifenStatus || '',
     reifenStatusRaw: refurb.reifenStatusRaw || '',
@@ -1853,6 +1920,12 @@ function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail) {
     mailUrl: mail.permalink || '',
     mailMessage: mail.message || '',
     gmailSearchUrl: gmailSearchUrl_('"Return to Auto1" "' + stockId + '"'),
+    nbB2a1: nbB2a1,
+    nbFertig: nbFertig,
+    nbReifenCount: nbReifen,
+    nbBoxCount: nbBox,
+    nbLabel: nbLabel,
+    itemTyp: itemTyp,
     checkedAt: nowStamp_()
   };
   item.action = aussenAction_(item);
@@ -1879,7 +1952,9 @@ function aussenRowFromItem_(batchId, scannedAt, item) {
     item.mailUrl || '',
     item.action || '',
     item.carolUrl || '',
-    item.tlUrl || ''
+    item.tlUrl || '',
+    item.itemTyp || '',
+    item.nbB2a1 ? 'B2A1' : (item.nbFertig ? 'FERTIG' : (item.nbLabel || ''))
   ];
 }
 
@@ -1890,6 +1965,8 @@ function aussenItemFromRow_(row) {
     markeModel: String(row[3] || '').trim(),
     carolStatus: String(row[4] || '').trim(),
     carolDone: String(row[5] || '').trim().toUpperCase() === 'JA',
+    carolB2a1: isB2A1Status_(String(row[4] || '')),
+    carolFertig: String(row[5] || '').trim().toUpperCase() === 'JA' || isFertigStatus_(String(row[4] || '')),
     tlFound: String(row[6] || '').trim().toUpperCase() === 'JA',
     tlGestellt: String(row[7] || '').trim().toUpperCase() === 'JA',
     tlGestelltEarlier: false,
@@ -1903,6 +1980,10 @@ function aussenItemFromRow_(row) {
     action: action || 'BEHALTEN',
     carolUrl: String(row[16] || '').trim(),
     tlUrl: String(row[17] || '').trim(),
+    itemTyp: String(row[18] || '').trim(),
+    nbLabel: String(row[19] || '').trim(),
+    nbB2a1: /b2a1/i.test(String(row[19] || '')),
+    nbFertig: /fertig/i.test(String(row[19] || '')),
     refurbFound: !!String(row[4] || '').trim(),
     tlCount: String(row[6] || '').trim().toUpperCase() === 'JA' ? 1 : 0,
     mailFrom: '',
@@ -2017,13 +2098,100 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.1.9', ts: nowStamp_() };
+  return { success: true, version: '1.2.1', ts: nowStamp_() };
+}
+
+function aussenCarolAlready_(item, liveMap) {
+  if (!item || item.tlGestellt) return true;
+  if (item.carolLive) return true;
+  if (liveMap && liveMap[item.stockId]) return true;
+  return /als\s*b2a1\s*markiert|flagged\s*for\s*return|fertiggestellt|completed\s+on/i.test(item.carolStatus || '');
+}
+
+function aussenCarolQueue(batchId) {
+  try {
+    batchId = String(batchId || '').trim();
+    if (!batchId) return { success: false, message: 'Kein Batch', ids: [] };
+    var stored = getAussenBatch(batchId);
+    if (!stored || !stored.success) return stored || { success: false, ids: [] };
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    var liveMap = maps.carolLive || {};
+    var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
+    var ids = [];
+    for (var i = 0; i < pool.length; i++) {
+      if (aussenCarolAlready_(pool[i], liveMap)) continue;
+      ids.push(pool[i].stockId);
+    }
+    return {
+      success: true,
+      batchId: batchId,
+      ids: ids,
+      nextId: ids.length ? ids[0] : '',
+      pending: ids.length,
+      carolUrl: ids.length ? (carolUrlFor_(ids[0], '') + '&retoure_batch=' + encodeURIComponent(batchId)) : ''
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), ids: [] };
+  }
+}
+
+function applyAussenCarolFlags(payload) {
+  try {
+    payload = payload || {};
+    var batchId = String(payload.batchId || '').trim();
+    var stockId = normalizeStockId_(payload.stockId);
+    if (!batchId || !stockId) return { success: false, message: 'Batch/ID fehlt' };
+    var stored = getAussenBatch(batchId);
+    if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
+    var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
+    var found = false;
+    var b2a1 = !!payload.carolB2a1;
+    var fertig = !!payload.carolFertig && !b2a1;
+    var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim();
+    for (var i = 0; i < pool.length; i++) {
+      if (pool[i].stockId !== stockId) continue;
+      found = true;
+      pool[i].carolLive = true;
+      pool[i].carolB2a1 = b2a1 || !!pool[i].carolB2a1;
+      pool[i].carolFertig = fertig || !!pool[i].carolFertig;
+      pool[i].carolDone = pool[i].carolFertig || !!pool[i].carolDone;
+      if (b2a1) pool[i].carolStatus = label || 'Als B2A1 markiert';
+      else if (fertig) pool[i].carolStatus = label || 'Fertiggestellt';
+      if (!pool[i].manual) {
+        pool[i].action = aussenAction_(pool[i]);
+        pool[i].actionKey = aussenActionKey_(pool[i].action);
+      }
+      break;
+    }
+    if (!found) return { success: false, message: 'ID nicht im Batch' };
+    writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), pool);
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    maps.carolLive = maps.carolLive || {};
+    maps.carolLive[stockId] = true;
+    putCacheJson_(aussenMapsPrefix_(batchId), maps);
+    var split = splitAussenItems_(pool);
+    var q = aussenCarolQueue(batchId);
+    return {
+      success: true,
+      batchId: batchId,
+      stockId: stockId,
+      items: split.items,
+      gestelltItems: split.gestelltItems,
+      gestelltCount: split.gestelltCount,
+      pending: q.pending || 0,
+      nextId: q.nextId || '',
+      carolUrl: q.carolUrl || '',
+      message: stockId + (b2a1 ? ' · Als B2A1 markiert' : (fertig ? ' · Fertiggestellt' : ' · kein Carol-Badge'))
+    };
+  } catch (err) {
+    return { success: false, message: String(err.message || err) };
+  }
 }
 
 function startAussenCheck(ids) {
   try {
     var list = parseAussenIds_(ids);
-    if (!list.length) return { success: false, message: 'Keine gültigen Stock-IDs — nur 2 Buchstaben + 5 Zahlen (AA12345)', items: [], done: true };
+    if (!list.length) return { success: false, message: 'Keine gültigen Stock-IDs — 2 Buchstaben + 4–8 Zahlen (AA12345)', items: [], done: true };
     var batchId = 'A' + Utilities.formatDate(new Date(), 'Europe/Berlin', 'yyyyMMddHHmmss');
     var scannedAt = nowStamp_();
     putCacheJson_(aussenMapsPrefix_(batchId), {
@@ -2036,7 +2204,8 @@ function startAussenCheck(ids) {
       tlScanned: 0,
       checkIds: [],
       gestelltIds: [],
-      manual: {}
+      manual: {},
+      nb: {}
     });
     return aussenStepOk_({
       batchId: batchId,
@@ -2099,11 +2268,28 @@ function aussenCheckStep(batchId, step, cursor) {
         scannedAt: maps.scannedAt,
         count: total,
         done: false,
-        nextStep: 'items',
-        percent: 55,
+        nextStep: 'nb',
+        percent: 48,
         phase: 'Carol / Refurbishment',
         currentSid: 'Refurbishment ✓',
         message: hits + '/' + (maps.checkIds ? maps.checkIds.length : total) + ' in Carol · ' + (maps.gestelltIds ? maps.gestelltIds.length : 0) + ' gestellt skip'
+      });
+    }
+    if (step === 'nb') {
+      var nbNeed = aussenNeedSet_(maps.checkIds && maps.checkIds.length ? maps.checkIds : maps.ids);
+      maps.nb = filterMapToIds_(buildNachbestellMap_(), nbNeed);
+      putCacheJson_(aussenMapsPrefix_(batchId), maps);
+      var nbHits = Object.keys(maps.nb).length;
+      return aussenStepOk_({
+        batchId: batchId,
+        scannedAt: maps.scannedAt,
+        count: total,
+        done: false,
+        nextStep: 'items',
+        percent: 62,
+        phase: 'Nachbestellung',
+        currentSid: 'Nachbestellung ✓',
+        message: nbHits + ' mit Nachbestellung'
       });
     }
     var tlMap = maps.tl || {};
@@ -2114,7 +2300,7 @@ function aussenCheckStep(batchId, step, cursor) {
     var allItems = [];
     for (var i = 0; i < maps.ids.length; i++) {
       var sid = maps.ids[i];
-      var it = aussenItemFromMaps_(sid, gestelltSet[sid] ? {} : (maps.refurb || {}), tlMap, null);
+      var it = aussenItemFromMaps_(sid, gestelltSet[sid] ? {} : (maps.refurb || {}), tlMap, null, maps.nb || {});
       applyAussenManual_(it, maps);
       allItems.push(it);
     }
@@ -2170,12 +2356,13 @@ function checkAussenMailChunk(batchId, offset, size) {
         message: 'Mails übersprungen — gestellt oder leer'
       };
     }
-    if (!maps || !maps.refurb || !maps.tl) {
+    if (!maps || !maps.refurb || !maps.tl || !maps.nb) {
       var need = stockIdSetFromList_(ids.map(function(sid) { return { stockId: sid }; }));
       maps = maps || {};
-      maps.refurb = filterMapToIds_(buildRefurbMap_(), need);
-      maps.tl = buildTageslisteMap_(need);
+      maps.refurb = maps.refurb || filterMapToIds_(buildRefurbMap_(), need);
+      maps.tl = maps.tl || buildTageslisteMap_(need);
       if (maps.tl && maps.tl._meta) delete maps.tl._meta;
+      maps.nb = maps.nb || filterMapToIds_(buildNachbestellMap_(), need);
       maps.ids = maps.ids || ids;
       maps.scannedAt = scannedAt;
       maps.manual = maps.manual || {};
@@ -2190,7 +2377,7 @@ function checkAussenMailChunk(batchId, offset, size) {
     for (var i = offset; i < end; i++) {
       var sid = ids[i];
       var mail = searchReturnMail_(sid);
-      var item = aussenItemFromMaps_(sid, maps.refurb, maps.tl, mail);
+      var item = aussenItemFromMaps_(sid, maps.refurb, maps.tl, mail, maps.nb);
       applyAussenManual_(item, maps);
       updated.push(item);
     }
@@ -2217,8 +2404,9 @@ function setAussenAction(batchId, stockId, action) {
     batchId = String(batchId || '');
     stockId = normalizeStockId_(stockId);
     action = String(action || '').trim().toUpperCase();
-    var allowed = { B2A1: 1, RAUS: 1, BEHALTEN: 1, TAGESLISTE: 1, GESTELLT: 1 };
+    var allowed = { B2A1: 1, FERTIG: 1, FERTIGGESTELLT: 1, RAUS: 1, BEHALTEN: 1, TAGESLISTE: 1, GESTELLT: 1 };
     if (!batchId || !stockId) return { success: false, message: 'Batch/ID fehlt' };
+    if (action === 'FERTIGGESTELLT' || action === 'RAUS' || action === 'COMPLETE') action = 'FERTIG';
     if (!allowed[action]) return { success: false, message: 'Ungültige Aktion' };
     var stored = getAussenBatch(batchId);
     if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
@@ -2273,7 +2461,7 @@ function recheckAussenMail(batchId, stockId) {
     var mail = searchReturnMail_(stockId);
     var item;
     if (maps.refurb || maps.tl) {
-      item = aussenItemFromMaps_(stockId, maps.refurb || {}, maps.tl || {}, mail);
+      item = aussenItemFromMaps_(stockId, maps.refurb || {}, maps.tl || {}, mail, maps.nb || {});
       if (prev && prev.manual) {
         item.action = prev.action;
         item.actionKey = prev.actionKey;
@@ -2292,7 +2480,7 @@ function recheckAussenMail(batchId, stockId) {
       }
       item = prev;
     } else {
-      item = aussenItemFromMaps_(stockId, {}, {}, mail);
+      item = aussenItemFromMaps_(stockId, {}, {}, mail, {});
     }
     applyAussenManual_(item, maps);
     writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), [item]);
@@ -2327,6 +2515,7 @@ function listAussenBatches() {
           count: 0,
           b2a1: 0,
           raus: 0,
+          fertig: 0,
           gestellt: 0,
           tagesliste: 0,
           behalten: 0
@@ -2336,7 +2525,10 @@ function listAussenBatches() {
       map[id].count++;
       var action = String(data[i][15] || '').trim().toUpperCase();
       if (action === 'B2A1') map[id].b2a1++;
-      else if (action === 'RAUS') map[id].raus++;
+      else if (action === 'RAUS' || action === 'FERTIG' || action === 'FERTIGGESTELLT') {
+        map[id].raus++;
+        map[id].fertig++;
+      }
       else if (action === 'GESTELLT') map[id].gestellt++;
       else if (action === 'TAGESLISTE') map[id].tagesliste++;
       else map[id].behalten++;
@@ -2368,6 +2560,12 @@ function getAussenBatch(batchId) {
       }
     }
     var split = splitAussenItems_(items);
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    var liveMap = maps.carolLive || {};
+    var pending = 0;
+    for (var p = 0; p < items.length; p++) {
+      if (!aussenCarolAlready_(items[p], liveMap)) pending++;
+    }
     return {
       success: true,
       batchId: batchId,
@@ -2376,7 +2574,8 @@ function getAussenBatch(batchId) {
       gestelltItems: split.gestelltItems,
       gestelltCount: split.gestelltCount,
       allItems: items,
-      count: items.length
+      count: items.length,
+      carolPending: pending
     };
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [] };
