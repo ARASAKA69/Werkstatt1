@@ -1,5 +1,6 @@
 var CONFIG = {
   senderEmail: 'info@rv-seng.de',
+  senderDomain: 'rv-seng.de',
   recipientEmail: 'Info@rv-seng.de',
   ccEmails: [
     'lena.scholz@auto1.com',
@@ -30,7 +31,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Per Email senden an Seng')
     .addItem('Per Email senden', 'sendFilledRowsByEmail')
-    .addToUi();
+   .addToUi();
 }
 
 function sendFilledRowsByEmail() {
@@ -234,8 +235,19 @@ function processRow_(sheet, row) {
     return;
   }
 
-  var lieferscheinNr = extractLieferscheinNr_(data.rawText);
-  var position = data.tablePosition || extractFirstPositionFromText_(data.rawText);
+  var rawText = (data && data.rawText) || '';
+  var subject = '';
+  var body = '';
+  try { subject = String(message.getSubject() || ''); } catch (e1) {}
+  try { body = String(message.getPlainBody() || ''); } catch (e2) {}
+
+  var lieferscheinNr = extractLieferscheinNr_(rawText) ||
+    extractLieferscheinNr_(subject) ||
+    extractLieferscheinNr_(body);
+  var position = (data && data.tablePosition && !isShippingPosition_(data.tablePosition))
+    ? data.tablePosition
+    : extractFirstPositionFromText_(rawText);
+  if (!position) position = extractFirstPositionFromText_(body);
 
   sheet.getRange(row, CONFIG.lieferscheinNrCol).setValue(lieferscheinNr || '');
   sheet.getRange(row, CONFIG.artikelCol).setValue(position ? position.artikel : '');
@@ -263,38 +275,120 @@ function setStatus_(sheet, row, text) {
 }
 
 function findLatestLieferscheinMessage_(stockId) {
-  var query = 'from:(' + CONFIG.senderEmail + ') "' + stockId + '" has:attachment';
-  var threads = GmailApp.search(query, 0, 10);
-  var stockIdUpper = String(stockId).toUpperCase();
-  var senderLower = CONFIG.senderEmail.toLowerCase();
-  var bestSenderMatch = null;
-  var bestSubjectMatch = null;
+  var stockIdClean = String(stockId || '').trim();
+  if (!stockIdClean) return null;
+  var stockIdUpper = stockIdClean.toUpperCase();
+  var queries = [
+    'from:' + CONFIG.senderEmail + ' ' + stockIdClean,
+    'from:' + CONFIG.senderDomain + ' ' + stockIdClean,
+    'subject:Lieferschein ' + stockIdClean,
+    stockIdClean
+  ];
 
-  for (var t = 0; t < threads.length; t++) {
-    var messages = threads[t].getMessages();
-    for (var m = 0; m < messages.length; m++) {
-      var msg = messages[m];
-      var fromLower = String(msg.getFrom() || '').toLowerCase();
-      if (fromLower.indexOf(senderLower) === -1) continue;
-      if (!findPdfAttachment_(msg)) continue;
-
-      if (!bestSenderMatch || msg.getDate().getTime() > bestSenderMatch.getDate().getTime()) {
-        bestSenderMatch = msg;
-      }
-
-      var subject = String(msg.getSubject() || '').toUpperCase();
-      if (subject.indexOf(stockIdUpper) === -1) continue;
-      if (!bestSubjectMatch || msg.getDate().getTime() > bestSubjectMatch.getDate().getTime()) {
-        bestSubjectMatch = msg;
+  var best = null;
+  var seen = {};
+  for (var q = 0; q < queries.length; q++) {
+    var threads = [];
+    try {
+      threads = GmailApp.search(queries[q], 0, 25);
+    } catch (searchErr) {
+      Logger.log('Gmail search failed [' + queries[q] + ']: ' + searchErr.message);
+      continue;
+    }
+    Logger.log('Gmail query [' + queries[q] + ']: ' + threads.length + ' Thread(s)');
+    for (var t = 0; t < threads.length; t++) {
+      var messages = threads[t].getMessages();
+      for (var m = 0; m < messages.length; m++) {
+        var msg = messages[m];
+        var mid = msg.getId();
+        var fromQuick = String(msg.getFrom() || '').toLowerCase();
+        if (fromQuick.indexOf('n4.parts') !== -1) continue;
+        if (fromQuick.indexOf('noreply@wm.de') !== -1) continue;
+        if (seen[mid]) continue;
+        seen[mid] = true;
+        if (!isSengLieferscheinMessage_(msg, stockIdUpper)) continue;
+        if (!best || scoreLieferscheinMessage_(msg, stockIdUpper) > scoreLieferscheinMessage_(best, stockIdUpper)) {
+          best = msg;
+        } else if (scoreLieferscheinMessage_(msg, stockIdUpper) === scoreLieferscheinMessage_(best, stockIdUpper) &&
+          msg.getDate().getTime() > best.getDate().getTime()) {
+          best = msg;
+        }
       }
     }
+    if (best) return best;
   }
+  return best;
+}
 
-  return bestSubjectMatch || bestSenderMatch;
+function scoreLieferscheinMessage_(msg, stockIdUpper) {
+  var subject = String(msg.getSubject() || '');
+  var fromLower = String(msg.getFrom() || '').toLowerCase();
+  var score = 0;
+  if (/lieferschein/i.test(subject)) score += 8;
+  if (fromLower.indexOf(String(CONFIG.senderDomain || 'rv-seng.de').toLowerCase()) !== -1) score += 6;
+  if (fromLower.indexOf(String(CONFIG.senderEmail || '').toLowerCase()) !== -1) score += 4;
+  if (subject.toUpperCase().indexOf(stockIdUpper) !== -1) score += 4;
+  if (findPdfAttachment_(msg)) score += 5;
+  return score;
+}
+
+function isSengLieferscheinMessage_(msg, stockIdUpper) {
+  var subject = '';
+  var fromLower = '';
+  try { subject = String(msg.getSubject() || ''); } catch (e1) {}
+  try { fromLower = String(msg.getFrom() || '').toLowerCase(); } catch (e2) {}
+  var subjectUpper = subject.toUpperCase();
+
+  if (subjectUpper.indexOf('REIFEN SENG RETOURE') !== -1) return false;
+  if (subjectUpper.indexOf('DELIVERY STATUS NOTIFICATION') !== -1) return false;
+  if (fromLower.indexOf('noreply@wm.de') !== -1) return false;
+  if (fromLower.indexOf('mailer-daemon') !== -1) return false;
+  if (!messageContainsStockId_(msg, stockIdUpper, subjectUpper)) return false;
+
+  var senderDomain = String(CONFIG.senderDomain || 'rv-seng.de').toLowerCase();
+  var senderEmail = String(CONFIG.senderEmail || '').toLowerCase();
+  var fromSeng = (senderEmail && fromLower.indexOf(senderEmail) !== -1) ||
+    fromLower.indexOf(senderDomain) !== -1 ||
+    fromLower.indexOf('reifenvertrieb seng') !== -1 ||
+    fromLower.indexOf('rv-seng') !== -1;
+  var lieferscheinSubject = /lieferschein/i.test(subject);
+  return fromSeng || lieferscheinSubject;
+}
+
+function messageContainsStockId_(msg, stockIdUpper, subjectUpper) {
+  if (subjectUpper && subjectUpper.indexOf(stockIdUpper) !== -1) return true;
+  try {
+    var body = String(msg.getPlainBody() || '').toUpperCase();
+    if (body.indexOf(stockIdUpper) !== -1) return true;
+  } catch (e1) {}
+  try {
+    var atts = collectMessageAttachments_(msg);
+    for (var i = 0; i < atts.length; i++) {
+      if (String(atts[i].getName() || '').toUpperCase().indexOf(stockIdUpper) !== -1) return true;
+    }
+  } catch (e2) {}
+  return false;
+}
+
+function collectMessageAttachments_(message) {
+  var attachments = [];
+  try {
+    attachments = message.getAttachments() || [];
+  } catch (e1) {
+    attachments = [];
+  }
+  if (!attachments.length) {
+    try {
+      attachments = message.getAttachments({ includeInlineImages: true, includeAttachments: true }) || [];
+    } catch (e2) {
+      attachments = [];
+    }
+  }
+  return attachments;
 }
 
 function findPdfAttachment_(message) {
-  var attachments = message.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
+  var attachments = collectMessageAttachments_(message);
   for (var i = 0; i < attachments.length; i++) {
     var contentType = String(attachments[i].getContentType() || '').toLowerCase();
     var name = String(attachments[i].getName() || '').toLowerCase();
@@ -306,17 +400,36 @@ function findPdfAttachment_(message) {
 }
 
 function extractLieferscheinData_(blob) {
+  var pdfBlob = cleanPdfBlob_(blob);
+  return { rawText: extractPdfTextFallback_(pdfBlob) || '', tablePosition: null };
+}
+
+function isUsefulLieferscheinText_(text) {
+  var t = String(text || '');
+  return /Lieferschein/i.test(t) || /\d{3}\/\d{2}/.test(t) || (/Anzahl/i.test(t) && /Beschreibung/i.test(t));
+}
+
+function cleanPdfBlob_(blob) {
+  var src = blob.getBytes();
+  var bytes = [];
+  for (var i = 0; i < src.length; i++) bytes.push(src[i] & 0xff);
+  return Utilities.newBlob(bytes, 'application/pdf', 'lieferschein.pdf');
+}
+
+function convertPdfBlobToText_(blob) {
   var docId = null;
+  try {
+    var inserted = driveConvertV2Upload_(blob);
+    docId = inserted && (inserted.id || inserted.fileId) || null;
+  } catch (e) {
+    Logger.log('PDF convert method failed: ' + e.message);
+  }
+  if (!docId) return { rawText: '', tablePosition: null };
+
+  Utilities.sleep(800);
+
   var rawText = '';
   var tablePosition = null;
-
-  try {
-    var inserted = driveConvertToDoc_(blob);
-    docId = inserted.id;
-  } catch (createErr) {
-    return { rawText: '', tablePosition: null };
-  }
-
   try {
     var doc = DocumentApp.openById(docId);
     rawText = doc.getBody().getText();
@@ -324,21 +437,517 @@ function extractLieferscheinData_(blob) {
   } catch (readErr) {
     rawText = '';
   }
-
-  if (!rawText) {
-    rawText = exportDocAsText_(docId);
-  }
-
+  if (!rawText) rawText = exportDocAsText_(docId);
   driveRemove_(docId);
   return { rawText: rawText || '', tablePosition: tablePosition };
 }
 
-function driveConvertToDoc_(blob) {
+function driveConvertV2Upload_(blob) {
   var stamp = 'rsr_ocr_temp_' + Date.now();
-  if (Drive.Files && typeof Drive.Files.create === 'function') {
-    return Drive.Files.create({ name: stamp, mimeType: 'application/vnd.google-apps.document' }, blob, { ocrLanguage: 'de' });
+  var metadata = {
+    title: stamp + '.pdf',
+    mimeType: 'application/pdf'
+  };
+  var boundary = 'b' + Date.now() + 'x';
+  var head =
+    '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) + '\r\n' +
+    '--' + boundary + '\r\n' +
+    'Content-Type: application/pdf\r\n\r\n';
+  var tail = '\r\n--' + boundary + '--';
+  var payload = [];
+  var headBytes = Utilities.newBlob(head).getBytes();
+  var pdfBytes = blob.getBytes();
+  var tailBytes = Utilities.newBlob(tail).getBytes();
+  var i;
+  for (i = 0; i < headBytes.length; i++) payload.push(headBytes[i] & 0xff);
+  for (i = 0; i < pdfBytes.length; i++) payload.push(pdfBytes[i] & 0xff);
+  for (i = 0; i < tailBytes.length; i++) payload.push(tailBytes[i] & 0xff);
+  var url = 'https://www.googleapis.com/upload/drive/v2/files?uploadType=multipart&convert=true';
+  var resp = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'multipart/related; boundary=' + boundary,
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: payload,
+    muteHttpExceptions: true
+  });
+  var code = resp.getResponseCode();
+  var body = resp.getContentText();
+  if (code >= 400) throw new Error('Drive v2 upload ' + code + ': ' + String(body).substring(0, 300));
+  var parsed = JSON.parse(body);
+  if (!parsed || !parsed.id) throw new Error('Drive v2 upload missing id');
+  return parsed;
+}
+
+function extractPdfTextFallback_(blob) {
+  var raw = bytesToBin_(blob.getBytes());
+  var cmap = {};
+  var contentStreams = [];
+  var idx = 0;
+  while (idx < raw.length) {
+    var flate = raw.indexOf('/FlateDecode', idx);
+    if (flate === -1) break;
+    var streamPos = raw.indexOf('stream', flate);
+    if (streamPos === -1 || streamPos - flate > 800) {
+      idx = flate + 12;
+      continue;
+    }
+    var dictStart = raw.lastIndexOf('<<', streamPos);
+    var dict = dictStart >= 0 ? raw.substring(dictStart, streamPos) : raw.substring(Math.max(0, flate - 300), streamPos);
+    if (isPdfNonContentDict_(dict)) {
+      idx = streamPos + 6;
+      continue;
+    }
+    var dataStart = streamPos + 6;
+    if (raw.charAt(dataStart) === '\r') dataStart++;
+    if (raw.charAt(dataStart) === '\n') dataStart++;
+    var dataEnd = raw.indexOf('endstream', dataStart);
+    if (dataEnd === -1) break;
+    var inflated = rsrInflate_(binToU8_(raw.substring(dataStart, dataEnd)));
+    if (inflated) {
+      if (/begincmap|beginbfchar|beginbfrange/.test(inflated)) {
+        parseToUnicodeCMap_(inflated, cmap);
+      } else if (isPdfContentStream_(inflated)) {
+        contentStreams.push(inflated);
+      }
+    }
+    idx = dataEnd + 9;
   }
-  return Drive.Files.insert({ title: stamp, mimeType: 'application/vnd.google-apps.document' }, blob, { ocr: true, ocrLanguage: 'de', convert: true });
+  var texts = [];
+  for (var c = 0; c < contentStreams.length; c++) {
+    var part = extractPdfVisibleText_(contentStreams[c], cmap);
+    if (part) texts.push(part);
+  }
+  return texts.join('\n');
+}
+
+function isPdfNonContentDict_(dict) {
+  return /\/Length1\b|\/FontFile|\/Type\s*\/Font\b|\/Subtype\s*\/(?:Image|CIDFont|Type1C|CIDFontType0C)|\/DCTDecode|\/JPXDecode|\/BitsPerComponent/.test(dict);
+}
+
+function isPdfContentStream_(inflated) {
+  return /BT[\s\S]{0,400}(Tj|TJ|Td|Tm|Tf)/.test(inflated);
+}
+
+function extractPdfVisibleText_(raw, cmap) {
+  var lines = [];
+  var btRe = /BT\s*([\s\S]*?)\s*ET/g;
+  var block;
+  while ((block = btRe.exec(raw))) {
+    var parts = extractPdfStringsFromBlock_(block[1], cmap);
+    parts = parts.filter(function(p) {
+      return p && p.length < 220;
+    });
+    if (!parts.length) continue;
+    var shortCount = 0;
+    for (var pi = 0; pi < parts.length; pi++) {
+      if (parts[pi].length <= 1) shortCount++;
+    }
+    var joined = shortCount >= parts.length / 2 ? parts.join('') : parts.join(' ');
+    lines.push(sanitizeLieferscheinText_(joined));
+  }
+  return lines.join('\n');
+}
+
+function extractPdfStringsFromBlock_(block, cmap) {
+  var parts = [];
+  var re = /\((?:\\.|[^\\)])*\)|<([0-9A-Fa-f \t\r\n]+)>/g;
+  var m;
+  while ((m = re.exec(block))) {
+    if (m[0].charAt(0) === '(') {
+      var s = unescapePdfString_(m[0].slice(1, -1), cmap);
+      if (s) parts.push(s);
+    } else if (m[1]) {
+      var hex = m[1].replace(/\s+/g, '');
+      if (hex.length >= 2 && hex.length % 2 === 0) {
+        var decoded = decodePdfHex_(hex, cmap);
+        if (decoded) parts.push(decoded);
+      }
+    }
+  }
+  return parts;
+}
+
+function unescapePdfString_(s, cmap) {
+  var raw = String(s || '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\(\d{1,3})/g, function(_, oct) {
+      return String.fromCharCode(parseInt(oct, 8));
+    });
+  if (!raw) return '';
+  if (raw.charCodeAt(0) === 0xFE && raw.length > 1 && raw.charCodeAt(1) === 0xFF) {
+    return decodeUtf16Cids_(raw.substring(2), cmap);
+  }
+  if (raw.indexOf('\x00') !== -1) {
+    return decodeUtf16Cids_(raw, cmap);
+  }
+  return raw;
+}
+
+function decodeUtf16Cids_(s, cmap) {
+  var out = [];
+  var i = 0;
+  if (s.length % 2 === 1) i = 1;
+  for (; i + 1 < s.length; i += 2) {
+    var cid = ((s.charCodeAt(i) & 0xff) << 8) | (s.charCodeAt(i + 1) & 0xff);
+    var ch = mapPdfCid_(cid, cmap);
+    if (ch) out.push(ch);
+  }
+  return out.join('');
+}
+
+function decodePdfHex_(hex, cmap) {
+  var out = [];
+  if (hex.length >= 4 && hex.length % 4 === 0) {
+    for (var i = 0; i + 3 < hex.length; i += 4) {
+      var cid = parseInt(hex.substr(i, 4), 16);
+      var ch = mapPdfCid_(cid, cmap);
+      if (ch) out.push(ch);
+    }
+    return out.join('');
+  }
+  for (var j = 0; j + 1 < hex.length; j += 2) {
+    var c = parseInt(hex.substr(j, 2), 16);
+    var mapped = mapPdfCid_(c, cmap);
+    if (mapped) out.push(mapped);
+  }
+  return out.join('');
+}
+
+function mapPdfCid_(cid, cmap) {
+  var ascii = (cid >= 32 && cid <= 126) ? String.fromCharCode(cid) : '';
+  var latin1 = (cid >= 160 && cid <= 255) ? String.fromCharCode(cid) : '';
+  if (cmap && Object.prototype.hasOwnProperty.call(cmap, String(cid))) {
+    var mapped = cmap[String(cid)];
+    if (mapped && isPlausibleInvoiceChar_(mapped)) return mapped;
+  }
+  return ascii || latin1 || '';
+}
+
+function isPlausibleInvoiceChar_(s) {
+  return /^[\x20-\x7E\u00A0-\u017F]+$/.test(String(s || ''));
+}
+
+function hexToUnicode_(hex) {
+  hex = String(hex || '').replace(/\s+/g, '');
+  var out = [];
+  for (var i = 0; i + 3 < hex.length; i += 4) {
+    var code = parseInt(hex.substr(i, 4), 16);
+    if (code >= 0xD800 && code <= 0xDBFF && i + 7 < hex.length) {
+      var low = parseInt(hex.substr(i + 4, 4), 16);
+      code = 0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00);
+      i += 4;
+    }
+    if (code) out.push(String.fromCharCode(code));
+  }
+  return out.join('');
+}
+
+function parseToUnicodeCMap_(text, cmap) {
+  var bfchar = /beginbfchar([\s\S]*?)endbfchar/g;
+  var m;
+  var p;
+  while ((m = bfchar.exec(text))) {
+    var pair = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+    while ((p = pair.exec(m[1]))) {
+      cmap[String(parseInt(p[1], 16))] = hexToUnicode_(p[2]);
+    }
+  }
+  var bfrange = /beginbfrange([\s\S]*?)endbfrange/g;
+  while ((m = bfrange.exec(text))) {
+    var rangeArr = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[([^\]]+)\]/g;
+    while ((p = rangeArr.exec(m[1]))) {
+      var startArr = parseInt(p[1], 16);
+      var dests = p[3].match(/<([0-9A-Fa-f]+)>/g) || [];
+      for (var k = 0; k < dests.length; k++) {
+        cmap[String(startArr + k)] = hexToUnicode_(dests[k].replace(/[<>]/g, ''));
+      }
+    }
+    var cleaned = String(m[1]).replace(/<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*\[[^\]]+\]/g, '');
+    var range1 = /<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>\s*<([0-9A-Fa-f]+)>/g;
+    while ((p = range1.exec(cleaned))) {
+      var start = parseInt(p[1], 16);
+      var end = parseInt(p[2], 16);
+      var dst = parseInt(p[3], 16);
+      for (var cid = start; cid <= end; cid++) {
+        cmap[String(cid)] = String.fromCharCode(dst + (cid - start));
+      }
+    }
+  }
+}
+
+function bytesToBin_(bytes) {
+  var u = rsrToU8_(bytes);
+  var chars = [];
+  var chunk = 0x8000;
+  for (var i = 0; i < u.length; i += chunk) {
+    var slice = [];
+    var end = Math.min(i + chunk, u.length);
+    for (var j = i; j < end; j++) slice.push(u[j]);
+    chars.push(String.fromCharCode.apply(null, slice));
+  }
+  return chars.join('');
+}
+
+function binToU8_(s) {
+  var out = new Uint8Array(s.length);
+  for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
+  return out;
+}
+
+function rsrToU8_(bytes) {
+  if (bytes instanceof Uint8Array) return bytes;
+  var out = new Uint8Array(bytes.length);
+  for (var i = 0; i < bytes.length; i++) out[i] = bytes[i] & 0xff;
+  return out;
+}
+
+function rsrU8ToBin_(u) {
+  var chars = [];
+  var chunk = 0x8000;
+  for (var i = 0; i < u.length; i += chunk) {
+    var slice = [];
+    var end = Math.min(i + chunk, u.length);
+    for (var j = i; j < end; j++) slice.push(u[j]);
+    chars.push(String.fromCharCode.apply(null, slice));
+  }
+  return chars.join('');
+}
+
+var RSR_TINF = null;
+
+function rsrTinfTree_() {
+  return { table: new Uint16Array(16), trans: new Uint16Array(288) };
+}
+
+function rsrTinfEnsure_() {
+  if (RSR_TINF) return;
+  var sl = rsrTinfTree_();
+  var sd = rsrTinfTree_();
+  var i;
+  for (i = 0; i < 7; ++i) sl.table[i] = 0;
+  sl.table[7] = 24;
+  sl.table[8] = 152;
+  sl.table[9] = 112;
+  for (i = 0; i < 24; ++i) sl.trans[i] = 256 + i;
+  for (i = 0; i < 144; ++i) sl.trans[24 + i] = i;
+  for (i = 0; i < 8; ++i) sl.trans[24 + 144 + i] = 280 + i;
+  for (i = 0; i < 112; ++i) sl.trans[24 + 144 + 8 + i] = 144 + i;
+  for (i = 0; i < 5; ++i) sd.table[i] = 0;
+  sd.table[5] = 32;
+  for (i = 0; i < 32; ++i) sd.trans[i] = i;
+
+  var lengthBits = new Uint8Array(30);
+  var lengthBase = new Uint16Array(30);
+  var distBits = new Uint8Array(30);
+  var distBase = new Uint16Array(30);
+  rsrTinfBuildBitsBase_(lengthBits, lengthBase, 4, 3);
+  rsrTinfBuildBitsBase_(distBits, distBase, 2, 1);
+  lengthBits[28] = 0;
+  lengthBase[28] = 258;
+
+  RSR_TINF = {
+    sl: sl,
+    sd: sd,
+    lengthBits: lengthBits,
+    lengthBase: lengthBase,
+    distBits: distBits,
+    distBase: distBase,
+    clcidx: new Uint8Array([16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]),
+    offs: new Uint16Array(16),
+    codeTree: rsrTinfTree_(),
+    lengths: new Uint8Array(288 + 32)
+  };
+}
+
+function rsrTinfBuildBitsBase_(bits, base, delta, first) {
+  var i;
+  var sum;
+  for (i = 0; i < delta; ++i) bits[i] = 0;
+  for (i = 0; i < 30 - delta; ++i) bits[i + delta] = i / delta | 0;
+  for (sum = first, i = 0; i < 30; ++i) {
+    base[i] = sum;
+    sum += 1 << bits[i];
+  }
+}
+
+function rsrTinfBuildTree_(t, lengths, off, num) {
+  var i;
+  var sum;
+  for (i = 0; i < 16; ++i) t.table[i] = 0;
+  for (i = 0; i < num; ++i) t.table[lengths[off + i]]++;
+  t.table[0] = 0;
+  for (sum = 0, i = 0; i < 16; ++i) {
+    RSR_TINF.offs[i] = sum;
+    sum += t.table[i];
+  }
+  for (i = 0; i < num; ++i) {
+    if (lengths[off + i]) t.trans[RSR_TINF.offs[lengths[off + i]]++] = i;
+  }
+}
+
+function rsrTinfGetbit_(d) {
+  if (!d.bitcount--) {
+    d.tag = d.source[d.sourceIndex++];
+    d.bitcount = 7;
+  }
+  var bit = d.tag & 1;
+  d.tag >>>= 1;
+  return bit;
+}
+
+function rsrTinfReadBits_(d, num, base) {
+  if (!num) return base;
+  while (d.bitcount < 24) {
+    d.tag |= d.source[d.sourceIndex++] << d.bitcount;
+    d.bitcount += 8;
+  }
+  var val = d.tag & (0xffff >>> (16 - num));
+  d.tag >>>= num;
+  d.bitcount -= num;
+  return val + base;
+}
+
+function rsrTinfDecodeSymbol_(d, t) {
+  while (d.bitcount < 24) {
+    d.tag |= d.source[d.sourceIndex++] << d.bitcount;
+    d.bitcount += 8;
+  }
+  var sum = 0;
+  var cur = 0;
+  var len = 0;
+  var tag = d.tag;
+  do {
+    cur = 2 * cur + (tag & 1);
+    tag >>>= 1;
+    ++len;
+    sum += t.table[len];
+    cur -= t.table[len];
+  } while (cur >= 0);
+  d.tag = tag;
+  d.bitcount -= len;
+  return t.trans[sum + cur];
+}
+
+function rsrTinfDecodeTrees_(d, lt, dt) {
+  var hlit = rsrTinfReadBits_(d, 5, 257);
+  var hdist = rsrTinfReadBits_(d, 5, 1);
+  var hclen = rsrTinfReadBits_(d, 4, 4);
+  var i;
+  var num;
+  var length;
+  for (i = 0; i < 19; ++i) RSR_TINF.lengths[i] = 0;
+  for (i = 0; i < hclen; ++i) {
+    RSR_TINF.lengths[RSR_TINF.clcidx[i]] = rsrTinfReadBits_(d, 3, 0);
+  }
+  rsrTinfBuildTree_(RSR_TINF.codeTree, RSR_TINF.lengths, 0, 19);
+  for (num = 0; num < hlit + hdist;) {
+    var sym = rsrTinfDecodeSymbol_(d, RSR_TINF.codeTree);
+    if (sym === 16) {
+      var prev = RSR_TINF.lengths[num - 1];
+      for (length = rsrTinfReadBits_(d, 2, 3); length; --length) RSR_TINF.lengths[num++] = prev;
+    } else if (sym === 17) {
+      for (length = rsrTinfReadBits_(d, 3, 3); length; --length) RSR_TINF.lengths[num++] = 0;
+    } else if (sym === 18) {
+      for (length = rsrTinfReadBits_(d, 7, 11); length; --length) RSR_TINF.lengths[num++] = 0;
+    } else {
+      RSR_TINF.lengths[num++] = sym;
+    }
+  }
+  rsrTinfBuildTree_(lt, RSR_TINF.lengths, 0, hlit);
+  rsrTinfBuildTree_(dt, RSR_TINF.lengths, hlit, hdist);
+}
+
+function rsrTinfInflateBlock_(d, lt, dt) {
+  while (true) {
+    var sym = rsrTinfDecodeSymbol_(d, lt);
+    if (sym === 256) return 0;
+    if (sym < 256) {
+      if (d.destLen >= d.dest.length) return -1;
+      d.dest[d.destLen++] = sym;
+    } else {
+      var length;
+      var dist;
+      var offs;
+      var i;
+      sym -= 257;
+      length = rsrTinfReadBits_(d, RSR_TINF.lengthBits[sym], RSR_TINF.lengthBase[sym]);
+      dist = rsrTinfDecodeSymbol_(d, dt);
+      offs = d.destLen - rsrTinfReadBits_(d, RSR_TINF.distBits[dist], RSR_TINF.distBase[dist]);
+      if (d.destLen + length > d.dest.length) return -1;
+      for (i = offs; i < offs + length; ++i) d.dest[d.destLen++] = d.dest[i];
+    }
+  }
+}
+
+function rsrTinfInflateUncompressed_(d) {
+  var length;
+  var invlength;
+  var i;
+  while (d.bitcount > 8) {
+    d.sourceIndex--;
+    d.bitcount -= 8;
+  }
+  length = d.source[d.sourceIndex + 1];
+  length = 256 * length + d.source[d.sourceIndex];
+  invlength = d.source[d.sourceIndex + 3];
+  invlength = 256 * invlength + d.source[d.sourceIndex + 2];
+  if (length !== (~invlength & 0x0000ffff)) return -3;
+  d.sourceIndex += 4;
+  if (d.destLen + length > d.dest.length) return -1;
+  for (i = length; i; --i) d.dest[d.destLen++] = d.source[d.sourceIndex++];
+  d.bitcount = 0;
+  return 0;
+}
+
+function rsrTinfUncompress_(source, dest) {
+  var d = {
+    source: source,
+    sourceIndex: 0,
+    tag: 0,
+    bitcount: 0,
+    dest: dest,
+    destLen: 0,
+    ltree: rsrTinfTree_(),
+    dtree: rsrTinfTree_()
+  };
+  var bfinal;
+  var btype;
+  var res;
+  do {
+    bfinal = rsrTinfGetbit_(d);
+    btype = rsrTinfReadBits_(d, 2, 0);
+    if (btype === 0) res = rsrTinfInflateUncompressed_(d);
+    else if (btype === 1) res = rsrTinfInflateBlock_(d, RSR_TINF.sl, RSR_TINF.sd);
+    else if (btype === 2) {
+      rsrTinfDecodeTrees_(d, d.ltree, d.dtree);
+      res = rsrTinfInflateBlock_(d, d.ltree, d.dtree);
+    } else res = -3;
+    if (res !== 0) throw new Error('inflate ' + res);
+  } while (!bfinal);
+  return d.dest.subarray(0, d.destLen);
+}
+
+function rsrInflate_(srcBytes) {
+  rsrTinfEnsure_();
+  var src = rsrToU8_(srcBytes);
+  if (src.length > 2 && src[0] === 0x78) src = src.subarray(2);
+  var destSize = Math.min(Math.max(src.length * 24, 131072), 4 * 1024 * 1024);
+  for (var attempt = 0; attempt < 3; attempt++) {
+    try {
+      var out = rsrTinfUncompress_(src, new Uint8Array(destSize));
+      return rsrU8ToBin_(out);
+    } catch (e) {
+      destSize = Math.min(destSize * 2, 8 * 1024 * 1024);
+    }
+  }
+  return '';
 }
 
 function driveRemove_(fileId) {
@@ -388,14 +997,17 @@ function extractPositionFromTables_(doc) {
       }
     }
 
-    if (headerRow > -1 && headerRow + 1 < numRows) {
-      var dataRow = table.getRow(headerRow + 1);
-      var anzahlText = dataRow.getCell(col.anzahl).getText().trim();
-      var artikelText = col.artikel > -1 ? dataRow.getCell(col.artikel).getText().trim() : '';
-      var beschreibungText = dataRow.getCell(col.beschreibung).getText().trim();
-      var anzahlNum = parseAnzahl_(anzahlText);
-      if (anzahlNum !== '') {
-        return { anzahl: anzahlNum, artikel: artikelText, beschreibung: beschreibungText };
+    if (headerRow > -1) {
+      for (var d = headerRow + 1; d < numRows; d++) {
+        var dataRow = table.getRow(d);
+        var anzahlText = dataRow.getCell(col.anzahl).getText().trim();
+        var artikelText = col.artikel > -1 ? dataRow.getCell(col.artikel).getText().trim() : '';
+        var beschreibungText = dataRow.getCell(col.beschreibung).getText().trim();
+        var anzahlNum = parseAnzahl_(anzahlText);
+        if (anzahlNum === '') continue;
+        var tablePos = { anzahl: anzahlNum, artikel: artikelText, beschreibung: beschreibungText };
+        if (isShippingPosition_(tablePos)) continue;
+        return tablePos;
       }
     }
   }
@@ -403,7 +1015,7 @@ function extractPositionFromTables_(doc) {
 }
 
 function extractFirstPositionFromText_(text) {
-  var lines = String(text || '').split('\n');
+  var lines = String(text || '').split(/\r?\n/);
   for (var i = 0; i < lines.length; i++) lines[i] = lines[i].trim();
   lines = lines.filter(function(l) { return l.length > 0; });
 
@@ -417,38 +1029,105 @@ function extractFirstPositionFromText_(text) {
   var scanLines = headerIdx >= 0 ? lines.slice(headerIdx + 1) : lines;
 
   for (var j = 0; j < scanLines.length; j++) {
-    var line = scanLines[j];
-    var anzahlMatch = line.match(/^(\d+[.,]\d+)\s+(.+)$/);
-    if (!anzahlMatch) continue;
-
-    var anzahl = parseAnzahl_(anzahlMatch[1]);
-    var rest = anzahlMatch[2];
-
-    var sameLineMatch = rest.match(/^(\d{3}\/\d{2}\s?R\d{2}\s+\d{2,3}(?:\/\d{2,3})?\s*[A-Z]{1,3})\s+(.+)$/);
-    if (sameLineMatch) {
-      return { anzahl: anzahl, artikel: sameLineMatch[1].trim(), beschreibung: sameLineMatch[2].trim() };
-    }
-
-    var artikel = rest;
-    var next = j + 1;
-    var continuationPattern = /^[A-Z0-9()\/\s]{1,10}$/;
-    var maxContinuations = 3;
-    while (next < scanLines.length && maxContinuations > 0 && continuationPattern.test(scanLines[next])) {
-      artikel += ' ' + scanLines[next];
-      next++;
-      maxContinuations--;
-    }
-
-    var beschreibung = next < scanLines.length ? scanLines[next] : '';
-
-    return { anzahl: anzahl, artikel: artikel.trim(), beschreibung: beschreibung.trim() };
+    var position = parsePositionAtLine_(scanLines, j);
+    if (!position) continue;
+    if (isShippingPosition_(position)) continue;
+    if (isJunkPdfPosition_(position)) continue;
+    if (!isTyrePosition_(position)) continue;
+    return position;
   }
 
   return null;
 }
 
+function parsePositionAtLine_(scanLines, j) {
+  var line = scanLines[j];
+  var anzahlMatch = line.match(/^(\d+[.,]\d+)$/);
+  var rest = '';
+  var next = j + 1;
+  if (anzahlMatch) {
+    rest = '';
+  } else {
+    anzahlMatch = line.match(/^(\d+[.,]\d+)\s+(.+)$/);
+    if (!anzahlMatch) return null;
+    rest = String(anzahlMatch[2] || '').trim();
+  }
+
+  var anzahl = parseAnzahl_(anzahlMatch[1]);
+  if (anzahl === '') return null;
+
+  if (!rest) {
+    while (next < scanLines.length && !rest) {
+      rest = cleanExtractedText_(scanLines[next]);
+      next++;
+    }
+  }
+  rest = cleanExtractedText_(rest);
+  if (!rest) return null;
+
+  var sameLineMatch = rest.match(/^(\d{3}\/\d{2}\s?Z?R\s?\d{2}\s+\d{2,3}(?:\/\d{2,3})?\s*[A-Z]{0,3})\s*(.*)$/i);
+  if (sameLineMatch) {
+    var artikelSame = sameLineMatch[1].replace(/\s+/g, ' ').trim();
+    var beschreibungSame = cleanExtractedText_(sameLineMatch[2] || '');
+    if (!beschreibungSame) {
+      while (next < scanLines.length && /^[A-Z0-9()\/\s]{1,10}$/.test(scanLines[next])) {
+        artikelSame += ' ' + scanLines[next];
+        next++;
+      }
+      beschreibungSame = next < scanLines.length ? cleanExtractedText_(scanLines[next]) : '';
+    }
+    return { anzahl: anzahl, artikel: artikelSame, beschreibung: beschreibungSame };
+  }
+
+  var artikel = rest;
+  var maxContinuations = 3;
+  while (next < scanLines.length && maxContinuations > 0 && /^[A-Z0-9()\/\s]{1,10}$/.test(scanLines[next])) {
+    artikel += ' ' + scanLines[next];
+    next++;
+    maxContinuations--;
+  }
+
+  var beschreibung = next < scanLines.length ? cleanExtractedText_(scanLines[next]) : '';
+  return { anzahl: anzahl, artikel: artikel.trim(), beschreibung: beschreibung };
+}
+
+function cleanExtractedText_(s) {
+  return sanitizeLieferscheinText_(s);
+}
+
+function sanitizeLieferscheinText_(s) {
+  var t = String(s || '')
+    .replace(/[\u0000-\u001F\u007F-\u009F\uFFFD]/g, '')
+    .replace(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g, '');
+  if (/^(?:[\x20-\x7E]\s+){3,}[\x20-\x7E]\s*$/.test(t)) {
+    t = t.replace(/ /g, '');
+  }
+  t = t.replace(/\s+/g, ' ').trim();
+  t = t.replace(/\(T[L—–-]?\s*$/i, '(TL)');
+  t = t.replace(/\(TL\s*$/i, '(TL)');
+  return t;
+}
+
+function isShippingPosition_(position) {
+  if (!position) return false;
+  var t = ((position.artikel || '') + ' ' + (position.beschreibung || '')).toLowerCase();
+  if (/\d{3}\/\d{2}/.test(t)) return false;
+  return /frei\s*versand|spedition|anlieferung per|fremdversand/.test(t);
+}
+
+function isJunkPdfPosition_(position) {
+  var t = ((position.artikel || '') + ' ' + (position.beschreibung || ''));
+  return /obj|endstream|endobj|FlateDecode|Length1|\/Filter|\bstream\b/i.test(t);
+}
+
+function isTyrePosition_(position) {
+  var t = ((position.artikel || '') + ' ' + (position.beschreibung || ''));
+  return /\d{3}\s*\/\s*\d{2}/.test(t);
+}
+
 function extractLieferscheinNr_(text) {
-  var match = String(text || '').match(/Lieferschein\s*Nr\.?\s*:?\s*(\d+)/i);
+  var s = String(text || '');
+  var match = s.match(/Lieferschein(?:\s*Nr\.?)?\s*:?\s*#?\s*(\d{4,})/i);
   return match ? match[1] : '';
 }
 
@@ -476,24 +1155,49 @@ function debugGmailAccount() {
 function debugStockSearch_(stockId) {
   Logger.log('=== Diagnose fuer ' + stockId + ' ===');
 
-  var idOnly = GmailApp.search('"' + stockId + '" has:attachment', 0, 5);
-  Logger.log('Nur StockID + has:attachment (ohne Sender-Filter): ' + idOnly.length + ' Thread(s)');
-  for (var i = 0; i < idOnly.length; i++) {
-    var msgs = idOnly[i].getMessages();
-    for (var m = 0; m < msgs.length; m++) {
-      Logger.log('  From: "' + msgs[m].getFrom() + '" | Subject: "' + msgs[m].getSubject() + '" | Datum: ' + msgs[m].getDate());
+  var queries = [
+    '"' + stockId + '" has:attachment',
+    'from:' + CONFIG.senderDomain + ' ' + stockId + ' filename:pdf',
+    'from:(' + CONFIG.senderEmail + ') "' + stockId + '"',
+    'from:(' + CONFIG.senderEmail + ') "' + stockId + '" has:attachment',
+    'subject:Lieferschein ' + stockId + ' filename:pdf'
+  ];
+  for (var q = 0; q < queries.length; q++) {
+    var threads = [];
+    try {
+      threads = GmailApp.search(queries[q], 0, 5);
+    } catch (e) {
+      Logger.log('Query fehlgeschlagen [' + queries[q] + ']: ' + e.message);
+      continue;
+    }
+    Logger.log('Query [' + queries[q] + ']: ' + threads.length + ' Thread(s)');
+    for (var i = 0; i < threads.length; i++) {
+      var msgs = threads[i].getMessages();
+      for (var m = 0; m < msgs.length; m++) {
+        var pdf = findPdfAttachment_(msgs[m]);
+        Logger.log('  From: "' + msgs[m].getFrom() + '" | Subject: "' + msgs[m].getSubject() + '" | Datum: ' + msgs[m].getDate() + ' | PDF: ' + (pdf ? pdf.getName() : 'nein'));
+      }
     }
   }
 
-  var withSender = GmailApp.search('from:(' + CONFIG.senderEmail + ') "' + stockId + '"', 0, 5);
-  Logger.log('Sender(' + CONFIG.senderEmail + ') + StockID, ohne attachment-Filter: ' + withSender.length + ' Thread(s)');
-
-  var full = GmailApp.search('from:(' + CONFIG.senderEmail + ') "' + stockId + '" has:attachment', 0, 5);
-  Logger.log('Sender + StockID + has:attachment: ' + full.length + ' Thread(s)');
+  var resolved = findLatestLieferscheinMessage_(stockId);
+  if (resolved) {
+    Logger.log('Ausgewaehlte E-Mail: "' + resolved.getSubject() + '" von ' + resolved.getFrom());
+  } else {
+    Logger.log('Keine passende Lieferschein-E-Mail gefunden');
+  }
 }
 
 function testExtractionAM11142() {
   testExtraction('AM11142');
+}
+
+function testExtractionCY32452() {
+  testExtraction('CY32452');
+}
+
+function testExtractionActiveRow() {
+  testExtraction('');
 }
 
 function debugStockSearchXU27308() {
@@ -501,23 +1205,64 @@ function debugStockSearchXU27308() {
 }
 
 function testExtraction(stockId) {
-  var message = findLatestLieferscheinMessage_(stockId);
-  if (!message) {
-    Logger.log('Keine E-Mail gefunden fuer ' + stockId);
+  var id = String(stockId || '').trim();
+  if (!id) {
+    var range = SpreadsheetApp.getActiveRange();
+    if (range) id = String(range.getSheet().getRange(range.getRow(), CONFIG.stockIdCol).getValue() || '').trim();
+  }
+
+  var account = '';
+  try { account = Session.getEffectiveUser().getEmail(); } catch (e) { account = '(unbekannt)'; }
+  Logger.log('Script-Konto: ' + account);
+  Logger.log('StockID: ' + (id || '(leer - Zelle in Spalte A markieren)'));
+
+  if (!id) {
+    Logger.log('Keine StockID. Markiere eine Zelle in der Zeile oder rufe testExtractionAM11142 auf.');
     return;
   }
-  Logger.log('E-Mail gefunden: ' + message.getSubject() + ' (' + message.getDate() + ')');
+
+  var sengThreads = [];
+  try { sengThreads = GmailApp.search('from:' + CONFIG.senderEmail, 0, 3); } catch (e1) {}
+  Logger.log('Mails von ' + CONFIG.senderEmail + ' in DIESEM Konto: ' + sengThreads.length);
+  for (var s = 0; s < sengThreads.length; s++) {
+    var last = sengThreads[s].getMessages().pop();
+    Logger.log('  Seng: "' + last.getSubject() + '"');
+  }
+
+  var rawHits = [];
+  try { rawHits = GmailApp.search(id, 0, 8); } catch (e2) {}
+  Logger.log('Beliebige Mails mit ' + id + ': ' + rawHits.length + ' Thread(s)');
+  var shown = 0;
+  for (var r = 0; r < rawHits.length && shown < 6; r++) {
+    var last = rawHits[r].getMessages().pop();
+    var from = String(last.getFrom() || '');
+    if (/n4\.parts/i.test(from)) continue;
+    Logger.log('  From: ' + from + ' | ' + last.getSubject());
+    shown++;
+  }
+
+  var message = findLatestLieferscheinMessage_(id);
+  if (!message) {
+    Logger.log('Keine Lieferschein-E-Mail gefunden fuer ' + id);
+    Logger.log('Wenn oben 0 Seng-Mails stehen, laeuft der Test im falschen Google-Konto. Im Sheet die StockID neu eintippen (Trigger = ersatzteile.hemau).');
+    return;
+  }
+  Logger.log('E-Mail gefunden: ' + message.getSubject() + ' (' + message.getDate() + ') von ' + message.getFrom());
 
   var attachment = findPdfAttachment_(message);
   if (!attachment) {
     Logger.log('Kein PDF-Anhang gefunden');
+    Logger.log('Lieferschein Nr aus Betreff: ' + extractLieferscheinNr_(message.getSubject()));
     return;
   }
+  Logger.log('PDF: ' + attachment.getName() + ' (' + attachment.getContentType() + ', ' + attachment.getBytes().length + ' bytes)');
 
   var data = extractLieferscheinData_(attachment.copyBlob());
-  Logger.log('Lieferschein Nr: ' + extractLieferscheinNr_(data.rawText));
+  var nr = extractLieferscheinNr_(data.rawText) || extractLieferscheinNr_(message.getSubject());
+  Logger.log('Lieferschein Nr: ' + nr);
   Logger.log('Tabellen-Position: ' + JSON.stringify(data.tablePosition));
   Logger.log('Text-Position: ' + JSON.stringify(extractFirstPositionFromText_(data.rawText)));
-  Logger.log('--- RAW TEXT ---');
-  Logger.log(data.rawText);
+  Logger.log('RAW TEXT length: ' + String(data.rawText || '').length);
+  Logger.log('--- RAW TEXT (first 3500) ---');
+  Logger.log(String(data.rawText || '').substring(0, 3500));
 }
