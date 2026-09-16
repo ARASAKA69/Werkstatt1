@@ -613,7 +613,7 @@
       } catch (eA) {}
       try {
         if (state.carolWin && !state.carolWin.closed) return true;
-        state.carolWin = window.open('https://carol.autohero.com/de-DE/refurbishment?retoure_auto=1', 'retoureCarol');
+        state.carolWin = window.open('about:blank', 'retoureCarol');
         return !!(state.carolWin && !state.carolWin.closed);
       } catch (e) {
         return false;

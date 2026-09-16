@@ -32,7 +32,8 @@ function doGet(e) {
       stockId: e.parameter.sid,
       carolB2a1: String(e.parameter.b2a1 || '') === '1',
       carolFertig: String(e.parameter.fertig || '') === '1',
-      carolLabel: e.parameter.label || ''
+      carolLabel: e.parameter.label || '',
+      detail: String(e.parameter.detail || '') === '1'
     }));
   }
   var isAussen = page === 'aussen' || page === 'scan';
@@ -64,7 +65,8 @@ function doPost(e) {
       stockId: body.sid || body.stockId || '',
       carolB2a1: body.b2a1 === true || String(body.b2a1 || '') === '1',
       carolFertig: body.fertig === true || String(body.fertig || '') === '1',
-      carolLabel: body.label || ''
+      carolLabel: body.label || '',
+      detail: body.detail === true || String(body.detail || '') === '1'
     }));
   }
   return jsonOut_({ success: false, message: 'Unbekannt' });
@@ -2121,14 +2123,27 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.3', ts: nowStamp_() };
+  return { success: true, version: '1.2.4', ts: nowStamp_() };
+}
+
+function withRetoureBatch_(url, batchId) {
+  url = String(url || '').trim();
+  batchId = String(batchId || '').trim();
+  if (!url) return '';
+  if (batchId && url.indexOf('retoure_batch=') === -1) {
+    url += (url.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(batchId);
+  }
+  return url;
 }
 
 function aussenCarolAlready_(item, liveMap) {
   if (!item || item.tlGestellt) return true;
-  if (item.carolLive) return true;
-  if (liveMap && liveMap[item.stockId]) return true;
-  return /als\s*b2a1\s*markiert|flagged\s*for\s*return|fertiggestellt|completed\s+on/i.test(item.carolStatus || '');
+  if (item.carolB2a1 || item.carolFertig) return true;
+  var live = liveMap ? liveMap[item.stockId] : '';
+  if (live === 'done' || live === 'b2a1' || live === 'fertig' || live === 'none') return true;
+  if (item.carolDetail) return true;
+  if (/als\s*b2a1\s*markiert|flagged\s*for\s*return|fertiggestellt|completed\s+on/i.test(item.carolStatus || '')) return true;
+  return false;
 }
 
 function latestAussenBatchId_() {
@@ -2164,13 +2179,11 @@ function aussenCarolQueue(batchId) {
     var liveMap = maps.carolLive || {};
     var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
     var ids = [];
+    var firstUrl = '';
     for (var i = 0; i < pool.length; i++) {
       if (aussenCarolAlready_(pool[i], liveMap)) continue;
       ids.push(pool[i].stockId);
-    }
-    var firstUrl = ids.length ? carolUrlFor_(ids[0], '') : '';
-    if (firstUrl && firstUrl.indexOf('retoure_batch=') === -1) {
-      firstUrl += (firstUrl.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(batchId);
+      if (!firstUrl) firstUrl = carolUrlFor_(pool[i].stockId, pool[i].carolUrl);
     }
     return {
       success: true,
@@ -2178,7 +2191,7 @@ function aussenCarolQueue(batchId) {
       ids: ids,
       nextId: ids.length ? ids[0] : '',
       pending: ids.length,
-      carolUrl: firstUrl
+      carolUrl: withRetoureBatch_(firstUrl, batchId)
     };
   } catch (err) {
     return { success: false, message: String(err.message || err), ids: [] };
@@ -2199,10 +2212,24 @@ function applyAussenCarolFlags(payload) {
     var b2a1 = !!payload.carolB2a1;
     var fertig = !!payload.carolFertig && !b2a1;
     var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim();
+    var fromDetail = payload.detail === true || String(payload.detail || '') === '1';
+    if (!fromDetail) {
+      var qSkip = aussenCarolQueue(batchId);
+      return {
+        success: false,
+        message: 'Kein Auftrag offen',
+        batchId: batchId,
+        stockId: stockId,
+        pending: qSkip.pending || 0,
+        nextId: qSkip.nextId || stockId,
+        carolUrl: qSkip.carolUrl || ''
+      };
+    }
     for (var i = 0; i < pool.length; i++) {
       if (pool[i].stockId !== stockId) continue;
       found = true;
       pool[i].carolLive = true;
+      pool[i].carolDetail = true;
       pool[i].carolB2a1 = b2a1 || !!pool[i].carolB2a1;
       pool[i].carolFertig = fertig || !!pool[i].carolFertig;
       pool[i].carolDone = pool[i].carolFertig || !!pool[i].carolDone;
@@ -2218,7 +2245,7 @@ function applyAussenCarolFlags(payload) {
     writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), pool);
     var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
     maps.carolLive = maps.carolLive || {};
-    maps.carolLive[stockId] = true;
+    maps.carolLive[stockId] = b2a1 ? 'b2a1' : (fertig ? 'fertig' : 'none');
     putCacheJson_(aussenMapsPrefix_(batchId), maps);
     var split = splitAussenItems_(pool);
     var q = aussenCarolQueue(batchId);
@@ -2615,7 +2642,16 @@ function getAussenBatch(batchId) {
     var liveMap = maps.carolLive || {};
     var pending = 0;
     for (var p = 0; p < items.length; p++) {
-      if (liveMap[items[p].stockId]) items[p].carolLive = true;
+      var lv = liveMap[items[p].stockId];
+      if (lv) {
+        items[p].carolLive = true;
+        items[p].carolDetail = lv === 'done' || lv === 'none' || lv === 'b2a1' || lv === 'fertig';
+        if (lv === 'b2a1') items[p].carolB2a1 = true;
+        if (lv === 'fertig') {
+          items[p].carolFertig = true;
+          items[p].carolDone = true;
+        }
+      }
       if (!aussenCarolAlready_(items[p], liveMap)) pending++;
     }
     return {
