@@ -47,6 +47,29 @@ function jsonOut_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function doPost(e) {
+  var body = {};
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    body = {};
+  }
+  var page = String(body.page || (e && e.parameter && e.parameter.page) || '').toLowerCase();
+  if (page === 'carolq' || page === 'carolqueue') {
+    return jsonOut_(aussenCarolQueue(body.batch || body.batchId || ''));
+  }
+  if (page === 'carolreport') {
+    return jsonOut_(applyAussenCarolFlags({
+      batchId: body.batch || body.batchId || '',
+      stockId: body.sid || body.stockId || '',
+      carolB2a1: body.b2a1 === true || String(body.b2a1 || '') === '1',
+      carolFertig: body.fertig === true || String(body.fertig || '') === '1',
+      carolLabel: body.label || ''
+    }));
+  }
+  return jsonOut_({ success: false, message: 'Unbekannt' });
+}
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Retoure Lager')
@@ -140,7 +163,7 @@ function gmailThreadUrl_(threadId) {
 function carolUrlFor_(stockId, sheetUrl) {
   var u = String(sheetUrl || '').trim();
   if (/^https?:\/\//i.test(u)) return u;
-  return 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(stockId);
+  return 'https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(stockId);
 }
 
 function linkUrlFromRichText_(rich) {
@@ -2098,7 +2121,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.1', ts: nowStamp_() };
+  return { success: true, version: '1.2.3', ts: nowStamp_() };
 }
 
 function aussenCarolAlready_(item, liveMap) {
@@ -2108,9 +2131,32 @@ function aussenCarolAlready_(item, liveMap) {
   return /als\s*b2a1\s*markiert|flagged\s*for\s*return|fertiggestellt|completed\s+on/i.test(item.carolStatus || '');
 }
 
+function latestAussenBatchId_() {
+  var list = listAussenBatches();
+  var batches = (list && list.batches) || [];
+  return batches.length ? String(batches[0].batchId || '').trim() : '';
+}
+
+function findAussenBatchForSid_(stockId) {
+  stockId = normalizeStockId_(stockId);
+  if (!stockId) return '';
+  var sh = getAussenSheet_();
+  var last = sh.getLastRow();
+  if (last < 2) return '';
+  var data = sh.getRange(2, 1, last, 3).getDisplayValues();
+  var found = '';
+  for (var i = 0; i < data.length; i++) {
+    if (normalizeStockId_(data[i][2]) !== stockId) continue;
+    var bid = String(data[i][0] || '').trim();
+    if (!found || String(bid).localeCompare(found) > 0) found = bid;
+  }
+  return found;
+}
+
 function aussenCarolQueue(batchId) {
   try {
     batchId = String(batchId || '').trim();
+    if (!batchId) batchId = latestAussenBatchId_();
     if (!batchId) return { success: false, message: 'Kein Batch', ids: [] };
     var stored = getAussenBatch(batchId);
     if (!stored || !stored.success) return stored || { success: false, ids: [] };
@@ -2122,13 +2168,17 @@ function aussenCarolQueue(batchId) {
       if (aussenCarolAlready_(pool[i], liveMap)) continue;
       ids.push(pool[i].stockId);
     }
+    var firstUrl = ids.length ? carolUrlFor_(ids[0], '') : '';
+    if (firstUrl && firstUrl.indexOf('retoure_batch=') === -1) {
+      firstUrl += (firstUrl.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(batchId);
+    }
     return {
       success: true,
       batchId: batchId,
       ids: ids,
       nextId: ids.length ? ids[0] : '',
       pending: ids.length,
-      carolUrl: ids.length ? (carolUrlFor_(ids[0], '') + '&retoure_batch=' + encodeURIComponent(batchId)) : ''
+      carolUrl: firstUrl
     };
   } catch (err) {
     return { success: false, message: String(err.message || err), ids: [] };
@@ -2140,6 +2190,7 @@ function applyAussenCarolFlags(payload) {
     payload = payload || {};
     var batchId = String(payload.batchId || '').trim();
     var stockId = normalizeStockId_(payload.stockId);
+    if (!batchId && stockId) batchId = findAussenBatchForSid_(stockId);
     if (!batchId || !stockId) return { success: false, message: 'Batch/ID fehlt' };
     var stored = getAussenBatch(batchId);
     if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
@@ -2564,6 +2615,7 @@ function getAussenBatch(batchId) {
     var liveMap = maps.carolLive || {};
     var pending = 0;
     for (var p = 0; p < items.length; p++) {
+      if (liveMap[items[p].stockId]) items[p].carolLive = true;
       if (!aussenCarolAlready_(items[p], liveMap)) pending++;
     }
     return {

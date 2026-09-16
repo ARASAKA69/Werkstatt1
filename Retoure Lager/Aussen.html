@@ -426,7 +426,7 @@
         </div>
         <div class="row-btns">
           <button class="btn teal" type="button" id="btnCheck">Prüfen</button>
-          <button class="btn ghost" type="button" id="btnCarolCheck">Carol prüfen</button>
+          <button class="btn teal" type="button" id="btnCarolCheck">Carol prüfen</button>
           <button class="btn ghost" type="button" id="btnNew">Neue Runde</button>
         </div>
         <select class="sel" id="batchSel" aria-label="Vorherige Dumps"></select>
@@ -552,7 +552,10 @@
       elapsedStart: 0,
       logLines: [],
       logErr: 0,
-      carolPoll: null
+      carolPoll: null,
+      carolWin: null,
+      carolDone: false,
+      mailDone: false
     };
 
     function $(id) { return document.getElementById(id); }
@@ -562,7 +565,92 @@
       el.textContent = msg;
       el.className = 'toast show' + (err ? ' err' : '');
       clearTimeout(toast._t);
-      toast._t = setTimeout(function() { el.className = 'toast'; }, 2800);
+      toast._t = setTimeout(function() { el.className = 'toast'; }, 4200);
+    }
+
+    function playDoneTone() {
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        var ctx = playDoneTone._ctx || new Ctx();
+        playDoneTone._ctx = ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        function beep(at, freq, dur) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.2, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(at);
+          o.stop(at + dur + 0.03);
+        }
+        var t = ctx.currentTime + 0.02;
+        beep(t, 880, 0.14);
+        beep(t + 0.16, 1175, 0.16);
+        beep(t + 0.36, 1568, 0.32);
+      } catch (e) {}
+      try {
+        if (window.Notification && Notification.permission === 'granted') {
+          new Notification('Retoure Scan', { body: 'Carol-Check fertig' });
+        }
+      } catch (e2) {}
+    }
+
+    function openCarolSlot() {
+      try {
+        if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
+      } catch (e0) {}
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          playDoneTone._ctx = playDoneTone._ctx || new Ctx();
+          if (playDoneTone._ctx.state === 'suspended') playDoneTone._ctx.resume();
+        }
+      } catch (eA) {}
+      try {
+        if (state.carolWin && !state.carolWin.closed) return true;
+        state.carolWin = window.open('https://carol.autohero.com/de-DE/refurbishment?retoure_auto=1', 'retoureCarol');
+        return !!(state.carolWin && !state.carolWin.closed);
+      } catch (e) {
+        return false;
+      }
+    }
+
+    function navCarol(url) {
+      if (!url) return false;
+      try {
+        if (state.carolWin && !state.carolWin.closed) {
+          state.carolWin.location.href = url;
+          try { state.carolWin.focus(); } catch (e1) {}
+          return true;
+        }
+      } catch (e2) {}
+      try {
+        state.carolWin = window.open(url, 'retoureCarol');
+        return !!(state.carolWin && !state.carolWin.closed);
+      } catch (e3) {
+        return false;
+      }
+    }
+
+    function closeCarolSlot() {
+      try {
+        if (state.carolWin && !state.carolWin.closed) state.carolWin.close();
+      } catch (e) {}
+      state.carolWin = null;
+    }
+
+    function maybeFinishRun() {
+      if (!state.mailDone || !state.carolDone) return;
+      closeCarolSlot();
+      playDoneTone();
+      var c = countsOf(state.items);
+      toast(c.sort + ' rausziehen · ' + c.b2a1 + ' B2A1 · ' + c.fertig + ' Fertig');
+      loadBatches(state.batchId);
     }
 
     function logTime() {
@@ -941,6 +1029,17 @@
       return null;
     }
 
+    function carolHref(it) {
+      var sid = it && it.stockId ? it.stockId : '';
+      var u = String((it && it.carolUrl) || '');
+      if (!u && sid) u = 'https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(sid);
+      if (!u) return '';
+      if (state.batchId && u.indexOf('retoure_batch=') === -1) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(state.batchId);
+      }
+      return u;
+    }
+
     function actionWhy(it) {
       var k = actionKeyOf(it);
       if (k === 'b2a1') {
@@ -1002,16 +1101,18 @@
       $('reasonList').innerHTML = reasonLines(it).map(function(r) {
         return '<li>' + esc(r) + '</li>';
       }).join('');
-      var carolSt = it.carolB2a1 ? 'bad' : ((it.carolFertig || it.carolDone) ? 'ok' : (it.refurbFound ? 'ok' : 'warn'));
-      var carolMsg = it.carolB2a1
-        ? ('Carol: <b>Als B2A1 markiert</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') +
-          (it.carolUrl ? ' · <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''))
+      var carolHrefUrl = carolHref(it);
+      var carolSt = it.carolB2a1 ? 'bad' : ((it.carolFertig || it.carolDone) ? 'ok' : (it.carolLive ? 'ok' : 'warn'));
+      var carolOpen = carolHrefUrl ? ' · <a href="' + esc(carolHrefUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : '';
+      var carolMsg = it.carolLive
+        ? (it.carolB2a1
+          ? ('Carol: <b>Als B2A1 markiert</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') + carolOpen)
+          : ((it.carolFertig || it.carolDone)
+            ? ('Carol: <b>Fertiggestellt</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') + carolOpen)
+            : ('Carol-Badge gelesen: keines' + carolOpen)))
         : (it.refurbFound
-        ? ('Status: <b>' + esc(it.carolStatus || '—') + '</b>' + ((it.carolFertig || it.carolDone)
-          ? ' — Fertiggestellt / herausgegeben.'
-          : ' — nicht Fertiggestellt.') +
-          (it.carolUrl ? ' · <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''))
-        : 'Nicht (mehr) in der Refurbishment List.' + (it.carolUrl ? ' <a href="' + esc(it.carolUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : ''));
+          ? ('Listen-Status: <b>' + esc(it.carolStatus || '—') + '</b> — Badge noch nicht gelesen. Oben <b>Carol</b> klicken (Tampermonkey).' + carolOpen)
+          : ('Nicht (mehr) in der Refurbishment List.' + carolOpen));
       var gSt = it.tlGestellt ? 'ok' : (it.tlFound ? 'warn' : 'none');
       var gMsg = it.tlFound
         ? (it.tlGestellt
@@ -1050,7 +1151,7 @@
         ? (esc(it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + esc(it.mailDate) : ''))
         : 'keine';
       $('fChecked').textContent = it.checkedAt || '—';
-      $('btnCarol').disabled = !it.carolUrl;
+      $('btnCarol').disabled = !it.carolUrl && !it.stockId;
       $('btnGmail').disabled = !it.gmailSearchUrl && !it.mailUrl;
     }
 
@@ -1102,6 +1203,9 @@
         return;
       }
       if (state.busy) return;
+      openCarolSlot();
+      state.mailDone = false;
+      state.carolDone = false;
       var opId = beginOp();
       showLoadProgress('Dump wird übernommen…', ids[0], '0 / ' + ids.length, 4);
       runFn(opId, function(res) {
@@ -1146,6 +1250,7 @@
         renderList();
         renderDetail();
         loadBatches(state.batchId);
+        startCarolBridge();
         checkMails(opId, 0);
       }, 'aussenCheckStep', state.batchId, step, cursor);
     }
@@ -1160,9 +1265,11 @@
         if (!res || !res.success) {
           state.busy = false;
           hideLoad();
+          state.mailDone = true;
           toast((res && res.message) || 'Mail-Check fehlgeschlagen', true);
           renderList();
           renderDetail();
+          maybeFinishRun();
           return;
         }
         mergeItems(res.items || []);
@@ -1172,10 +1279,9 @@
         if (res.done) {
           state.busy = false;
           hideLoad();
-          var c = countsOf(state.items);
-          toast(c.sort + ' rausziehen · ' + c.b2a1 + ' B2A1 · ' + c.fertig + ' Fertig · ' + (state.gestelltCount || 0) + ' gestellt skip');
-          loadBatches(state.batchId);
-          startCarolBridge();
+          state.mailDone = true;
+          if (!state.carolDone) toast('Mails fertig — Carol prüft die Badges automatisch');
+          maybeFinishRun();
           $('dump').focus();
           return;
         }
@@ -1200,11 +1306,11 @@
           renderDetail();
           if (!res.carolPending) {
             stopCarolPoll();
-            toast('Carol-Check fertig');
-            loadBatches(state.batchId);
+            state.carolDone = true;
+            maybeFinishRun();
           }
         }).getAussenBatch(state.batchId);
-      }, 3000);
+      }, 2000);
     }
 
     function startCarolBridge() {
@@ -1220,13 +1326,18 @@
           return;
         }
         if (!res.pending) {
-          toast('Carol schon geprüft');
+          state.carolDone = true;
+          maybeFinishRun();
           return;
         }
         var url = res.carolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextId || '') + '&retoure_batch=' + encodeURIComponent(state.batchId));
-        window.open(url, '_blank', 'noopener,noreferrer');
+        var ok = navCarol(url);
         startCarolPoll();
-        toast('Carol prüfen: Tampermonkey-Script „Carol Retoure Bridge“ muss aktiv sein · ' + res.pending + ' IDs');
+        if (!ok) {
+          toast('Carol-Fenster blockiert — einmal Carol prüfen klicken', true);
+          return;
+        }
+        toast('Carol prüft automatisch · ' + res.pending + ' IDs');
       }).aussenCarolQueue(state.batchId);
     }
 
@@ -1362,6 +1473,7 @@
 
     function newRound() {
       stopCarolPoll();
+      closeCarolSlot();
       state.items = [];
       state.gestelltItems = [];
       state.gestelltCount = 0;
@@ -1369,6 +1481,8 @@
       state.scannedAt = '';
       state.selected = '';
       state.pending = [];
+      state.mailDone = false;
+      state.carolDone = false;
       $('dump').value = '';
       $('batchSel').value = '';
       updateDumpHint({ ids: [], ignored: 0 });
@@ -1381,6 +1495,7 @@
       var parsed = parseDumpText(this.value);
       state.pending = parsed.ids;
       updateDumpHint(parsed);
+      if (parsed.ids.length) openCarolSlot();
       clearTimeout(state.dumpTimer);
       if (!parsed.ids.length || state.busy) return;
       state.dumpTimer = setTimeout(function() {
@@ -1408,7 +1523,10 @@
     });
     $('btnCarol').addEventListener('click', function() {
       var it = selectedItem();
-      if (it && it.carolUrl) window.open(it.carolUrl, '_blank', 'noopener,noreferrer');
+      var url = carolHref(it);
+      if (!url) return;
+      navCarol(url);
+      startCarolPoll();
     });
     $('btnGmail').addEventListener('click', function() {
       var it = selectedItem();
