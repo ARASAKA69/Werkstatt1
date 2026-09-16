@@ -600,7 +600,7 @@
       } catch (e2) {}
     }
 
-    function openCarolSlot() {
+    function unlockAudio() {
       try {
         if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
       } catch (e0) {}
@@ -611,13 +611,6 @@
           if (playDoneTone._ctx.state === 'suspended') playDoneTone._ctx.resume();
         }
       } catch (eA) {}
-      try {
-        if (state.carolWin && !state.carolWin.closed) return true;
-        state.carolWin = window.open('about:blank', 'retoureCarol');
-        return !!(state.carolWin && !state.carolWin.closed);
-      } catch (e) {
-        return false;
-      }
     }
 
     function navCarol(url) {
@@ -1203,7 +1196,7 @@
         return;
       }
       if (state.busy) return;
-      openCarolSlot();
+      unlockAudio();
       state.mailDone = false;
       state.carolDone = false;
       var opId = beginOp();
@@ -1250,7 +1243,6 @@
         renderList();
         renderDetail();
         loadBatches(state.batchId);
-        startCarolBridge();
         checkMails(opId, 0);
       }, 'aussenCheckStep', state.batchId, step, cursor);
     }
@@ -1280,8 +1272,7 @@
           state.busy = false;
           hideLoad();
           state.mailDone = true;
-          if (!state.carolDone) toast('Mails fertig — Carol prüft die Badges automatisch');
-          maybeFinishRun();
+          startCarolBridge();
           $('dump').focus();
           return;
         }
@@ -1495,7 +1486,7 @@
       var parsed = parseDumpText(this.value);
       state.pending = parsed.ids;
       updateDumpHint(parsed);
-      if (parsed.ids.length) openCarolSlot();
+      if (parsed.ids.length) unlockAudio();
       clearTimeout(state.dumpTimer);
       if (!parsed.ids.length || state.busy) return;
       state.dumpTimer = setTimeout(function() {
