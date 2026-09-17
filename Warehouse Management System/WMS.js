@@ -31,6 +31,16 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.10",
+    date: "17.09.2026",
+    notes:
+      "• N4part Packzettel: beim Laden einer Stock-ID mit N4P-Beleg öffnet sich eine Auswahl der bestellten Artikel (nur Artikelname)\n" +
+      "• Angekreuzte Teile landen mit Lieferant im Kommentar Anlieferung: KNOLL, WM (Wessels Müller), STA (Stahlgruber)\n" +
+      "• Kommentar wird nur vorausgefüllt — speichern wie gewohnt über Kommentar + Regal speichern Button unten wie gewohnt\n" +
+      "• Auswahl lässt sich später über „Teile aus Packzettel“ unter dem Beleg-Button nochmal öffnen und anpassen\n\n" +
+      "• Viel spass damit hoffe es klappt alles, falls nicht einfach bescheid geben ist der erste anlauf & bis später."
+  },
+  {
     version: "2.2.9",
     date: "28.08.2026",
     notes:
@@ -3408,6 +3418,289 @@ function getRefurbishmentCachePayload() {
       return { success: false, message: err.message };
     }
   }
+
+function pzIsN4pRow_(row) {
+  var source = String((row && row[1]) || "").toLowerCase();
+  var order = String((row && row[3]) || "").toUpperCase().replace(/\s+/g, "");
+  var raw = String((row && row[13]) || "").toUpperCase();
+  if (source.indexOf("n4.parts") !== -1 || source.indexOf("n4parts") !== -1) return true;
+  if (/^N4P\d{4,}/.test(order)) return true;
+  if (/\bN4P\d{4,}/.test(raw)) return true;
+  return false;
+}
+
+function pzNormalizePartName_(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+
+function pzPartNameKey_(name, tag) {
+  var n = String(name || "").toLowerCase().replace(/[^a-z0-9äöüß]+/g, "");
+  return n + "|" + String(tag || "").toUpperCase();
+}
+
+function pzLooksLikeQty_(s) {
+  return /^[1-9]\d?$/.test(String(s || "").trim());
+}
+
+function pzLooksLikeArtNr_(s) {
+  var t = String(s || "").trim();
+  if (!t) return false;
+  if (/^[1-9]\d?$/.test(t)) return false;
+  if (/^\d+[.\d]*$/.test(t)) return true;
+  if (/^\d{3,}$/.test(t)) return true;
+  if (/^[A-Z]{1,8}\d+[A-Z0-9]*$/i.test(t) && /\d/.test(t)) return true;
+  if (/^[A-Z]{1,8}\d{1,6}[-/][A-Z0-9]+$/i.test(t)) return true;
+  if (/^[A-Z]\d{1,4}$/i.test(t)) return true;
+  return false;
+}
+
+function pzIsStopSection_(line) {
+  var t = pzNormalizePartName_(line);
+  return /^(geplante\s+arbeiten|hinweise|bemerkungen|lieferadresse)\b/i.test(t);
+}
+
+function pzIsHeaderToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return true;
+  return /^(herstellername|hersteller|artnr|großhändler|grosshaendler|grosshandler|artikelname|menge|geliefert|arbeitsnr|beschreibung|dauer|packzettel|artikel-?daten|kundenname|kennzeichen|bestellnummer|bestelldatum|referenznummer|seite)$/i.test(t);
+}
+
+function pzIsBrandToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return false;
+  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|elparts)$/i.test(t)) return true;
+  var key = t.toUpperCase().replace(/[^A-Z0-9+]/g, "");
+  var brands = {
+    BOSCH: 1, VAICO: 1, ELRING: 1, FEBI: 1, BILSTEIN: 1, MEYLE: 1,
+    FERODO: 1, MANN: 1, HERTH: 1, BUSS: 1, ELPARTS: 1, HECHT: 1,
+    ELBS: 1, JACOPARTS: 1, KNOLL: 1, STAHLGRUBER: 1, WESSELS: 1, MULLER: 1,
+    MUELLER: 1
+  };
+  return !!brands[key];
+}
+
+function pzIsNoiseToken_(tok) {
+  var raw = String(tok || "").trim();
+  if (!raw || raw === ",") return false;
+  if (raw === "+" || raw === ":" || raw === "/") return false;
+  var t = raw.replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return true;
+  if (pzIsHeaderToken_(t)) return true;
+  if (pzIsBrandToken_(t)) return true;
+  if (/^n4p/i.test(t) || /^knoll_/i.test(t)) return true;
+  if (pzLooksLikeArtNr_(t)) return true;
+  if (/^[\d.]+$/.test(t)) return true;
+  if (/^[A-Z]$/i.test(t)) return true;
+  if (pzLooksLikeQty_(t)) return true;
+  return false;
+}
+
+function pzMatchSupplierHeader_(line) {
+  var t = String(line || "").replace(/\s+/g, " ").trim();
+  if (!t) return null;
+  if (/wessels\s*m(?:ü|ue?|u)ller/i.test(t)) {
+    if (/[-–(]|\d{5,}/.test(t) || /^wessels\s*m(?:ü|ue?|u)ller\s*$/i.test(t)) {
+      return { tag: "WM", supplier: "Wessels Müller" };
+    }
+  }
+  if (/^knoll\b/i.test(t)) {
+    if (/[-–(]|\d{5,}/.test(t) || /^knoll\s*$/i.test(t)) {
+      return { tag: "KNOLL", supplier: "KNOLL" };
+    }
+  }
+  if (/^stahlgruber\b/i.test(t)) {
+    if (/[-–(]|\d{5,}/.test(t) || /^stahlgruber\s*$/i.test(t)) {
+      return { tag: "STA", supplier: "Stahlgruber" };
+    }
+  }
+  return null;
+}
+
+function pzJoinOcrLines_(lines) {
+  var out = [];
+  for (var i = 0; i < (lines || []).length; i++) {
+    var line = pzNormalizePartName_(lines[i]);
+    if (!line) continue;
+    if (out.length && /-$/.test(out[out.length - 1])) {
+      out[out.length - 1] = out[out.length - 1] + line;
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join(" ");
+}
+
+function pzSplitArtikelTokens_(text) {
+  var raw = String(text || "").replace(/,/g, " , ");
+  var parts = raw.split(/\s+/);
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    var t = String(parts[i] || "").trim();
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+function pzIsOpenArtikelPrefix_(name) {
+  var t = pzNormalizePartName_(name).replace(/[.,:;!?]+$/g, "");
+  return /^(tellesatz|teilesatz|dichtung|warnkontakt|bremsbelagsatz|filtersatz|reparatursatz|dichtungssatz|filter)$/i.test(t);
+}
+
+function pzIsNameContinue_(prevName, nextTok) {
+  var n = String(nextTok || "").trim();
+  var p = String(prevName || "").trim();
+  if (!n) return false;
+  if (n === "," || n === "+" || n === ":" || n === "/") return true;
+  if (/[,-:]$/.test(p)) return true;
+  if (pzIsOpenArtikelPrefix_(p)) return true;
+  if (/^[a-zäöüß]/.test(n)) return true;
+  var core = n.replace(/[.,:;!?]+$/g, "");
+  if (/^(evo|kit|kits|original|premier|expert|iridium|plus|satz)$/i.test(core)) return true;
+  if (/^(better|solution|for|you)$/i.test(core)) return true;
+  if (/^[A-Z]{2,}(-[A-Z0-9]+)+/.test(core)) return true;
+  return false;
+}
+
+function pzIsNewArtikelName_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (t.length < 4) return false;
+  return /^[A-ZÄÖÜ][a-zäöüß]/.test(t);
+}
+
+function pzSanitizeArtikelName_(s) {
+  var tokens = pzSplitArtikelTokens_(s);
+  var keep = [];
+  for (var i = 0; i < tokens.length; i++) {
+    if (tokens[i] === ",") {
+      if (keep.length) keep.push(",");
+      continue;
+    }
+    if (pzIsNoiseToken_(tokens[i])) continue;
+    keep.push(tokens[i]);
+  }
+  var name = pzNormalizePartName_(keep.join(" ").replace(/\s+,/g, ",").replace(/,\s*/g, ", "));
+  name = name.replace(/\s+\+/g, " +").replace(/:\s*/g, ": ").replace(/\s+/g, " ").trim();
+  if (name.length < 3 || name.length > 180) return "";
+  if (!/[a-zäöüß]/.test(name)) return "";
+  if (/hersteller|artnr|artikelname|großhändler|grosshaendler|\bmenge\b|geliefert/i.test(name)) return "";
+  return name;
+}
+
+function pzGroupArtikelNames_(tokens) {
+  var names = [];
+  var cur = [];
+  function emit() {
+    var name = pzSanitizeArtikelName_(cur.join(" "));
+    cur = [];
+    if (name) names.push(name);
+  }
+  for (var i = 0; i < (tokens || []).length; i++) {
+    var tok = tokens[i];
+    if (pzIsNoiseToken_(tok)) continue;
+    var prev = cur.join(" ");
+    if (cur.length && pzIsNewArtikelName_(tok) && !pzIsNameContinue_(prev, tok)) emit();
+    cur.push(tok);
+  }
+  emit();
+  return names;
+}
+
+function pzParseN4pPartsFromText_(raw) {
+  var text = String(raw || "").replace(/\r/g, "");
+  if (!text.trim()) return [];
+  var lines = text.split(/\n+/);
+  var current = null;
+  var block = [];
+  var out = [];
+  function flushBlock() {
+    if (!current || !block.length) {
+      block = [];
+      return;
+    }
+    var joined = pzJoinOcrLines_(block);
+    var tokens = pzSplitArtikelTokens_(joined);
+    var names = pzGroupArtikelNames_(tokens);
+    for (var i = 0; i < names.length; i++) {
+      out.push({ name: names[i], tag: current.tag, supplier: current.supplier });
+    }
+    block = [];
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = pzNormalizePartName_(lines[i]);
+    if (!line) continue;
+    if (pzIsStopSection_(line)) {
+      flushBlock();
+      current = null;
+      continue;
+    }
+    var header = pzMatchSupplierHeader_(line);
+    if (header) {
+      flushBlock();
+      current = header;
+      continue;
+    }
+    if (!current) continue;
+    block.push(line);
+  }
+  flushBlock();
+  return pzDedupeParts_(out);
+}
+
+function pzDedupeParts_(parts) {
+  var out = [];
+  for (var i = 0; i < (parts || []).length; i++) {
+    var p = parts[i];
+    if (!p || !p.name) continue;
+    out.push({
+      name: p.name,
+      tag: String(p.tag || "").toUpperCase(),
+      supplier: String(p.supplier || "")
+    });
+  }
+  return out;
+}
+
+function getPackzettelPartsForStock(keys) {
+  try {
+    var normKeys = [];
+    var seen = {};
+    for (var k = 0; k < (keys || []).length; k++) {
+      var nk = String(keys[k] || "").toUpperCase().replace(/\s+/g, "");
+      if (nk.length >= 4 && !seen[nk]) {
+        seen[nk] = true;
+        normKeys.push(nk);
+      }
+    }
+    if (!normKeys.length) return { success: true, parts: [] };
+
+    var data = readPackzettelSheet_();
+    var values = data.values || [];
+    var parts = [];
+    var usedOrders = {};
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      if (!pzIsN4pRow_(row)) continue;
+      var haystack = [row[3], row[4], row[5], row[8], row[13]]
+        .join(" ").toUpperCase().replace(/\s+/g, "");
+      var hit = false;
+      for (var j = 0; j < normKeys.length; j++) {
+        if (haystack.indexOf(normKeys[j]) !== -1) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) continue;
+      var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
+      if (on && usedOrders[on]) continue;
+      if (on) usedOrders[on] = true;
+      var parsed = pzParseN4pPartsFromText_(row[13]);
+      for (var p = 0; p < parsed.length; p++) parts.push(parsed[p]);
+    }
+    return { success: true, parts: pzDedupeParts_(parts) };
+  } catch (err) {
+    return { success: false, message: err.message, parts: [] };
+  }
+}
 
   function lagerKistenIsRegalHeader_(v) {
     return /^\s*regal\s+\d+\.\d+\s*$/i.test(String(v == null ? "" : v));

@@ -247,6 +247,7 @@
     <div class="info-box schaeden-list" id="infoBestellung">-</div>
     <div class="pz-card-action" id="pzCardAction" style="display:none;">
       <button type="button" class="btn-pz-open btn-glow" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
+      <button type="button" class="btn-pz-parts btn-glow" id="btnPzParts" style="display:none;" onclick="openPzPartsPickerManual()">Teile aus Packzettel</button>
     </div>
     <div class="wss-card-action" id="wssCardAction">
       <button type="button" class="btn-wss-open btn-glow" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
@@ -506,6 +507,29 @@
           <tr><td colspan="8" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Nachbestellungen...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<div class="nb-choose-modal pz-parts-modal" id="pzPartsModal" onclick="if(event.target===this)closePzPartsPicker()">
+  <div class="nb-choose-dialog pz-parts-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Teile aus Packzettel</div>
+      <button type="button" class="nb-choose-x" onclick="closePzPartsPicker()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub">Artikelname ankreuzen — ausgewählte Teile kommen in den Kommentar. Speichern danach über Kommentar + Regal.</div>
+    <div class="pz-parts-toolbar">
+      <button type="button" class="pz-parts-mini" onclick="setPzPartsChecks(true)">Alle</button>
+      <button type="button" class="pz-parts-mini" onclick="setPzPartsChecks(false)">Keine</button>
+    </div>
+    <div class="pz-parts-list" id="pzPartsList"></div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" onclick="closePzPartsPicker()">
+        <span class="nb-choose-btn-txt">Abbrechen</span>
+      </button>
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="confirmPzPartsPicker()">
+        <span class="nb-choose-btn-txt">Übernehmen</span>
+      </button>
     </div>
   </div>
 </div>

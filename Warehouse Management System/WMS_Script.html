@@ -1377,6 +1377,11 @@
       closeWmsShortcutsModal();
       return;
     }
+    if (wmsElIsOpen('pzPartsModal')) {
+      consumeEsc();
+      closePzPartsPicker();
+      return;
+    }
     if (wmsElIsOpen('nbChooseModal')) {
       consumeEsc();
       closeNbChooser();
@@ -3687,6 +3692,9 @@
   var currentPzKeys = [];
   var pzPendingKeys = null;
   var pzPendingLabel = '';
+  var pzPartsCache = [];
+  var pzPartsStock = '';
+  var pzPartsPendingNb = null;
 
   function minimizePzModal() {
     document.getElementById('pzModal').classList.remove('open');
@@ -3801,8 +3809,151 @@
 
   function hidePzContext() {
     currentPzKeys = [];
+    pzPartsCache = [];
+    pzPartsStock = '';
+    pzPartsPendingNb = null;
     var action = document.getElementById('pzCardAction');
     if(action) action.style.display = 'none';
+    hidePzPartsButton();
+    var partsModal = document.getElementById('pzPartsModal');
+    if (partsModal) partsModal.classList.remove('open');
+  }
+
+  function hidePzPartsButton() {
+    var btn = document.getElementById('btnPzParts');
+    if (btn) btn.style.display = 'none';
+  }
+
+  function updatePzPartsButton(n) {
+    var btn = document.getElementById('btnPzParts');
+    if (!btn) return;
+    if (n > 0) {
+      btn.style.display = '';
+      btn.innerText = 'Teile aus Packzettel (' + n + ')';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function maybeShowPzPartsThenNb(stockId, nbOpts) {
+    pzPartsPendingNb = null;
+    var openParts = document.getElementById('pzPartsModal');
+    if (openParts) openParts.classList.remove('open');
+    var keys = (currentPzKeys && currentPzKeys.length)
+      ? currentPzKeys
+      : pzExtractKeysFromContext(stockId, currentBestellungText);
+    if (!keys.length) {
+      hidePzPartsButton();
+      maybeShowNbChooser(stockId, nbOpts);
+      return;
+    }
+    google.script.run.withSuccessHandler(function(res) {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      var parts = (res && res.success && res.parts) ? res.parts : [];
+      pzPartsCache = parts;
+      pzPartsStock = stockId;
+      updatePzPartsButton(parts.length);
+      if (!parts.length) {
+        maybeShowNbChooser(stockId, nbOpts);
+        return;
+      }
+      pzPartsPendingNb = { stockId: stockId, opts: nbOpts || {} };
+      showPzPartsPicker(parts);
+    }).withFailureHandler(function() {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      hidePzPartsButton();
+      maybeShowNbChooser(stockId, nbOpts);
+    }).getPackzettelPartsForStock(keys);
+  }
+
+  function openPzPartsPickerManual() {
+    if (!pzPartsCache.length) return;
+    pzPartsPendingNb = null;
+    showPzPartsPicker(pzPartsCache);
+  }
+
+  function pzCompactPartText(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/ä/g, 'a')
+      .replace(/ö/g, 'o')
+      .replace(/ü/g, 'u')
+      .replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function pzPartAlreadyInComment(name, tag, comment) {
+    var c = pzCompactPartText(comment);
+    var n = pzCompactPartText(name);
+    if (!c || n.length < 4) return false;
+    if (c.indexOf(n) !== -1) return true;
+    var tagged = pzCompactPartText(String(name || '') + ' ' + String(tag || ''));
+    return tagged.length >= 5 && c.indexOf(tagged) !== -1;
+  }
+
+  function showPzPartsPicker(parts) {
+    var list = document.getElementById('pzPartsList');
+    var modal = document.getElementById('pzPartsModal');
+    if (!list || !modal) return;
+    var comment = getCommentText();
+    var html = '';
+    for (var i = 0; i < (parts || []).length; i++) {
+      var p = parts[i] || {};
+      var name = String(p.name || '');
+      var tag = String(p.tag || '');
+      if (!name) continue;
+      var id = 'pzPartChk' + i;
+      var checked = pzPartAlreadyInComment(name, tag, comment) ? ' checked' : '';
+      var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
+      html += '<label class="pz-parts-item" for="' + id + '">';
+      html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '"' + checked + '>';
+      html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
+      if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
+      html += '</label>';
+    }
+    list.innerHTML = html || '<div class="nb-choose-sub">Keine Artikel gefunden.</div>';
+    modal.classList.add('open');
+  }
+
+  function setPzPartsChecks(on) {
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) boxes[i].checked = !!on;
+  }
+
+  function applyPzPartsToComment() {
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    var comment = getCommentText();
+    var extras = [];
+    var probe = comment;
+    for (var i = 0; i < boxes.length; i++) {
+      if (!boxes[i].checked) continue;
+      var name = boxes[i].getAttribute('data-name') || '';
+      var tag = boxes[i].getAttribute('data-tag') || '';
+      if (!name) continue;
+      if (pzPartAlreadyInComment(name, tag, probe)) continue;
+      var line = name + (tag ? (' ' + tag) : '') + ' da //';
+      extras.push(line);
+      probe = probe + ' ' + line;
+    }
+    if (!extras.length) return;
+    var next = String(comment || '').replace(/\s+$/, '');
+    var add = extras.join(' ');
+    setCommentText(next ? (next + ' ' + add) : add);
+  }
+
+  function closePzPartsPicker() {
+    var m = document.getElementById('pzPartsModal');
+    if (m) m.classList.remove('open');
+    var pending = pzPartsPendingNb;
+    pzPartsPendingNb = null;
+    if (pending && pending.stockId && normalizeStockInput(pending.stockId) === normalizeStockInput(currentStock)) {
+      maybeShowNbChooser(pending.stockId, pending.opts);
+    }
+  }
+
+  function confirmPzPartsPicker() {
+    applyPzPartsToComment();
+    closePzPartsPicker();
   }
 
   function pzLoad(query) {
@@ -7712,7 +7863,7 @@
       rememberPendingStellantisTracking(id);
 
       updatePzContext(id, res.kommBestellung);
-      maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
+      maybeShowPzPartsThenNb(id, { tagesliste: isRegalTagesliste(regalVal) });
       claimStockEditLockForCurrent(loadedStock);
     } else {
       skipRecentStockPush = false;
