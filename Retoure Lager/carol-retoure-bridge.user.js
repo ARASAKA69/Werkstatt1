@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      1.8
-// @description  Liest nur sichtbare Carol-Badges (B2A1 / Fertiggestellt) und sendet an Retoure Scan
+// @version      2.0
+// @description  Liest Carol-Badges (B2A1 / Fertiggestellt) aus Trefferzeile oder Auftrag und sendet an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
@@ -13,14 +13,20 @@
 (function () {
     'use strict';
 
-    var VER = '1.8';
-    if (window.__retoureBridgeVer) {
-        return;
-    }
+    var VER = '2.0';
+    if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
     var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
-    var MAX_TRIES = 34;
+    var MAX_TRIES = 40;
+    var ORDER_RE = /\/refurbishment\/[0-9a-f-]{8,}/i;
+    var BADGE_BOX = '[class*="refurbishmentBadges"], [class*="RefurbishmentBadges"]';
+    var BADGE_QA = '[data-qa-selector*="efurbishmentStatus"]';
+    var ACTION_EL = 'button, a, input, select, option, textarea, label, form, [role="button"], [role="menu"], [role="menuitem"], [role="tab"], [aria-haspopup]';
+    var B2A1_RE = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i;
+    var FERTIG_RE = /fertiggestellt|completed\s+on\s+\d/i;
+    var STARTED_RE = /refurbishment\s+(started|gestartet)/i;
+
     var busy = false;
     var lastKey = '';
     var timer = null;
@@ -50,8 +56,13 @@
         return ssGet('retoure_batch').trim();
     }
 
+    function wantedSid() {
+        var v = String(qs('rsv') || '').replace(/\s+/g, '').toUpperCase();
+        return /^[A-Z]{2}\d{4,8}$/.test(v) ? v : '';
+    }
+
     function isDetailPage() {
-        return /\/refurbishment\/[0-9a-f-]{8,}/i.test(location.pathname);
+        return ORDER_RE.test(location.pathname);
     }
 
     function pageText() {
@@ -61,7 +72,7 @@
     function detailSid() {
         var head = document.querySelector('[class*="vehicleHeader"], [class*="VehicleHeader"]');
         if (head) {
-            var hm = String(head.innerText || head.textContent || '').match(/\b([A-Z]{2}\d{4,8})\s*[-–]/);
+            var hm = String(head.innerText || head.textContent || '').match(/\b([A-Z]{2}\d{4,8})\b/);
             if (hm) return hm[1].toUpperCase();
         }
         var nodes = document.querySelectorAll('h1, h2, h3, h4, h5');
@@ -73,17 +84,12 @@
         return m2 ? m2[1].toUpperCase() : '';
     }
 
-    function wantedSid() {
-        var fromQs = String(qs('rsv') || '').replace(/\s+/g, '').toUpperCase();
-        if (/^[A-Z]{2}\d{4,8}$/.test(fromQs)) return fromQs;
-        return '';
-    }
-
     function doneKey(batch) {
         return 'retoure_done_' + (batch || 'x');
     }
 
     function isDone(batch, sid) {
+        if (qs('retoure_force') === '1') return false;
         return ssGet(doneKey(batch)).indexOf('|' + sid + '|') !== -1;
     }
 
@@ -92,11 +98,147 @@
         if (cur.indexOf('|' + sid + '|') === -1) ssSet(doneKey(batch), cur + '|' + sid + '|');
     }
 
-    function clickEl(el) {
-        if (!el) return;
+    function isAction(el) {
+        try { return !!el.closest(ACTION_EL); } catch (e) { return false; }
+    }
+
+    function textsIn(root, skipActions) {
+        var out = [];
+        var seen = {};
+        function push(raw) {
+            var t = String(raw || '').replace(/\s+/g, ' ').trim();
+            if (!t || t.length > 90 || seen[t]) return;
+            seen[t] = 1;
+            out.push(t);
+        }
+        if (!root) return out;
+        var leaves = root.querySelectorAll('span, div, p, small, strong, b');
+        for (var i = 0; i < leaves.length; i++) {
+            if (leaves[i].children && leaves[i].children.length) continue;
+            if (skipActions && isAction(leaves[i])) continue;
+            push(leaves[i].textContent);
+        }
+        if (!out.length) push(root.innerText || root.textContent);
+        return out;
+    }
+
+    function badgeTextsDetail() {
+        var out = [];
+        var seen = {};
+        function add(list) {
+            for (var i = 0; i < list.length; i++) {
+                if (seen[list[i]]) continue;
+                seen[list[i]] = 1;
+                out.push(list[i]);
+            }
+        }
+        var boxes = document.querySelectorAll(BADGE_BOX);
+        for (var b = 0; b < boxes.length; b++) add(textsIn(boxes[b], true));
+        var qa = document.querySelectorAll(BADGE_QA);
+        for (var q = 0; q < qa.length; q++) {
+            if (isAction(qa[q])) continue;
+            add(textsIn(qa[q], true));
+        }
+        return out;
+    }
+
+    function flagsFrom(texts) {
+        for (var i = 0; i < texts.length; i++) {
+            if (B2A1_RE.test(texts[i])) return { b2a1: true, fertig: false, label: texts[i] };
+        }
+        for (var f = 0; f < texts.length; f++) {
+            if (FERTIG_RE.test(texts[f]) && !STARTED_RE.test(texts[f])) {
+                return { b2a1: false, fertig: true, label: texts[f] };
+            }
+        }
+        return { b2a1: false, fertig: false, label: texts.join(' · ').slice(0, 140) };
+    }
+
+    function rowLooksComplete(el, raw) {
+        var a = el.querySelector('a[href*="refurbishment/"]');
+        if (a && ORDER_RE.test(a.getAttribute('href') || a.href || '')) return true;
+        return /als\s+b2a1|flagged\s+for\s+return|fertiggestellt|completed\s+on|refurbishment\s+started|automatisch\s+beauftragt|auto-?ordered/i.test(raw);
+    }
+
+    function rowForSid(sid) {
+        var want = String(sid || '').toUpperCase();
+        if (!want) return null;
+        var cands = document.querySelectorAll('article, li, tr, [class*="card"], [class*="Card"], [class*="row"], [class*="result"], [class*="Result"], [class*="entry"], [class*="item"]');
+        var best = null;
+        var bestLen = 1e9;
+        var loose = null;
+        var looseLen = 1e9;
+        for (var i = 0; i < cands.length; i++) {
+            var el = cands[i];
+            var raw = String(el.textContent || '');
+            if (raw.length > 2000) continue;
+            if (raw.toUpperCase().replace(/\s+/g, '').indexOf(want) === -1) continue;
+            if (rowLooksComplete(el, raw)) {
+                if (raw.length < bestLen) {
+                    best = el;
+                    bestLen = raw.length;
+                }
+            } else if (raw.length < looseLen) {
+                loose = el;
+                looseLen = raw.length;
+            }
+        }
+        if (best) return best;
+        var up = loose;
+        for (var h = 0; up && h < 6; h++) {
+            var txt = String(up.textContent || '');
+            if (txt.length < 2000 && rowLooksComplete(up, txt)) return up;
+            up = up.parentElement;
+        }
+        return loose;
+    }
+
+    function orderHref(root) {
+        var scopes = [root, document];
+        for (var s = 0; s < scopes.length; s++) {
+            if (!scopes[s]) continue;
+            var links = scopes[s].querySelectorAll('a[href*="refurbishment/"]');
+            for (var i = 0; i < links.length; i++) {
+                var href = links[i].getAttribute('href') || links[i].href || '';
+                if (ORDER_RE.test(href)) return href;
+            }
+        }
+        return '';
+    }
+
+    function fireClick(el) {
+        if (!el) return false;
         try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
-        try { el.click(); } catch (e2) {}
-        try { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window })); } catch (e3) {}
+        var evts = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+        for (var i = 0; i < evts.length; i++) {
+            try {
+                el.dispatchEvent(new MouseEvent(evts[i], { bubbles: true, cancelable: true, view: window }));
+            } catch (e2) {}
+        }
+        try { el.click(); } catch (e3) {}
+        return true;
+    }
+
+    function openOrder(row, batch) {
+        var href = orderHref(row);
+        if (href) {
+            var abs = href.indexOf('http') === 0 ? href : (location.origin + (href.charAt(0) === '/' ? '' : '/') + href);
+            if (batch && abs.indexOf('retoure_batch=') === -1) {
+                abs += (abs.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(batch);
+            }
+            location.assign(abs);
+            return true;
+        }
+        if (!row) return false;
+        var title = row.querySelector('[class*="title"], [class*="Title"], [class*="link"], [class*="Link"], h1, h2, h3, h4, h5, strong, b');
+        if (title && fireClick(title)) return true;
+        return fireClick(row);
+    }
+
+    function noResults() {
+        var t = pageText();
+        if (/\b0\s+(ergebnisse|results)\b/i.test(t)) return true;
+        return /keine\s+(ergebnisse|fahrzeuge)|no\s+(results|vehicles)\s+found/i.test(t);
     }
 
     function fillSearch(sid) {
@@ -118,71 +260,6 @@
             return true;
         }
         return false;
-    }
-
-    function clickStockLink(sid) {
-        var want = String(sid || '').toUpperCase();
-        if (!want) return false;
-        var links = document.querySelectorAll('a[href*="/refurbishment/"]');
-        for (var i = 0; i < links.length; i++) {
-            var href = links[i].getAttribute('href') || links[i].href || '';
-            if (!/\/refurbishment\/[0-9a-f-]{8,}/i.test(href)) continue;
-            var row = links[i].closest('article, li, tr, [class*="card"], [class*="row"]') || links[i];
-            var txt = String((row && row.textContent) || '').toUpperCase().replace(/\s+/g, '');
-            if (txt.indexOf(want) !== -1) {
-                clickEl(links[i]);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    var BADGE_BOX = '[class*="refurbishmentBadges"], [class*="RefurbishmentBadges"]';
-    var BADGE_QA = '[data-qa-selector*="efurbishmentStatus"], [data-qa-selector*="eturnToAuto1"], [data-qa-selector*="2a1"], [data-qa-selector*="2A1"]';
-    var B2A1_RE = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i;
-    var FERTIG_RE = /fertiggestellt|completed\s+on\s+\d/i;
-
-    function badgeTexts() {
-        var out = [];
-        var seen = {};
-        function push(raw) {
-            var t = String(raw || '').replace(/\s+/g, ' ').trim();
-            if (!t || t.length > 90 || seen[t]) return;
-            seen[t] = 1;
-            out.push(t);
-        }
-        function collect(root) {
-            if (!root) return;
-            var leaves = root.querySelectorAll('span, div, p, small, strong, b');
-            var got = 0;
-            for (var i = 0; i < leaves.length; i++) {
-                if (leaves[i].children && leaves[i].children.length) continue;
-                var t = String(leaves[i].textContent || '').trim();
-                if (!t) continue;
-                push(t);
-                got++;
-            }
-            if (!got) push(root.innerText || root.textContent);
-        }
-        var boxes = document.querySelectorAll(BADGE_BOX);
-        for (var b = 0; b < boxes.length; b++) collect(boxes[b]);
-        var qa = document.querySelectorAll(BADGE_QA);
-        for (var q = 0; q < qa.length; q++) push(qa[q].innerText || qa[q].textContent);
-        return out;
-    }
-
-    function readFlags() {
-        var texts = badgeTexts();
-        if (!texts.length) return null;
-        for (var i = 0; i < texts.length; i++) {
-            if (B2A1_RE.test(texts[i])) return { b2a1: true, fertig: false, label: texts[i] };
-        }
-        for (var f = 0; f < texts.length; f++) {
-            if (FERTIG_RE.test(texts[f]) && !/refurbishment\s+started/i.test(texts[f])) {
-                return { b2a1: false, fertig: true, label: texts[f] };
-            }
-        }
-        return { b2a1: false, fertig: false, label: texts.join(' · ').slice(0, 140) };
     }
 
     function looksLikeAnswer(o) {
@@ -283,7 +360,7 @@
     }
 
     function goTo(batch, sid, url) {
-        if (url && /\/refurbishment\/[0-9a-f-]{8,}/i.test(url)) {
+        if (url && ORDER_RE.test(url)) {
             var u = url;
             if (batch && u.indexOf('retoure_batch=') === -1) u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(batch);
             location.assign(u);
@@ -304,7 +381,7 @@
                 return;
             }
             if (next === sid || isDone(res.batchId || batch, next)) {
-                toast(next + ' bleibt offen — Scan-Seite übernimmt');
+                toast(next + ' offen — Scan-Seite übernimmt');
                 busy = false;
                 return;
             }
@@ -319,7 +396,7 @@
 
     function send(batch, sid, flags, notfound) {
         markDone(batch, sid);
-        toast(sid + ' · ' + (notfound ? 'kein Auftrag' : (flags.label || 'kein Badge')) + ' — sende…');
+        toast(sid + ' · ' + (notfound ? 'kein Auftrag in Carol' : (flags.label || 'kein Badge')) + ' — sende…');
         post({
             page: 'carolreport',
             batch: batch || '',
@@ -354,44 +431,78 @@
         var batch = batchId();
         var want = wantedSid();
         var tries = 0;
+        var opened = false;
         if (timer) clearInterval(timer);
         timer = setInterval(function () {
             tries++;
-            if (!isDetailPage()) {
-                if (tries === 2 || tries === 12) fillSearch(want);
-                clickStockLink(want);
-                if (tries < MAX_TRIES) return;
-                clearInterval(timer);
-                if (want) send(batch, want, { b2a1: false, fertig: false, label: '' }, true);
-                else {
+
+            if (isDetailPage()) {
+                var sid = detailSid() || want;
+                if (!sid) {
+                    if (tries < MAX_TRIES) return;
+                    clearInterval(timer);
                     busy = false;
-                    toast('Kein Auftrag gefunden');
+                    toast('Stock-ID nicht gefunden');
+                    return;
                 }
+                if (isDone(batch, sid)) {
+                    clearInterval(timer);
+                    askQueue(batch, sid);
+                    return;
+                }
+                var texts = badgeTextsDetail();
+                if (!texts.length) {
+                    if (tries < MAX_TRIES) return;
+                    clearInterval(timer);
+                    send(batch, sid, { b2a1: false, fertig: false, label: 'Badges nicht geladen' }, false);
+                    return;
+                }
+                clearInterval(timer);
+                send(batch, sid, flagsFrom(texts), false);
                 return;
             }
-            var sid = detailSid();
-            if (!sid) {
+
+            if (!want) {
                 if (tries < MAX_TRIES) return;
                 clearInterval(timer);
                 busy = false;
-                toast('Stock-ID nicht gefunden');
+                toast('Keine Stock-ID in der URL');
                 return;
             }
-            if (want && sid !== want && tries < 14) return;
-            if (isDone(batch, sid)) {
+            if (isDone(batch, want)) {
                 clearInterval(timer);
-                askQueue(batch, sid);
+                askQueue(batch, want);
                 return;
             }
-            var flags = readFlags();
-            if (!flags) {
+            if (tries === 2 || tries === 16) fillSearch(want);
+
+            var row = rowForSid(want);
+            if (row) {
+                var rowFlags = flagsFrom(textsIn(row, true));
+                if (rowFlags.b2a1 || rowFlags.fertig) {
+                    clearInterval(timer);
+                    send(batch, want, rowFlags, false);
+                    return;
+                }
+                if (!opened) {
+                    opened = true;
+                    toast('Öffne Auftrag ' + want + '…');
+                    if (openOrder(row, batch)) return;
+                }
                 if (tries < MAX_TRIES) return;
                 clearInterval(timer);
-                send(batch, sid, { b2a1: false, fertig: false, label: 'Badges nicht geladen' }, false);
+                send(batch, want, rowFlags, false);
                 return;
             }
+
+            if (noResults() && tries > 6) {
+                clearInterval(timer);
+                send(batch, want, { b2a1: false, fertig: false, label: '' }, true);
+                return;
+            }
+            if (tries < MAX_TRIES) return;
             clearInterval(timer);
-            send(batch, sid, flags, false);
+            send(batch, want, { b2a1: false, fertig: false, label: '' }, true);
         }, 300);
     }
 
@@ -400,7 +511,7 @@
         if (!isDetailPage() && !wantedSid()) return;
         if (busy) return;
         busy = true;
-        toast(isDetailPage() ? 'Lese Auftrag…' : ('Öffne ' + wantedSid() + '…'));
+        toast(isDetailPage() ? 'Lese Auftrag…' : ('Suche ' + wantedSid() + '…'));
         run();
     }
 

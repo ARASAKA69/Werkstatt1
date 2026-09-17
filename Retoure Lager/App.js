@@ -2172,7 +2172,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.10', ts: nowStamp_() };
+  return { success: true, version: '1.2.12', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {

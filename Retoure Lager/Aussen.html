@@ -194,6 +194,7 @@
     .status-pill.gestellt { background: #34A853; }
     .status-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
     .status-pill.behalten { background: rgba(255,255,255,0.16); color: var(--foreground-muted); }
+    .status-pill.refurb { background: #7C3AED; color: #fff; }
     .sub { margin-top: 3px; font-size: 0.78rem; color: var(--foreground-muted); font-weight: 600; }
     .main-top {
       padding: var(--space-md) var(--space-lg);
@@ -263,6 +264,7 @@
     .verdict .big-pill.gestellt { background: #34A853; color: #fff; }
     .verdict .big-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
     .verdict .big-pill.behalten { background: rgba(255,255,255,0.12); color: var(--foreground-muted); }
+    .verdict .big-pill.refurb { background: #7C3AED; color: #fff; }
     .vlabel { display: block; font-size: 0.75rem; color: var(--foreground-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
     .status-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
     .sbtn {
@@ -959,7 +961,14 @@
       if (key === 'fertig' || key === 'raus') return 'Fertiggestellt';
       if (key === 'gestellt') return 'GESTELLT';
       if (key === 'tagesliste') return 'TAGESLISTE';
+      if (key === 'refurb') return 'Refurbishment gestartet';
       return 'BEHALTEN';
+    }
+
+    function badgeKeyOf(it) {
+      var k = actionKeyOf(it);
+      if (k !== 'behalten' || !it || !it.carolLive) return k;
+      return /refurbishment\s+(started|gestartet)/i.test(String(it.carolBadge || '')) ? 'refurb' : k;
     }
 
     function actionHint(it) {
@@ -971,6 +980,7 @@
       if (actionKeyOf(it) === 'fertig') return 'Fertiggestellt — rausziehen';
       if (it.actionKey === 'gestellt') return 'Gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + ' — bei Mechanik';
       if (it.actionKey === 'tagesliste') return 'Auf Tagesliste, nicht gestellt';
+      if (badgeKeyOf(it) === 'refurb') return 'Refurbishment gestartet';
       return 'Noch behalten';
     }
 
@@ -1008,8 +1018,9 @@
         for (var i = 0; i < items.length; i++) {
           var it = items[i];
           var k = actionKeyOf(it);
+          var bk = badgeKeyOf(it);
           html += '<button type="button" class="item st-' + k + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
-            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + k + '">' + esc(actionLabel(k)) + '</span></div>' +
+            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + bk + '">' + esc(actionLabel(bk)) + '</span></div>' +
             '<div class="sub">' + esc((it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel || actionHint(it))) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
             '</button>';
         }
@@ -1050,6 +1061,9 @@
       if (state.batchId && u.indexOf('retoure_batch=') === -1) {
         u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(state.batchId);
       }
+      if (u.indexOf('retoure_force=') === -1) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_force=1';
+      }
       return u;
     }
 
@@ -1066,6 +1080,7 @@
       }
       if (k === 'gestellt') return 'Gestellt — bei der Mechanik, nicht mehr im Lager.';
       if (k === 'tagesliste') return 'Tagesliste — nicht gestellt, noch im Lager.';
+      if (badgeKeyOf(it) === 'refurb') return 'Refurbishment gestartet — kein B2A1, nicht fertiggestellt. Bleibt im Lager.';
       return 'Behalten — kein B2A1, nicht Fertiggestellt.';
     }
 
@@ -1107,8 +1122,9 @@
       $('btnCopySid').disabled = !it.stockId;
       $('detailSub').textContent = (it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
       var k = actionKeyOf(it);
-      $('actionPill').className = 'big-pill ' + k;
-      $('actionPill').textContent = actionLabel(k);
+      var bk = badgeKeyOf(it);
+      $('actionPill').className = 'big-pill ' + bk;
+      $('actionPill').textContent = actionLabel(bk);
       $('actionWhy').textContent = actionWhy(it);
       var sbtns = $('actionBtns').querySelectorAll('.sbtn');
       for (var b = 0; b < sbtns.length; b++) {
@@ -1465,14 +1481,15 @@
           var bits = [];
           if (it.itemTyp && it.itemTyp !== '—') bits.push(it.itemTyp);
           if (it.markeModel) bits.push(it.markeModel);
-          if (it.carolB2a1) bits.push('Als B2A1 markiert');
-          else if (it.carolStatus) bits.push(it.carolStatus);
+          if (it.carolB2a1) bits.push(it.carolBadge || 'Als B2A1 markiert');
+          else if (it.carolFertig) bits.push(it.carolBadge || 'Fertiggestellt');
+          else if (it.carolStatus) bits.push('Liste: ' + it.carolStatus);
           if (it.nbB2a1) bits.push('NB B2A1');
           else if (it.nbFertig) bits.push('NB Fertiggestellt');
           if (it.mailFound) bits.push(it.mailSubject || 'Return to Auto1');
           body += '<div class="entry ' + esc(actionKeyOf(it)) + '">' +
             '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
-            '<span class="st">' + esc(actionLabel(actionKeyOf(it))) + '</span></div>' +
+            '<span class="st">' + esc(actionLabel(badgeKeyOf(it))) + '</span></div>' +
             (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
             '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></div>';
         }
