@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      2.3
+// @version      2.5
 // @description  Öffnet den Carol-Auftrag, liest die Badges mit Datum und sendet sie an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -14,7 +14,7 @@
 (function () {
     'use strict';
 
-    var VER = '2.3';
+    var VER = '2.5';
     if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
@@ -343,7 +343,7 @@
                     gmReq('GET', jump, '', onOk, onErr, hop + 1);
                     return;
                 }
-                if (res && res.status >= 200 && res.status < 400) ok({ success: true, accepted: true });
+                if (res && res.status >= 200 && res.status < 400) ok({ accepted: true });
                 else err('HTTP ' + (res && res.status));
             },
             onerror: function () { err('netzwerk'); },
@@ -413,10 +413,24 @@
             + (batch ? '&retoure_batch=' + encodeURIComponent(batch) : ''));
     }
 
+    function pingHud(data) {
+        var targets = [];
+        try { if (window.opener) targets.push(window.opener); } catch (e0) {}
+        try { if (window.opener && window.opener.parent) targets.push(window.opener.parent); } catch (e1) {}
+        try { if (window.opener && window.opener.top) targets.push(window.opener.top); } catch (e2) {}
+        for (var i = 0; i < targets.length; i++) {
+            try { targets[i].postMessage(data, '*'); } catch (e3) {}
+        }
+    }
+
+    function isQueueDone(res) {
+        return !!(res && res.success === true && Number(res.pending) === 0 && !res.accepted);
+    }
+
     function goHome() {
+        pingHud({ retoureCarolDone: 1 });
         try {
             if (window.opener && !window.opener.closed) {
-                try { window.opener.postMessage({ retoureCarolDone: 1 }, '*'); } catch (e0) {}
                 try { window.opener.focus(); } catch (e1) {}
             }
         } catch (e2) {}
@@ -442,15 +456,28 @@
                 goTo(b, next, res.carolUrl || '');
                 return;
             }
-            if (!res || !res.nextId || Number(res.pending) === 0) {
+            if (isQueueDone(res)) {
                 finish('Carol-Check fertig');
                 return;
             }
-            if (String(res.nextId || '').toUpperCase() === String(sid || '').toUpperCase()) {
+            if (res && res.accepted) {
+                toast('Queue unklar — erneut');
+                busy = false;
+                setTimeout(function () { if (!busy) start(); }, 900);
+                return;
+            }
+            if (String(res && res.nextId || '').toUpperCase() === String(sid || '').toUpperCase()) {
                 unmarkDone(b, sid);
                 toast(sid + ' · Report erneut');
                 busy = false;
                 setTimeout(function () { if (!busy) start(); }, 700);
+                return;
+            }
+            if (res && Number(res.pending) > 0 && res.nextId) {
+                unmarkDone(b, String(res.nextId).toUpperCase());
+                toast('weiter · ' + res.nextId);
+                busy = false;
+                goTo(b, res.nextId, res.carolUrl || '');
                 return;
             }
             toast('Warte auf Scan-Seite');
@@ -475,23 +502,42 @@
             label: shortLabel(flags.label || ''),
             detail: '1'
         }, function (res) {
+            if (res && res.accepted && res.success !== true) {
+                if (attempt < 4) {
+                    toast(sid + ' · Report unklar — erneut');
+                    setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+                    return;
+                }
+                toast(sid + ' · Report unklar — Scan-Seite übernimmt');
+                busy = false;
+                return;
+            }
             if (res && res.success === false && String(res.message || '') === 'Kein Auftrag offen') {
                 toast(sid + ' · Scan-Seite übernimmt');
                 busy = false;
                 return;
             }
-            if (res && res.success === false) {
-                if (attempt < 3) {
-                    toast(sid + ' · ' + (res.message || 'Fehler') + ' — erneut');
+            if (!res || res.success === false) {
+                if (attempt < 4) {
+                    toast(sid + ' · ' + ((res && res.message) || 'Fehler') + ' — erneut');
                     setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
                     return;
                 }
-                toast(sid + ' · Report: ' + (res.message || 'Fehler'));
+                toast(sid + ' · Report hängt — Scan-Seite übernimmt');
                 busy = false;
-                setTimeout(function () { if (!busy) start(); }, 1200);
                 return;
             }
             markDone(batch, sid);
+            pingHud({
+                retoureCarolUpdate: 1,
+                stockId: sid,
+                carolB2a1: !!flags.b2a1,
+                carolFertig: !!flags.fertig,
+                carolLabel: notfound ? 'Kein Carol-Auftrag' : shortLabel(flags.label || ''),
+                notFound: !!notfound,
+                pending: res && res.pending,
+                nextId: res && res.nextId
+            });
             if (res && res.batchId) ssSet('retoure_batch', res.batchId);
             var b = (res && res.batchId) || batch;
             var next = pickNext(res, sid, b);
@@ -501,27 +547,21 @@
                 goTo(b, next, res.carolUrl || '');
                 return;
             }
-            if (res && res.accepted) {
-                askQueue(batch, sid);
+            if (isQueueDone(res)) {
+                finish(sid + ' ok · 0 offen');
                 return;
             }
-            var left = Number(res && res.pending) || 0;
-            if (left > 0) {
-                toast(sid + ' ok · ' + left + ' offen');
-                busy = false;
-                askQueue(batch, sid);
-                return;
-            }
-            finish(sid + ' ok · 0 offen');
+            toast(sid + ' ok · ' + ((res && res.pending) || '?') + ' offen');
+            busy = false;
+            askQueue(batch, sid);
         }, function (e) {
-            if (attempt < 3) {
+            if (attempt < 4) {
                 toast(sid + ' · Report ' + e + ' — erneut');
                 setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
                 return;
             }
-            toast(sid + ' · Report ' + e);
+            toast(sid + ' · Report ' + e + ' — Scan-Seite übernimmt');
             busy = false;
-            setTimeout(function () { if (!busy) start(); }, 1500);
         });
     }
 

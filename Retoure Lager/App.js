@@ -2180,7 +2180,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.16', ts: nowStamp_() };
+  return { success: true, version: '1.2.18', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2255,7 +2255,7 @@ function aussenCarolQueue(batchId) {
 function applyAussenCarolFlags(payload) {
   var lock = LockService.getScriptLock();
   try {
-    lock.waitLock(20000);
+    lock.waitLock(8000);
   } catch (lockErr) {
     return { success: false, message: 'Beschäftigt — erneut' };
   }
@@ -2302,10 +2302,10 @@ function applyAussenCarolFlags(payload) {
         pool[i].action = aussenAction_(pool[i]);
         pool[i].actionKey = aussenActionKey_(pool[i].action);
       }
+      writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), [pool[i]]);
       break;
     }
     if (!found) return { success: false, message: 'ID nicht im Batch' };
-    writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), pool);
     var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
     maps.carolLive = maps.carolLive || {};
     maps.carolLive[stockId] = b2a1 ? 'b2a1' : (fertig ? 'fertig' : 'none');

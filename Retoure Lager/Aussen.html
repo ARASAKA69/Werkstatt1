@@ -572,6 +572,7 @@
       logLines: [],
       logErr: 0,
       carolPoll: null,
+      carolPollBusy: false,
       carolWin: null,
       carolDone: false,
       mailDone: false,
@@ -919,8 +920,77 @@
       if (res.gestelltCount != null) state.gestelltCount = res.gestelltCount;
       else if (res.gestelltItems) state.gestelltCount = res.gestelltItems.length;
       if (merge) mergeItems(res.items || []);
-      else if (res.items) state.items = res.items;
+      else if (res.items) {
+        var prevMap = {};
+        for (var p = 0; p < state.items.length; p++) prevMap[state.items[p].stockId] = state.items[p];
+        var next = [];
+        for (var n = 0; n < res.items.length; n++) {
+          var it = res.items[n];
+          var prev = prevMap[it.stockId];
+          if (prev && prev.carolLive && !it.carolLive) {
+            it.carolLive = true;
+            it.carolDetail = true;
+            it.carolB2a1 = !!prev.carolB2a1;
+            it.carolFertig = !!prev.carolFertig;
+            it.carolDone = !!prev.carolDone;
+            it.carolBadge = prev.carolBadge;
+            if (!it.manual && !prev.manual) {
+              it.action = prev.action;
+              it.actionKey = prev.actionKey;
+            }
+          }
+          next.push(it);
+        }
+        state.items = next;
+      }
       if (!state.selected && state.items.length) state.selected = state.items[0].stockId;
+    }
+
+    function patchItemCarol(d) {
+      var sid = String((d && d.stockId) || '').toUpperCase();
+      if (!sid) return false;
+      var lists = [state.items, state.gestelltItems];
+      var it = null;
+      for (var L = 0; L < lists.length && !it; L++) {
+        var arr = lists[L] || [];
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i].stockId === sid) {
+            it = arr[i];
+            break;
+          }
+        }
+      }
+      if (!it) return false;
+      var notFound = !!d.notFound;
+      it.carolLive = true;
+      it.carolDetail = true;
+      it.carolB2a1 = !notFound && !!d.carolB2a1;
+      it.carolFertig = !notFound && !!d.carolFertig && !it.carolB2a1;
+      it.carolDone = !!it.carolFertig;
+      it.carolBadge = notFound
+        ? 'Kein Carol-Auftrag'
+        : (d.carolLabel || (it.carolB2a1 ? 'Als B2A1 markiert' : (it.carolFertig ? 'Fertiggestellt' : 'Kein Badge')));
+      if (!it.manual) {
+        if (it.mailFound || it.carolB2a1 || it.nbB2a1) {
+          it.action = 'B2A1';
+          it.actionKey = 'b2a1';
+        } else if (it.carolFertig || it.nbFertig) {
+          it.action = 'FERTIG';
+          it.actionKey = 'fertig';
+        } else if (it.tlGestellt) {
+          it.action = 'GESTELLT';
+          it.actionKey = 'gestellt';
+        } else if (it.tlFound) {
+          it.action = 'TAGESLISTE';
+          it.actionKey = 'tagesliste';
+        } else {
+          it.action = 'BEHALTEN';
+          it.actionKey = 'behalten';
+        }
+      }
+      renderList();
+      renderDetail();
+      return true;
     }
 
     function actionKeyOf(it) {
@@ -1208,9 +1278,24 @@
     function mergeItems(chunk) {
       var map = {};
       for (var i = 0; i < state.items.length; i++) map[state.items[i].stockId] = i;
-      for (var j = 0; j < chunk.length; j++) {
+      for (var j = 0; j < (chunk || []).length; j++) {
         var it = chunk[j];
-        if (map[it.stockId] != null) state.items[map[it.stockId]] = it;
+        if (!it || !it.stockId) continue;
+        var idx = map[it.stockId];
+        var prev = idx != null ? state.items[idx] : null;
+        if (prev && prev.carolLive && !it.carolLive) {
+          it.carolLive = true;
+          it.carolDetail = true;
+          it.carolB2a1 = !!prev.carolB2a1;
+          it.carolFertig = !!prev.carolFertig;
+          it.carolDone = !!prev.carolDone;
+          it.carolBadge = prev.carolBadge;
+          if (!it.manual && !prev.manual) {
+            it.action = prev.action;
+            it.actionKey = prev.actionKey;
+          }
+        }
+        if (idx != null) state.items[idx] = it;
         else state.items.push(it);
       }
     }
@@ -1340,8 +1425,14 @@
 
     function startCarolPoll() {
       if (state.carolPoll || !state.batchId) return;
+      state.carolPollBusy = false;
       state.carolPoll = setInterval(function() {
-        google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+        if (state.carolPollBusy) return;
+        state.carolPollBusy = true;
+        google.script.run.withFailureHandler(function() {
+          state.carolPollBusy = false;
+        }).withSuccessHandler(function(res) {
+          state.carolPollBusy = false;
           if (!res || !res.success) return;
           applyBatchPayload(res, false);
           renderList();
@@ -1358,6 +1449,12 @@
           else {
             state.carolStallSid = nextSid;
             state.carolStall = 0;
+          }
+          var gone = false;
+          try { gone = !state.carolWin || state.carolWin.closed; } catch (eW) { gone = true; }
+          if (gone) {
+            state.carolWin = null;
+            state.carolNav[nextSid] = 0;
           }
           if (!state.carolNav[nextSid]) {
             state.carolNav[nextSid] = 1;
@@ -1377,7 +1474,7 @@
             maybeFinishRun();
           }
         }).getAussenBatch(state.batchId);
-      }, 2000);
+      }, 1200);
     }
 
     function startCarolBridge() {
@@ -1723,10 +1820,33 @@
     });
     window.addEventListener('message', function(ev) {
       var d = ev && ev.data;
-      if (!d || d.retoureCarolDone !== 1) return;
-      stopCarolPoll();
-      state.carolDone = true;
-      maybeFinishRun();
+      if (!d) return;
+      if (d.retoureCarolUpdate === 1) {
+        patchItemCarol(d);
+        if (!state.carolPoll) startCarolPoll();
+        return;
+      }
+      if (d.retoureCarolDone !== 1) return;
+      if (!state.batchId) return;
+      google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+        if (!res || !res.success) return;
+        applyBatchPayload(res, false);
+        renderList();
+        renderDetail();
+        if (res.carolPending) {
+          if (!state.carolPoll) startCarolPoll();
+          var nextSid = res.nextCarolId || '';
+          if (nextSid) {
+            state.carolNav[nextSid] = 0;
+            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
+          }
+          toast('Carol-Check läuft weiter · ' + res.carolPending + ' offen', true);
+          return;
+        }
+        stopCarolPoll();
+        state.carolDone = true;
+        maybeFinishRun();
+      }).getAussenBatch(state.batchId);
     });
     document.addEventListener('click', function(e) {
       if (e.target.closest('button, a, select, textarea, input')) return;
