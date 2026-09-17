@@ -192,7 +192,7 @@
     .status-pill.b2a1 { background: #ff0000; }
     .status-pill.fertig, .status-pill.raus { background: #00ffff; color: #1a1a1a; }
     .status-pill.gestellt { background: #34A853; }
-    .status-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
+    .status-pill.tagesliste, .status-pill.heraus { background: #ffff00; color: #1a1a1a; }
     .status-pill.behalten { background: rgba(255,255,255,0.16); color: var(--foreground-muted); }
     .status-pill.refurb { background: #7C3AED; color: #fff; }
     .sub { margin-top: 3px; font-size: 0.78rem; color: var(--foreground-muted); font-weight: 600; }
@@ -318,6 +318,63 @@
     .fv.red { color: #fca5a5; }
     .fv.cyan { color: #a5f3fc; }
     .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
+    .handy-modal {
+      position: fixed; inset: 0; z-index: 90; display: none; place-items: center;
+      background: rgba(5,5,6,.78); backdrop-filter: blur(8px); padding: 18px;
+    }
+    .handy-modal.show { display: grid; }
+    .handy-card {
+      width: min(420px, 100%); background: #10141c; border: 1px solid var(--border-strong);
+      border-radius: 18px; padding: 18px; text-align: center;
+    }
+    .handy-card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .handy-card p { margin: 0 0 14px; color: var(--foreground-muted); font-size: .82rem; font-weight: 600; line-height: 1.4; }
+    .handy-card img { width: 220px; height: 220px; border-radius: 12px; background: #fff; }
+    .handy-card input {
+      width: 100%; margin: 12px 0; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--foreground); font: 600 .72rem/1.3 var(--font);
+    }
+    .pick-app {
+      display: none; position: relative; z-index: 2; min-height: 100%; padding: 16px 16px 28px;
+      flex-direction: column; gap: 14px;
+    }
+    body.pick-on { overflow: auto; }
+    body.pick-on .app, body.pick-on .ambient, body.pick-on .log-card { display: none !important; }
+    body.pick-on .pick-app { display: flex; }
+    .pick-top { display: flex; align-items: center; gap: 12px; }
+    .pick-top strong { font-size: 1.15rem; }
+    .pick-top span { color: var(--foreground-muted); font-size: .75rem; font-weight: 700; }
+    .pick-scan {
+      width: 100%; min-height: 64px; font: 800 1.35rem/1.2 var(--font); letter-spacing: .04em;
+      text-transform: uppercase; text-align: center; padding: 14px;
+      border-radius: 16px; border: 2px solid var(--color-primary);
+      background: var(--surface); color: var(--foreground); outline: none;
+    }
+    .pick-hit {
+      border-radius: 18px; padding: 18px; border: 1px solid var(--border-strong);
+      background: var(--surface); min-height: 140px;
+    }
+    .pick-hit .sid { font-size: 1.8rem; font-weight: 800; letter-spacing: .04em; }
+    .pick-hit .why { margin-top: 8px; font-weight: 700; font-size: 1.05rem; }
+    .pick-hit .sub { margin-top: 6px; color: var(--foreground-muted); font-size: .85rem; font-weight: 600; }
+    .pick-hit.b2a1 { background: rgba(220,38,38,.22); border-color: #ef4444; }
+    .pick-hit.fertig { background: rgba(6,182,212,.2); border-color: #22d3ee; }
+    .pick-hit.heraus, .pick-hit.tagesliste { background: rgba(251,191,36,.18); border-color: #fbbf24; }
+    .pick-hit.ok { background: rgba(52,211,153,.12); border-color: #34d399; }
+    .pick-hit.miss { background: rgba(255,255,255,.04); }
+    .pick-hist { display: flex; flex-direction: column; gap: 8px; }
+    .pick-hist .row {
+      display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px;
+      border-radius: 12px; border: 1px solid var(--border); font-weight: 700; font-size: .85rem;
+    }
+    @media (max-width: 900px) {
+      html { font-size: 18px; }
+      body { overflow: auto; }
+      .app { height: auto; min-height: 100%; }
+      .main-top { flex-wrap: wrap; }
+      .actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+      .log-card { display: none; }
+    }
     .nb-empty {
       text-align: center; color: var(--foreground-muted); font-size: 0.9rem;
       padding: 1.2rem; border: 1px dashed var(--border); border-radius: 12px;
@@ -440,13 +497,14 @@
         <div class="row-btns">
           <button class="btn teal" type="button" id="btnCheck">Prüfen</button>
           <button class="btn teal" type="button" id="btnCarolCheck">Carol prüfen</button>
+          <button class="btn ghost" type="button" id="btnHandy">Handy</button>
           <button class="btn ghost" type="button" id="btnNew">Neue Runde</button>
         </div>
         <select class="sel" id="batchSel" aria-label="Vorherige Dumps"></select>
         <div class="stats" id="stats"></div>
         <div class="filters" id="filters">
           <button class="chip active" data-f="alle" type="button">Alle</button>
-          <button class="chip" data-f="sort" type="button">B2A1 + Fertig</button>
+          <button class="chip" data-f="sort" type="button">Rausziehen</button>
           <button class="chip" data-f="b2a1" type="button">B2A1</button>
           <button class="chip" data-f="fertig" type="button">Fertig</button>
           <button class="chip" data-f="reifen" type="button">Reifen</button>
@@ -477,7 +535,7 @@
         <div class="actions">
           <button class="btn primary" id="btnPrintSort" type="button" disabled>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-            PDF B2A1 + Fertig
+            PDF Rausziehen
           </button>
           <button class="btn" id="btnPrintAll" type="button" disabled>PDF Alles</button>
           <button class="btn teal" id="btnCarol" type="button" disabled>Carol</button>
@@ -533,6 +591,34 @@
       </div>
     </section>
   </div>
+  <div class="pick-app" id="pickApp">
+    <div class="pick-top">
+      <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+      <div>
+        <strong>Retoure Handy</strong>
+        <span id="pickMeta">Scanner bereit</span>
+      </div>
+    </div>
+    <input class="pick-scan" id="pickScan" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Box scannen…">
+    <div class="pick-hit miss" id="pickHit">
+      <div class="sid">—</div>
+      <div class="why">Scanner auf das Feld, dann Barcode</div>
+      <div class="sub">Piept bei B2A1, Fertiggestellt, Herausgegeben und Tagesliste</div>
+    </div>
+    <div class="pick-hist" id="pickHist"></div>
+  </div>
+  <div class="handy-modal" id="handyModal">
+    <div class="handy-card">
+      <h2>Handy mit diesem Dump verbinden</h2>
+      <p>QR scannen oder Link öffnen. Gleicher Dump wie am PC. Scanner piept bei rauszuziehenden Boxen.</p>
+      <img id="handyQr" alt="QR">
+      <input id="handyUrl" readonly>
+      <div class="row-btns" style="justify-content:center">
+        <button class="btn teal" type="button" id="btnHandyCopy">Link kopieren</button>
+        <button class="btn ghost" type="button" id="btnHandyClose">Schließen</button>
+      </div>
+    </div>
+  </div>
   <div class="toast" id="toast"></div>
   <aside class="log-card" id="logCard">
     <div class="log-head">
@@ -543,6 +629,8 @@
     <div class="log-body" id="logBody"><div class="log-empty">Bereit — Fehler und Schritte erscheinen hier</div></div>
   </aside>
   <script>
+    var BOOT_MODE = <?!= JSON.stringify(typeof bootMode === 'undefined' ? 'desk' : bootMode) ?>;
+    var BOOT_PICK = <?!= JSON.stringify(typeof bootPick === 'undefined' ? '' : bootPick) ?>;
     var APP_BASE = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
     var CALL_WAIT = {
       aussenPing: 12000,
@@ -578,7 +666,8 @@
       mailDone: false,
       carolNav: {},
       carolStallSid: '',
-      carolStall: 0
+      carolStall: 0,
+      pickPoll: null
     };
 
     function $(id) { return document.getElementById(id); }
@@ -634,6 +723,111 @@
           if (playDoneTone._ctx.state === 'suspended') playDoneTone._ctx.resume();
         }
       } catch (eA) {}
+    }
+
+    function playPullTone(kind) {
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        playDoneTone._ctx = playDoneTone._ctx || new Ctx();
+        var ctx = playDoneTone._ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        function beep(at, freq, dur) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(at);
+          o.stop(at + dur + 0.03);
+        }
+        var t = ctx.currentTime + 0.02;
+        if (kind === 'b2a1') {
+          beep(t, 880, 0.12); beep(t + 0.16, 880, 0.12); beep(t + 0.34, 1320, 0.28);
+        } else if (kind === 'fertig') {
+          beep(t, 740, 0.14); beep(t + 0.2, 1175, 0.28);
+        } else {
+          beep(t, 523, 0.16); beep(t + 0.2, 698, 0.26);
+        }
+      } catch (e) {}
+    }
+
+    function handyUrl() {
+      if (!state.batchId) return '';
+      return APP_BASE + '?page=pick&batch=' + encodeURIComponent(state.batchId);
+    }
+
+    function openHandy() {
+      if (!state.batchId) {
+        toast('Zuerst Dump prüfen', true);
+        return;
+      }
+      var url = handyUrl();
+      $('handyUrl').value = url;
+      $('handyQr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
+      $('handyModal').classList.add('show');
+    }
+
+    function findItem(sid) {
+      sid = String(sid || '').replace(/\s+/g, '').toUpperCase();
+      var lists = [state.items, state.gestelltItems];
+      for (var L = 0; L < lists.length; L++) {
+        var arr = lists[L] || [];
+        for (var i = 0; i < arr.length; i++) if (arr[i].stockId === sid) return arr[i];
+      }
+      return null;
+    }
+
+    function showPickHit(sid, it) {
+      var box = $('pickHit');
+      if (!it) {
+        box.className = 'pick-hit miss';
+        box.innerHTML = '<div class="sid">' + esc(sid || '—') + '</div><div class="why">Nicht in diesem Dump</div><div class="sub">Andere Box scannen</div>';
+        return;
+      }
+      var kind = pullKindOf(it);
+      box.className = 'pick-hit ' + (kind || (it.tlGestellt ? 'ok' : 'ok'));
+      var why = kind ? pullKindLabel(kind) : (it.tlGestellt ? 'Gestellt — nicht im Aussenlager' : 'Behalten — bleibt');
+      var sub = [it.itemTyp, it.markeModel, it.carolBadge || it.carolStatus, it.tlDatum ? ('TL ' + it.tlDatum) : ''].filter(Boolean).join(' · ');
+      box.innerHTML = '<div class="sid">' + esc(it.stockId) + '</div><div class="why">' + esc(why) + '</div><div class="sub">' + esc(sub) + '</div>';
+      if (kind) playPullTone(kind);
+      var hist = $('pickHist');
+      var row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span>' + esc(it.stockId) + '</span><span>' + esc(kind ? pullKindLabel(kind) : 'OK') + '</span>';
+      hist.insertBefore(row, hist.firstChild);
+      while (hist.children.length > 12) hist.removeChild(hist.lastChild);
+    }
+
+    function handlePickScan(raw) {
+      var sid = String(raw || '').replace(/\s+/g, '').toUpperCase();
+      if (!/^[A-Z]{2}\d{4,8}$/.test(sid)) return;
+      $('pickScan').value = '';
+      showPickHit(sid, findItem(sid));
+    }
+
+    function startPickMode() {
+      document.body.classList.add('pick-on');
+      if (BOOT_PICK) {
+        loadBatch(BOOT_PICK);
+        $('pickMeta').textContent = BOOT_PICK;
+      } else {
+        $('pickMeta').textContent = 'Kein Dump in der URL — QR am PC scannen';
+      }
+      setTimeout(function() { $('pickScan').focus(); unlockAudio(); }, 300);
+      if (state.pickPoll) clearInterval(state.pickPoll);
+      state.pickPoll = setInterval(function() {
+        if (!state.batchId) return;
+        google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          applyBatchPayload(res, false);
+          $('pickMeta').textContent = (pullItems().length || 0) + ' rausziehen · ' + (state.items.length || 0) + ' IDs';
+        }).getAussenBatch(state.batchId);
+      }, 8000);
     }
 
     function navCarol(url) {
@@ -1041,15 +1235,42 @@
       return k;
     }
 
+    function isHerausgegeben(it) {
+      return /herausgegeben|handed\s*out/i.test(String((it && it.carolStatus) || '') + ' ' + String((it && it.carolBadge) || ''));
+    }
+
+    function pullKindOf(it) {
+      if (!it || it.tlGestellt) return '';
+      var k = actionKeyOf(it);
+      if (k === 'b2a1') return 'b2a1';
+      if (k === 'fertig') return 'fertig';
+      if (isHerausgegeben(it)) return 'heraus';
+      if (k === 'tagesliste' || (it.tlFound && !it.tlGestellt)) return 'tagesliste';
+      return '';
+    }
+
+    function pullItems() {
+      return state.items.filter(function(it) { return !!pullKindOf(it); });
+    }
+
+    function pullKindLabel(kind) {
+      if (kind === 'b2a1') return 'B2A1 — rausziehen';
+      if (kind === 'fertig') return 'Fertiggestellt — rausziehen';
+      if (kind === 'heraus') return 'Herausgegeben — rausziehen';
+      if (kind === 'tagesliste') return 'Tagesliste — noch im Lager';
+      return '';
+    }
+
     function countsOf(items) {
-      var c = { all: items.length, b2a1: 0, fertig: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0, reifen: 0, box: 0 };
+      var c = { all: items.length, b2a1: 0, fertig: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0, reifen: 0, box: 0, heraus: 0 };
       for (var i = 0; i < items.length; i++) {
         var it = items[i];
         var k = actionKeyOf(it);
         if (k === 'gestellt') continue;
         if (k === 'fertig') c.fertig++;
         else if (c[k] != null) c[k]++;
-        if (k === 'b2a1' || k === 'fertig') c.sort++;
+        if (pullKindOf(it)) c.sort++;
+        if (isHerausgegeben(it) && k !== 'b2a1' && k !== 'fertig') c.heraus++;
         var typ = String(it.itemTyp || '');
         if (typ === 'Reifen' || typ === 'Reifen + Box') c.reifen++;
         if (typ === 'Lagerbox' || typ === 'Reifen + Box') c.box++;
@@ -1061,17 +1282,25 @@
     function visibleItems() {
       var f = String(state.filter || 'alle').toLowerCase();
       if (f === 'gestellt') return state.gestelltItems || [];
-      return state.items.filter(function(it) {
+      var list = state.items.filter(function(it) {
         var k = actionKeyOf(it);
         var typ = String(it.itemTyp || '');
         if (it.tlGestellt) return false;
         if (f === 'alle') return true;
-        if (f === 'sort') return k === 'b2a1' || k === 'fertig';
+        if (f === 'sort') return !!pullKindOf(it);
         if (f === 'fertig' || f === 'raus') return k === 'fertig';
         if (f === 'reifen') return typ === 'Reifen' || typ === 'Reifen + Box';
         if (f === 'lagerbox') return typ === 'Lagerbox' || typ === 'Reifen + Box';
         return k === f;
       });
+      var rank = { b2a1: 1, fertig: 2, heraus: 3, tagesliste: 4 };
+      list.sort(function(a, b) {
+        var ra = rank[pullKindOf(a)] || 9;
+        var rb = rank[pullKindOf(b)] || 9;
+        if (ra !== rb) return ra - rb;
+        return String(a.stockId).localeCompare(String(b.stockId));
+      });
+      return list;
     }
 
     function actionLabel(key) {
@@ -1114,7 +1343,7 @@
       var html = '';
       for (var i = 0; i < keys.length; i++) {
         var k = keys[i][0];
-        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'fertig'));
+        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'fertig' || k === 'tagesliste'));
         html += '<button type="button" class="stat ' + k + (on ? ' active' : '') + '" data-f="' + k + '"><div class="n">' + c[k] + '</div><div class="l">' + keys[i][1] + '</div></button>';
       }
       $('stats').innerHTML = html;
@@ -1135,10 +1364,10 @@
       } else {
         for (var i = 0; i < items.length; i++) {
           var it = items[i];
-          var k = actionKeyOf(it);
-          var bk = badgeKeyOf(it);
-          html += '<button type="button" class="item st-' + k + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
-            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + bk + '">' + esc(actionLabel(bk)) + '</span></div>' +
+          var k = badgeKeyOf(it);
+          var pk = pullKindOf(it);
+          html += '<button type="button" class="item st-' + actionKeyOf(it) + (pk ? ' pull' : '') + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
+            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + (pk || k) + '">' + esc(pk ? pullKindLabel(pk).split(' —')[0] : actionLabel(k)) + '</span></div>' +
             '<div class="sub">' + esc((it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel || actionHint(it))) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
             '</button>';
         }
@@ -1455,7 +1684,7 @@
           return;
         }
         checkMails(opId, res.nextOffset || (offset + (res.items ? res.items.length : 8)));
-      }, 'checkAussenMailChunk', state.batchId, offset, 8);
+      }, 'checkAussenMailChunk', state.batchId, offset, 16);
     }
 
     function stopCarolPoll() {
@@ -1516,7 +1745,7 @@
             maybeFinishRun();
           }
         }).getAussenBatch(state.batchId);
-      }, 1200);
+      }, 8000);
     }
 
     function startCarolBridge() {
@@ -1592,28 +1821,40 @@
         state.selected = state.items.length ? state.items[0].stockId : '';
         renderList();
         renderDetail();
-        $('dump').focus();
+        if (document.body.classList.contains('pick-on')) {
+          $('pickMeta').textContent = (pullItems().length || 0) + ' rausziehen · ' + (state.items.length || 0) + ' IDs';
+          setTimeout(function() { $('pickScan').focus(); unlockAudio(); }, 200);
+        } else {
+          $('dump').focus();
+        }
       }, 'getAussenBatch', id);
     }
 
-    function printItems(items, title) {
+    function printItems(items, title, pullOnly) {
       items = items || [];
       if (!items.length) {
         toast('Nichts zu drucken', true);
         return;
       }
-      var groups = [
-        { key: 'b2a1', title: 'B2A1 — Als B2A1 markiert / Mail', items: [] },
+      var groups = pullOnly ? [
+        { key: 'b2a1', title: 'B2A1', items: [] },
         { key: 'fertig', title: 'Fertiggestellt', items: [] },
+        { key: 'heraus', title: 'Herausgegeben', items: [] },
+        { key: 'tagesliste', title: 'Tagesliste — noch im Lager', items: [] }
+      ] : [
+        { key: 'b2a1', title: 'B2A1', items: [] },
+        { key: 'fertig', title: 'Fertiggestellt', items: [] },
+        { key: 'tagesliste', title: 'Tagesliste', items: [] },
         { key: 'behalten', title: 'Behalten', items: [] }
       ];
       var map = {};
       for (var g = 0; g < groups.length; g++) map[groups[g].key] = groups[g];
       for (var i = 0; i < items.length; i++) {
         if (items[i].tlGestellt) continue;
-        var k = actionKeyOf(items[i]);
-        if (!map[k]) k = 'behalten';
-        map[k].items.push(items[i]);
+        var pk = pullOnly ? pullKindOf(items[i]) : actionKeyOf(items[i]);
+        if (!pk || !map[pk]) pk = pullOnly ? '' : 'behalten';
+        if (!pk || !map[pk]) continue;
+        map[pk].items.push(items[i]);
       }
       var now = new Date();
       var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
@@ -1634,7 +1875,8 @@
           if (it.nbB2a1) bits.push('NB B2A1');
           else if (it.nbFertig) bits.push('NB Fertiggestellt');
           if (it.mailFound) bits.push(it.mailSubject || 'Return to Auto1');
-          body += '<div class="entry ' + esc(actionKeyOf(it)) + '">' +
+          var ek = pullOnly ? (pullKindOf(it) || 'behalten') : actionKeyOf(it);
+          body += '<div class="entry ' + esc(ek) + '">' +
             '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
             '<span class="st">' + esc(actionLabel(badgeKeyOf(it))) + '</span></div>' +
             (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
@@ -1655,7 +1897,7 @@
         '.entry.b2a1{background:#f7c5c5;border-color:#c00}' +
         '.entry.fertig,.entry.raus{background:#c5f0f7;border-color:#088}' +
         '.entry.gestellt{background:#d4edda;border-color:#2a7}' +
-        '.entry.tagesliste{background:#fff3b0;border-color:#aa0}' +
+        '.entry.tagesliste,.entry.heraus{background:#fff3b0;border-color:#aa0}' +
         '.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
         '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
         '.st{font-weight:bold;font-size:10px;white-space:nowrap}' +
@@ -1719,6 +1961,43 @@
       }, 2000);
     });
 
+    $('btnHandy').addEventListener('click', openHandy);
+    $('btnHandyClose').addEventListener('click', function() {
+      $('handyModal').classList.remove('show');
+    });
+    $('btnHandyCopy').addEventListener('click', function() {
+      var url = $('handyUrl').value || handyUrl();
+      if (!url) return;
+      function done() { toast('Handy-Link kopiert'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(function() {
+          $('handyUrl').select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+        });
+        return;
+      }
+      $('handyUrl').select();
+      try { document.execCommand('copy'); done(); } catch (e2) {}
+    });
+    $('handyModal').addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('show');
+    });
+    $('pickScan').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePickScan(this.value);
+      }
+    });
+    $('pickScan').addEventListener('input', function() {
+      var v = this.value;
+      clearTimeout(handlePickScan._t);
+      var sid = String(v || '').replace(/\s+/g, '').toUpperCase();
+      if (/^[A-Z]{2}\d{4,8}$/.test(sid)) {
+        handlePickScan._t = setTimeout(function() { handlePickScan(v); }, 60);
+      }
+    });
+    $('pickScan').addEventListener('focus', unlockAudio);
+    $('pickHit').addEventListener('click', function() { $('pickScan').focus(); });
     $('btnCheck').addEventListener('click', function() {
       clearTimeout(state.dumpTimer);
       startCheck();
@@ -1751,10 +2030,7 @@
       window.open(APP_BASE, '_blank', 'noopener,noreferrer');
     });
     $('btnPrintSort').addEventListener('click', function() {
-      printItems(state.items.filter(function(it) {
-        var k = actionKeyOf(it);
-        return k === 'b2a1' || k === 'fertig';
-      }), 'Retoure — B2A1 + Fertiggestellt');
+      printItems(pullItems(), 'Retoure — Rausziehen', true);
     });
     $('btnPrintAll').addEventListener('click', function() {
       printItems(state.items, 'Retoure Scan');
@@ -1848,12 +2124,17 @@
     });
     document.addEventListener('keydown', function(e) {
       if (e.key === 'Escape') {
+        if ($('handyModal').classList.contains('show')) {
+          $('handyModal').classList.remove('show');
+          return;
+        }
         if ($('loadOverlay').classList.contains('show') || state.busy) {
           e.preventDefault();
           cancelBusyOp();
         }
         return;
       }
+      if (document.body.classList.contains('pick-on')) return;
       if (e.target === $('dump') || e.target === $('batchSel')) return;
       if (e.key === '/' || (e.key.length === 1 && /[a-z0-9]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         $('dump').focus();
@@ -1949,6 +2230,10 @@
     });
     document.addEventListener('click', function(e) {
       if (e.target.closest('button, a, select, textarea, input')) return;
+      if (document.body.classList.contains('pick-on')) {
+        $('pickScan').focus();
+        return;
+      }
       $('dump').focus();
     });
 
@@ -1978,8 +2263,12 @@
     } catch (e1) {
       logLine('err', 'aussenPing ' + String(e1 && e1.message ? e1.message : e1));
     }
-    loadBatches();
-    $('dump').focus();
+    if (BOOT_MODE === 'pick') {
+      startPickMode();
+    } else {
+      loadBatches();
+      $('dump').focus();
+    }
   </script>
 </body>
 </html>

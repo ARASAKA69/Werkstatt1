@@ -28,7 +28,7 @@ function doGet(e) {
       return jsonOut_(aussenCarolQueue(e.parameter.batch));
     }
     if (page === 'carolping') {
-      return jsonOut_({ success: true, version: '1.2.19', via: 'get', ts: nowStamp_() });
+      return jsonOut_({ success: true, version: '1.2.21', via: 'get', ts: nowStamp_() });
     }
     if (page === 'carolreport') {
       return jsonOut_(applyAussenCarolFlags({
@@ -41,9 +41,18 @@ function doGet(e) {
         notFound: String(e.parameter.notfound || '') === '1'
       }));
     }
-    var isAussen = page === 'aussen' || page === 'scan';
-    return HtmlService.createHtmlOutputFromFile(isAussen ? 'Aussen' : 'Index')
-      .setTitle(isAussen ? 'Retoure Scan' : 'Retoure Lager')
+    var isAussen = page === 'aussen' || page === 'scan' || page === 'pick' || page === 'handy';
+    if (isAussen) {
+      var t = HtmlService.createTemplateFromFile('Aussen');
+      t.bootMode = (page === 'pick' || page === 'handy') ? 'pick' : 'desk';
+      t.bootPick = String((e && e.parameter && (e.parameter.batch || e.parameter.pick)) || '');
+      return t.evaluate()
+        .setTitle(t.bootMode === 'pick' ? 'Retoure Handy' : 'Retoure Scan')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
+    }
+    return HtmlService.createHtmlOutputFromFile('Index')
+      .setTitle('Retoure Lager')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   } catch (err) {
@@ -69,7 +78,7 @@ function doPost(e) {
       return jsonOut_(aussenCarolQueue(body.batch || body.batchId || ''));
     }
     if (page === 'carolping') {
-      return jsonOut_({ success: true, version: '1.2.19', via: 'post', ts: nowStamp_() });
+      return jsonOut_({ success: true, version: '1.2.21', via: 'post', ts: nowStamp_() });
     }
     if (page === 'carolreport') {
       return jsonOut_(applyAussenCarolFlags({
@@ -341,19 +350,12 @@ function buildRefurbMap_() {
     if (!sheet) return map;
     var lastRow = sheet.getLastRow();
     if (lastRow < 2) return map;
-    var lastCol = Math.min(45, Math.max(30, sheet.getLastColumn()));
+    var lastCol = Math.min(30, Math.max(30, sheet.getLastColumn()));
     var data = sheet.getRange(2, 1, lastRow, lastCol).getValues();
     var formulas = sheet.getRange(2, 3, lastRow, 3).getFormulas();
     for (var i = 0; i < data.length; i++) {
       var stockId = normalizeStockId_(data[i][1]);
       if (!stockId || map[stockId]) continue;
-      var rowText = '';
-      for (var c = 0; c < data[i].length; c++) {
-        var cell = data[i][c];
-        if (cell == null || cell === '') continue;
-        if (Object.prototype.toString.call(cell) === '[object Date]') continue;
-        rowText += ' ' + String(cell);
-      }
       map[stockId] = {
         found: true,
         row: i + 2,
@@ -365,8 +367,7 @@ function buildRefurbMap_() {
         status: String(data[i][25] || '').trim(),
         regal: String(data[i][27] || '').trim(),
         reifenStatusRaw: String(data[i][29] || '').trim(),
-        reifenStatus: formatReifenLabel_(data[i][29]),
-        rowText: rowText
+        reifenStatus: formatReifenLabel_(data[i][29])
       };
     }
   } catch (e) {}
@@ -1029,16 +1030,17 @@ function clearCacheJson_(prefix) {
   } catch (e0) {}
 }
 
-function putCacheJson_(prefix, obj) {
+function putCacheJson_(prefix, obj, ttlSec) {
   var cache = CacheService.getScriptCache();
   var raw = JSON.stringify(obj == null ? {} : obj);
   var chunk = 90000;
   var parts = Math.max(1, Math.ceil(raw.length / chunk));
   if (parts > 80) return false;
+  var ttl = Math.max(60, Number(ttlSec) || 600);
   clearCacheJson_(prefix);
-  cache.put(prefix + 'n', String(parts), 600);
+  cache.put(prefix + 'n', String(parts), ttl);
   for (var p = 0; p < parts; p++) {
-    cache.put(prefix + p, raw.substr(p * chunk, chunk), 600);
+    cache.put(prefix + p, raw.substr(p * chunk, chunk), ttl);
   }
   return true;
 }
@@ -1779,6 +1781,10 @@ function forceRebuildCache() {
 var AUSSEN_TAB = 'Reifen Aussen Scan';
 var AUSSEN_HEADERS = ['Batch', 'Gescannt', 'Stock-ID', 'Marke', 'Carol Status', 'Carol fertig', 'Tagesliste', 'Gestellt', 'Gestellt am', 'Reifen', 'Schicht', 'B2A1', 'Mail Betreff', 'Mail Datum', 'Mail URL', 'Aktion', 'Carol URL', 'TL URL', 'Typ', 'NB'];
 var AUSSEN_MAP_PREFIX = 'aussen_maps_';
+var AUSSEN_SLIM_REFURB = 'aussen_slim_refurb_v1_';
+var AUSSEN_SLIM_NB = 'aussen_slim_nb_v1_';
+var AUSSEN_SLIM_TL = 'aussen_slim_tl_v1_';
+var AUSSEN_SHEET_TTL = 900;
 
 function isCarolB2a1Badge_(val) {
   var s = String(val || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
@@ -2116,21 +2122,31 @@ function writeAussenItems_(batchId, scannedAt, items) {
       if (sid) rowMap[sid] = i + 2;
     }
   }
+  var updates = [];
   var toAppend = [];
   for (var j = 0; j < items.length; j++) {
     var it = items[j];
     var vals = aussenRowFromItem_(batchId, scannedAt, it);
     var row = rowMap[it.stockId];
-    if (row) {
-      sh.getRange(row, 1, 1, AUSSEN_HEADERS.length).setValues([vals]);
-    } else {
-      toAppend.push(vals);
+    if (row) updates.push({ row: row, vals: vals });
+    else toAppend.push(vals);
+  }
+  updates.sort(function(a, b) { return a.row - b.row; });
+  var u = 0;
+  while (u < updates.length) {
+    var block = [updates[u].vals];
+    var v = u;
+    while (v + 1 < updates.length && updates[v + 1].row === updates[v].row + 1) {
+      v++;
+      block.push(updates[v].vals);
     }
+    sh.getRange(updates[u].row, 1, block.length, AUSSEN_HEADERS.length).setValues(block);
+    u = v + 1;
   }
   if (toAppend.length) {
     sh.getRange(sh.getLastRow() + 1, 1, toAppend.length, AUSSEN_HEADERS.length).setValues(toAppend);
   }
-  SpreadsheetApp.flush();
+  patchAussenBatchCache_(batchId, scannedAt, items);
 }
 
 function aussenMapsPrefix_(batchId) {
@@ -2204,7 +2220,280 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.20', ts: nowStamp_() };
+  return { success: true, version: '1.2.21', ts: nowStamp_() };
+}
+
+function aussenBatchCacheKey_(batchId) {
+  return 'abatchv2_' + String(batchId || '') + '_';
+}
+
+function rememberAussenBatch_(batchId, scannedAt, items) {
+  if (!batchId || !items) return;
+  putCacheJson_(aussenBatchCacheKey_(batchId), { scannedAt: scannedAt || '', items: items }, 180);
+}
+
+function patchAussenBatchCache_(batchId, scannedAt, items) {
+  if (!batchId || !items || !items.length) return;
+  var hit = getCacheJson_(aussenBatchCacheKey_(batchId));
+  if (!hit || !hit.items || !hit.items.length) return;
+  var all = hit.items.slice();
+  var idx = {};
+  for (var i = 0; i < all.length; i++) idx[all[i].stockId] = i;
+  for (var j = 0; j < items.length; j++) {
+    var it = items[j];
+    if (!it || !it.stockId) continue;
+    if (idx[it.stockId] != null) all[idx[it.stockId]] = it;
+    else all.push(it);
+  }
+  rememberAussenBatch_(batchId, scannedAt || hit.scannedAt, all);
+}
+
+function slimRefurbMapForAussen_(full) {
+  var out = {};
+  var keys = Object.keys(full || {});
+  for (var i = 0; i < keys.length; i++) {
+    var e = full[keys[i]];
+    if (!e || !e.found) continue;
+    out[keys[i]] = {
+      found: true,
+      carolUrl: e.carolUrl || '',
+      markeModel: e.markeModel || '',
+      status: e.status || '',
+      kommBestellung: e.kommBestellung || '',
+      kommAnlieferung: e.kommAnlieferung || '',
+      regal: e.regal || '',
+      reifenStatus: e.reifenStatus || '',
+      reifenStatusRaw: e.reifenStatusRaw || ''
+    };
+  }
+  return out;
+}
+
+function slimNbMapForAussen_(full) {
+  var out = {};
+  var keys = Object.keys(full || {});
+  for (var i = 0; i < keys.length; i++) {
+    var arr = full[keys[i]] || [];
+    var slim = [];
+    for (var j = 0; j < arr.length; j++) {
+      slim.push({ status: arr[j].status || '', reifen: !!arr[j].reifen });
+    }
+    if (slim.length) out[keys[i]] = slim;
+  }
+  return out;
+}
+
+function cachedMapOrBuild_(prefix, builder) {
+  var hit = getCacheJson_(prefix);
+  if (hit && hit.map) return hit.map;
+  if (hit && typeof hit === 'object') {
+    var ks = Object.keys(hit);
+    if (ks.length && hit[ks[0]] && (hit[ks[0]].found || hit[ks[0]].length)) return hit;
+  }
+  var full = builder();
+  putCacheJson_(prefix, full, AUSSEN_SHEET_TTL);
+  return full;
+}
+
+function getCachedSlimRefurb_() {
+  return cachedMapOrBuild_(AUSSEN_SLIM_REFURB, function() {
+    return slimRefurbMapForAussen_(buildRefurbMap_());
+  });
+}
+
+function getCachedSlimNb_() {
+  return cachedMapOrBuild_(AUSSEN_SLIM_NB, function() {
+    return slimNbMapForAussen_(buildNachbestellMap_());
+  });
+}
+
+function getCachedSlimTl_() {
+  return cachedMapOrBuild_(AUSSEN_SLIM_TL, function() {
+    return aussenBuildTlIndex_();
+  });
+}
+
+function carolFlagCacheKey_(sid) {
+  return 'acf_' + String(sid || '');
+}
+
+function getCachedCarolFlags_(ids) {
+  var out = {};
+  try {
+    var cache = CacheService.getScriptCache();
+    var i;
+    var j;
+    for (i = 0; i < (ids || []).length; i += 80) {
+      var slice = (ids || []).slice(i, i + 80);
+      var keys = [];
+      for (j = 0; j < slice.length; j++) keys.push(carolFlagCacheKey_(slice[j]));
+      var got = cache.getAll(keys);
+      for (j = 0; j < slice.length; j++) {
+        var raw = got[keys[j]];
+        if (!raw) continue;
+        try { out[slice[j]] = JSON.parse(raw); } catch (e1) {}
+      }
+    }
+  } catch (e0) {}
+  return out;
+}
+
+function putCachedCarolFlag_(sid, flag) {
+  try {
+    CacheService.getScriptCache().put(carolFlagCacheKey_(sid), JSON.stringify(flag || {}), 10800);
+  } catch (e1) {}
+}
+
+function applyCachedCarolToItem_(item, flag) {
+  if (!item || !flag || !flag.live) return item;
+  item.carolLive = true;
+  item.carolDetail = true;
+  item.carolB2a1 = !!flag.b2a1;
+  item.carolFertig = !!flag.fertig && !flag.b2a1;
+  item.carolDone = !!item.carolFertig;
+  item.carolBadge = flag.label || (item.carolB2a1 ? 'Als B2A1 markiert' : (item.carolFertig ? 'Fertiggestellt' : (flag.none ? 'Kein Carol-Auftrag' : 'Kein Badge')));
+  if (!item.manual) {
+    item.action = aussenAction_(item);
+    item.actionKey = aussenActionKey_(item.action);
+  }
+  return item;
+}
+
+function carolPendingFromPool_(pool, liveMap) {
+  var ids = [];
+  var firstUrl = '';
+  for (var i = 0; i < (pool || []).length; i++) {
+    if (aussenCarolAlready_(pool[i], liveMap)) continue;
+    ids.push(pool[i].stockId);
+    if (!firstUrl) firstUrl = carolUrlFor_(pool[i].stockId, pool[i].carolUrl);
+  }
+  return {
+    ids: ids,
+    nextId: ids.length ? ids[0] : '',
+    pending: ids.length,
+    carolUrl: firstUrl
+  };
+}
+
+function aussenBuildTlIndex_() {
+  var map = {};
+  try {
+    var sheet = getTageslisteSheet_();
+    if (!sheet) return map;
+    var lastRow = sheet.getLastRow();
+    if (lastRow < 2) return map;
+    var width = Math.max(TL_STOCK_COL, TL_REIFEN_COL, TL_DATUM_COL, TL_SCHICHT_COL);
+    var data = sheet.getRange(2, 1, lastRow - 1, width).getDisplayValues();
+    for (var r = data.length - 1; r >= 0; r--) {
+      var sid = normalizeStockId_(data[r][TL_STOCK_COL - 1]);
+      if (!sid) continue;
+      if (!map[sid]) map[sid] = [];
+      if (map[sid].length >= TL_MAX_ENTRIES) continue;
+      var reifen = String(data[r][TL_REIFEN_COL - 1] || '').trim();
+      map[sid].push({
+        row: r + 2,
+        datum: String(data[r][TL_DATUM_COL - 1] || '').trim(),
+        schicht: String(data[r][TL_SCHICHT_COL - 1] || '').trim(),
+        reifen: reifen,
+        reifenGreen: isReifenGestelltText_(reifen),
+        url: tageslisteUrl_(r + 2)
+      });
+    }
+  } catch (e1) {}
+  return map;
+}
+
+function filterTlToIds_(tlMap, ids) {
+  var out = {};
+  tlMap = tlMap || {};
+  for (var i = 0; i < (ids || []).length; i++) {
+    var sid = ids[i];
+    if (sid && tlMap[sid]) out[sid] = tlMap[sid];
+  }
+  return out;
+}
+
+function mailCacheKey_(sid) {
+  return 'amail_' + String(sid || '');
+}
+
+function getCachedMail_(sid) {
+  try {
+    var raw = CacheService.getScriptCache().get(mailCacheKey_(sid));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function putCachedMail_(sid, mail) {
+  try {
+    CacheService.getScriptCache().put(mailCacheKey_(sid), JSON.stringify(mail || {}), (mail && mail.found) ? 21600 : 1800);
+  } catch (e1) {}
+}
+
+function getCachedMails_(ids) {
+  var out = {};
+  try {
+    var cache = CacheService.getScriptCache();
+    var i;
+    var j;
+    for (i = 0; i < (ids || []).length; i += 80) {
+      var slice = (ids || []).slice(i, i + 80);
+      var keys = [];
+      for (j = 0; j < slice.length; j++) keys.push(mailCacheKey_(slice[j]));
+      var got = cache.getAll(keys);
+      for (j = 0; j < slice.length; j++) {
+        var raw = got[keys[j]];
+        if (!raw) continue;
+        try { out[slice[j]] = JSON.parse(raw); } catch (e1) {}
+      }
+    }
+  } catch (e0) {}
+  return out;
+}
+
+function searchReturnMailsChunk_(ids) {
+  var out = getCachedMails_(ids);
+  var need = [];
+  var i;
+  for (i = 0; i < (ids || []).length; i++) {
+    var sid = ids[i];
+    if (out[sid]) continue;
+    need.push(sid);
+  }
+  if (!need.length) return out;
+  function absorb(list) {
+    for (var a = 0; a < (list || []).length; a++) {
+      var meta = gmailApiMeta_(list[a].id);
+      var sub = gmailHeader_(meta, 'Subject');
+      var snip = (meta && meta.snippet) || '';
+      for (var n = 0; n < need.length; n++) {
+        var id = need[n];
+        if (out[id] && out[id].found) continue;
+        if (!isReturnToAuto1Text_(sub, snip, id) && String(sub).toUpperCase().indexOf(id) === -1) continue;
+        var result = { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
+        fillReturnMailFromMeta_(result, meta, list[a].threadId || list[a].id);
+        out[id] = result;
+        putCachedMail_(id, result);
+      }
+    }
+  }
+  try {
+    absorb(gmailApiList_('"Return to Auto1" (' + need.map(function(id) { return '"' + id + '"'; }).join(' OR ') + ')', 40));
+    var miss = [];
+    for (i = 0; i < need.length; i++) if (!out[need[i]] || !out[need[i]].found) miss.push(need[i]);
+    if (miss.length) {
+      absorb(gmailApiList_('(' + miss.map(function(id) { return '"' + id + '---Return to Auto1"'; }).join(' OR ') + ')', 40));
+    }
+  } catch (e2) {}
+  for (i = 0; i < need.length; i++) {
+    if (out[need[i]]) continue;
+    var empty = { found: false, subject: '', from: '', date: '', permalink: '', message: 'keine Mail' };
+    out[need[i]] = empty;
+    putCachedMail_(need[i], empty);
+  }
+  return out;
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2217,9 +2506,17 @@ function withRetoureBatch_(url, batchId) {
   return url;
 }
 
+function aussenShouldSkipCarol_(item) {
+  if (!item || item.tlGestellt) return 'gestellt';
+  if (item.carolLive || item.carolDetail) return 'done';
+  if (item.mailFound || item.nbB2a1) return 'b2a1';
+  if (item.nbFertig) return 'fertig';
+  if (!item.refurbFound) return 'none';
+  return '';
+}
+
 function aussenCarolAlready_(item, liveMap) {
-  if (!item || item.tlGestellt) return true;
-  if (item.carolLive || item.carolDetail) return true;
+  if (aussenShouldSkipCarol_(item)) return true;
   var live = liveMap ? liveMap[item.stockId] : '';
   return live === 'b2a1' || live === 'fertig' || live === 'none' || live === 'done';
 }
@@ -2253,23 +2550,62 @@ function aussenCarolQueue(batchId) {
     if (!batchId) return { success: false, message: 'Kein Batch', ids: [] };
     var stored = getAussenBatch(batchId);
     if (!stored || !stored.success) return stored || { success: false, ids: [] };
-    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
-    var liveMap = maps.carolLive || {};
     var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
-    var ids = [];
-    var firstUrl = '';
-    for (var i = 0; i < pool.length; i++) {
-      if (aussenCarolAlready_(pool[i], liveMap)) continue;
-      ids.push(pool[i].stockId);
-      if (!firstUrl) firstUrl = carolUrlFor_(pool[i].stockId, pool[i].carolUrl);
+    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+    maps.carolLive = maps.carolLive || {};
+    var cachedFlags = getCachedCarolFlags_(pool.map(function(it) { return it.stockId; }));
+    var skipRows = [];
+    for (var s = 0; s < pool.length; s++) {
+      var it = pool[s];
+      if (cachedFlags[it.stockId] && cachedFlags[it.stockId].live && !it.carolLive) {
+        applyCachedCarolToItem_(it, cachedFlags[it.stockId]);
+        maps.carolLive[it.stockId] = it.carolB2a1 ? 'b2a1' : (it.carolFertig ? 'fertig' : 'none');
+        skipRows.push(it);
+        continue;
+      }
+      if (it.carolLive || it.carolDetail) continue;
+      var why = aussenShouldSkipCarol_(it);
+      if (!why || why === 'gestellt' || why === 'done') continue;
+      it.carolLive = true;
+      it.carolDetail = true;
+      if (why === 'b2a1') {
+        it.carolB2a1 = true;
+        it.carolBadge = it.carolBadge || (it.mailFound ? 'B2A1 Mail' : 'NB B2A1');
+        maps.carolLive[it.stockId] = 'b2a1';
+      } else if (why === 'fertig') {
+        it.carolFertig = true;
+        it.carolDone = true;
+        it.carolBadge = it.carolBadge || 'NB Fertiggestellt';
+        maps.carolLive[it.stockId] = 'fertig';
+      } else {
+        it.carolBadge = 'Kein Carol-Auftrag';
+        maps.carolLive[it.stockId] = 'none';
+      }
+      if (!it.manual) {
+        it.action = aussenAction_(it);
+        it.actionKey = aussenActionKey_(it.action);
+      }
+      putCachedCarolFlag_(it.stockId, {
+        live: true,
+        b2a1: maps.carolLive[it.stockId] === 'b2a1',
+        fertig: maps.carolLive[it.stockId] === 'fertig',
+        none: maps.carolLive[it.stockId] === 'none',
+        label: it.carolBadge || ''
+      });
+      skipRows.push(it);
     }
+    if (skipRows.length) {
+      writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), skipRows);
+      putCacheJson_(aussenMapsPrefix_(batchId), maps);
+    }
+    var q = carolPendingFromPool_(pool, maps.carolLive || {});
     return {
       success: true,
       batchId: batchId,
-      ids: ids,
-      nextId: ids.length ? ids[0] : '',
-      pending: ids.length,
-      carolUrl: withRetoureBatch_(firstUrl, batchId)
+      ids: q.ids,
+      nextId: q.nextId,
+      pending: q.pending,
+      carolUrl: withRetoureBatch_(q.carolUrl, batchId)
     };
   } catch (err) {
     return { success: false, message: String(err.message || err), ids: [] };
@@ -2294,9 +2630,9 @@ function applyAussenCarolFlags(payload) {
     var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
     var found = false;
     var notFound = payload.notFound === true || String(payload.notFound || '') === '1';
+    var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     var b2a1 = !notFound && (!!payload.carolB2a1 || isCarolB2a1Badge_(label));
     var fertig = !notFound && !!payload.carolFertig && !b2a1;
-    var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     var fromDetail = notFound || payload.detail === true || String(payload.detail || '') === '1';
     if (!fromDetail) {
       var qSkip = aussenCarolQueue(batchId);
@@ -2334,8 +2670,17 @@ function applyAussenCarolFlags(payload) {
     maps.carolLive = maps.carolLive || {};
     maps.carolLive[stockId] = b2a1 ? 'b2a1' : (fertig ? 'fertig' : 'none');
     putCacheJson_(aussenMapsPrefix_(batchId), maps);
+    putCachedCarolFlag_(stockId, {
+      live: true,
+      b2a1: b2a1,
+      fertig: fertig,
+      none: !b2a1 && !fertig,
+      label: b2a1 || fertig
+        ? (label || (b2a1 ? 'Als B2A1 markiert' : 'Fertiggestellt'))
+        : (notFound ? 'Kein Carol-Auftrag' : (label || 'Kein Badge'))
+    });
     var split = splitAussenItems_(pool);
-    var q = aussenCarolQueue(batchId);
+    var q = carolPendingFromPool_(pool, maps.carolLive);
     return {
       success: true,
       batchId: batchId,
@@ -2346,7 +2691,7 @@ function applyAussenCarolFlags(payload) {
       pending: q.pending || 0,
       nextId: q.nextId || '',
       ids: q.ids || [],
-      carolUrl: q.carolUrl || '',
+      carolUrl: withRetoureBatch_(q.carolUrl, batchId),
       message: stockId + (b2a1 ? ' · Als B2A1 markiert' : (fertig ? ' · Fertiggestellt' : ' · kein Carol-Badge'))
     };
   } catch (err) {
@@ -2373,7 +2718,7 @@ function startAussenCheck(ids) {
       checkIds: [],
       gestelltIds: [],
       manual: {},
-      nb: {}
+      nb: null
     });
     return aussenStepOk_({
       batchId: batchId,
@@ -2401,78 +2746,94 @@ function aussenCheckStep(batchId, step, cursor) {
       return { success: false, message: 'Batch weg — Dump nochmal ausgeben', items: [], done: true };
     }
     var total = maps.ids.length;
-    if (step === 'tl') {
-      var t0 = Date.now();
-      maps.tl = aussenBuildTlMapFast_(maps.ids);
-      maps.checkIds = [];
-      maps.gestelltIds = [];
-      maps.manual = maps.manual || {};
-      for (var t = 0; t < maps.ids.length; t++) {
-        var sidT = maps.ids[t];
-        var tlRes = resolveTlGestellt_(maps.tl[sidT] || []);
-        if (tlRes.gestellt) maps.gestelltIds.push(sidT);
-        else maps.checkIds.push(sidT);
+    var t0 = Date.now();
+    var checkNeed;
+    if (step === 'tl' || step === 'refurb' || step === 'nb') {
+      if (step === 'tl' || !maps.tl || !maps.checkIds) {
+        maps.tl = filterTlToIds_(getCachedSlimTl_(), maps.ids);
+        maps.checkIds = [];
+        maps.gestelltIds = [];
+        maps.manual = maps.manual || {};
+        for (var t = 0; t < maps.ids.length; t++) {
+          var sidT = maps.ids[t];
+          var tlRes = resolveTlGestellt_(maps.tl[sidT] || []);
+          if (tlRes.gestellt) maps.gestelltIds.push(sidT);
+          else maps.checkIds.push(sidT);
+        }
+      }
+      if (Date.now() - t0 > 50000 && (!maps.refurb || maps.refurb === null) && (step === 'tl')) {
+        putCacheJson_(aussenMapsPrefix_(batchId), maps);
+        return aussenStepOk_({
+          batchId: batchId,
+          scannedAt: maps.scannedAt,
+          count: total,
+          done: false,
+          nextStep: maps.checkIds.length ? 'refurb' : 'items',
+          percent: 22,
+          phase: 'Tagesliste',
+          currentSid: 'Tagesliste ✓',
+          message: maps.gestelltIds.length + ' gestellt übersprungen · ' + maps.checkIds.length + ' prüfen · ' + (Date.now() - t0) + 'ms'
+        });
+      }
+      if (!maps.refurb && maps.checkIds && maps.checkIds.length) {
+        checkNeed = aussenNeedSet_(maps.checkIds);
+        maps.refurb = filterMapToIds_(getCachedSlimRefurb_(), checkNeed);
+      } else if (!maps.refurb) {
+        maps.refurb = {};
+      }
+      if (Date.now() - t0 > 50000 && step !== 'nb' && step !== 'items') {
+        putCacheJson_(aussenMapsPrefix_(batchId), maps);
+        return aussenStepOk_({
+          batchId: batchId,
+          scannedAt: maps.scannedAt,
+          count: total,
+          done: false,
+          nextStep: 'nb',
+          percent: 48,
+          phase: 'Carol / Refurbishment',
+          currentSid: 'Refurbishment ✓',
+          message: Object.keys(maps.refurb || {}).length + '/' + (maps.checkIds ? maps.checkIds.length : total) + ' in Carol · ' + (Date.now() - t0) + 'ms'
+        });
+      }
+      if (!maps.nb) {
+        if (maps.checkIds && maps.checkIds.length) {
+          checkNeed = aussenNeedSet_(maps.checkIds);
+          maps.nb = filterMapToIds_(getCachedSlimNb_(), checkNeed);
+        } else {
+          maps.nb = {};
+        }
       }
       putCacheJson_(aussenMapsPrefix_(batchId), maps);
-      return aussenStepOk_({
-        batchId: batchId,
-        scannedAt: maps.scannedAt,
-        count: total,
-        done: false,
-        nextStep: maps.checkIds.length ? 'refurb' : 'items',
-        percent: 22,
-        phase: 'Tagesliste',
-        currentSid: 'Tagesliste ✓',
-        message: maps.gestelltIds.length + ' gestellt übersprungen · ' + maps.checkIds.length + ' prüfen · ' + (Date.now() - t0) + 'ms'
-      });
-    }
-    if (step === 'refurb') {
-      var checkNeed = aussenNeedSet_(maps.checkIds && maps.checkIds.length ? maps.checkIds : maps.ids);
-      maps.refurb = filterMapToIds_(buildRefurbMap_(), checkNeed);
-      putCacheJson_(aussenMapsPrefix_(batchId), maps);
-      var hits = Object.keys(maps.refurb).length;
-      return aussenStepOk_({
-        batchId: batchId,
-        scannedAt: maps.scannedAt,
-        count: total,
-        done: false,
-        nextStep: 'nb',
-        percent: 48,
-        phase: 'Carol / Refurbishment',
-        currentSid: 'Refurbishment ✓',
-        message: hits + '/' + (maps.checkIds ? maps.checkIds.length : total) + ' in Carol · ' + (maps.gestelltIds ? maps.gestelltIds.length : 0) + ' gestellt skip'
-      });
-    }
-    if (step === 'nb') {
-      var nbNeed = aussenNeedSet_(maps.checkIds && maps.checkIds.length ? maps.checkIds : maps.ids);
-      maps.nb = filterMapToIds_(buildNachbestellMap_(), nbNeed);
-      putCacheJson_(aussenMapsPrefix_(batchId), maps);
-      var nbHits = Object.keys(maps.nb).length;
-      return aussenStepOk_({
-        batchId: batchId,
-        scannedAt: maps.scannedAt,
-        count: total,
-        done: false,
-        nextStep: 'items',
-        percent: 62,
-        phase: 'Nachbestellung',
-        currentSid: 'Nachbestellung ✓',
-        message: nbHits + ' mit Nachbestellung'
-      });
+      if (Date.now() - t0 > 55000) {
+        return aussenStepOk_({
+          batchId: batchId,
+          scannedAt: maps.scannedAt,
+          count: total,
+          done: false,
+          nextStep: 'items',
+          percent: 62,
+          phase: 'Nachbestellung',
+          currentSid: 'Nachbestellung ✓',
+          message: Object.keys(maps.nb || {}).length + ' mit Nachbestellung · ' + (Date.now() - t0) + 'ms'
+        });
+      }
     }
     var tlMap = maps.tl || {};
     if (tlMap._meta) delete tlMap._meta;
     var gestelltSet = {};
     var gids = maps.gestelltIds || [];
     for (var g = 0; g < gids.length; g++) gestelltSet[gids[g]] = true;
+    var carolFlags = getCachedCarolFlags_(maps.ids);
     var allItems = [];
     for (var i = 0; i < maps.ids.length; i++) {
       var sid = maps.ids[i];
       var it = aussenItemFromMaps_(sid, gestelltSet[sid] ? {} : (maps.refurb || {}), tlMap, null, maps.nb || {});
+      if (carolFlags[sid]) applyCachedCarolToItem_(it, carolFlags[sid]);
       applyAussenManual_(it, maps);
       allItems.push(it);
     }
     writeAussenItems_(batchId, maps.scannedAt, allItems);
+    rememberAussenBatch_(batchId, maps.scannedAt, allItems);
     var split = splitAussenItems_(allItems);
     return aussenStepOk_({
       batchId: batchId,
@@ -2486,7 +2847,7 @@ function aussenCheckStep(batchId, step, cursor) {
       percent: 78,
       phase: 'Liste',
       currentSid: split.items.length ? split.items[0].stockId : 'Fertig',
-      message: split.items.length + ' prüfen · ' + split.gestelltCount + ' gestellt skip'
+      message: split.items.length + ' prüfen · ' + split.gestelltCount + ' gestellt skip · ' + (Date.now() - t0) + 'ms'
     });
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [], done: true };
@@ -2497,7 +2858,7 @@ function checkAussenMailChunk(batchId, offset, size) {
   try {
     batchId = String(batchId || '');
     offset = Math.max(0, Number(offset) || 0);
-    size = Math.max(1, Math.min(12, Number(size) || 8));
+    size = Math.max(1, Math.min(20, Number(size) || 16));
     if (!batchId) return { success: false, message: 'Kein Batch', items: [], done: true };
     var maps = getCacheJson_(aussenMapsPrefix_(batchId));
     var storedItems = [];
@@ -2527,10 +2888,10 @@ function checkAussenMailChunk(batchId, offset, size) {
     if (!maps || !maps.refurb || !maps.tl || !maps.nb) {
       var need = stockIdSetFromList_(ids.map(function(sid) { return { stockId: sid }; }));
       maps = maps || {};
-      maps.refurb = maps.refurb || filterMapToIds_(buildRefurbMap_(), need);
-      maps.tl = maps.tl || buildTageslisteMap_(need);
+      maps.refurb = maps.refurb || filterMapToIds_(getCachedSlimRefurb_(), need);
+      maps.tl = maps.tl || filterTlToIds_(getCachedSlimTl_(), ids);
       if (maps.tl && maps.tl._meta) delete maps.tl._meta;
-      maps.nb = maps.nb || filterMapToIds_(buildNachbestellMap_(), need);
+      maps.nb = maps.nb || filterMapToIds_(getCachedSlimNb_(), need);
       maps.ids = maps.ids || ids;
       maps.scannedAt = scannedAt;
       maps.manual = maps.manual || {};
@@ -2541,11 +2902,22 @@ function checkAussenMailChunk(batchId, offset, size) {
       return { success: true, items: [], offset: offset, nextOffset: offset, total: total, done: true, batchId: batchId };
     }
     var end = Math.min(offset + size, total);
+    var slice = ids.slice(offset, end);
+    var mails = searchReturnMailsChunk_(slice);
     var updated = [];
-    for (var i = offset; i < end; i++) {
-      var sid = ids[i];
-      var mail = searchReturnMail_(sid);
+    for (var i = 0; i < slice.length; i++) {
+      var sid = slice[i];
+      var mail = mails[sid] || { found: false, subject: '', from: '', date: '', permalink: '', message: 'keine Mail' };
       var item = aussenItemFromMaps_(sid, maps.refurb, maps.tl, mail, maps.nb);
+      if (maps.carolLive && maps.carolLive[sid]) {
+        applyCachedCarolToItem_(item, {
+          live: true,
+          b2a1: maps.carolLive[sid] === 'b2a1',
+          fertig: maps.carolLive[sid] === 'fertig',
+          none: maps.carolLive[sid] === 'none',
+          label: item.carolBadge
+        });
+      }
       applyAussenManual_(item, maps);
       updated.push(item);
     }
@@ -2712,10 +3084,69 @@ function listAussenBatches() {
   }
 }
 
+function assembleAussenBatch_(batchId, scannedAt, items) {
+  items = items || [];
+  var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
+  var liveMap = maps.carolLive || {};
+  var manualMap = maps.manual || {};
+  var pending = 0;
+  var nextCarolId = '';
+  var nextCarolUrl = '';
+  for (var p = 0; p < items.length; p++) {
+    var lv = liveMap[items[p].stockId];
+    if (lv && !items[p].carolLive) {
+      items[p].carolLive = true;
+      items[p].carolDetail = true;
+      if (lv === 'b2a1') items[p].carolB2a1 = true;
+      if (lv === 'fertig') {
+        items[p].carolFertig = true;
+        items[p].carolDone = true;
+      }
+    }
+    if (items[p].carolLive && !items[p].carolB2a1 && isCarolB2a1Badge_(items[p].carolBadge)) {
+      items[p].carolB2a1 = true;
+      items[p].carolFertig = false;
+      items[p].carolDone = false;
+    }
+    if (manualMap[items[p].stockId]) {
+      items[p].action = manualMap[items[p].stockId];
+      items[p].manual = true;
+    } else {
+      items[p].action = aussenAction_(items[p]);
+    }
+    items[p].actionKey = aussenActionKey_(items[p].action);
+    if (!aussenCarolAlready_(items[p], liveMap)) {
+      pending++;
+      if (!nextCarolId) {
+        nextCarolId = items[p].stockId;
+        nextCarolUrl = withRetoureBatch_(carolUrlFor_(items[p].stockId, items[p].carolUrl), batchId);
+      }
+    }
+  }
+  var split = splitAussenItems_(items);
+  return {
+    success: true,
+    batchId: batchId,
+    scannedAt: scannedAt,
+    items: split.items,
+    gestelltItems: split.gestelltItems,
+    gestelltCount: split.gestelltCount,
+    allItems: items,
+    count: items.length,
+    carolPending: pending,
+    nextCarolId: nextCarolId,
+    nextCarolUrl: nextCarolUrl
+  };
+}
+
 function getAussenBatch(batchId) {
   try {
     batchId = String(batchId || '').trim();
     if (!batchId) return { success: false, message: 'Kein Batch', items: [] };
+    var hit = getCacheJson_(aussenBatchCacheKey_(batchId));
+    if (hit && hit.items && hit.items.length) {
+      return assembleAussenBatch_(batchId, hit.scannedAt || '', hit.items);
+    }
     var sh = getAussenSheet_();
     var last = sh.getLastRow();
     var items = [];
@@ -2729,57 +3160,8 @@ function getAussenBatch(batchId) {
         if (it.stockId) items.push(it);
       }
     }
-    var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
-    var liveMap = maps.carolLive || {};
-    var manualMap = maps.manual || {};
-    var pending = 0;
-    var nextCarolId = '';
-    var nextCarolUrl = '';
-    for (var p = 0; p < items.length; p++) {
-      var lv = liveMap[items[p].stockId];
-      if (lv && !items[p].carolLive) {
-        items[p].carolLive = true;
-        items[p].carolDetail = true;
-        if (lv === 'b2a1') items[p].carolB2a1 = true;
-        if (lv === 'fertig') {
-          items[p].carolFertig = true;
-          items[p].carolDone = true;
-        }
-      }
-      if (items[p].carolLive && !items[p].carolB2a1 && isCarolB2a1Badge_(items[p].carolBadge)) {
-        items[p].carolB2a1 = true;
-        items[p].carolFertig = false;
-        items[p].carolDone = false;
-      }
-      if (manualMap[items[p].stockId]) {
-        items[p].action = manualMap[items[p].stockId];
-        items[p].manual = true;
-      } else {
-        items[p].action = aussenAction_(items[p]);
-      }
-      items[p].actionKey = aussenActionKey_(items[p].action);
-      if (!aussenCarolAlready_(items[p], liveMap)) {
-        pending++;
-        if (!nextCarolId) {
-          nextCarolId = items[p].stockId;
-          nextCarolUrl = withRetoureBatch_(carolUrlFor_(items[p].stockId, items[p].carolUrl), batchId);
-        }
-      }
-    }
-    var split = splitAussenItems_(items);
-    return {
-      success: true,
-      batchId: batchId,
-      scannedAt: scannedAt,
-      items: split.items,
-      gestelltItems: split.gestelltItems,
-      gestelltCount: split.gestelltCount,
-      allItems: items,
-      count: items.length,
-      carolPending: pending,
-      nextCarolId: nextCarolId,
-      nextCarolUrl: nextCarolUrl
-    };
+    rememberAussenBatch_(batchId, scannedAt, items);
+    return assembleAussenBatch_(batchId, scannedAt, items);
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [] };
   }
@@ -2803,6 +3185,7 @@ function deleteAussenBatch(batchId) {
     }
     if (removed) SpreadsheetApp.flush();
     clearCacheJson_(aussenMapsPrefix_(batchId));
+    clearCacheJson_(aussenBatchCacheKey_(batchId));
     return { success: true, message: removed + ' Zeilen gelöscht', deleted: removed };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
