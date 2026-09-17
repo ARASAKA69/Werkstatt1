@@ -33,7 +33,8 @@ function doGet(e) {
       carolB2a1: String(e.parameter.b2a1 || '') === '1',
       carolFertig: String(e.parameter.fertig || '') === '1',
       carolLabel: e.parameter.label || '',
-      detail: String(e.parameter.detail || '') === '1'
+      detail: String(e.parameter.detail || '') === '1',
+      notFound: String(e.parameter.notfound || '') === '1'
     }));
   }
   var isAussen = page === 'aussen' || page === 'scan';
@@ -66,7 +67,8 @@ function doPost(e) {
       carolB2a1: body.b2a1 === true || String(body.b2a1 || '') === '1',
       carolFertig: body.fertig === true || String(body.fertig || '') === '1',
       carolLabel: body.label || '',
-      detail: body.detail === true || String(body.detail || '') === '1'
+      detail: body.detail === true || String(body.detail || '') === '1',
+      notFound: body.notfound === true || String(body.notfound || '') === '1'
     }));
   }
   return jsonOut_({ success: false, message: 'Unbekannt' });
@@ -2123,7 +2125,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.7', ts: nowStamp_() };
+  return { success: true, version: '1.2.8', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2209,10 +2211,11 @@ function applyAussenCarolFlags(payload) {
     if (!stored || !stored.success) return stored || { success: false, message: 'Batch nicht gefunden' };
     var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
     var found = false;
-    var b2a1 = !!payload.carolB2a1;
-    var fertig = !!payload.carolFertig && !b2a1;
+    var notFound = payload.notFound === true || String(payload.notFound || '') === '1';
+    var b2a1 = !notFound && !!payload.carolB2a1;
+    var fertig = !notFound && !!payload.carolFertig && !b2a1;
     var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim();
-    var fromDetail = payload.detail === true || String(payload.detail || '') === '1';
+    var fromDetail = notFound || payload.detail === true || String(payload.detail || '') === '1';
     if (!fromDetail) {
       var qSkip = aussenCarolQueue(batchId);
       return {
@@ -2230,11 +2233,12 @@ function applyAussenCarolFlags(payload) {
       found = true;
       pool[i].carolLive = true;
       pool[i].carolDetail = true;
-      pool[i].carolB2a1 = b2a1 || !!pool[i].carolB2a1;
-      pool[i].carolFertig = fertig || !!pool[i].carolFertig;
-      pool[i].carolDone = pool[i].carolFertig || !!pool[i].carolDone;
+      pool[i].carolB2a1 = b2a1;
+      pool[i].carolFertig = fertig;
+      pool[i].carolDone = fertig;
       if (b2a1) pool[i].carolStatus = label || 'Als B2A1 markiert';
       else if (fertig) pool[i].carolStatus = label || 'Fertiggestellt';
+      else pool[i].carolStatus = notFound ? 'Kein Carol-Auftrag' : (label || 'Kein Badge');
       if (!pool[i].manual) {
         pool[i].action = aussenAction_(pool[i]);
         pool[i].actionKey = aussenActionKey_(pool[i].action);

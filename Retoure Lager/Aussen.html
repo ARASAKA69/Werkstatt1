@@ -573,7 +573,9 @@
       carolWin: null,
       carolDone: false,
       mailDone: false,
-      carolNavSid: ''
+      carolNav: {},
+      carolStallSid: '',
+      carolStall: 0
     };
 
     function $(id) { return document.getElementById(id); }
@@ -1321,9 +1323,27 @@
             maybeFinishRun();
             return;
           }
-          if (res.nextCarolId && res.nextCarolId !== state.carolNavSid) {
-            state.carolNavSid = res.nextCarolId;
-            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextCarolId) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
+          var nextSid = res.nextCarolId || '';
+          if (!nextSid) return;
+          if (nextSid === state.carolStallSid) state.carolStall++;
+          else {
+            state.carolStallSid = nextSid;
+            state.carolStall = 0;
+          }
+          if (!state.carolNav[nextSid]) {
+            state.carolNav[nextSid] = 1;
+            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
+            return;
+          }
+          if (state.carolStall === 20) {
+            state.carolNav[nextSid] = 0;
+            toast(nextSid + ' hängt in Carol — neuer Versuch', true);
+          }
+          if (state.carolStall >= 45) {
+            stopCarolPoll();
+            state.carolDone = true;
+            toast(res.carolPending + ' IDs ohne Carol-Badge — Carol prüfen wiederholen', true);
+            maybeFinishRun();
           }
         }).getAussenBatch(state.batchId);
       }, 2000);
@@ -1347,7 +1367,10 @@
           return;
         }
         var url = res.carolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextId || '') + '&retoure_batch=' + encodeURIComponent(state.batchId));
-        state.carolNavSid = res.nextId || '';
+        state.carolNav = {};
+        state.carolStallSid = res.nextId || '';
+        state.carolStall = 0;
+        if (res.nextId) state.carolNav[res.nextId] = 1;
         var ok = navCarol(url);
         startCarolPoll();
         if (!ok) {
@@ -1500,7 +1523,9 @@
       state.pending = [];
       state.mailDone = false;
       state.carolDone = false;
-      state.carolNavSid = '';
+      state.carolNav = {};
+      state.carolStallSid = '';
+      state.carolStall = 0;
       $('dump').value = '';
       $('batchSel').value = '';
       updateDumpHint({ ids: [], ignored: 0 });
