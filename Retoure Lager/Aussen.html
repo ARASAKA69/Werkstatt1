@@ -652,16 +652,22 @@
       }
     }
 
+    function focusHud() {
+      try { window.focus(); } catch (e0) {}
+      try { if (window.top) window.top.focus(); } catch (e1) {}
+    }
+
     function closeCarolSlot() {
       try {
         if (state.carolWin && !state.carolWin.closed) state.carolWin.close();
       } catch (e) {}
       state.carolWin = null;
+      focusHud();
     }
 
     function maybeFinishRun() {
+      if (state.carolDone) closeCarolSlot();
       if (!state.mailDone || !state.carolDone) return;
-      closeCarolSlot();
       playDoneTone();
       var c = countsOf(state.items);
       toast(c.sort + ' rausziehen · ' + c.b2a1 + ' B2A1 · ' + c.fertig + ' Fertig');
@@ -1358,11 +1364,13 @@
             navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
             return;
           }
-          if (state.carolStall === 20) {
-            state.carolNav[nextSid] = 0;
+          if (state.carolStall === 4 || state.carolStall === 10) {
+            var forceUrl = res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId));
+            if (forceUrl.indexOf('retoure_force=') < 0) forceUrl += (forceUrl.indexOf('?') >= 0 ? '&' : '?') + 'retoure_force=1';
+            navCarol(forceUrl);
             toast(nextSid + ' hängt in Carol — neuer Versuch', true);
           }
-          if (state.carolStall >= 45) {
+          if (state.carolStall >= 25) {
             stopCarolPoll();
             state.carolDone = true;
             toast(res.carolPending + ' IDs ohne Carol-Badge — Carol prüfen wiederholen', true);
@@ -1712,6 +1720,13 @@
         $('dump').focus();
         if (e.key === '/') e.preventDefault();
       }
+    });
+    window.addEventListener('message', function(ev) {
+      var d = ev && ev.data;
+      if (!d || d.retoureCarolDone !== 1) return;
+      stopCarolPoll();
+      state.carolDone = true;
+      maybeFinishRun();
     });
     document.addEventListener('click', function(e) {
       if (e.target.closest('button, a, select, textarea, input')) return;

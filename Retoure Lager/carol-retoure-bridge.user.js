@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      2.1
+// @version      2.3
 // @description  Öffnet den Carol-Auftrag, liest die Badges mit Datum und sendet sie an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
+// @grant        window.close
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
 // @run-at       document-idle
@@ -13,7 +14,7 @@
 (function () {
     'use strict';
 
-    var VER = '2.1';
+    var VER = '2.3';
     if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
@@ -98,6 +99,30 @@
         if (cur.indexOf('|' + sid + '|') === -1) ssSet(doneKey(batch), cur + '|' + sid + '|');
     }
 
+    function unmarkDone(batch, sid) {
+        var cur = ssGet(doneKey(batch));
+        ssSet(doneKey(batch), cur.split('|' + sid + '|').join('|'));
+    }
+
+    function shortLabel(s) {
+        s = String(s || '').replace(/[·•]/g, '|').replace(/\s+/g, ' ').trim();
+        if (s.length > 80) s = s.slice(0, 80);
+        return s;
+    }
+
+    function pickNext(res, skipSid, batch) {
+        skipSid = String(skipSid || '').toUpperCase();
+        var next = String((res && res.nextId) || '').toUpperCase();
+        if (next && next !== skipSid && !isDone(batch, next)) return next;
+        var ids = (res && res.ids) || [];
+        var i;
+        for (i = 0; i < ids.length; i++) {
+            var id = String(ids[i] || '').toUpperCase();
+            if (id && id !== skipSid && !isDone(batch, id)) return id;
+        }
+        return '';
+    }
+
     function isAction(el) {
         try { return !!el.closest(ACTION_EL); } catch (e) { return false; }
     }
@@ -151,7 +176,7 @@
                 return { b2a1: false, fertig: true, label: texts[f] };
             }
         }
-        return { b2a1: false, fertig: false, label: texts.join(' · ').slice(0, 140) };
+        return { b2a1: false, fertig: false, label: shortLabel(texts.join(' | ')) };
     }
 
     function rowLooksComplete(el, raw) {
@@ -303,8 +328,8 @@
             url: url,
             data: body || undefined,
             headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
-            anonymous: false,
-            timeout: 20000,
+            anonymous: true,
+            timeout: 12000,
             onload: function (res) {
                 var txt = res && res.responseText != null ? res.responseText : '';
                 var data = parseLoose(txt);
@@ -327,17 +352,34 @@
     }
 
     function post(body, onOk, onErr) {
-        gmReq('POST', WEB_APP_URL, JSON.stringify(body || {}), onOk, function () {
-            var q = WEB_APP_URL + '?page=' + encodeURIComponent(body.page || '')
-                + '&batch=' + encodeURIComponent(body.batch || '')
-                + '&sid=' + encodeURIComponent(body.sid || '')
-                + '&b2a1=' + encodeURIComponent(body.b2a1 || '0')
-                + '&fertig=' + encodeURIComponent(body.fertig || '0')
-                + '&notfound=' + encodeURIComponent(body.notfound || '0')
-                + '&label=' + encodeURIComponent(body.label || '')
-                + '&detail=' + encodeURIComponent(body.detail || '0');
-            gmReq('GET', q, '', onOk, onErr);
-        });
+        var payload = {
+            page: body.page || '',
+            batch: body.batch || '',
+            sid: body.sid || '',
+            b2a1: body.b2a1 || '0',
+            fertig: body.fertig || '0',
+            notfound: body.notfound || '0',
+            label: shortLabel(body.label || ''),
+            detail: body.detail || '0'
+        };
+        function tryPost(n) {
+            gmReq('POST', WEB_APP_URL, JSON.stringify(payload), onOk, function (e) {
+                if (n < 2) {
+                    setTimeout(function () { tryPost(n + 1); }, 700 * (n + 1));
+                    return;
+                }
+                var q = WEB_APP_URL + '?page=' + encodeURIComponent(payload.page)
+                    + '&batch=' + encodeURIComponent(payload.batch)
+                    + '&sid=' + encodeURIComponent(payload.sid)
+                    + '&b2a1=' + encodeURIComponent(payload.b2a1)
+                    + '&fertig=' + encodeURIComponent(payload.fertig)
+                    + '&notfound=' + encodeURIComponent(payload.notfound)
+                    + '&detail=' + encodeURIComponent(payload.detail)
+                    + '&label=' + encodeURIComponent(payload.label);
+                gmReq('GET', q, '', onOk, onErr || function () {});
+            });
+        }
+        tryPost(0);
     }
 
     function toast(msg) {
@@ -371,32 +413,58 @@
             + (batch ? '&retoure_batch=' + encodeURIComponent(batch) : ''));
     }
 
+    function goHome() {
+        try {
+            if (window.opener && !window.opener.closed) {
+                try { window.opener.postMessage({ retoureCarolDone: 1 }, '*'); } catch (e0) {}
+                try { window.opener.focus(); } catch (e1) {}
+            }
+        } catch (e2) {}
+        setTimeout(function () {
+            try { window.close(); } catch (e3) {}
+        }, 350);
+    }
+
+    function finish(msg) {
+        toast(msg || 'Carol-Check fertig');
+        busy = false;
+        goHome();
+    }
+
     function askQueue(batch, sid) {
         post({ page: 'carolq', batch: batch || '' }, function (res) {
             if (res && res.batchId) ssSet('retoure_batch', res.batchId);
-            var next = res && res.nextId;
-            if (!next) {
-                toast('Carol-Check fertig');
+            var b = res.batchId || batch;
+            var next = pickNext(res, sid, b);
+            if (next) {
+                toast('weiter · ' + next);
                 busy = false;
+                goTo(b, next, res.carolUrl || '');
                 return;
             }
-            if (next === sid || isDone(res.batchId || batch, next)) {
-                toast(next + ' offen — Scan-Seite übernimmt');
-                busy = false;
+            if (!res || !res.nextId || Number(res.pending) === 0) {
+                finish('Carol-Check fertig');
                 return;
             }
-            toast('weiter · ' + next);
+            if (String(res.nextId || '').toUpperCase() === String(sid || '').toUpperCase()) {
+                unmarkDone(b, sid);
+                toast(sid + ' · Report erneut');
+                busy = false;
+                setTimeout(function () { if (!busy) start(); }, 700);
+                return;
+            }
+            toast('Warte auf Scan-Seite');
             busy = false;
-            goTo(res.batchId || batch, next, res.carolUrl || '');
         }, function (e) {
-            toast('Queue: ' + e);
+            toast('Queue: ' + e + ' — erneut');
             busy = false;
+            setTimeout(function () { if (!busy) start(); }, 1200);
         });
     }
 
-    function send(batch, sid, flags, notfound) {
-        markDone(batch, sid);
-        toast(sid + ' · ' + (notfound ? 'kein Auftrag in Carol' : (flags.label || 'kein Badge')) + ' — sende…');
+    function send(batch, sid, flags, notfound, attempt) {
+        attempt = attempt || 0;
+        toast(sid + ' · ' + (notfound ? 'kein Auftrag in Carol' : (flags.label || 'kein Badge')) + (attempt ? ' — erneut…' : ' — sende…'));
         post({
             page: 'carolreport',
             batch: batch || '',
@@ -404,26 +472,56 @@
             b2a1: flags.b2a1 ? '1' : '0',
             fertig: flags.fertig ? '1' : '0',
             notfound: notfound ? '1' : '0',
-            label: flags.label || '',
+            label: shortLabel(flags.label || ''),
             detail: '1'
         }, function (res) {
+            if (res && res.success === false && String(res.message || '') === 'Kein Auftrag offen') {
+                toast(sid + ' · Scan-Seite übernimmt');
+                busy = false;
+                return;
+            }
+            if (res && res.success === false) {
+                if (attempt < 3) {
+                    toast(sid + ' · ' + (res.message || 'Fehler') + ' — erneut');
+                    setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+                    return;
+                }
+                toast(sid + ' · Report: ' + (res.message || 'Fehler'));
+                busy = false;
+                setTimeout(function () { if (!busy) start(); }, 1200);
+                return;
+            }
+            markDone(batch, sid);
             if (res && res.batchId) ssSet('retoure_batch', res.batchId);
-            var next = res && res.nextId;
-            if (next && next !== sid && !isDone(res.batchId || batch, next)) {
+            var b = (res && res.batchId) || batch;
+            var next = pickNext(res, sid, b);
+            if (next) {
                 toast(sid + ' ok · weiter ' + next);
                 busy = false;
-                goTo(res.batchId || batch, next, res.carolUrl || '');
+                goTo(b, next, res.carolUrl || '');
                 return;
             }
             if (res && res.accepted) {
                 askQueue(batch, sid);
                 return;
             }
-            toast(sid + ' ok · ' + ((res && res.pending) || 0) + ' offen');
-            busy = false;
+            var left = Number(res && res.pending) || 0;
+            if (left > 0) {
+                toast(sid + ' ok · ' + left + ' offen');
+                busy = false;
+                askQueue(batch, sid);
+                return;
+            }
+            finish(sid + ' ok · 0 offen');
         }, function (e) {
+            if (attempt < 3) {
+                toast(sid + ' · Report ' + e + ' — erneut');
+                setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+                return;
+            }
             toast(sid + ' · Report ' + e);
             busy = false;
+            setTimeout(function () { if (!busy) start(); }, 1500);
         });
     }
 

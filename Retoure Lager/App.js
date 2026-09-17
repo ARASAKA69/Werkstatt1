@@ -22,26 +22,30 @@ var HOT_CACHE_TTL_SEC = 300;
 var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
 
 function doGet(e) {
-  var page = String((e && e.parameter && e.parameter.page) || '').toLowerCase();
-  if (page === 'carolq' || page === 'carolqueue') {
-    return jsonOut_(aussenCarolQueue(e.parameter.batch));
+  try {
+    var page = String((e && e.parameter && e.parameter.page) || '').toLowerCase();
+    if (page === 'carolq' || page === 'carolqueue') {
+      return jsonOut_(aussenCarolQueue(e.parameter.batch));
+    }
+    if (page === 'carolreport') {
+      return jsonOut_(applyAussenCarolFlags({
+        batchId: e.parameter.batch,
+        stockId: e.parameter.sid,
+        carolB2a1: String(e.parameter.b2a1 || '') === '1',
+        carolFertig: String(e.parameter.fertig || '') === '1',
+        carolLabel: String(e.parameter.label || '').slice(0, 80),
+        detail: String(e.parameter.detail || '') === '1',
+        notFound: String(e.parameter.notfound || '') === '1'
+      }));
+    }
+    var isAussen = page === 'aussen' || page === 'scan';
+    return HtmlService.createHtmlOutputFromFile(isAussen ? 'Aussen' : 'Index')
+      .setTitle(isAussen ? 'Retoure Scan' : 'Retoure Lager')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  } catch (err) {
+    return jsonOut_({ success: false, message: String(err.message || err) });
   }
-  if (page === 'carolreport') {
-    return jsonOut_(applyAussenCarolFlags({
-      batchId: e.parameter.batch,
-      stockId: e.parameter.sid,
-      carolB2a1: String(e.parameter.b2a1 || '') === '1',
-      carolFertig: String(e.parameter.fertig || '') === '1',
-      carolLabel: e.parameter.label || '',
-      detail: String(e.parameter.detail || '') === '1',
-      notFound: String(e.parameter.notfound || '') === '1'
-    }));
-  }
-  var isAussen = page === 'aussen' || page === 'scan';
-  return HtmlService.createHtmlOutputFromFile(isAussen ? 'Aussen' : 'Index')
-    .setTitle(isAussen ? 'Retoure Scan' : 'Retoure Lager')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function jsonOut_(obj) {
@@ -50,28 +54,32 @@ function jsonOut_(obj) {
 }
 
 function doPost(e) {
-  var body = {};
   try {
-    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-  } catch (err) {
-    body = {};
+    var body = {};
+    try {
+      body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    } catch (err) {
+      body = {};
+    }
+    var page = String(body.page || (e && e.parameter && e.parameter.page) || '').toLowerCase();
+    if (page === 'carolq' || page === 'carolqueue') {
+      return jsonOut_(aussenCarolQueue(body.batch || body.batchId || ''));
+    }
+    if (page === 'carolreport') {
+      return jsonOut_(applyAussenCarolFlags({
+        batchId: body.batch || body.batchId || '',
+        stockId: body.sid || body.stockId || '',
+        carolB2a1: body.b2a1 === true || String(body.b2a1 || '') === '1',
+        carolFertig: body.fertig === true || String(body.fertig || '') === '1',
+        carolLabel: String(body.label || '').slice(0, 80),
+        detail: body.detail === true || String(body.detail || '') === '1',
+        notFound: body.notfound === true || String(body.notfound || '') === '1'
+      }));
+    }
+    return jsonOut_({ success: false, message: 'Unbekannt' });
+  } catch (err2) {
+    return jsonOut_({ success: false, message: String(err2.message || err2) });
   }
-  var page = String(body.page || (e && e.parameter && e.parameter.page) || '').toLowerCase();
-  if (page === 'carolq' || page === 'carolqueue') {
-    return jsonOut_(aussenCarolQueue(body.batch || body.batchId || ''));
-  }
-  if (page === 'carolreport') {
-    return jsonOut_(applyAussenCarolFlags({
-      batchId: body.batch || body.batchId || '',
-      stockId: body.sid || body.stockId || '',
-      carolB2a1: body.b2a1 === true || String(body.b2a1 || '') === '1',
-      carolFertig: body.fertig === true || String(body.fertig || '') === '1',
-      carolLabel: body.label || '',
-      detail: body.detail === true || String(body.detail || '') === '1',
-      notFound: body.notfound === true || String(body.notfound || '') === '1'
-    }));
-  }
-  return jsonOut_({ success: false, message: 'Unbekannt' });
 }
 
 function onOpen() {
@@ -2172,7 +2180,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.14', ts: nowStamp_() };
+  return { success: true, version: '1.2.16', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2245,6 +2253,12 @@ function aussenCarolQueue(batchId) {
 }
 
 function applyAussenCarolFlags(payload) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+  } catch (lockErr) {
+    return { success: false, message: 'Beschäftigt — erneut' };
+  }
   try {
     payload = payload || {};
     var batchId = String(payload.batchId || '').trim();
@@ -2258,7 +2272,7 @@ function applyAussenCarolFlags(payload) {
     var notFound = payload.notFound === true || String(payload.notFound || '') === '1';
     var b2a1 = !notFound && !!payload.carolB2a1;
     var fertig = !notFound && !!payload.carolFertig && !b2a1;
-    var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim();
+    var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     var fromDetail = notFound || payload.detail === true || String(payload.detail || '') === '1';
     if (!fromDetail) {
       var qSkip = aussenCarolQueue(batchId);
@@ -2269,6 +2283,7 @@ function applyAussenCarolFlags(payload) {
         stockId: stockId,
         pending: qSkip.pending || 0,
         nextId: qSkip.nextId || stockId,
+        ids: qSkip.ids || [],
         carolUrl: qSkip.carolUrl || ''
       };
     }
@@ -2306,11 +2321,14 @@ function applyAussenCarolFlags(payload) {
       gestelltCount: split.gestelltCount,
       pending: q.pending || 0,
       nextId: q.nextId || '',
+      ids: q.ids || [],
       carolUrl: q.carolUrl || '',
       message: stockId + (b2a1 ? ' · Als B2A1 markiert' : (fertig ? ' · Fertiggestellt' : ' · kein Carol-Badge'))
     };
   } catch (err) {
     return { success: false, message: String(err.message || err) };
+  } finally {
+    try { lock.releaseLock(); } catch (eLock) {}
   }
 }
 
