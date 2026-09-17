@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      1.6
+// @version      1.8
 // @description  Liest nur sichtbare Carol-Badges (B2A1 / Fertiggestellt) und sendet an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    var VER = '1.6';
+    var VER = '1.8';
     if (window.__retoureBridgeVer) {
         return;
     }
@@ -59,6 +59,11 @@
     }
 
     function detailSid() {
+        var head = document.querySelector('[class*="vehicleHeader"], [class*="VehicleHeader"]');
+        if (head) {
+            var hm = String(head.innerText || head.textContent || '').match(/\b([A-Z]{2}\d{4,8})\s*[-–]/);
+            if (hm) return hm[1].toUpperCase();
+        }
         var nodes = document.querySelectorAll('h1, h2, h3, h4, h5');
         for (var i = 0; i < nodes.length; i++) {
             var m = String(nodes[i].textContent || '').trim().match(/^([A-Z]{2}\d{4,8})\s*[-–]/);
@@ -132,30 +137,52 @@
         return false;
     }
 
-    function isB2a1Chip(t) {
-        if (/refurbishment\s+started/i.test(t)) return false;
-        return /als\s+b2a1\s+markiert/i.test(t) || /flagged\s+for\s+return\s+to\s+auto\s*1/i.test(t);
-    }
+    var BADGE_BOX = '[class*="refurbishmentBadges"], [class*="RefurbishmentBadges"]';
+    var BADGE_QA = '[data-qa-selector*="efurbishmentStatus"], [data-qa-selector*="eturnToAuto1"], [data-qa-selector*="2a1"], [data-qa-selector*="2A1"]';
+    var B2A1_RE = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i;
+    var FERTIG_RE = /fertiggestellt|completed\s+on\s+\d/i;
 
-    function isFertigChip(t) {
-        if (/refurbishment\s+started/i.test(t)) return false;
-        return /^fertiggestellt(\s+am\b|$)/i.test(t) || /^completed\s+on\s+\d/i.test(t);
+    function badgeTexts() {
+        var out = [];
+        var seen = {};
+        function push(raw) {
+            var t = String(raw || '').replace(/\s+/g, ' ').trim();
+            if (!t || t.length > 90 || seen[t]) return;
+            seen[t] = 1;
+            out.push(t);
+        }
+        function collect(root) {
+            if (!root) return;
+            var leaves = root.querySelectorAll('span, div, p, small, strong, b');
+            var got = 0;
+            for (var i = 0; i < leaves.length; i++) {
+                if (leaves[i].children && leaves[i].children.length) continue;
+                var t = String(leaves[i].textContent || '').trim();
+                if (!t) continue;
+                push(t);
+                got++;
+            }
+            if (!got) push(root.innerText || root.textContent);
+        }
+        var boxes = document.querySelectorAll(BADGE_BOX);
+        for (var b = 0; b < boxes.length; b++) collect(boxes[b]);
+        var qa = document.querySelectorAll(BADGE_QA);
+        for (var q = 0; q < qa.length; q++) push(qa[q].innerText || qa[q].textContent);
+        return out;
     }
 
     function readFlags() {
-        var nodes = document.querySelectorAll('span, div, p, li, small, strong, [class*="badge"], [class*="chip"], [class*="tag"], [class*="pill"], [class*="label"]');
-        var b2a1 = '';
-        var fertig = '';
-        for (var i = 0; i < nodes.length; i++) {
-            if (nodes[i].children && nodes[i].children.length) continue;
-            var t = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
-            if (!t || t.length > 70) continue;
-            if (!b2a1 && isB2a1Chip(t)) b2a1 = t;
-            if (!fertig && isFertigChip(t)) fertig = t;
+        var texts = badgeTexts();
+        if (!texts.length) return null;
+        for (var i = 0; i < texts.length; i++) {
+            if (B2A1_RE.test(texts[i])) return { b2a1: true, fertig: false, label: texts[i] };
         }
-        if (b2a1) return { b2a1: true, fertig: false, label: b2a1 };
-        if (fertig) return { b2a1: false, fertig: true, label: fertig };
-        return { b2a1: false, fertig: false, label: '' };
+        for (var f = 0; f < texts.length; f++) {
+            if (FERTIG_RE.test(texts[f]) && !/refurbishment\s+started/i.test(texts[f])) {
+                return { b2a1: false, fertig: true, label: texts[f] };
+            }
+        }
+        return { b2a1: false, fertig: false, label: texts.join(' · ').slice(0, 140) };
     }
 
     function looksLikeAnswer(o) {
@@ -292,7 +319,7 @@
 
     function send(batch, sid, flags, notfound) {
         markDone(batch, sid);
-        toast(sid + ' · ' + (notfound ? 'kein Auftrag' : (flags.b2a1 ? 'B2A1' : (flags.fertig ? 'Fertiggestellt' : 'kein Badge'))) + ' — sende…');
+        toast(sid + ' · ' + (notfound ? 'kein Auftrag' : (flags.label || 'kein Badge')) + ' — sende…');
         post({
             page: 'carolreport',
             batch: batch || '',
@@ -357,7 +384,12 @@
                 return;
             }
             var flags = readFlags();
-            if (!flags.b2a1 && !flags.fertig && tries < 18) return;
+            if (!flags) {
+                if (tries < MAX_TRIES) return;
+                clearInterval(timer);
+                send(batch, sid, { b2a1: false, fertig: false, label: 'Badges nicht geladen' }, false);
+                return;
+            }
             clearInterval(timer);
             send(batch, sid, flags, false);
         }, 300);

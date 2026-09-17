@@ -1892,8 +1892,8 @@ function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail, nbMap) {
   var nbs = (nbMap && nbMap[stockId]) || [];
   var tlRes = resolveTlGestellt_(tl);
   var carolBlob = [refurb.status, refurb.kommBestellung, refurb.kommAnlieferung, refurb.rowText].join(' ');
-  var carolB2a1 = !!refurb.found && isB2A1Status_(carolBlob);
-  var carolFertig = !!refurb.found && isFertigStatus_(refurb.status);
+  var listB2a1 = !!refurb.found && isB2A1Status_(carolBlob);
+  var listFertig = !!refurb.found && isFertigStatus_(refurb.status);
   var mail = returnMail || { found: false, subject: '', from: '', date: '', permalink: '', message: '' };
   var gEntry = tlRes.gestelltEntry || null;
   var latest = tlRes.latest || null;
@@ -1926,9 +1926,14 @@ function aussenItemFromMaps_(stockId, refurbMap, tlMap, returnMail, nbMap) {
     carolUrl: carolUrlFor_(stockId, refurb.carolUrl),
     refurbFound: !!refurb.found,
     carolStatus: refurb.status || '',
-    carolDone: carolFertig,
-    carolB2a1: carolB2a1,
-    carolFertig: carolFertig,
+    carolListB2a1: listB2a1,
+    carolListFertig: listFertig,
+    carolLive: false,
+    carolDetail: false,
+    carolBadge: '',
+    carolDone: false,
+    carolB2a1: false,
+    carolFertig: false,
     regal: refurb.regal || '',
     reifenStatus: refurb.reifenStatus || '',
     reifenStatusRaw: refurb.reifenStatusRaw || '',
@@ -1967,7 +1972,7 @@ function aussenRowFromItem_(batchId, scannedAt, item) {
     item.stockId,
     item.markeModel || '',
     item.carolStatus || '',
-    item.carolDone ? 'JA' : '',
+    aussenCarolCell_(item),
     item.tlFound ? 'JA' : '',
     item.tlGestellt ? 'JA' : '',
     item.tlDatum || '',
@@ -1985,15 +1990,57 @@ function aussenRowFromItem_(batchId, scannedAt, item) {
   ];
 }
 
+function carryAussenCarolLive_(item, prev) {
+  if (!item || !prev || (!prev.carolLive && !prev.carolDetail)) return item;
+  item.carolLive = true;
+  item.carolDetail = true;
+  item.carolB2a1 = !!prev.carolB2a1;
+  item.carolFertig = !!prev.carolFertig;
+  item.carolDone = !!prev.carolFertig;
+  item.carolBadge = prev.carolBadge || '';
+  if (!item.manual) {
+    item.action = aussenAction_(item);
+    item.actionKey = aussenActionKey_(item.action);
+  }
+  return item;
+}
+
+function aussenCarolCell_(item) {
+  if (!item || (!item.carolLive && !item.carolDetail)) return '';
+  var token = item.carolB2a1 ? 'B2A1' : (item.carolFertig ? 'FERTIG' : 'NEIN');
+  var badge = String(item.carolBadge || '').replace(/[|\r\n]+/g, ' ').trim();
+  return badge ? (token + ' | ' + badge) : token;
+}
+
+function aussenCarolFromCell_(val) {
+  var raw = String(val || '').trim();
+  var parts = raw.split('|');
+  var token = String(parts[0] || '').trim().toUpperCase();
+  var badge = parts.length > 1 ? parts.slice(1).join('|').trim() : '';
+  var live = token === 'B2A1' || token === 'FERTIG' || token === 'NEIN';
+  return {
+    live: live,
+    b2a1: token === 'B2A1',
+    fertig: token === 'FERTIG',
+    badge: badge
+  };
+}
+
 function aussenItemFromRow_(row) {
   var action = String(row[15] || '').trim().toUpperCase();
+  var live = aussenCarolFromCell_(row[5]);
   var item = {
     stockId: normalizeStockId_(row[2]),
     markeModel: String(row[3] || '').trim(),
     carolStatus: String(row[4] || '').trim(),
-    carolDone: String(row[5] || '').trim().toUpperCase() === 'JA',
-    carolB2a1: isB2A1Status_(String(row[4] || '')),
-    carolFertig: String(row[5] || '').trim().toUpperCase() === 'JA' || isFertigStatus_(String(row[4] || '')),
+    carolListB2a1: isB2A1Status_(String(row[4] || '')),
+    carolListFertig: isFertigStatus_(String(row[4] || '')),
+    carolLive: live.live,
+    carolDetail: live.live,
+    carolBadge: live.badge,
+    carolDone: live.fertig,
+    carolB2a1: live.b2a1,
+    carolFertig: live.fertig,
     tlFound: String(row[6] || '').trim().toUpperCase() === 'JA',
     tlGestellt: String(row[7] || '').trim().toUpperCase() === 'JA',
     tlGestelltEarlier: false,
@@ -2004,7 +2051,7 @@ function aussenItemFromRow_(row) {
     mailSubject: String(row[12] || '').trim(),
     mailDate: String(row[13] || '').trim(),
     mailUrl: String(row[14] || '').trim(),
-    action: action || 'BEHALTEN',
+    action: action,
     carolUrl: String(row[16] || '').trim(),
     tlUrl: String(row[17] || '').trim(),
     itemTyp: String(row[18] || '').trim(),
@@ -2125,7 +2172,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.8', ts: nowStamp_() };
+  return { success: true, version: '1.2.10', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2140,12 +2187,9 @@ function withRetoureBatch_(url, batchId) {
 
 function aussenCarolAlready_(item, liveMap) {
   if (!item || item.tlGestellt) return true;
-  if (item.carolB2a1 || item.carolFertig) return true;
+  if (item.carolLive || item.carolDetail) return true;
   var live = liveMap ? liveMap[item.stockId] : '';
-  if (live === 'done' || live === 'b2a1' || live === 'fertig' || live === 'none') return true;
-  if (item.carolDetail) return true;
-  if (/als\s*b2a1\s*markiert|flagged\s*for\s*return|fertiggestellt|completed\s+on/i.test(item.carolStatus || '')) return true;
-  return false;
+  return live === 'b2a1' || live === 'fertig' || live === 'none' || live === 'done';
 }
 
 function latestAussenBatchId_() {
@@ -2236,9 +2280,9 @@ function applyAussenCarolFlags(payload) {
       pool[i].carolB2a1 = b2a1;
       pool[i].carolFertig = fertig;
       pool[i].carolDone = fertig;
-      if (b2a1) pool[i].carolStatus = label || 'Als B2A1 markiert';
-      else if (fertig) pool[i].carolStatus = label || 'Fertiggestellt';
-      else pool[i].carolStatus = notFound ? 'Kein Carol-Auftrag' : (label || 'Kein Badge');
+      pool[i].carolBadge = b2a1 || fertig
+        ? (label || (b2a1 ? 'Als B2A1 markiert' : 'Fertiggestellt'))
+        : (notFound ? 'Kein Carol-Auftrag' : (label || 'Kein Badge'));
       if (!pool[i].manual) {
         pool[i].action = aussenAction_(pool[i]);
         pool[i].actionKey = aussenActionKey_(pool[i].action);
@@ -2544,6 +2588,7 @@ function recheckAussenMail(batchId, stockId) {
     var item;
     if (maps.refurb || maps.tl) {
       item = aussenItemFromMaps_(stockId, maps.refurb || {}, maps.tl || {}, mail, maps.nb || {});
+      carryAussenCarolLive_(item, prev);
       if (prev && prev.manual) {
         item.action = prev.action;
         item.actionKey = prev.actionKey;
@@ -2563,6 +2608,7 @@ function recheckAussenMail(batchId, stockId) {
       item = prev;
     } else {
       item = aussenItemFromMaps_(stockId, {}, {}, mail, {});
+      carryAussenCarolLive_(item, prev);
     }
     applyAussenManual_(item, maps);
     writeAussenItems_(batchId, stored.scannedAt || nowStamp_(), [item]);
@@ -2641,23 +2687,30 @@ function getAussenBatch(batchId) {
         if (it.stockId) items.push(it);
       }
     }
-    var split = splitAussenItems_(items);
     var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
     var liveMap = maps.carolLive || {};
+    var manualMap = maps.manual || {};
     var pending = 0;
     var nextCarolId = '';
     var nextCarolUrl = '';
     for (var p = 0; p < items.length; p++) {
       var lv = liveMap[items[p].stockId];
-      if (lv) {
+      if (lv && !items[p].carolLive) {
         items[p].carolLive = true;
-        items[p].carolDetail = lv === 'done' || lv === 'none' || lv === 'b2a1' || lv === 'fertig';
+        items[p].carolDetail = true;
         if (lv === 'b2a1') items[p].carolB2a1 = true;
         if (lv === 'fertig') {
           items[p].carolFertig = true;
           items[p].carolDone = true;
         }
       }
+      if (manualMap[items[p].stockId]) {
+        items[p].action = manualMap[items[p].stockId];
+        items[p].manual = true;
+      } else {
+        items[p].action = aussenAction_(items[p]);
+      }
+      items[p].actionKey = aussenActionKey_(items[p].action);
       if (!aussenCarolAlready_(items[p], liveMap)) {
         pending++;
         if (!nextCarolId) {
@@ -2666,6 +2719,7 @@ function getAussenBatch(batchId) {
         }
       }
     }
+    var split = splitAussenItems_(items);
     return {
       success: true,
       batchId: batchId,

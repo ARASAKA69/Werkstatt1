@@ -1060,7 +1060,10 @@
         if (it.nbB2a1) return 'B2A1 — Nachbestellung Status B2A1. Rausziehen.';
         return 'B2A1 — Return-to-Auto1 Mail gefunden. Rausziehen.';
       }
-      if (k === 'fertig') return 'Fertiggestellt — Carol / Nachbestellung fertig. Rausziehen.';
+      if (k === 'fertig') {
+        if (it.carolFertig) return 'Fertiggestellt — Carol-Badge „' + (it.carolBadge || 'Fertiggestellt') + '“. Rausziehen.';
+        return 'Fertiggestellt — Nachbestellung fertig. Rausziehen.';
+      }
       if (k === 'gestellt') return 'Gestellt — bei der Mechanik, nicht mehr im Lager.';
       if (k === 'tagesliste') return 'Tagesliste — nicht gestellt, noch im Lager.';
       return 'Behalten — kein B2A1, nicht Fertiggestellt.';
@@ -1071,9 +1074,10 @@
       if (it.itemTyp && it.itemTyp !== '—') rows.push('Typ: ' + it.itemTyp);
       if (it.mailFound) rows.push('B2A1-Mail: ' + (it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + it.mailDate : ''));
       else rows.push('Keine Return-to-Auto1 Mail');
-      if (it.carolB2a1) rows.push('Carol: Als B2A1 markiert' + (it.carolStatus ? ' · ' + it.carolStatus : ''));
-      else if (it.carolFertig || it.carolDone) rows.push('Carol Fertiggestellt: ' + (it.carolStatus || 'herausgegeben'));
-      else if (it.refurbFound) rows.push('Carol Status: ' + (it.carolStatus || 'ohne Status'));
+      if (it.carolB2a1) rows.push('Carol-Badge: ' + (it.carolBadge || 'Als B2A1 markiert'));
+      else if (it.carolFertig) rows.push('Carol-Badge: ' + (it.carolBadge || 'Fertiggestellt'));
+      else if (it.carolLive) rows.push('Carol-Badge geprüft: ' + (it.carolBadge || 'kein Badge'));
+      else if (it.refurbFound) rows.push('Carol-Badge noch nicht gelesen · Liste: ' + (it.carolStatus || 'ohne Status'));
       else rows.push('Nicht in der Refurbishment List');
       if (it.nbB2a1) rows.push('Nachbestellung: B2A1' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
       else if (it.nbFertig) rows.push('Nachbestellung: Fertiggestellt' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
@@ -1117,16 +1121,17 @@
         return '<li>' + esc(r) + '</li>';
       }).join('');
       var carolHrefUrl = carolHref(it);
-      var carolSt = it.carolB2a1 ? 'bad' : ((it.carolFertig || it.carolDone) ? 'ok' : (it.carolLive ? 'ok' : 'warn'));
+      var carolSt = it.carolB2a1 ? 'bad' : (it.carolFertig ? 'ok' : (it.carolLive ? 'none' : 'warn'));
       var carolOpen = carolHrefUrl ? ' · <a href="' + esc(carolHrefUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : '';
+      var listInfo = it.carolStatus ? ' · Liste: ' + esc(it.carolStatus) : '';
       var carolMsg = it.carolLive
         ? (it.carolB2a1
-          ? ('Carol: <b>Als B2A1 markiert</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') + carolOpen)
-          : ((it.carolFertig || it.carolDone)
-            ? ('Carol: <b>Fertiggestellt</b>' + (it.carolStatus ? ' — ' + esc(it.carolStatus) : '') + carolOpen)
-            : ('Carol-Badge gelesen: keines' + carolOpen)))
+          ? ('Badge: <b>' + esc(it.carolBadge || 'Als B2A1 markiert') + '</b>' + listInfo + carolOpen)
+          : (it.carolFertig
+            ? ('Badge: <b>' + esc(it.carolBadge || 'Fertiggestellt') + '</b>' + listInfo + carolOpen)
+            : ('Badge geprüft: <b>' + esc(it.carolBadge || 'kein B2A1, nicht fertiggestellt') + '</b>' + listInfo + carolOpen)))
         : (it.refurbFound
-          ? ('Listen-Status: <b>' + esc(it.carolStatus || '—') + '</b> — Badge noch nicht gelesen. Oben <b>Carol</b> klicken (Tampermonkey).' + carolOpen)
+          ? ('Badge noch nicht gelesen — Carol prüfen läuft' + listInfo + carolOpen)
           : ('Nicht (mehr) in der Refurbishment List.' + carolOpen));
       var gSt = it.tlGestellt ? 'ok' : (it.tlFound ? 'warn' : 'none');
       var gMsg = it.tlFound
@@ -1152,8 +1157,10 @@
         checkRow(gSt, 'Tagesliste / Gestellt', gMsg);
       $('fTyp').textContent = it.itemTyp || '—';
       $('fMarke').textContent = it.markeModel || '—';
-      $('fStatus').textContent = it.carolStatus || (it.refurbFound ? '—' : 'nicht in Refurb');
-      $('fStatus').className = 'fv' + (it.carolB2a1 ? ' red' : ((it.carolFertig || it.carolDone) ? ' cyan' : (it.refurbFound ? ' green' : ' red')));
+      $('fStatus').textContent = it.carolLive
+        ? (it.carolBadge || 'kein Badge')
+        : (it.carolStatus ? it.carolStatus + ' (Liste)' : (it.refurbFound ? '—' : 'nicht in Refurb'));
+      $('fStatus').className = 'fv' + (it.carolB2a1 ? ' red' : (it.carolFertig ? ' cyan' : (it.refurbFound ? ' green' : ' red')));
       $('fReifen').textContent = it.reifenStatus || it.reifenStatusRaw || '—';
       $('fRegal').textContent = it.regal || '—';
       $('fTl').textContent = it.tlFound
