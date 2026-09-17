@@ -27,6 +27,9 @@ function doGet(e) {
     if (page === 'carolq' || page === 'carolqueue') {
       return jsonOut_(aussenCarolQueue(e.parameter.batch));
     }
+    if (page === 'carolping') {
+      return jsonOut_({ success: true, version: '1.2.19', via: 'get', ts: nowStamp_() });
+    }
     if (page === 'carolreport') {
       return jsonOut_(applyAussenCarolFlags({
         batchId: e.parameter.batch,
@@ -64,6 +67,9 @@ function doPost(e) {
     var page = String(body.page || (e && e.parameter && e.parameter.page) || '').toLowerCase();
     if (page === 'carolq' || page === 'carolqueue') {
       return jsonOut_(aussenCarolQueue(body.batch || body.batchId || ''));
+    }
+    if (page === 'carolping') {
+      return jsonOut_({ success: true, version: '1.2.19', via: 'post', ts: nowStamp_() });
     }
     if (page === 'carolreport') {
       return jsonOut_(applyAussenCarolFlags({
@@ -2180,7 +2186,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.18', ts: nowStamp_() };
+  return { success: true, version: '1.2.19', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {

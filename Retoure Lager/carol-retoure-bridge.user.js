@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      2.5
+// @version      2.6
 // @description  Öffnet den Carol-Auftrag, liest die Badges mit Datum und sendet sie an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -14,7 +14,7 @@
 (function () {
     'use strict';
 
-    var VER = '2.5';
+    var VER = '2.6';
     if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
@@ -31,6 +31,10 @@
     var busy = false;
     var lastKey = '';
     var timer = null;
+    var waitingAck = null;
+    var ackTimer = null;
+    var DEPLOY_ID = (WEB_APP_URL.match(/\/s\/([^/]+)/) || [])[1] || '';
+    var PUBLIC_URL = DEPLOY_ID ? ('https://script.google.com/macros/s/' + DEPLOY_ID + '/exec') : WEB_APP_URL;
 
     function qs(name) {
         try {
@@ -314,6 +318,24 @@
         return m ? m[0] : '';
     }
 
+    function sniffBody(status, txt) {
+        var raw = String(txt || '');
+        var s = raw.replace(/\s+/g, ' ').trim().slice(0, 160);
+        var low = raw.toLowerCase();
+        if (/accounts\.google|servicelogin|\bsign in\b|\banmelden\b/.test(low)) {
+            return 'HTTP ' + status + ' · Google-Login (Cookies fehlen)';
+        }
+        if (/authorization|not authorized|access denied|permission/i.test(raw)) {
+            return 'HTTP ' + status + ' · keine Berechtigung';
+        }
+        if (/sorry|unable to (open|process|handle)/i.test(low)) {
+            return 'HTTP ' + status + ' · Google Sorry-Seite';
+        }
+        if (status === 400 && !s) return 'HTTP 400 · leer (Script nicht ausgeführt, oft Auth/anonymous)';
+        if (status === 400) return 'HTTP 400 · ' + (s || 'Bad Request');
+        return 'HTTP ' + status + (s ? ' · ' + s : '');
+    }
+
     function gmReq(method, url, body, onOk, onErr, hop) {
         hop = hop || 0;
         var done = false;
@@ -327,11 +349,12 @@
             method: method,
             url: url,
             data: body || undefined,
-            headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
-            anonymous: true,
-            timeout: 12000,
+            headers: method === 'POST' ? { 'Content-Type': 'text/plain' } : {},
+            anonymous: false,
+            timeout: 15000,
             onload: function (res) {
                 var txt = res && res.responseText != null ? res.responseText : '';
+                var status = res && res.status;
                 var data = parseLoose(txt);
                 if (data) {
                     ok(data);
@@ -343,8 +366,8 @@
                     gmReq('GET', jump, '', onOk, onErr, hop + 1);
                     return;
                 }
-                if (res && res.status >= 200 && res.status < 400) ok({ accepted: true });
-                else err('HTTP ' + (res && res.status));
+                if (status >= 200 && status < 400) ok({ accepted: true });
+                else err(sniffBody(status, txt));
             },
             onerror: function () { err('netzwerk'); },
             ontimeout: function () { err('timeout'); }
@@ -362,24 +385,43 @@
             label: shortLabel(body.label || ''),
             detail: body.detail || '0'
         };
-        function tryPost(n) {
-            gmReq('POST', WEB_APP_URL, JSON.stringify(payload), onOk, function (e) {
-                if (n < 2) {
-                    setTimeout(function () { tryPost(n + 1); }, 700 * (n + 1));
-                    return;
-                }
-                var q = WEB_APP_URL + '?page=' + encodeURIComponent(payload.page)
-                    + '&batch=' + encodeURIComponent(payload.batch)
-                    + '&sid=' + encodeURIComponent(payload.sid)
-                    + '&b2a1=' + encodeURIComponent(payload.b2a1)
-                    + '&fertig=' + encodeURIComponent(payload.fertig)
-                    + '&notfound=' + encodeURIComponent(payload.notfound)
-                    + '&detail=' + encodeURIComponent(payload.detail)
-                    + '&label=' + encodeURIComponent(payload.label);
-                gmReq('GET', q, '', onOk, onErr || function () {});
+        var packed = JSON.stringify(payload);
+        var query = function (base) {
+            return base + '?page=' + encodeURIComponent(payload.page)
+                + '&batch=' + encodeURIComponent(payload.batch)
+                + '&sid=' + encodeURIComponent(payload.sid)
+                + '&b2a1=' + encodeURIComponent(payload.b2a1)
+                + '&fertig=' + encodeURIComponent(payload.fertig)
+                + '&notfound=' + encodeURIComponent(payload.notfound)
+                + '&detail=' + encodeURIComponent(payload.detail)
+                + '&label=' + encodeURIComponent(payload.label);
+        };
+        var steps = [
+            { method: 'POST', url: WEB_APP_URL, body: packed, name: 'POST domain' },
+            { method: 'GET', url: query(WEB_APP_URL), body: '', name: 'GET domain' },
+            { method: 'POST', url: PUBLIC_URL, body: packed, name: 'POST public' },
+            { method: 'GET', url: query(PUBLIC_URL), body: '', name: 'GET public' }
+        ];
+        function runStep(i) {
+            if (i >= steps.length) {
+                onErr(new Error('alle Wege HTTP-Fehler'));
+                return;
+            }
+            var st = steps[i];
+            hudLog('wait', sidHint() + 'GM ' + st.name, false);
+            gmReq(st.method, st.url, st.body, function (res) {
+                hudLog('ok', sidHint() + 'GM ' + st.name + ' ok', false);
+                onOk(res);
+            }, function (e) {
+                hudLog('err', sidHint() + 'GM ' + st.name + ' · ' + e, false);
+                runStep(i + 1);
             });
         }
-        tryPost(0);
+        runStep(0);
+    }
+
+    function sidHint() {
+        return waitingAck && waitingAck.sid ? (waitingAck.sid + ' · ') : '';
     }
 
     function toast(msg) {
@@ -421,6 +463,16 @@
         for (var i = 0; i < targets.length; i++) {
             try { targets[i].postMessage(data, '*'); } catch (e3) {}
         }
+        return targets.length > 0;
+    }
+
+    function hudLog(kind, msg, showToast) {
+        pingHud({ retoureCarolLog: 1, kind: kind || 'info', msg: String(msg || '') });
+        if (showToast !== false) toast(msg);
+    }
+
+    function hasHud() {
+        try { return !!(window.opener && !window.opener.closed); } catch (e) { return false; }
     }
 
     function isQueueDone(res) {
@@ -446,44 +498,52 @@
     }
 
     function askQueue(batch, sid) {
-        post({ page: 'carolq', batch: batch || '' }, function (res) {
-            if (res && res.batchId) ssSet('retoure_batch', res.batchId);
-            var b = res.batchId || batch;
-            var next = pickNext(res, sid, b);
-            if (next) {
-                toast('weiter · ' + next);
-                busy = false;
-                goTo(b, next, res.carolUrl || '');
-                return;
-            }
-            if (isQueueDone(res)) {
-                finish('Carol-Check fertig');
-                return;
-            }
-            if (res && res.accepted) {
-                toast('Queue unklar — erneut');
-                busy = false;
-                setTimeout(function () { if (!busy) start(); }, 900);
-                return;
-            }
-            if (String(res && res.nextId || '').toUpperCase() === String(sid || '').toUpperCase()) {
-                unmarkDone(b, sid);
-                toast(sid + ' · Report erneut');
-                busy = false;
-                setTimeout(function () { if (!busy) start(); }, 700);
-                return;
-            }
-            if (res && Number(res.pending) > 0 && res.nextId) {
-                unmarkDone(b, String(res.nextId).toUpperCase());
-                toast('weiter · ' + res.nextId);
-                busy = false;
-                goTo(b, res.nextId, res.carolUrl || '');
-                return;
-            }
-            toast('Warte auf Scan-Seite');
+        if (hasHud()) {
+            hudLog('wait', (sid || '') + ' · Queue via HUD', false);
+            waitingAck = { kind: 'queue', batch: batch, sid: sid };
+            if (ackTimer) clearTimeout(ackTimer);
+            ackTimer = setTimeout(function () {
+                if (!waitingAck || waitingAck.kind !== 'queue') return;
+                waitingAck = null;
+                hudLog('err', (sid || '') + ' · HUD Queue timeout — GM');
+                askQueueGm(batch, sid);
+            }, 12000);
+            pingHud({ retoureCarolQueue: 1, batch: batch || '', skip: sid || '' });
+            return;
+        }
+        askQueueGm(batch, sid);
+    }
+
+    function applyAck(res, sid, batch) {
+        if (res && res.batchId) ssSet('retoure_batch', res.batchId);
+        var b = (res && res.batchId) || batch;
+        var next = pickNext(res, sid, b);
+        if (next) {
+            hudLog('ok', sid + ' ok · weiter ' + next);
             busy = false;
+            goTo(b, next, res.carolUrl || '');
+            return;
+        }
+        if (isQueueDone(res) || (res && res.success === true && Number(res.pending) === 0)) {
+            finish(sid ? (sid + ' ok · 0 offen') : 'Carol-Check fertig');
+            return;
+        }
+        if (String(res && res.nextId || '').toUpperCase() === String(sid || '').toUpperCase()) {
+            unmarkDone(b, sid);
+            hudLog('wait', sid + ' · Report erneut');
+            busy = false;
+            setTimeout(function () { if (!busy) start(); }, 700);
+            return;
+        }
+        hudLog('wait', 'Warte auf Scan-Seite');
+        busy = false;
+    }
+
+    function askQueueGm(batch, sid) {
+        post({ page: 'carolq', batch: batch || '' }, function (res) {
+            applyAck(res, sid, batch);
         }, function (e) {
-            toast('Queue: ' + e + ' — erneut');
+            hudLog('err', 'Queue: ' + e + ' — erneut');
             busy = false;
             setTimeout(function () { if (!busy) start(); }, 1200);
         });
@@ -491,7 +551,35 @@
 
     function send(batch, sid, flags, notfound, attempt) {
         attempt = attempt || 0;
-        toast(sid + ' · ' + (notfound ? 'kein Auftrag in Carol' : (flags.label || 'kein Badge')) + (attempt ? ' — erneut…' : ' — sende…'));
+        var label = notfound ? 'kein Auftrag in Carol' : (flags.label || 'kein Badge');
+        toast(sid + ' · ' + label + (attempt ? ' — erneut…' : ' — sende…'));
+        if (hasHud() && attempt === 0) {
+            hudLog('wait', sid + ' · Report via HUD · ' + label, false);
+            waitingAck = { kind: 'report', batch: batch, sid: sid, flags: flags, notfound: notfound };
+            if (ackTimer) clearTimeout(ackTimer);
+            ackTimer = setTimeout(function () {
+                if (!waitingAck || waitingAck.kind !== 'report' || waitingAck.sid !== sid) return;
+                waitingAck = null;
+                hudLog('err', sid + ' · HUD timeout — GM Fallback');
+                sendGm(batch, sid, flags, notfound, 0);
+            }, 12000);
+            pingHud({
+                retoureCarolReport: 1,
+                batchId: batch || '',
+                stockId: sid,
+                carolB2a1: !!flags.b2a1,
+                carolFertig: !!flags.fertig,
+                carolLabel: notfound ? 'Kein Carol-Auftrag' : shortLabel(flags.label || ''),
+                notFound: !!notfound
+            });
+            return;
+        }
+        sendGm(batch, sid, flags, notfound, attempt);
+    }
+
+    function sendGm(batch, sid, flags, notfound, attempt) {
+        attempt = attempt || 0;
+        hudLog('wait', sid + ' · GM Report…');
         post({
             page: 'carolreport',
             batch: batch || '',
@@ -503,27 +591,27 @@
             detail: '1'
         }, function (res) {
             if (res && res.accepted && res.success !== true) {
-                if (attempt < 4) {
-                    toast(sid + ' · Report unklar — erneut');
-                    setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+                if (attempt < 2) {
+                    hudLog('err', sid + ' · Report unklar — erneut');
+                    setTimeout(function () { sendGm(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
                     return;
                 }
-                toast(sid + ' · Report unklar — Scan-Seite übernimmt');
+                hudLog('err', sid + ' · Report unklar — Scan-Seite übernimmt');
                 busy = false;
                 return;
             }
             if (res && res.success === false && String(res.message || '') === 'Kein Auftrag offen') {
-                toast(sid + ' · Scan-Seite übernimmt');
+                hudLog('wait', sid + ' · Scan-Seite übernimmt');
                 busy = false;
                 return;
             }
             if (!res || res.success === false) {
-                if (attempt < 4) {
-                    toast(sid + ' · ' + ((res && res.message) || 'Fehler') + ' — erneut');
-                    setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+                if (attempt < 2) {
+                    hudLog('err', sid + ' · ' + ((res && res.message) || 'Fehler') + ' — erneut');
+                    setTimeout(function () { sendGm(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
                     return;
                 }
-                toast(sid + ' · Report hängt — Scan-Seite übernimmt');
+                hudLog('err', sid + ' · Report hängt — Scan-Seite übernimmt');
                 busy = false;
                 return;
             }
@@ -538,31 +626,37 @@
                 pending: res && res.pending,
                 nextId: res && res.nextId
             });
-            if (res && res.batchId) ssSet('retoure_batch', res.batchId);
-            var b = (res && res.batchId) || batch;
-            var next = pickNext(res, sid, b);
-            if (next) {
-                toast(sid + ' ok · weiter ' + next);
-                busy = false;
-                goTo(b, next, res.carolUrl || '');
-                return;
-            }
-            if (isQueueDone(res)) {
-                finish(sid + ' ok · 0 offen');
-                return;
-            }
-            toast(sid + ' ok · ' + ((res && res.pending) || '?') + ' offen');
-            busy = false;
-            askQueue(batch, sid);
+            applyAck(res, sid, batch);
         }, function (e) {
-            if (attempt < 4) {
-                toast(sid + ' · Report ' + e + ' — erneut');
-                setTimeout(function () { send(batch, sid, flags, notfound, attempt + 1); }, 800 * (attempt + 1));
+            hudLog('err', sid + ' · Report ' + e + (attempt < 1 ? ' — erneut' : ' — Scan-Seite übernimmt'));
+            if (attempt < 1) {
+                setTimeout(function () { sendGm(batch, sid, flags, notfound, attempt + 1); }, 1000);
                 return;
             }
-            toast(sid + ' · Report ' + e + ' — Scan-Seite übernimmt');
             busy = false;
         });
+    }
+
+    function onHudAck(d) {
+        if (!d) return;
+        if (ackTimer) {
+            clearTimeout(ackTimer);
+            ackTimer = null;
+        }
+        var wait = waitingAck;
+        waitingAck = null;
+        if (!wait) return;
+        if (wait.kind === 'report') {
+            if (!d.success) {
+                hudLog('err', wait.sid + ' · HUD: ' + (d.message || 'Fehler') + ' — GM Fallback');
+                sendGm(wait.batch, wait.sid, wait.flags, wait.notfound, 0);
+                return;
+            }
+            markDone(wait.batch, wait.sid);
+            applyAck(d, wait.sid, wait.batch);
+            return;
+        }
+        if (wait.kind === 'queue') applyAck(d, wait.sid, wait.batch);
     }
 
     function run() {
@@ -644,11 +738,16 @@
         if (!isDetailPage() && !wantedSid()) return;
         if (busy) return;
         busy = true;
-        toast(isDetailPage() ? 'Lese Auftrag…' : ('Suche ' + wantedSid() + '…'));
+        hudLog('info', 'Bridge v' + VER + (hasHud() ? ' · HUD verbunden' : ' · kein HUD') + ' · ' + (isDetailPage() ? 'Lese Auftrag' : ('Suche ' + wantedSid())));
         run();
     }
 
     lastKey = location.pathname + location.search;
+    window.addEventListener('message', function (ev) {
+        var d = ev && ev.data;
+        if (!d || d.retoureCarolAck !== 1) return;
+        onHudAck(d);
+    });
     start();
     setInterval(function () {
         var key = location.pathname + location.search;

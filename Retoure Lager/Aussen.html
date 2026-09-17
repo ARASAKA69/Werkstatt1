@@ -666,6 +666,24 @@
       focusHud();
     }
 
+    function ackCarol(res, stockId) {
+      var payload = {
+        retoureCarolAck: 1,
+        success: !!(res && res.success),
+        stockId: (res && res.stockId) || stockId || '',
+        batchId: (res && res.batchId) || state.batchId || '',
+        nextId: (res && res.nextId) || '',
+        ids: (res && res.ids) || [],
+        pending: res && res.pending,
+        carolUrl: (res && res.carolUrl) || '',
+        message: (res && res.message) || ''
+      };
+      try {
+        if (state.carolWin && !state.carolWin.closed) state.carolWin.postMessage(payload, '*');
+      } catch (e0) {}
+      return payload;
+    }
+
     function maybeFinishRun() {
       if (state.carolDone) closeCarolSlot();
       if (!state.mailDone || !state.carolDone) return;
@@ -1821,9 +1839,66 @@
     window.addEventListener('message', function(ev) {
       var d = ev && ev.data;
       if (!d) return;
+      if (d.retoureCarolLog === 1) {
+        logLine(d.kind || 'info', String(d.msg || ''));
+        return;
+      }
       if (d.retoureCarolUpdate === 1) {
         patchItemCarol(d);
         if (!state.carolPoll) startCarolPoll();
+        return;
+      }
+      if (d.retoureCarolReport === 1) {
+        var sid = String(d.stockId || '').toUpperCase();
+        logLine('wait', 'Carol Report ' + sid + ' · ' + (d.notFound ? 'kein Auftrag' : (d.carolLabel || 'Badge')));
+        google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', 'Carol Report ' + sid + ' · google.script ' + msg);
+          ackCarol({ success: false, stockId: sid, message: msg }, sid);
+        }).withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            logLine('err', 'Carol Report ' + sid + ' · ' + ((res && res.message) || 'fehlgeschlagen'));
+            ackCarol(res || { success: false, stockId: sid, message: 'fehlgeschlagen' }, sid);
+            return;
+          }
+          logLine('ok', 'Carol Report ' + sid + ' · ' + (res.message || 'ok') + ' · offen ' + (res.pending != null ? res.pending : '?'));
+          patchItemCarol(d);
+          applyBatchPayload(res, false);
+          renderList();
+          renderDetail();
+          ackCarol(res, sid);
+          if (!state.carolPoll) startCarolPoll();
+          if (!res.pending) {
+            stopCarolPoll();
+            state.carolDone = true;
+            maybeFinishRun();
+          }
+        }).applyAussenCarolFlags({
+          batchId: d.batchId || state.batchId || '',
+          stockId: sid,
+          carolB2a1: !!d.carolB2a1,
+          carolFertig: !!d.carolFertig,
+          carolLabel: d.carolLabel || '',
+          detail: true,
+          notFound: !!d.notFound
+        });
+        return;
+      }
+      if (d.retoureCarolQueue === 1) {
+        logLine('wait', 'Carol Queue…');
+        google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', 'Carol Queue · ' + msg);
+          ackCarol({ success: false, message: msg }, d.skip || '');
+        }).withSuccessHandler(function(res) {
+          logLine(res && res.success ? 'ok' : 'err', 'Carol Queue · ' + ((res && res.pending) || 0) + ' offen · next ' + ((res && res.nextId) || '—'));
+          ackCarol(res || { success: false }, d.skip || '');
+          if (res && res.success) {
+            applyBatchPayload(res, false);
+            renderList();
+            renderDetail();
+          }
+        }).aussenCarolQueue(d.batch || state.batchId || '');
         return;
       }
       if (d.retoureCarolDone !== 1) return;
