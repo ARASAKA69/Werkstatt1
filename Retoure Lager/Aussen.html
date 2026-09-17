@@ -628,9 +628,11 @@
     </div>
     <div class="log-body" id="logBody"><div class="log-empty">Bereit — Fehler und Schritte erscheinen hier</div></div>
   </aside>
+  <input type="hidden" id="bootModeVal" value="<?= typeof bootMode === 'undefined' ? 'desk' : bootMode ?>">
+  <input type="hidden" id="bootPickVal" value="<?= typeof bootPick === 'undefined' ? '' : bootPick ?>">
   <script>
-    var BOOT_MODE = <?!= JSON.stringify(typeof bootMode === 'undefined' ? 'desk' : bootMode) ?>;
-    var BOOT_PICK = <?!= JSON.stringify(typeof bootPick === 'undefined' ? '' : bootPick) ?>;
+    var BOOT_MODE = (document.getElementById('bootModeVal') && document.getElementById('bootModeVal').value) || 'desk';
+    var BOOT_PICK = (document.getElementById('bootPickVal') && document.getElementById('bootPickVal').value) || '';
     var APP_BASE = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
     var CALL_WAIT = {
       aussenPing: 12000,
