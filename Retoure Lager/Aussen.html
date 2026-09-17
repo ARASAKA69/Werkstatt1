@@ -1475,7 +1475,7 @@
       for (var gi = 0; gi < groups.length; gi++) {
         var grp = groups[gi];
         if (!grp.items.length) continue;
-        body += '<h2>' + esc(grp.title) + ' (' + grp.items.length + ')</h2>';
+        body += '<h2>' + esc(grp.title) + ' (' + grp.items.length + ')</h2><div class="grid">';
         for (var j = 0; j < grp.items.length; j++) {
           var it = grp.items[j];
           var bits = [];
@@ -1493,6 +1493,7 @@
             (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
             '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></div>';
         }
+        body += '</div>';
       }
       var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
         '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
@@ -1500,19 +1501,20 @@
         '@page{size:A4 portrait;margin:12mm}' +
         'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:18px;font-size:12px}' +
         'h1{font-size:18px;margin:0 0 2px;text-align:center}' +
-        'h2{font-size:14px;margin:16px 0 8px;border-bottom:2px solid #111;padding-bottom:4px}' +
-        '.head{color:#555;font-size:11px;margin-bottom:12px;text-align:center}' +
-        '.entry{width:72mm;margin:0 auto 12px;page-break-inside:avoid;padding:6px 8px;border:1px solid #ccc;border-radius:6px}' +
+        'h2{font-size:14px;margin:10px 0 6px;border-bottom:2px solid #111;padding-bottom:3px;break-after:avoid;page-break-after:avoid}' +
+        '.head{color:#555;font-size:11px;margin-bottom:10px;text-align:center}' +
+        '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(56mm,1fr));gap:4mm;align-items:start;margin-bottom:6mm}' +
+        '.entry{width:auto;margin:0;page-break-inside:avoid;break-inside:avoid;padding:5px 7px;border:1px solid #ccc;border-radius:6px}' +
         '.entry.b2a1{background:#f7c5c5;border-color:#c00}' +
         '.entry.fertig,.entry.raus{background:#c5f0f7;border-color:#088}' +
         '.entry.gestellt{background:#d4edda;border-color:#2a7}' +
         '.entry.tagesliste{background:#fff3b0;border-color:#aa0}' +
         '.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
-        '.sid{font-weight:bold;font-size:16px;letter-spacing:0.03em}' +
-        '.st{font-weight:bold;font-size:11px}' +
-        '.meta2{font-size:11px;color:#333;margin:3px 0 4px}' +
-        '.bc{display:block;height:36px;margin:0 auto;width:100%}' +
-        '@media print{body{margin:0}}' +
+        '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
+        '.st{font-weight:bold;font-size:10px;white-space:nowrap}' +
+        '.meta2{font-size:10px;color:#333;margin:2px 0 3px;line-height:1.25}' +
+        '.bc{display:block;height:30px;margin:0;width:100%}' +
+        '@media print{body{margin:0}.grid{gap:3mm}}' +
         '</style></head><body>' +
         '<h1>' + esc(title) + '</h1>' +
         '<div class="head">Stand: ' + esc(dateStr) + (state.scannedAt ? ' · Dump ' + esc(state.scannedAt) : '') + ' · ' + items.length + ' Stock-IDs</div>' +
@@ -1520,7 +1522,7 @@
         '<script>window.onload=function(){' +
         'var els=document.querySelectorAll("svg.bc");' +
         'for(var i=0;i<els.length;i++){' +
-        'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:30,width:1.4,displayValue:false,margin:0});}catch(e){}' +
+        'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:26,width:1.15,displayValue:false,margin:0});}catch(e){}' +
         '}' +
         'setTimeout(function(){window.print();},250);' +
         '};<\/script></body></html>';

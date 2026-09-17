@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      2.0
-// @description  Liest Carol-Badges (B2A1 / Fertiggestellt) aus Trefferzeile oder Auftrag und sendet an Retoure Scan
+// @version      2.1
+// @description  Öffnet den Carol-Auftrag, liest die Badges mit Datum und sendet sie an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
 // @connect      script.google.com
@@ -13,7 +13,7 @@
 (function () {
     'use strict';
 
-    var VER = '2.0';
+    var VER = '2.1';
     if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
@@ -478,20 +478,15 @@
 
             var row = rowForSid(want);
             if (row) {
-                var rowFlags = flagsFrom(textsIn(row, true));
-                if (rowFlags.b2a1 || rowFlags.fertig) {
-                    clearInterval(timer);
-                    send(batch, want, rowFlags, false);
-                    return;
-                }
                 if (!opened) {
                     opened = true;
                     toast('Öffne Auftrag ' + want + '…');
                     if (openOrder(row, batch)) return;
                 }
+                if (tries % 12 === 0) opened = false;
                 if (tries < MAX_TRIES) return;
                 clearInterval(timer);
-                send(batch, want, rowFlags, false);
+                send(batch, want, flagsFrom(textsIn(row, true)), false);
                 return;
             }
 
