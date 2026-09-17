@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      2.6
+// @version      2.7
 // @description  Öffnet den Carol-Auftrag, liest die Badges mit Datum und sendet sie an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -14,7 +14,7 @@
 (function () {
     'use strict';
 
-    var VER = '2.6';
+    var VER = '2.7';
     if (window.__retoureBridgeVer) return;
     window.__retoureBridgeVer = VER;
 
@@ -24,7 +24,7 @@
     var BADGE_BOX = '[class*="refurbishmentBadges"], [class*="RefurbishmentBadges"]';
     var BADGE_QA = '[data-qa-selector*="efurbishmentStatus"]';
     var ACTION_EL = 'button, a, input, select, option, textarea, label, form, [role="button"], [role="menu"], [role="menuitem"], [role="tab"], [aria-haspopup]';
-    var B2A1_RE = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i;
+    var B2A1_RE = /als\s+b2a1|b2a1\s+markiert|flagged\s+for\s+return|return\s+to\s+auto\s*1\s+candidate|rückgabe\s+an\s+auto\s*1/i;
     var FERTIG_RE = /fertiggestellt|completed\s+on\s+\d/i;
     var STARTED_RE = /refurbishment\s+(started|gestartet)/i;
 
@@ -127,6 +127,16 @@
         return '';
     }
 
+    function isB2a1Badge(s) {
+        s = String(s || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!s) return false;
+        if (/^(return\s+to\s+auto\s*1|zurück\s+zu\s+auto\s*1)$/i.test(s)) return false;
+        if (B2A1_RE.test(s)) return true;
+        if (/kandidat/i.test(s) && /auto\s*1|b2a1/i.test(s)) return true;
+        if (/return\s+to\s+auto\s*1/i.test(s) && (/\bcandidate\b|\b(on|am)\s+\d/i.test(s))) return true;
+        return false;
+    }
+
     function isAction(el) {
         try { return !!el.closest(ACTION_EL); } catch (e) { return false; }
     }
@@ -136,7 +146,7 @@
         var seen = {};
         function push(raw) {
             var t = String(raw || '').replace(/\s+/g, ' ').trim();
-            if (!t || t.length > 90 || seen[t]) return;
+            if (!t || t.length > 140 || seen[t]) return;
             seen[t] = 1;
             out.push(t);
         }
@@ -144,7 +154,7 @@
         var leaves = root.querySelectorAll('span, div, p, small, strong, b');
         for (var i = 0; i < leaves.length; i++) {
             if (leaves[i].children && leaves[i].children.length) continue;
-            if (skipActions && isAction(leaves[i])) continue;
+            if (skipActions && isAction(leaves[i]) && !isB2a1Badge(leaves[i].textContent)) continue;
             push(leaves[i].textContent);
         }
         if (!out.length) push(root.innerText || root.textContent);
@@ -165,15 +175,23 @@
         for (var b = 0; b < boxes.length; b++) add(textsIn(boxes[b], true));
         var qa = document.querySelectorAll(BADGE_QA);
         for (var q = 0; q < qa.length; q++) {
-            if (isAction(qa[q])) continue;
+            if (isAction(qa[q]) && !isB2a1Badge(qa[q].textContent)) continue;
             add(textsIn(qa[q], true));
         }
         return out;
     }
 
     function flagsFrom(texts) {
-        for (var i = 0; i < texts.length; i++) {
-            if (B2A1_RE.test(texts[i])) return { b2a1: true, fertig: false, label: texts[i] };
+        var i;
+        for (i = 0; i < texts.length; i++) {
+            if (isB2a1Badge(texts[i])) return { b2a1: true, fertig: false, label: texts[i] };
+        }
+        if (isB2a1Badge(texts.join(' '))) {
+            var bits = [];
+            for (i = 0; i < texts.length; i++) {
+                if (/return|b2a1|kandidat|flagged|rückgabe|candidate/i.test(texts[i])) bits.push(texts[i]);
+            }
+            return { b2a1: true, fertig: false, label: shortLabel(bits.join(' | ') || texts.join(' | ')) };
         }
         for (var f = 0; f < texts.length; f++) {
             if (FERTIG_RE.test(texts[f]) && !STARTED_RE.test(texts[f])) {
@@ -186,7 +204,7 @@
     function rowLooksComplete(el, raw) {
         var a = el.querySelector('a[href*="refurbishment/"]');
         if (a && ORDER_RE.test(a.getAttribute('href') || a.href || '')) return true;
-        return /als\s+b2a1|flagged\s+for\s+return|fertiggestellt|completed\s+on|refurbishment\s+started|automatisch\s+beauftragt|auto-?ordered/i.test(raw);
+        return /als\s+b2a1|flagged\s+for\s+return|return\s+to\s+auto\s*1\s+candidate|fertiggestellt|completed\s+on|refurbishment\s+started|automatisch\s+beauftragt|auto-?ordered/i.test(raw);
     }
 
     function rowForSid(sid) {

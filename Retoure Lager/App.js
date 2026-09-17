@@ -1780,6 +1780,19 @@ var AUSSEN_TAB = 'Reifen Aussen Scan';
 var AUSSEN_HEADERS = ['Batch', 'Gescannt', 'Stock-ID', 'Marke', 'Carol Status', 'Carol fertig', 'Tagesliste', 'Gestellt', 'Gestellt am', 'Reifen', 'Schicht', 'B2A1', 'Mail Betreff', 'Mail Datum', 'Mail URL', 'Aktion', 'Carol URL', 'TL URL', 'Typ', 'NB'];
 var AUSSEN_MAP_PREFIX = 'aussen_maps_';
 
+function isCarolB2a1Badge_(val) {
+  var s = String(val || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!s) return false;
+  if (/^(return\s+to\s+auto\s*1|zurück\s+zu\s+auto\s*1)$/i.test(s)) return false;
+  if (/als\s*b2a1|b2a1\s*markiert/i.test(s)) return true;
+  if (/flagged\s*for\s*return/i.test(s)) return true;
+  if (/return\s*to\s*auto\s*1\s*candidate/i.test(s)) return true;
+  if (/kandidat/i.test(s) && /auto\s*1|b2a1/i.test(s)) return true;
+  if (/rückgabe\s+an\s+auto\s*1/i.test(s)) return true;
+  if (/return\s*to\s*auto\s*1/i.test(s) && (/\bcandidate\b|\b(on|am)\s+\d/i.test(s))) return true;
+  return false;
+}
+
 function isB2A1Status_(val) {
   var s = String(val || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
   if (!s) return false;
@@ -2079,6 +2092,11 @@ function aussenItemFromRow_(row) {
     gmailSearchUrl: gmailSearchUrl_('"Return to Auto1" "' + normalizeStockId_(row[2]) + '"'),
     checkedAt: String(row[1] || '').trim()
   };
+  if (item.carolLive && !item.carolB2a1 && isCarolB2a1Badge_(item.carolBadge)) {
+    item.carolB2a1 = true;
+    item.carolFertig = false;
+    item.carolDone = false;
+  }
   if (!item.action) item.action = aussenAction_(item);
   item.actionKey = aussenActionKey_(item.action);
   if (!item.carolUrl) item.carolUrl = carolUrlFor_(item.stockId, '');
@@ -2186,7 +2204,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.19', ts: nowStamp_() };
+  return { success: true, version: '1.2.20', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2276,7 +2294,7 @@ function applyAussenCarolFlags(payload) {
     var pool = (stored.allItems && stored.allItems.length) ? stored.allItems : (stored.items || []).concat(stored.gestelltItems || []);
     var found = false;
     var notFound = payload.notFound === true || String(payload.notFound || '') === '1';
-    var b2a1 = !notFound && !!payload.carolB2a1;
+    var b2a1 = !notFound && (!!payload.carolB2a1 || isCarolB2a1Badge_(label));
     var fertig = !notFound && !!payload.carolFertig && !b2a1;
     var label = String(payload.carolLabel || '').replace(/\s+/g, ' ').trim().slice(0, 80);
     var fromDetail = notFound || payload.detail === true || String(payload.detail || '') === '1';
@@ -2727,6 +2745,11 @@ function getAussenBatch(batchId) {
           items[p].carolFertig = true;
           items[p].carolDone = true;
         }
+      }
+      if (items[p].carolLive && !items[p].carolB2a1 && isCarolB2a1Badge_(items[p].carolBadge)) {
+        items[p].carolB2a1 = true;
+        items[p].carolFertig = false;
+        items[p].carolDone = false;
       }
       if (manualMap[items[p].stockId]) {
         items[p].action = manualMap[items[p].stockId];

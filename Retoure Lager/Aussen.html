@@ -930,6 +930,29 @@
       return { ids: out, ignored: ignored };
     }
 
+    function badgeLooksB2a1(s) {
+      s = String(s || '').replace(/\s+/g, ' ').trim();
+      if (!s) return false;
+      if (/^(return\s+to\s+auto\s*1|zurück\s+zu\s+auto\s*1)$/i.test(s)) return false;
+      if (/als\s+b2a1|b2a1\s+markiert|flagged\s+for\s+return|return\s+to\s+auto\s*1\s+candidate|rückgabe\s+an\s+auto\s*1/i.test(s)) return true;
+      if (/kandidat/i.test(s) && /auto\s*1|b2a1/i.test(s)) return true;
+      if (/return\s+to\s+auto\s*1/i.test(s) && (/\bcandidate\b|\b(on|am)\s+\d/i.test(s))) return true;
+      return false;
+    }
+
+    function applyCarolB2a1FromBadge(it) {
+      if (!it || it.carolB2a1 || !it.carolLive) return it;
+      if (!badgeLooksB2a1(it.carolBadge)) return it;
+      it.carolB2a1 = true;
+      it.carolFertig = false;
+      it.carolDone = false;
+      if (!it.manual) {
+        it.action = 'B2A1';
+        it.actionKey = 'b2a1';
+      }
+      return it;
+    }
+
     function applyBatchPayload(res, merge) {
       if (!res) return;
       if (res.batchId) state.batchId = res.batchId;
@@ -957,6 +980,7 @@
               it.actionKey = prev.actionKey;
             }
           }
+          applyCarolB2a1FromBadge(it);
           next.push(it);
         }
         state.items = next;
@@ -982,7 +1006,7 @@
       var notFound = !!d.notFound;
       it.carolLive = true;
       it.carolDetail = true;
-      it.carolB2a1 = !notFound && !!d.carolB2a1;
+      it.carolB2a1 = !notFound && (!!d.carolB2a1 || badgeLooksB2a1(d.carolLabel) || badgeLooksB2a1(it.carolBadge));
       it.carolFertig = !notFound && !!d.carolFertig && !it.carolB2a1;
       it.carolDone = !!it.carolFertig;
       it.carolBadge = notFound
