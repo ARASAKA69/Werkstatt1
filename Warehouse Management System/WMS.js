@@ -34,11 +34,12 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.10",
     date: "17.09.2026",
     notes:
-      "• N4part Packzettel: beim Laden einer Stock-ID mit N4P-Beleg öffnet sich eine Auswahl der bestellten Artikel (nur Artikelname)\n" +
-      "• Angekreuzte Teile landen mit Lieferant im Kommentar Anlieferung: KNOLL, WM (Wessels Müller), STA (Stahlgruber)\n" +
-      "• Kommentar wird nur vorausgefüllt — speichern wie gewohnt über Kommentar + Regal speichern Button unten wie gewohnt\n" +
-      "• Auswahl lässt sich später über „Teile aus Packzettel“ unter dem Beleg-Button nochmal öffnen und anpassen\n\n" +
-      "• Viel spass damit hoffe es klappt alles, falls nicht einfach bescheid geben ist der erste anlauf & bis später."
+      "• NEU N4P Packzettel: Stock-ID laden und es poppt die Teileauswahl auf — nur bestellte Artikelname, kein Schrott drumrum\n\n" +
+      "• Was ihr ankreuzt geht in den Kommentar Anlieferung, Lieferant hängt automatisch dran: KNOLL, WM (Wessels Müller), STA (Stahlgruber)\n\n" +
+      "• Füllt nur den Kommentar vor, speichern tut ihr selbst unten über Kommentar + Regal speichern wie immer\n\n" +
+      "• Falls ihr was vergessen habt: unter dem Beleg-Button nochmal „Teile aus Packzettel“ aufmachen und nachziehen\n\n" +
+      "• Spart massig Zeit weil man das nicht mehr manuel eintippen muss und im Kommentar dann wirklich nur das steht was in der Kiste ist\n\n" +
+      "• Viel Spass damit, hoffe es klappt alles. Falls nicht einfach Bescheid geben — ist der erste Anlauf. Bis später."
   },
   {
     version: "2.2.9",
@@ -3454,6 +3455,13 @@ function pzLooksLikeArtNr_(s) {
   return false;
 }
 
+function pzIsArtNrPrefix_(tok, next) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!/^[A-Z]{2,5}$/.test(t)) return false;
+  if (/^(EXPERT|KITS|KIT|PREMIUM|ORIGINAL|IRIDIUM|PLUS|EVO)$/i.test(t)) return false;
+  return pzLooksLikeArtNr_(next) || /^[\d.]+$/.test(String(next || "").trim());
+}
+
 function pzIsStopSection_(line) {
   var t = pzNormalizePartName_(line);
   return /^(geplante\s+arbeiten|hinweise|bemerkungen|lieferadresse)\b/i.test(t);
@@ -3468,15 +3476,25 @@ function pzIsHeaderToken_(tok) {
 function pzIsBrandToken_(tok) {
   var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
   if (!t) return false;
-  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|elparts)$/i.test(t)) return true;
+  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|jakoparts|elparts)$/i.test(t)) return true;
   var key = t.toUpperCase().replace(/[^A-Z0-9+]/g, "");
   var brands = {
     BOSCH: 1, VAICO: 1, ELRING: 1, FEBI: 1, BILSTEIN: 1, MEYLE: 1,
     FERODO: 1, MANN: 1, HERTH: 1, BUSS: 1, ELPARTS: 1, HECHT: 1,
-    ELBS: 1, JACOPARTS: 1, KNOLL: 1, STAHLGRUBER: 1, WESSELS: 1, MULLER: 1,
-    MUELLER: 1
+    ELBS: 1, JACOPARTS: 1, JAKOPARTS: 1, KNOLL: 1, STAHLGRUBER: 1,
+    WESSELS: 1, MULLER: 1, MUELLER: 1, EXIDE: 1, NGK: 1, BERU: 1,
+    MAHLE: 1, PURFLUX: 1, VALEO: 1, HELLA: 1, SWAG: 1, TRW: 1, ATE: 1,
+    TEXTAR: 1, SACHS: 1, GATES: 1, DAYCO: 1, SKF: 1, INA: 1, LUK: 1,
+    HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1
   };
   return !!brands[key];
+}
+
+function pzBrandRunLength_(tokens, i) {
+  if (!pzIsBrandToken_(tokens[i])) return 0;
+  var n = 1;
+  while (i + n < tokens.length && pzIsBrandToken_(tokens[i + n])) n++;
+  return n;
 }
 
 function pzIsNoiseToken_(tok) {
@@ -3541,42 +3559,46 @@ function pzSplitArtikelTokens_(text) {
   return out;
 }
 
-function pzIsOpenArtikelPrefix_(name) {
-  var t = pzNormalizePartName_(name).replace(/[.,:;!?]+$/g, "");
-  return /^(tellesatz|teilesatz|dichtung|warnkontakt|bremsbelagsatz|filtersatz|reparatursatz|dichtungssatz|filter)$/i.test(t);
-}
-
-function pzIsNameContinue_(prevName, nextTok) {
-  var n = String(nextTok || "").trim();
-  var p = String(prevName || "").trim();
-  if (!n) return false;
-  if (n === "," || n === "+" || n === ":" || n === "/") return true;
-  if (/[,-:]$/.test(p)) return true;
-  if (pzIsOpenArtikelPrefix_(p)) return true;
-  if (/^[a-zäöüß]/.test(n)) return true;
-  var core = n.replace(/[.,:;!?]+$/g, "");
-  if (/^(evo|kit|kits|original|premier|expert|iridium|plus|satz)$/i.test(core)) return true;
-  if (/^(better|solution|for|you)$/i.test(core)) return true;
-  if (/^[A-Z]{2,}(-[A-Z0-9]+)+/.test(core)) return true;
-  return false;
-}
-
-function pzIsNewArtikelName_(tok) {
-  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
-  if (t.length < 4) return false;
-  return /^[A-ZÄÖÜ][a-zäöüß]/.test(t);
+function pzSplitRowsByBrand_(tokens) {
+  var rows = [];
+  var cur = [];
+  var i = 0;
+  while (i < (tokens || []).length) {
+    var run = pzBrandRunLength_(tokens, i);
+    if (run && cur.length) {
+      rows.push(cur);
+      cur = [];
+    }
+    if (run) {
+      var k;
+      for (k = 0; k < run; k++) cur.push(tokens[i + k]);
+      i += run;
+      continue;
+    }
+    cur.push(tokens[i]);
+    i++;
+  }
+  if (cur.length) rows.push(cur);
+  return rows;
 }
 
 function pzSanitizeArtikelName_(s) {
   var tokens = pzSplitArtikelTokens_(s);
   var keep = [];
-  for (var i = 0; i < tokens.length; i++) {
-    if (tokens[i] === ",") {
+  var i;
+  for (i = 0; i < tokens.length; i++) {
+    var tok = tokens[i];
+    var next = tokens[i + 1] || "";
+    if (tok === ",") {
       if (keep.length) keep.push(",");
       continue;
     }
-    if (pzIsNoiseToken_(tokens[i])) continue;
-    keep.push(tokens[i]);
+    if (pzIsArtNrPrefix_(tok, next)) {
+      i++;
+      continue;
+    }
+    if (pzIsNoiseToken_(tok)) continue;
+    keep.push(tok);
   }
   var name = pzNormalizePartName_(keep.join(" ").replace(/\s+,/g, ",").replace(/,\s*/g, ", "));
   name = name.replace(/\s+\+/g, " +").replace(/:\s*/g, ": ").replace(/\s+/g, " ").trim();
@@ -3586,23 +3608,8 @@ function pzSanitizeArtikelName_(s) {
   return name;
 }
 
-function pzGroupArtikelNames_(tokens) {
-  var names = [];
-  var cur = [];
-  function emit() {
-    var name = pzSanitizeArtikelName_(cur.join(" "));
-    cur = [];
-    if (name) names.push(name);
-  }
-  for (var i = 0; i < (tokens || []).length; i++) {
-    var tok = tokens[i];
-    if (pzIsNoiseToken_(tok)) continue;
-    var prev = cur.join(" ");
-    if (cur.length && pzIsNewArtikelName_(tok) && !pzIsNameContinue_(prev, tok)) emit();
-    cur.push(tok);
-  }
-  emit();
-  return names;
+function pzArtikelNameFromRow_(tokens) {
+  return pzSanitizeArtikelName_((tokens || []).join(" "));
 }
 
 function pzParseN4pPartsFromText_(raw) {
@@ -3619,9 +3626,11 @@ function pzParseN4pPartsFromText_(raw) {
     }
     var joined = pzJoinOcrLines_(block);
     var tokens = pzSplitArtikelTokens_(joined);
-    var names = pzGroupArtikelNames_(tokens);
-    for (var i = 0; i < names.length; i++) {
-      out.push({ name: names[i], tag: current.tag, supplier: current.supplier });
+    var rows = pzSplitRowsByBrand_(tokens);
+    var r;
+    for (r = 0; r < rows.length; r++) {
+      var name = pzArtikelNameFromRow_(rows[r]);
+      if (name) out.push({ name: name, tag: current.tag, supplier: current.supplier });
     }
     block = [];
   }
