@@ -572,7 +572,8 @@
       carolPoll: null,
       carolWin: null,
       carolDone: false,
-      mailDone: false
+      mailDone: false,
+      carolNavSid: ''
     };
 
     function $(id) { return document.getElementById(id); }
@@ -1318,6 +1319,11 @@
             stopCarolPoll();
             state.carolDone = true;
             maybeFinishRun();
+            return;
+          }
+          if (res.nextCarolId && res.nextCarolId !== state.carolNavSid) {
+            state.carolNavSid = res.nextCarolId;
+            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextCarolId) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
           }
         }).getAussenBatch(state.batchId);
       }, 2000);
@@ -1341,6 +1347,7 @@
           return;
         }
         var url = res.carolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextId || '') + '&retoure_batch=' + encodeURIComponent(state.batchId));
+        state.carolNavSid = res.nextId || '';
         var ok = navCarol(url);
         startCarolPoll();
         if (!ok) {
@@ -1493,6 +1500,7 @@
       state.pending = [];
       state.mailDone = false;
       state.carolDone = false;
+      state.carolNavSid = '';
       $('dump').value = '';
       $('batchSel').value = '';
       updateDumpHint({ ids: [], ignored: 0 });

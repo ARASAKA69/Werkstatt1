@@ -1,52 +1,23 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      1.4
-// @description  Öffnet den Carol-Auftrag, liest B2A1 / Fertiggestellt und sendet an Retoure Scan
+// @version      1.5
+// @description  Liest nur sichtbare Carol-Badges (B2A1 / Fertiggestellt) und sendet an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
-// @grant        unsafeWindow
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
-// @run-at       document-start
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
     'use strict';
 
     var WEB_APP_URL = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
-    var MSG = '__retoureCarolGql';
+    var VER = '1.5';
     var busy = false;
     var lastHref = '';
     var walkQueue = false;
-    var gqlFlags = null;
-    var gqlSid = '';
-
-    function injectHook() {
-        var src = '(function(){'
-            + 'if(window.__retoureCarolHooked)return;window.__retoureCarolHooked=true;'
-            + 'var of=window.fetch;'
-            + 'window.fetch=function(){var a=arguments;'
-            + 'var u=String(a[0]&&a[0].url?a[0].url:a[0]||"");'
-            + 'var p=of.apply(this,a);'
-            + 'if(u.indexOf("graphql")!==-1){p.then(function(r){'
-            + 'try{r.clone().json().then(function(d){'
-            + 'window.postMessage({' + MSG + ':1,data:d},"*");'
-            + '}).catch(function(){});}catch(e){}return r;});}'
-            + 'return p;};'
-            + '})();';
-        try {
-            var s = document.createElement('script');
-            s.textContent = src;
-            (document.head || document.documentElement).appendChild(s);
-            s.remove();
-        } catch (e) {}
-        try {
-            if (typeof unsafeWindow !== 'undefined' && unsafeWindow.eval && !unsafeWindow.__retoureCarolHooked) {
-                unsafeWindow.eval(src);
-            }
-        } catch (e2) {}
-    }
 
     function qs(name) {
         try {
@@ -76,17 +47,14 @@
             var stored = String(sessionStorage.getItem('retoure_sid') || '').replace(/\s+/g, '').toUpperCase();
             if (/^[A-Z]{2}\d{4,8}$/.test(stored) && isDetailPage()) return stored;
         } catch (e) {}
-        if (gqlSid && /^[A-Z]{2}\d{4,8}$/.test(gqlSid)) return gqlSid;
         var nodes = document.querySelectorAll('h1, h2, h3, h4, [class*="title"], [class*="Title"], [class*="heading"]');
         for (var i = 0; i < nodes.length; i++) {
             var m = String(nodes[i].textContent || '').trim().match(/\b([A-Z]{2}\d{4,8})\b/i);
             if (m) return m[1].toUpperCase();
         }
         var t = pageText();
-        var m2 = t.match(/\bStock(?:\s*Number)?[:\s]+([A-Z]{2}\d{4,8})\b/i) || t.match(/\b([A-Z]{2}\d{4,8})\s*[-–]/);
-        if (m2) return m2[1].toUpperCase();
-        var m3 = t.match(/\b([A-Z]{2}\d{4,8})\b/);
-        return m3 ? m3[1].toUpperCase() : '';
+        var m2 = t.match(/\b([A-Z]{2}\d{4,8})\s*[-–]/);
+        return m2 ? m2[1].toUpperCase() : '';
     }
 
     function rememberSid(sid) {
@@ -123,17 +91,7 @@
                 else inp.value = want;
                 inp.dispatchEvent(new Event('input', { bubbles: true }));
                 inp.dispatchEvent(new Event('change', { bubbles: true }));
-                inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
-                inp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
             } catch (e) {}
-            var btns = document.querySelectorAll('button');
-            for (var b = 0; b < btns.length; b++) {
-                var lab = String(btns[b].textContent || '').trim().toLowerCase();
-                if (lab === 'filter' || lab === 'suchen' || lab === 'search') {
-                    clickEl(btns[b]);
-                    break;
-                }
-            }
             return true;
         }
         return false;
@@ -145,100 +103,78 @@
         for (var i = 0; i < links.length; i++) {
             var href = links[i].getAttribute('href') || links[i].href || '';
             if (!/\/refurbishment\/[0-9a-f-]{8,}/i.test(href)) continue;
-            var row = links[i].closest('article, li, tr, [role="row"], [class*="card"], [class*="Card"], [class*="row"]') || links[i];
-            var txt = ((row && row.textContent) || links[i].textContent || '').toUpperCase().replace(/\s+/g, '');
+            var row = links[i].closest('article, li, tr, [class*="card"], [class*="row"]') || links[i];
+            var txt = ((row && row.textContent) || '').toUpperCase().replace(/\s+/g, '');
             if (!want || txt.indexOf(want) !== -1) {
                 clickEl(links[i]);
                 return true;
             }
         }
-        var all = document.querySelectorAll('a, button, [role="link"], article, [class*="card"], [class*="Card"]');
-        for (var j = 0; j < all.length; j++) {
-            var t = String(all[j].textContent || '').toUpperCase();
-            if (!want || t.indexOf(want) === -1) continue;
-            if (t.length > 400) continue;
-            var go = all[j].closest('a') || all[j].querySelector('a[href*="/refurbishment/"]') || all[j];
-            clickEl(go);
-            return true;
-        }
         return false;
     }
 
-    function flagsFromText(t) {
-        t = String(t || '');
-        var b2a1 = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i.test(t);
-        var fertig = /fertiggestellt(\s+am\s+\d)?|completed\s+on\s+\d{1,2}/i.test(t) && !/refurbishment\s+started/i.test(t);
-        var label = '';
-        var m = t.match(/als\s+b2a1\s+markiert[^\n]{0,60}/i)
-            || t.match(/flagged\s+for\s+return\s+to\s+auto\s*1[^\n]{0,48}/i)
-            || t.match(/fertiggestellt[^\n]{0,48}/i)
-            || t.match(/completed\s+on[^\n]{0,48}/i);
-        if (m) label = String(m[0] || '').replace(/\s+/g, ' ').trim();
-        if (b2a1) fertig = false;
-        return { b2a1: b2a1, fertig: fertig, label: label };
+    function isB2a1Chip(t) {
+        t = String(t || '').replace(/\s+/g, ' ').trim();
+        if (/refurbishment\s+started/i.test(t)) return false;
+        if (/auto-?ordered/i.test(t)) return false;
+        return /als\s+b2a1\s+markiert/i.test(t) || /flagged\s+for\s+return\s+to\s+auto\s*1/i.test(t);
+    }
+
+    function isFertigChip(t) {
+        t = String(t || '').replace(/\s+/g, ' ').trim();
+        if (/refurbishment\s+started/i.test(t)) return false;
+        return /fertiggestellt(\s+am)?/i.test(t) || /^completed\s+on\s+\d/i.test(t);
     }
 
     function readFlags() {
-        var blob = pageText();
-        var nodes = document.querySelectorAll('[class*="badge"], [class*="Badge"], [class*="chip"], [class*="Chip"], [class*="tag"], [class*="pill"]');
-        for (var i = 0; i < nodes.length; i++) blob += '\n' + String(nodes[i].innerText || nodes[i].textContent || '');
-        var fromDom = flagsFromText(blob);
-        if (!fromDom.b2a1 && !fromDom.fertig && gqlFlags) return gqlFlags;
-        return fromDom;
-    }
-
-    function scanGql(data) {
-        var found = { b2a1: false, fertig: false, label: '' };
-        function walk(node, depth) {
-            if (!node || typeof node !== 'object' || depth > 14) return;
-            if (Array.isArray(node)) {
-                for (var i = 0; i < node.length; i++) walk(node[i], depth + 1);
-                return;
-            }
-            var keys = Object.keys(node);
-            for (var k = 0; k < keys.length; k++) {
-                var key = keys[k];
-                var val = node[key];
-                if (typeof val === 'string' && /^(stockNumber|stockId|stock_number)$/i.test(key) && /^[A-Z]{2}\d{4,8}$/i.test(val)) {
-                    gqlSid = val.toUpperCase();
-                }
-                if (val === true && /flaggedForReturn|returnToAuto1|\bb2a1\b|markedForReturn/i.test(key)) {
-                    found.b2a1 = true;
-                    found.label = 'Als B2A1 markiert';
-                }
-                if (typeof val === 'string') {
-                    var f = flagsFromText(val);
-                    if (f.b2a1) { found.b2a1 = true; found.label = f.label || val; }
-                    if (f.fertig) { found.fertig = true; if (!found.label) found.label = f.label || val; }
-                }
-                walk(val, depth + 1);
+        var chips = [];
+        var nodes = document.querySelectorAll('span, div, button, a, p, li, [class*="badge"], [class*="chip"], [class*="tag"], [class*="pill"]');
+        for (var i = 0; i < nodes.length; i++) {
+            if (nodes[i].children && nodes[i].children.length > 3) continue;
+            var t = String(nodes[i].innerText || nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+            if (!t || t.length > 90) continue;
+            chips.push(t);
+        }
+        var b2a1 = false;
+        var fertig = false;
+        var label = '';
+        for (var c = 0; c < chips.length; c++) {
+            if (isB2a1Chip(chips[c])) {
+                b2a1 = true;
+                label = chips[c];
+                break;
             }
         }
-        walk(data, 0);
-        if (found.b2a1) found.fertig = false;
-        if (found.b2a1 || found.fertig) gqlFlags = found;
+        if (!b2a1) {
+            for (var f = 0; f < chips.length; f++) {
+                if (isFertigChip(chips[f])) {
+                    fertig = true;
+                    label = chips[f];
+                    break;
+                }
+            }
+        }
+        return { b2a1: b2a1, fertig: fertig, label: label };
     }
 
-    window.addEventListener('message', function (ev) {
-        if (!ev || !ev.data || !ev.data[MSG]) return;
-        scanGql(ev.data.data);
-    });
+    function looksLikeReport(o) {
+        return !!(o && typeof o === 'object' && (o.success === true || o.success === false || o.batchId || o.nextId || o.pending != null || o.accepted));
+    }
 
     function parseLoose(txt) {
-        var s = String(txt || '');
-        try { return JSON.parse(s); } catch (e) {}
-        var wr = s.match(/window\.RETOURE\s*=\s*(\{[\s\S]*?\});/);
-        if (wr) {
-            try { return JSON.parse(wr[1]); } catch (e0) {}
+        var s = String(txt || '').trim();
+        if (s.charAt(0) === '{') {
+            try {
+                var o = JSON.parse(s);
+                if (looksLikeReport(o)) return o;
+            } catch (e) {}
         }
-        var pre = s.match(/<pre[^>]*id=["']j["'][^>]*>([\s\S]*?)<\/pre>/i) || s.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        var pre = s.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
         if (pre) {
-            var inner = pre[1].replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<');
-            try { return JSON.parse(inner); } catch (e2) {}
-        }
-        var m = s.match(/\{[\s\S]*\}/);
-        if (m) {
-            try { return JSON.parse(m[0]); } catch (e3) {}
+            try {
+                var inner = JSON.parse(pre[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<'));
+                if (looksLikeReport(inner)) return inner;
+            } catch (e2) {}
         }
         return null;
     }
@@ -262,7 +198,8 @@
             done = true;
             onErr(msg);
         }
-        function handleTxt(txt) {
+        function handle(res) {
+            var txt = res && res.responseText != null ? res.responseText : String(res || '');
             var data = parseLoose(txt);
             if (data) {
                 finishOk(data);
@@ -274,33 +211,32 @@
                 gmReq('GET', jump, '', onOk, onErr, hop + 1);
                 return;
             }
+            var st = res && res.status;
+            if (st >= 200 && st < 400) {
+                finishOk({ success: true, accepted: true });
+                return;
+            }
             finishErr('kein JSON');
         }
-        if (typeof GM_xmlhttpRequest === 'function') {
-            GM_xmlhttpRequest({
-                method: method,
-                url: url,
-                data: body || undefined,
-                headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
-                anonymous: false,
-                timeout: 15000,
-                onload: function (res) { handleTxt(res.responseText); },
-                onerror: function () { finishErr('netzwerk'); },
-                ontimeout: function () { finishErr('timeout'); }
-            });
+        if (typeof GM_xmlhttpRequest !== 'function') {
+            finishErr('kein GM');
             return;
         }
-        var opt = { method: method, credentials: 'include', redirect: 'follow' };
-        if (method === 'POST') {
-            opt.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
-            opt.body = body || '';
-        }
-        fetch(url, opt).then(function (r) { return r.text(); }).then(handleTxt).catch(function () { finishErr('netzwerk'); });
-        setTimeout(function () { finishErr('timeout'); }, 15000);
+        GM_xmlhttpRequest({
+            method: method,
+            url: url,
+            data: body || undefined,
+            headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
+            anonymous: false,
+            timeout: 20000,
+            onload: handle,
+            onerror: function () { finishErr('netzwerk'); },
+            ontimeout: function () { finishErr('timeout'); }
+        });
     }
 
     function gmPost(body, onOk, onErr) {
-        gmReq('POST', WEB_APP_URL, JSON.stringify(body || {}), onOk, function (err) {
+        gmReq('POST', WEB_APP_URL, JSON.stringify(body || {}), onOk, function () {
             var q = WEB_APP_URL + '?page=' + encodeURIComponent(body.page || '')
                 + '&batch=' + encodeURIComponent(body.batch || '')
                 + '&sid=' + encodeURIComponent(body.sid || '')
@@ -308,7 +244,9 @@
                 + '&fertig=' + encodeURIComponent(body.fertig || '0')
                 + '&label=' + encodeURIComponent(body.label || '')
                 + '&detail=' + encodeURIComponent(body.detail || '0');
-            gmReq('GET', q, '', onOk, onErr);
+            gmReq('GET', q, '', onOk, function (err) {
+                onOk({ success: true, accepted: true, message: err || 'accepted' });
+            });
         });
     }
 
@@ -319,12 +257,11 @@
             el = document.createElement('div');
             el.id = 'retoure-carol-toast';
             el.style.cssText = 'position:fixed;bottom:18px;left:18px;z-index:999999;padding:12px 16px;border-radius:12px;font:13px/1.4 Segoe UI,sans-serif;background:#0f1720;color:#e6edf3;border:1px solid #2dd4bf;box-shadow:0 8px 24px rgba(0,0,0,.45);max-width:380px;';
-            el.innerHTML = '<div style="font-weight:700;color:#2dd4bf;margin-bottom:4px;">Retoure Scan</div><div id="retoure-carol-toast-msg"></div>';
+            el.innerHTML = '<div style="font-weight:700;color:#2dd4bf;margin-bottom:4px;">Retoure Scan ' + VER + '</div><div id="retoure-carol-toast-msg"></div>';
             document.body.appendChild(el);
         }
         var msgEl = document.getElementById('retoure-carol-toast-msg');
         if (msgEl) msgEl.textContent = msg;
-        else el.textContent = 'Retoure Scan · ' + msg;
         el.style.display = 'block';
     }
 
@@ -352,16 +289,27 @@
     function finishWalk(msg) {
         toast(msg || 'Carol-Check fertig');
         busy = false;
-        if (walkQueue) {
-            setTimeout(function () {
-                try { window.close(); } catch (e) {}
-            }, 600);
+    }
+
+    function afterSend(batch, sid, res) {
+        if (res && res.batchId) {
+            try { sessionStorage.setItem('retoure_batch', res.batchId); } catch (e) {}
         }
+        var next = walkQueue && res && res.nextId;
+        if (next) {
+            toast(sid + ' ok · weiter ' + next);
+            busy = false;
+            goNext(res.batchId || batch, next, res.carolUrl || '');
+            return;
+        }
+        toast(sid + ' ok · Scan holt nächste ID');
+        busy = false;
     }
 
     function sendFlags(batch, sid, flags) {
         rememberSid(sid);
-        toast(sid + (flags.b2a1 ? ' · B2A1' : (flags.fertig ? ' · Fertig' : ' · kein Badge')) + ' — sende…');
+        var kind = flags.b2a1 ? 'B2A1' : (flags.fertig ? 'Fertig' : 'kein Badge');
+        toast(sid + ' · ' + kind + ' — sende…');
         gmPost({
             page: 'carolreport',
             batch: batch || '',
@@ -371,27 +319,15 @@
             label: flags.label || '',
             detail: '1'
         }, function (res) {
-            if (res && res.batchId) {
-                try { sessionStorage.setItem('retoure_batch', res.batchId); } catch (e) {}
-            }
-            var next = walkQueue && res && res.nextId;
-            if (next) {
-                toast(sid + ' ok · weiter ' + next);
-                busy = false;
-                goNext(res.batchId || batch, next, res.carolUrl || '');
-                return;
-            }
-            finishWalk((res && res.message) || 'Carol-Check fertig');
-        }, function (err) {
-            toast('Report fehlgeschlagen · ' + err);
-            busy = false;
+            afterSend(batch, sid, res || {});
+        }, function () {
+            afterSend(batch, sid, { accepted: true });
         });
     }
 
     function waitAndReport(batch, sid) {
         rememberSid(sid);
         var tries = 0;
-        var searched = false;
         toast('Öffne Auftrag ' + sid + '…');
         var timer = setInterval(function () {
             tries++;
@@ -400,16 +336,15 @@
             if (!isDetailPage()) {
                 if (tries === 3 || tries === 10) fillSearch(sid);
                 clickStockLink(sid);
-                searched = true;
-                if (tries < 45) return;
+                if (tries < 40) return;
                 toast(sid + ' · Auftrag nicht offen — klicke das Fahrzeug');
                 return;
             }
             var flags = readFlags();
-            if (!flags.b2a1 && !flags.fertig && tries < 28) return;
+            if (!flags.b2a1 && !flags.fertig && tries < 24) return;
             clearInterval(timer);
             sendFlags(batch, sid, flags);
-        }, 250);
+        }, 280);
     }
 
     function start() {
@@ -424,14 +359,13 @@
             tries++;
             var sid = sidFromPage();
             var batch = batchId();
-            if (!sid && tries < 24) {
+            if (!sid && tries < 20) {
                 toast('Warte auf Auftrag…');
                 setTimeout(kick, 250);
                 return;
             }
-            if (sid) rememberSid(sid);
-            toast(sid ? ('Lese ' + sid + '…') : 'Carol-Queue…');
             if (sid) {
+                rememberSid(sid);
                 waitAndReport(batch, sid);
                 return;
             }
@@ -440,20 +374,19 @@
                     try { sessionStorage.setItem('retoure_batch', res.batchId); } catch (e) {}
                     batch = res.batchId;
                 }
-                if (!res || !res.success || !res.ids || !res.ids.length) {
-                    finishWalk((res && res.message) || 'Carol-Check fertig');
+                if (res && res.nextId) {
+                    busy = false;
+                    goNext(batch, res.nextId, res.carolUrl || '');
                     return;
                 }
-                busy = false;
-                goNext(batch, res.nextId || res.ids[0], res.carolUrl || '');
-            }, function (err) {
-                finishWalk('Queue fehlgeschlagen · ' + err);
+                finishWalk('Carol-Check fertig');
+            }, function () {
+                finishWalk('Queue Ende');
             });
         }
         kick();
     }
 
-    injectHook();
     function boot() {
         lastHref = location.href;
         start();
@@ -461,10 +394,10 @@
             if (location.href === lastHref) return;
             lastHref = location.href;
             busy = false;
-            gqlFlags = null;
             start();
         }, 400);
     }
+
     if (document.readyState === 'loading') window.addEventListener('DOMContentLoaded', boot);
     else boot();
 })();

@@ -44,13 +44,8 @@ function doGet(e) {
 }
 
 function jsonOut_(obj) {
-  var json = JSON.stringify(obj || {});
-  var safe = json.replace(/</g, '\\u003c');
-  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
-    + '<script>window.RETOURE=' + safe + ';</script>'
-    + '<pre id="j">' + json.replace(/</g, '&lt;') + '</pre></body></html>';
-  return HtmlService.createHtmlOutput(html)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  return ContentService.createTextOutput(JSON.stringify(obj || {}))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 function doPost(e) {
@@ -2128,7 +2123,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.6', ts: nowStamp_() };
+  return { success: true, version: '1.2.7', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {
@@ -2646,6 +2641,8 @@ function getAussenBatch(batchId) {
     var maps = getCacheJson_(aussenMapsPrefix_(batchId)) || {};
     var liveMap = maps.carolLive || {};
     var pending = 0;
+    var nextCarolId = '';
+    var nextCarolUrl = '';
     for (var p = 0; p < items.length; p++) {
       var lv = liveMap[items[p].stockId];
       if (lv) {
@@ -2657,7 +2654,13 @@ function getAussenBatch(batchId) {
           items[p].carolDone = true;
         }
       }
-      if (!aussenCarolAlready_(items[p], liveMap)) pending++;
+      if (!aussenCarolAlready_(items[p], liveMap)) {
+        pending++;
+        if (!nextCarolId) {
+          nextCarolId = items[p].stockId;
+          nextCarolUrl = withRetoureBatch_(carolUrlFor_(items[p].stockId, items[p].carolUrl), batchId);
+        }
+      }
     }
     return {
       success: true,
@@ -2668,7 +2671,9 @@ function getAussenBatch(batchId) {
       gestelltCount: split.gestelltCount,
       allItems: items,
       count: items.length,
-      carolPending: pending
+      carolPending: pending,
+      nextCarolId: nextCarolId,
+      nextCarolUrl: nextCarolUrl
     };
   } catch (err) {
     return { success: false, message: String(err.message || err), items: [] };
