@@ -202,6 +202,17 @@
     }
     .main-title h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
     .main-title span { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--foreground-muted); }
+    .sid-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+    .btn-copy-sid {
+      height: 32px; padding: 0 12px; flex-shrink: 0;
+      border-radius: 999px; border: 0;
+      background: var(--color-primary); color: #fff;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      font: 600 0.72rem var(--font); letter-spacing: 0.02em;
+    }
+    .btn-copy-sid:hover { background: var(--color-secondary); }
+    .btn-copy-sid:disabled { opacity: 0.35; cursor: default; }
+    .btn-copy-sid svg { width: 14px; height: 14px; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
     .content { flex: 1; min-height: 0; overflow: auto; padding: var(--space-lg); }
     .empty { height: 100%; display: grid; place-items: center; }
@@ -452,7 +463,13 @@
     <section class="main">
       <div class="main-top glass-bar">
         <div class="main-title">
-          <h1 id="detailSid">—</h1>
+          <div class="sid-row">
+            <button class="btn-copy-sid" id="btnCopySid" type="button" title="Stock-ID kopieren" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+            <h1 id="detailSid">—</h1>
+          </div>
           <span id="detailSub">Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen</span>
         </div>
         <div class="actions">
@@ -1072,6 +1089,7 @@
         $('emptyState').classList.remove('hide');
         $('detailSid').textContent = '—';
         $('detailSub').textContent = 'Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen';
+        $('btnCopySid').disabled = true;
         $('btnCarol').disabled = true;
         $('btnGmail').disabled = true;
         return;
@@ -1079,6 +1097,7 @@
       $('emptyState').classList.add('hide');
       $('detail').classList.add('show');
       $('detailSid').textContent = it.stockId;
+      $('btnCopySid').disabled = !it.stockId;
       $('detailSub').textContent = (it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
       var k = actionKeyOf(it);
       $('actionPill').className = 'big-pill ' + k;
@@ -1499,6 +1518,28 @@
       startCheck();
     });
     $('btnCarolCheck').addEventListener('click', startCarolBridge);
+    $('btnCopySid').addEventListener('click', function() {
+      var sid = ($('detailSid').textContent || '').replace(/\s+/g, '').trim();
+      if (!sid || sid === '—') return;
+      function done() { toast(sid + ' kopiert'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sid).then(done).catch(function() {
+          var ta = document.createElement('textarea');
+          ta.value = sid;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          document.body.removeChild(ta);
+        });
+        return;
+      }
+      var ta = document.createElement('textarea');
+      ta.value = sid;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e2) {}
+      document.body.removeChild(ta);
+    });
     $('btnNew').addEventListener('click', newRound);
     $('btnKontrolle').addEventListener('click', function() {
       window.open(APP_BASE, '_blank', 'noopener,noreferrer');

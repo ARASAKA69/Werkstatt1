@@ -44,8 +44,13 @@ function doGet(e) {
 }
 
 function jsonOut_(obj) {
-  return ContentService.createTextOutput(JSON.stringify(obj || {}))
-    .setMimeType(ContentService.MimeType.JSON);
+  var json = JSON.stringify(obj || {});
+  var safe = json.replace(/</g, '\\u003c');
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
+    + '<script>window.RETOURE=' + safe + ';</script>'
+    + '<pre id="j">' + json.replace(/</g, '&lt;') + '</pre></body></html>';
+  return HtmlService.createHtmlOutput(html)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function doPost(e) {
@@ -2123,7 +2128,7 @@ function aussenBuildTlMapFast_(ids) {
 }
 
 function aussenPing() {
-  return { success: true, version: '1.2.5', ts: nowStamp_() };
+  return { success: true, version: '1.2.6', ts: nowStamp_() };
 }
 
 function withRetoureBatch_(url, batchId) {

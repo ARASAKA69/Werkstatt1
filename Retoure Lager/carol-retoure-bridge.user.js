@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Retoure Bridge
 // @namespace    retoure-lager
-// @version      1.3
+// @version      1.4
 // @description  Öffnet den Carol-Auftrag, liest B2A1 / Fertiggestellt und sendet an Retoure Scan
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -166,11 +166,11 @@
 
     function flagsFromText(t) {
         t = String(t || '');
-        var b2a1 = /als\s*b2a1\s*markiert|flagged\s*for\s*return(\s*to\s*auto\s*1)?|return\s*to\s*auto\s*1/i.test(t);
-        var fertig = /fertiggestellt(\s+am)?|completed\s+on\s+\d|handed\s*out|herausgegeben/i.test(t);
+        var b2a1 = /als\s+b2a1\s+markiert|flagged\s+for\s+return\s+to\s+auto\s*1/i.test(t);
+        var fertig = /fertiggestellt(\s+am\s+\d)?|completed\s+on\s+\d{1,2}/i.test(t) && !/refurbishment\s+started/i.test(t);
         var label = '';
-        var m = t.match(/als\s*b2a1\s*markiert[^\n]{0,60}/i)
-            || t.match(/flagged\s*for\s*return[^\n]{0,72}/i)
+        var m = t.match(/als\s+b2a1\s+markiert[^\n]{0,60}/i)
+            || t.match(/flagged\s+for\s+return\s+to\s+auto\s*1[^\n]{0,48}/i)
             || t.match(/fertiggestellt[^\n]{0,48}/i)
             || t.match(/completed\s+on[^\n]{0,48}/i);
         if (m) label = String(m[0] || '').replace(/\s+/g, ' ').trim();
@@ -179,20 +179,44 @@
     }
 
     function readFlags() {
-        var fromDom = flagsFromText(pageText());
-        if (!fromDom.b2a1 && !fromDom.fertig && gqlFlags) {
-            return gqlFlags;
-        }
+        var blob = pageText();
+        var nodes = document.querySelectorAll('[class*="badge"], [class*="Badge"], [class*="chip"], [class*="Chip"], [class*="tag"], [class*="pill"]');
+        for (var i = 0; i < nodes.length; i++) blob += '\n' + String(nodes[i].innerText || nodes[i].textContent || '');
+        var fromDom = flagsFromText(blob);
+        if (!fromDom.b2a1 && !fromDom.fertig && gqlFlags) return gqlFlags;
         return fromDom;
     }
 
     function scanGql(data) {
-        var s = '';
-        try { s = JSON.stringify(data); } catch (e) { return; }
-        var sidM = s.match(/"(?:stockNumber|stockId|stock_number)"\s*:\s*"([A-Z]{2}\d{4,8})"/i);
-        if (sidM) gqlSid = sidM[1].toUpperCase();
-        var flags = flagsFromText(s);
-        if (flags.b2a1 || flags.fertig) gqlFlags = flags;
+        var found = { b2a1: false, fertig: false, label: '' };
+        function walk(node, depth) {
+            if (!node || typeof node !== 'object' || depth > 14) return;
+            if (Array.isArray(node)) {
+                for (var i = 0; i < node.length; i++) walk(node[i], depth + 1);
+                return;
+            }
+            var keys = Object.keys(node);
+            for (var k = 0; k < keys.length; k++) {
+                var key = keys[k];
+                var val = node[key];
+                if (typeof val === 'string' && /^(stockNumber|stockId|stock_number)$/i.test(key) && /^[A-Z]{2}\d{4,8}$/i.test(val)) {
+                    gqlSid = val.toUpperCase();
+                }
+                if (val === true && /flaggedForReturn|returnToAuto1|\bb2a1\b|markedForReturn/i.test(key)) {
+                    found.b2a1 = true;
+                    found.label = 'Als B2A1 markiert';
+                }
+                if (typeof val === 'string') {
+                    var f = flagsFromText(val);
+                    if (f.b2a1) { found.b2a1 = true; found.label = f.label || val; }
+                    if (f.fertig) { found.fertig = true; if (!found.label) found.label = f.label || val; }
+                }
+                walk(val, depth + 1);
+            }
+        }
+        walk(data, 0);
+        if (found.b2a1) found.fertig = false;
+        if (found.b2a1 || found.fertig) gqlFlags = found;
     }
 
     window.addEventListener('message', function (ev) {
@@ -203,9 +227,13 @@
     function parseLoose(txt) {
         var s = String(txt || '');
         try { return JSON.parse(s); } catch (e) {}
-        var pre = s.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        var wr = s.match(/window\.RETOURE\s*=\s*(\{[\s\S]*?\});/);
+        if (wr) {
+            try { return JSON.parse(wr[1]); } catch (e0) {}
+        }
+        var pre = s.match(/<pre[^>]*id=["']j["'][^>]*>([\s\S]*?)<\/pre>/i) || s.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
         if (pre) {
-            var inner = pre[1].replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&');
+            var inner = pre[1].replace(/&quot;/g, '"').replace(/&#34;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<');
             try { return JSON.parse(inner); } catch (e2) {}
         }
         var m = s.match(/\{[\s\S]*\}/);
@@ -215,7 +243,14 @@
         return null;
     }
 
-    function gmReq(method, url, body, onOk, onErr) {
+    function echoUrl(txt) {
+        var s = String(txt || '').replace(/&amp;/g, '&');
+        var m = s.match(/https:\/\/script\.googleusercontent\.com\/macros\/echo[^"'\\\s<>]*/);
+        return m ? m[0] : '';
+    }
+
+    function gmReq(method, url, body, onOk, onErr, hop) {
+        hop = hop || 0;
         var done = false;
         function finishOk(data) {
             if (done) return;
@@ -227,6 +262,20 @@
             done = true;
             onErr(msg);
         }
+        function handleTxt(txt) {
+            var data = parseLoose(txt);
+            if (data) {
+                finishOk(data);
+                return;
+            }
+            var jump = hop < 2 ? echoUrl(txt) : '';
+            if (jump) {
+                done = true;
+                gmReq('GET', jump, '', onOk, onErr, hop + 1);
+                return;
+            }
+            finishErr('kein JSON');
+        }
         if (typeof GM_xmlhttpRequest === 'function') {
             GM_xmlhttpRequest({
                 method: method,
@@ -234,28 +283,20 @@
                 data: body || undefined,
                 headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
                 anonymous: false,
-                timeout: 8000,
-                onload: function (res) {
-                    var data = parseLoose(res.responseText);
-                    if (!data) finishErr('kein JSON');
-                    else finishOk(data);
-                },
+                timeout: 15000,
+                onload: function (res) { handleTxt(res.responseText); },
                 onerror: function () { finishErr('netzwerk'); },
                 ontimeout: function () { finishErr('timeout'); }
             });
             return;
         }
-        var opt = { method: method, credentials: 'include' };
+        var opt = { method: method, credentials: 'include', redirect: 'follow' };
         if (method === 'POST') {
             opt.headers = { 'Content-Type': 'text/plain;charset=utf-8' };
             opt.body = body || '';
         }
-        fetch(url, opt).then(function (r) { return r.text(); }).then(function (txt) {
-            var data = parseLoose(txt);
-            if (!data) finishErr('kein JSON');
-            else finishOk(data);
-        }).catch(function () { finishErr('netzwerk'); });
-        setTimeout(function () { finishErr('timeout'); }, 8000);
+        fetch(url, opt).then(function (r) { return r.text(); }).then(handleTxt).catch(function () { finishErr('netzwerk'); });
+        setTimeout(function () { finishErr('timeout'); }, 15000);
     }
 
     function gmPost(body, onOk, onErr) {
