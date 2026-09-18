@@ -37,6 +37,7 @@ const WMS_CHANGELOG_HISTORY = [
       "• Packzettel-Picker: Endschalldämpfer und Rohrverbinder waren auf einer Zeile obwohl sie aufm Beleg getrennt sind — jetzt wieder einzeln\n\n" +
       "• Plus am Ende war kein extra Teil, gehört zum Tellesatz Automatikgetriebe-Ölwechsel Plus — hängt jetzt wieder am richtigen Artikel\n\n" +
       "• LKQ_STAHLGRUBER ist jetzt ein eigener Lieferant (STA), hängt nicht mehr am KNOLL-Teil rum\n\n" +
+      "• Masteroil / NAPA / OPTIMAL sind Hersteller, nicht Artikel — tauchen nicht mehr extra in der Liste auf\n\n" +
       "• Artikelnummern und Seite-2-Fußzeile (Bemerkung / Datum / Unterschrift / Name) bleiben draußen bzw. soltlen. Bescheid geben wenn was ist am besten mit screenshot Danke."
   },
   {
@@ -3468,6 +3469,7 @@ function pzLooksLikeArtNr_(s) {
   if (/^\d+,\d+$/.test(t)) return true;
   if (/^[A-Z]{1,8}\d+[A-Z0-9.-]*$/i.test(t) && /\d/.test(t)) return true;
   if (/^[A-Z]{1,8}\d{1,6}[-/][A-Z0-9]+$/i.test(t)) return true;
+  if (/^[A-Z]{1,6}-\d+[A-Z0-9]*$/i.test(t)) return true;
   if (/^[A-Z]\d{1,4}$/i.test(t)) return true;
   return false;
 }
@@ -3510,7 +3512,8 @@ function pzIsBrandToken_(tok) {
     TEXTAR: 1, SACHS: 1, GATES: 1, DAYCO: 1, SKF: 1, INA: 1, LUK: 1,
     HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1,
     BOSAL: 1, FA1: 1, VICTOR: 1, REINZ: 1, WALKER: 1, HJS: 1, ERNST: 1,
-    METZGER: 1, CTAM: 1, AUTOTEILE: 1, LKQ: 1
+    METZGER: 1, CTAM: 1, AUTOTEILE: 1, LKQ: 1,
+    MASTEROIL: 1, NAPA: 1, OPTIMAL: 1, GERMANY: 1
   };
   return !!brands[key];
 }
