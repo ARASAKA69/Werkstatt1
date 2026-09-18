@@ -34,11 +34,9 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.11",
     date: "18.09.2026",
     notes:
-      "• Packzettel-Picker: Endschalldämpfer und Rohrverbinder waren auf einer Zeile obwohl sie aufm Beleg getrennt sind — jetzt wieder einzeln\n\n" +
-      "• Plus am Ende war kein extra Teil, gehört zum Tellesatz Automatikgetriebe-Ölwechsel Plus — hängt jetzt wieder am richtigen Artikel\n\n" +
-      "• LKQ_STAHLGRUBER ist jetzt ein eigener Lieferant (STA), hängt nicht mehr am KNOLL-Teil rum\n\n" +
-      "• Masteroil / NAPA / OPTIMAL sind Hersteller, nicht Artikel — tauchen nicht mehr extra in der Liste auf\n\n" +
-      "• Artikelnummern und Seite-2-Fußzeile (Bemerkung / Datum / Unterschrift / Name) bleiben draußen bzw. soltlen. Bescheid geben wenn was ist am besten mit screenshot Danke."
+      "• Artikelnamen sollten jetzt einigermaßen richtig erkannt werden, STA - WM und KNOLL\n\n" +
+      "• Oben in der Teileauswahl steht jetzt die Stückzahl pro Lieferant (z.B. 3 Pos = KNOLL, 4 Pos = WM) — einfach mitm Beleg abgleichen, nicht mehr selber zählen spart bissl zeit\n\n" +
+      "• Bescheid geben wenn was ist am besten mit screenshot Danke."
   },
   {
     version: "2.2.10",
@@ -3458,9 +3456,18 @@ function pzNormDash_(s) {
   return String(s || "").replace(/[\u2010-\u2015\u2212]/g, "-");
 }
 
+function pzLooksLikeSpecToken_(tok) {
+  var t = String(tok || "").trim();
+  if (!t) return false;
+  if (/^\d+[.,]?\d*(v|ah|a|l|w|kw|ps|mm)$/i.test(t)) return true;
+  if (/^\d+w-?\d+$/i.test(t)) return true;
+  return false;
+}
+
 function pzLooksLikeArtNr_(s) {
   var t = pzNormDash_(s).trim();
   if (!t) return false;
+  if (pzLooksLikeSpecToken_(t)) return false;
   if (/^[1-9]\d?$/.test(t)) return false;
   if (/^\d+[.\d]*$/.test(t)) return true;
   if (/^\d{3,}$/.test(t)) return true;
@@ -3471,6 +3478,8 @@ function pzLooksLikeArtNr_(s) {
   if (/^[A-Z]{1,8}\d{1,6}[-/][A-Z0-9]+$/i.test(t)) return true;
   if (/^[A-Z]{1,6}-\d+[A-Z0-9]*$/i.test(t)) return true;
   if (/^[A-Z]\d{1,4}$/i.test(t)) return true;
+  if (/^\d{4,}[A-Z][A-Z0-9]*$/i.test(t) && t.length >= 8) return true;
+  if (/^\d+[A-Z]\d+[A-Z0-9]*$/i.test(t) && t.length >= 8) return true;
   return false;
 }
 
@@ -3489,7 +3498,13 @@ function pzIsFooterLabelToken_(tok) {
 
 function pzIsStopSection_(line) {
   var t = pzNormalizePartName_(line);
-  return /^(geplante\s+arbeiten|hinweise|bemerkungen?|lieferadresse|unterschrift|datum|name)\b/i.test(t);
+  if (/erledigt\s*\?/i.test(t)) return true;
+  return /^(geplante\s+arbeiten|weitere\s+positionen|hinweise|bemerkungen?|lieferadresse|unterschrift|datum|name)\b/i.test(t);
+}
+
+function pzIsWorkSectionToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(geplante|arbeiten|weitere|positionen|erledigt)$/i.test(t);
 }
 
 function pzIsHeaderToken_(tok) {
@@ -3513,7 +3528,7 @@ function pzIsBrandToken_(tok) {
     HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1,
     BOSAL: 1, FA1: 1, VICTOR: 1, REINZ: 1, WALKER: 1, HJS: 1, ERNST: 1,
     METZGER: 1, CTAM: 1, AUTOTEILE: 1, LKQ: 1,
-    MASTEROIL: 1, NAPA: 1, OPTIMAL: 1, GERMANY: 1
+    MASTEROIL: 1, NAPA: 1, OPTIMAL: 1, GERMANY: 1, REPSTAR: 1
   };
   return !!brands[key];
 }
@@ -3614,26 +3629,50 @@ function pzSplitArtikelTokens_(text) {
   return out;
 }
 
+function pzIsValidArtikelName_(name) {
+  var n = pzNormalizePartName_(name);
+  if (!n) return false;
+  if (/^(plus|premium|premier|febi|expert|original|napa|germany|optimal|masteroil|repstar)$/i.test(n)) return false;
+  if (/^napa(\s+germany)?$/i.test(n)) return false;
+  if (/erledigt|weitere\s+positionen|geplante\s+arbeiten/i.test(n)) return false;
+  return true;
+}
+
+function pzRowHasArtikelHint_(row) {
+  var i;
+  for (i = 0; i < (row || []).length; i++) {
+    if (pzLooksLikeNameWord_(row[i]) && row[i] !== ",") return true;
+  }
+  return false;
+}
+
 function pzExtractNamesFromTokens_(tokens) {
   var names = [];
   var row = [];
+  var seenArt = false;
   var seenName = false;
   var i = 0;
   function emit() {
     var name = pzArtikelNameFromRow_(row);
     row = [];
+    seenArt = false;
     seenName = false;
-    if (name) names.push(name);
+    if (name && pzIsValidArtikelName_(name)) names.push(name);
   }
   while (i < (tokens || []).length) {
     var tok = tokens[i];
-    if (pzIsFooterLabelToken_(tok)) {
+    var next = tokens[i + 1];
+    if (pzIsFooterLabelToken_(tok) || pzIsWorkSectionToken_(tok)) {
       emit();
       break;
     }
-    if (pzLooksLikeQty_(tok) && seenName) {
+    if (pzLooksLikeQty_(tok) && (seenName || pzRowHasArtikelHint_(row))) {
+      if (!seenArt && next && (pzLooksLikeArtNr_(next) || pzIsArtNrPrefix_(next, tokens[i + 2]))) {
+        i++;
+        continue;
+      }
       var j = i + 1;
-      while (j < tokens.length && pzIsNameContinueWord_(tokens[j])) {
+      while (j < tokens.length && (pzIsNameContinueWord_(tokens[j]) || /^febi$/i.test(tokens[j]))) {
         row.push(tokens[j]);
         j++;
       }
@@ -3641,17 +3680,32 @@ function pzExtractNamesFromTokens_(tokens) {
       emit();
       continue;
     }
-    if (seenName && (pzBrandRunLength_(tokens, i) || pzLooksLikeArtNr_(tok) || pzIsArtNrPrefix_(tok, tokens[i + 1]))) {
+    var run = pzBrandRunLength_(tokens, i);
+    var artHere = pzLooksLikeArtNr_(tok) || pzIsArtNrPrefix_(tok, next);
+    if (seenName && run) {
+      var afterBrand = i + run;
+      if (!(afterBrand < tokens.length && (pzIsNameContinueWord_(tokens[afterBrand]) || /^febi$/i.test(tokens[afterBrand]) || pzLooksLikeQty_(tokens[afterBrand])))) {
+        emit();
+        continue;
+      }
+    }
+    if (seenName && artHere) {
       emit();
       continue;
     }
-    if (!seenName && !row.length && names.length && pzIsNameContinueWord_(tok)) {
-      names[names.length - 1] = pzSanitizeArtikelName_(names[names.length - 1] + " " + tok);
+    if (!seenName && !row.length && names.length && (pzIsNameContinueWord_(tok) || /^febi$/i.test(tok))) {
+      var extra = tok;
       i++;
+      while (i < tokens.length && pzIsNameContinueWord_(tokens[i])) {
+        extra += " " + tokens[i];
+        i++;
+      }
+      names[names.length - 1] = pzSanitizeArtikelName_(names[names.length - 1] + " " + extra);
       continue;
     }
     row.push(tok);
-    if (pzLooksLikeNameWord_(tok)) seenName = true;
+    if (artHere) seenArt = true;
+    if (pzLooksLikeNameWord_(tok) && seenArt) seenName = true;
     i++;
   }
   emit();
@@ -3673,6 +3727,13 @@ function pzSanitizeArtikelName_(s) {
       i++;
       continue;
     }
+    if (pzIsBrandToken_(tok)) {
+      var prev = keep.length ? keep[keep.length - 1] : "";
+      if (keep.length && (pzLooksLikeNameWord_(prev) || prev === ",") && pzIsNameContinueWord_(next)) {
+        keep.push(tok);
+      }
+      continue;
+    }
     if (pzIsNoiseToken_(tok)) continue;
     keep.push(tok);
   }
@@ -3687,7 +3748,34 @@ function pzSanitizeArtikelName_(s) {
 }
 
 function pzArtikelNameFromRow_(tokens) {
-  return pzSanitizeArtikelName_((tokens || []).join(" "));
+  tokens = tokens || [];
+  var i = 0;
+  var sawArt = false;
+  while (i < tokens.length) {
+    var tok = tokens[i];
+    var next = tokens[i + 1];
+    if (pzLooksLikeArtNr_(tok)) {
+      sawArt = true;
+      i++;
+      continue;
+    }
+    if (pzIsArtNrPrefix_(tok, next)) {
+      sawArt = true;
+      i += 2;
+      continue;
+    }
+    if (pzIsBrandToken_(tok) || pzLooksLikeQty_(tok) || pzIsNoiseToken_(tok)) {
+      i++;
+      continue;
+    }
+    if (!sawArt) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  if (!sawArt) return pzSanitizeArtikelName_(tokens.join(" "));
+  return pzSanitizeArtikelName_(tokens.slice(i).join(" "));
 }
 
 function pzParseN4pPartsFromText_(raw) {
@@ -3737,16 +3825,42 @@ function pzParseN4pPartsFromText_(raw) {
   return pzDedupeParts_(out);
 }
 
+function pzCompactPartName_(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 function pzDedupeParts_(parts) {
-  var out = [];
-  for (var i = 0; i < (parts || []).length; i++) {
+  var tmp = [];
+  var i;
+  for (i = 0; i < (parts || []).length; i++) {
     var p = parts[i];
     if (!p || !p.name) continue;
-    out.push({
+    tmp.push({
       name: p.name,
       tag: String(p.tag || "").toUpperCase(),
       supplier: String(p.supplier || "")
     });
+  }
+  var drop = {};
+  var j;
+  for (i = 0; i < tmp.length; i++) {
+    var a = pzCompactPartName_(tmp[i].name);
+    if (a.length < 6) continue;
+    for (j = 0; j < tmp.length; j++) {
+      if (i === j || tmp[i].tag !== tmp[j].tag) continue;
+      var b = pzCompactPartName_(tmp[j].name);
+      if (b.length > a.length && b.indexOf(a) === 0) drop[i] = true;
+    }
+  }
+  var out = [];
+  for (i = 0; i < tmp.length; i++) {
+    if (!drop[i]) out.push(tmp[i]);
   }
   return out;
 }

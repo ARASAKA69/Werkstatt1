@@ -3894,13 +3894,17 @@
   function showPzPartsPicker(parts) {
     var list = document.getElementById('pzPartsList');
     var modal = document.getElementById('pzPartsModal');
+    var countsEl = document.getElementById('pzPartsCounts');
     if (!list || !modal) return;
     var comment = getCommentText();
     var html = '';
+    var counts = {};
+    var total = 0;
+    var order = ['KNOLL', 'WM', 'STA'];
     for (var i = 0; i < (parts || []).length; i++) {
       var p = parts[i] || {};
       var name = String(p.name || '');
-      var tag = String(p.tag || '');
+      var tag = String(p.tag || '').toUpperCase();
       if (!name) continue;
       var id = 'pzPartChk' + i;
       var checked = pzPartAlreadyInComment(name, tag, comment) ? ' checked' : '';
@@ -3910,8 +3914,24 @@
       html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
       if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
       html += '</label>';
+      if (tag) {
+        if (counts[tag] == null) counts[tag] = 0;
+        counts[tag]++;
+        total++;
+        if (order.indexOf(tag) === -1) order.push(tag);
+      }
     }
     list.innerHTML = html || '<div class="nb-choose-sub">Keine Artikel gefunden.</div>';
+    if (countsEl) {
+      var bits = [];
+      if (total) bits.push('<span class="pz-parts-count-total">' + total + ' Positionen</span>');
+      for (var o = 0; o < order.length; o++) {
+        var t = order[o];
+        if (!counts[t]) continue;
+        bits.push('<span class="pz-parts-count pz-parts-count--' + t.toLowerCase() + '">' + counts[t] + ' Pos = ' + escapeHtml(t) + '</span>');
+      }
+      countsEl.innerHTML = bits.join('');
+    }
     modal.classList.add('open');
   }
 
