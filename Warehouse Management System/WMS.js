@@ -31,6 +31,15 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.11",
+    date: "18.09.2026",
+    notes:
+      "• Packzettel-Picker: Endschalldämpfer und Rohrverbinder waren auf einer Zeile obwohl sie aufm Beleg getrennt sind — jetzt wieder einzeln\n\n" +
+      "• Plus am Ende war kein extra Teil, gehört zum Tellesatz Automatikgetriebe-Ölwechsel Plus — hängt jetzt wieder am richtigen Artikel\n\n" +
+      "• LKQ_STAHLGRUBER ist jetzt ein eigener Lieferant (STA), hängt nicht mehr am KNOLL-Teil rum\n\n" +
+      "• Artikelnummern und Seite-2-Fußzeile (Bemerkung / Datum / Unterschrift / Name) bleiben draußen bzw. soltlen. Bescheid geben wenn was ist am besten mit screenshot Danke."
+  },
+  {
     version: "2.2.10",
     date: "17.09.2026",
     notes:
@@ -39,6 +48,7 @@ const WMS_CHANGELOG_HISTORY = [
       "• Füllt nur den Kommentar vor, speichern tut ihr selbst unten über Kommentar + Regal speichern wie immer\n\n" +
       "• Falls ihr was vergessen habt: unter dem Beleg-Button nochmal „Teile aus Packzettel“ aufmachen und nachziehen\n\n" +
       "• Spart massig Zeit weil man das nicht mehr manuel eintippen muss und im Kommentar dann wirklich nur das steht was in der Kiste ist\n\n" +
+      "• Seite 2 vom Packzettel (Datum / Unterschrift / Name) kommt nicht mehr in die Teileliste rum\n\n" +
       "• Viel Spass damit, hoffe es klappt alles. Falls nicht einfach Bescheid geben — ist der erste Anlauf. Bis später."
   },
   {
@@ -3443,13 +3453,20 @@ function pzLooksLikeQty_(s) {
   return /^[1-9]\d?$/.test(String(s || "").trim());
 }
 
+function pzNormDash_(s) {
+  return String(s || "").replace(/[\u2010-\u2015\u2212]/g, "-");
+}
+
 function pzLooksLikeArtNr_(s) {
-  var t = String(s || "").trim();
+  var t = pzNormDash_(s).trim();
   if (!t) return false;
   if (/^[1-9]\d?$/.test(t)) return false;
   if (/^\d+[.\d]*$/.test(t)) return true;
   if (/^\d{3,}$/.test(t)) return true;
-  if (/^[A-Z]{1,8}\d+[A-Z0-9]*$/i.test(t) && /\d/.test(t)) return true;
+  if (/^\d{1,5}[-./]\d{2,8}(?:[-./]\d+)?$/.test(t)) return true;
+  if (/^\d+\/\d+$/.test(t)) return true;
+  if (/^\d+,\d+$/.test(t)) return true;
+  if (/^[A-Z]{1,8}\d+[A-Z0-9.-]*$/i.test(t) && /\d/.test(t)) return true;
   if (/^[A-Z]{1,8}\d{1,6}[-/][A-Z0-9]+$/i.test(t)) return true;
   if (/^[A-Z]\d{1,4}$/i.test(t)) return true;
   return false;
@@ -3457,14 +3474,20 @@ function pzLooksLikeArtNr_(s) {
 
 function pzIsArtNrPrefix_(tok, next) {
   var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
-  if (!/^[A-Z]{2,5}$/.test(t)) return false;
-  if (/^(EXPERT|KITS|KIT|PREMIUM|ORIGINAL|IRIDIUM|PLUS|EVO)$/i.test(t)) return false;
-  return pzLooksLikeArtNr_(next) || /^[\d.]+$/.test(String(next || "").trim());
+  if (!/^[A-Z]{1,5}$/.test(t)) return false;
+  if (/^(EXPERT|KITS|KIT|PREMIUM|ORIGINAL|IRIDIUM|PLUS|EVO|FA)$/i.test(t)) return false;
+  var n = String(next || "").trim();
+  return pzLooksLikeArtNr_(n) || /^[\d.]+$/.test(n) || /^\d+\/\d+$/.test(n);
+}
+
+function pzIsFooterLabelToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(bemerkung|bemerkungen|datum|unterschrift|name)$/i.test(t);
 }
 
 function pzIsStopSection_(line) {
   var t = pzNormalizePartName_(line);
-  return /^(geplante\s+arbeiten|hinweise|bemerkungen|lieferadresse)\b/i.test(t);
+  return /^(geplante\s+arbeiten|hinweise|bemerkungen?|lieferadresse|unterschrift|datum|name)\b/i.test(t);
 }
 
 function pzIsHeaderToken_(tok) {
@@ -3476,7 +3499,7 @@ function pzIsHeaderToken_(tok) {
 function pzIsBrandToken_(tok) {
   var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
   if (!t) return false;
-  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|jakoparts|elparts)$/i.test(t)) return true;
+  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|jakoparts|elparts|victor-?reinz)$/i.test(t)) return true;
   var key = t.toUpperCase().replace(/[^A-Z0-9+]/g, "");
   var brands = {
     BOSCH: 1, VAICO: 1, ELRING: 1, FEBI: 1, BILSTEIN: 1, MEYLE: 1,
@@ -3485,9 +3508,26 @@ function pzIsBrandToken_(tok) {
     WESSELS: 1, MULLER: 1, MUELLER: 1, EXIDE: 1, NGK: 1, BERU: 1,
     MAHLE: 1, PURFLUX: 1, VALEO: 1, HELLA: 1, SWAG: 1, TRW: 1, ATE: 1,
     TEXTAR: 1, SACHS: 1, GATES: 1, DAYCO: 1, SKF: 1, INA: 1, LUK: 1,
-    HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1
+    HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1,
+    BOSAL: 1, FA1: 1, VICTOR: 1, REINZ: 1, WALKER: 1, HJS: 1, ERNST: 1,
+    METZGER: 1, CTAM: 1, AUTOTEILE: 1, LKQ: 1
   };
   return !!brands[key];
+}
+
+function pzIsNameContinueWord_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(plus|premium|premier|expert|kits|kit|evo|platinum|original|iridium|satz)$/i.test(t);
+}
+
+function pzLooksLikeNameWord_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return false;
+  if (t === ",") return true;
+  if (pzIsFooterLabelToken_(t) || pzIsHeaderToken_(t) || pzIsBrandToken_(t)) return false;
+  if (pzLooksLikeArtNr_(t) || pzLooksLikeQty_(t) || /^[\d.]+$/.test(t)) return false;
+  if (pzIsNameContinueWord_(t)) return true;
+  return /[a-zäöüß]/.test(t);
 }
 
 function pzBrandRunLength_(tokens, i) {
@@ -3504,8 +3544,10 @@ function pzIsNoiseToken_(tok) {
   var t = raw.replace(/[.,:;!?]+$/g, "").trim();
   if (!t) return true;
   if (pzIsHeaderToken_(t)) return true;
+  if (pzIsFooterLabelToken_(t)) return true;
   if (pzIsBrandToken_(t)) return true;
   if (/^n4p/i.test(t) || /^knoll_/i.test(t)) return true;
+  if (/^lkq[_-]?stahlgruber$/i.test(t)) return true;
   if (pzLooksLikeArtNr_(t)) return true;
   if (/^[\d.]+$/.test(t)) return true;
   if (/^[A-Z]$/i.test(t)) return true;
@@ -3513,25 +3555,35 @@ function pzIsNoiseToken_(tok) {
   return false;
 }
 
-function pzMatchSupplierHeader_(line) {
-  var t = String(line || "").replace(/\s+/g, " ").trim();
+function pzLocateSupplierHeader_(line) {
+  var t = String(line || "");
   if (!t) return null;
-  if (/wessels\s*m(?:ü|ue?|u)ller/i.test(t)) {
-    if (/[-–(]|\d{5,}/.test(t) || /^wessels\s*m(?:ü|ue?|u)ller\s*$/i.test(t)) {
-      return { tag: "WM", supplier: "Wessels Müller" };
-    }
+  var best = null;
+  function take(re, tag, supplier) {
+    var m = re.exec(t);
+    if (!m) return;
+    if (best && m.index >= best.index) return;
+    best = { index: m.index, length: m[0].length, tag: tag, supplier: supplier };
   }
-  if (/^knoll\b/i.test(t)) {
-    if (/[-–(]|\d{5,}/.test(t) || /^knoll\s*$/i.test(t)) {
-      return { tag: "KNOLL", supplier: "KNOLL" };
-    }
+  take(/\blkq[_\s-]*stahlgruber\b/i, "STA", "Stahlgruber");
+  take(/\bwessels\s*m(?:ü|ue?|u)ller\b/i, "WM", "Wessels Müller");
+  take(/\bknoll(?=_|\b)/i, "KNOLL", "KNOLL");
+  if (!best || best.tag !== "STA") take(/\bstahlgruber\b/i, "STA", "Stahlgruber");
+  return best;
+}
+
+function pzStripSupplierHeaderTail_(s) {
+  var t = pzNormalizePartName_(s);
+  var prev = "";
+  while (t && t !== prev) {
+    prev = t;
+    t = t.replace(/^[-–_:]+/, "").trim();
+    t = t.replace(/^\([^)]*\)/, "").trim();
+    t = t.replace(/^(knoll_)?n4p[a-z0-9]+/i, "").trim();
+    t = t.replace(/^knoll\b/i, "").trim();
+    t = t.replace(/^\d{5,}/, "").trim();
   }
-  if (/^stahlgruber\b/i.test(t)) {
-    if (/[-–(]|\d{5,}/.test(t) || /^stahlgruber\s*$/i.test(t)) {
-      return { tag: "STA", supplier: "Stahlgruber" };
-    }
-  }
-  return null;
+  return t;
 }
 
 function pzJoinOcrLines_(lines) {
@@ -3549,7 +3601,7 @@ function pzJoinOcrLines_(lines) {
 }
 
 function pzSplitArtikelTokens_(text) {
-  var raw = String(text || "").replace(/,/g, " , ");
+  var raw = pzNormDash_(text).replace(/(\D),(\S)/g, "$1 , $2").replace(/(\D),\s+/g, "$1 , ");
   var parts = raw.split(/\s+/);
   var out = [];
   for (var i = 0; i < parts.length; i++) {
@@ -3559,27 +3611,48 @@ function pzSplitArtikelTokens_(text) {
   return out;
 }
 
-function pzSplitRowsByBrand_(tokens) {
-  var rows = [];
-  var cur = [];
+function pzExtractNamesFromTokens_(tokens) {
+  var names = [];
+  var row = [];
+  var seenName = false;
   var i = 0;
+  function emit() {
+    var name = pzArtikelNameFromRow_(row);
+    row = [];
+    seenName = false;
+    if (name) names.push(name);
+  }
   while (i < (tokens || []).length) {
-    var run = pzBrandRunLength_(tokens, i);
-    if (run && cur.length) {
-      rows.push(cur);
-      cur = [];
+    var tok = tokens[i];
+    if (pzIsFooterLabelToken_(tok)) {
+      emit();
+      break;
     }
-    if (run) {
-      var k;
-      for (k = 0; k < run; k++) cur.push(tokens[i + k]);
-      i += run;
+    if (pzLooksLikeQty_(tok) && seenName) {
+      var j = i + 1;
+      while (j < tokens.length && pzIsNameContinueWord_(tokens[j])) {
+        row.push(tokens[j]);
+        j++;
+      }
+      i = j;
+      emit();
       continue;
     }
-    cur.push(tokens[i]);
+    if (seenName && (pzBrandRunLength_(tokens, i) || pzLooksLikeArtNr_(tok) || pzIsArtNrPrefix_(tok, tokens[i + 1]))) {
+      emit();
+      continue;
+    }
+    if (!seenName && !row.length && names.length && pzIsNameContinueWord_(tok)) {
+      names[names.length - 1] = pzSanitizeArtikelName_(names[names.length - 1] + " " + tok);
+      i++;
+      continue;
+    }
+    row.push(tok);
+    if (pzLooksLikeNameWord_(tok)) seenName = true;
     i++;
   }
-  if (cur.length) rows.push(cur);
-  return rows;
+  emit();
+  return names;
 }
 
 function pzSanitizeArtikelName_(s) {
@@ -3602,6 +3675,8 @@ function pzSanitizeArtikelName_(s) {
   }
   var name = pzNormalizePartName_(keep.join(" ").replace(/\s+,/g, ",").replace(/,\s*/g, ", "));
   name = name.replace(/\s+\+/g, " +").replace(/:\s*/g, ": ").replace(/\s+/g, " ").trim();
+  name = name.replace(/\s*(bemerkung|datum|unterschrift|name)\s*:?\s*$/ig, "").trim();
+  name = name.replace(/\s*(bemerkung|datum|unterschrift|name)\s*:?\s*/ig, " ").replace(/\s+/g, " ").trim();
   if (name.length < 3 || name.length > 180) return "";
   if (!/[a-zäöüß]/.test(name)) return "";
   if (/hersteller|artnr|artikelname|großhändler|grosshaendler|\bmenge\b|geliefert/i.test(name)) return "";
@@ -3626,30 +3701,34 @@ function pzParseN4pPartsFromText_(raw) {
     }
     var joined = pzJoinOcrLines_(block);
     var tokens = pzSplitArtikelTokens_(joined);
-    var rows = pzSplitRowsByBrand_(tokens);
+    var names = pzExtractNamesFromTokens_(tokens);
     var r;
-    for (r = 0; r < rows.length; r++) {
-      var name = pzArtikelNameFromRow_(rows[r]);
-      if (name) out.push({ name: name, tag: current.tag, supplier: current.supplier });
+    for (r = 0; r < names.length; r++) {
+      out.push({ name: names[r], tag: current.tag, supplier: current.supplier });
     }
     block = [];
   }
   for (var i = 0; i < lines.length; i++) {
-    var line = pzNormalizePartName_(lines[i]);
-    if (!line) continue;
-    if (pzIsStopSection_(line)) {
+    var rest = pzNormalizePartName_(lines[i]);
+    if (!rest) continue;
+    if (pzIsStopSection_(rest)) {
       flushBlock();
       current = null;
       continue;
     }
-    var header = pzMatchSupplierHeader_(line);
-    if (header) {
+    while (rest) {
+      var loc = pzLocateSupplierHeader_(rest);
+      if (!loc) {
+        if (current) block.push(rest);
+        break;
+      }
+      var before = pzNormalizePartName_(rest.slice(0, loc.index));
+      var after = pzStripSupplierHeaderTail_(rest.slice(loc.index + loc.length));
+      if (current && before) block.push(before);
       flushBlock();
-      current = header;
-      continue;
+      current = { tag: loc.tag, supplier: loc.supplier };
+      rest = after;
     }
-    if (!current) continue;
-    block.push(line);
   }
   flushBlock();
   return pzDedupeParts_(out);
