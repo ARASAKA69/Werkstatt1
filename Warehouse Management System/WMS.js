@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.12",
+    date: "22.09.2026",
+    notes:
+      "• Teile aus Packzettel zeigt nur noch die Teile von der Stock-ID die gerade offen ist — kein fremder Auftrag mehr dazwischen (z.B. JR97017 / VT61454 hatten Teile von TJ51010 drin)\n\n" +
+      "• Stückzahl oben (KNOLL / WM / STA) zählt damit auch nur diesen Auftrag, Abgleich mitm Beleg stimmt wieder"
+  },
+  {
     version: "2.2.11",
     date: "18.09.2026",
     notes:
@@ -3865,18 +3872,31 @@ function pzDedupeParts_(parts) {
   return out;
 }
 
-function getPackzettelPartsForStock(keys) {
+function pzRowBelongsToStock_(row, stockId) {
+  var want = normalizeStockId(stockId);
+  if (!want) return false;
+  var stock = normalizeStockId(row && row[5]);
+  var ref = normalizeStockId(row && row[4]);
+  var kz = normalizeStockId(row && row[6]);
+  if (stock === want || ref === want || kz === want) return true;
+  if (stock && stock !== want) return false;
+  var raw = String((row && row[13]) || "").toUpperCase();
+  return raw.indexOf(want) !== -1 && new RegExp("(^|[^A-Z0-9])" + want + "([^A-Z0-9]|$)").test(raw);
+}
+
+function getPackzettelPartsForStock(stockId) {
   try {
-    var normKeys = [];
-    var seen = {};
-    for (var k = 0; k < (keys || []).length; k++) {
-      var nk = String(keys[k] || "").toUpperCase().replace(/\s+/g, "");
-      if (nk.length >= 4 && !seen[nk]) {
-        seen[nk] = true;
-        normKeys.push(nk);
+    var want = normalizeStockId(stockId);
+    if (!want && stockId && stockId.length) {
+      for (var k = 0; k < stockId.length; k++) {
+        var cand = normalizeStockId(stockId[k]);
+        if (/^[A-Z]{2}\d{4,8}$/.test(cand)) {
+          want = cand;
+          break;
+        }
       }
     }
-    if (!normKeys.length) return { success: true, parts: [] };
+    if (!want) return { success: true, parts: [] };
 
     var data = readPackzettelSheet_();
     var values = data.values || [];
@@ -3885,16 +3905,7 @@ function getPackzettelPartsForStock(keys) {
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
       if (!pzIsN4pRow_(row)) continue;
-      var haystack = [row[3], row[4], row[5], row[8], row[13]]
-        .join(" ").toUpperCase().replace(/\s+/g, "");
-      var hit = false;
-      for (var j = 0; j < normKeys.length; j++) {
-        if (haystack.indexOf(normKeys[j]) !== -1) {
-          hit = true;
-          break;
-        }
-      }
-      if (!hit) continue;
+      if (!pzRowBelongsToStock_(row, want)) continue;
       var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
       if (on && usedOrders[on]) continue;
       if (on) usedOrders[on] = true;

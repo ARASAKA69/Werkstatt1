@@ -3839,10 +3839,8 @@
     pzPartsPendingNb = null;
     var openParts = document.getElementById('pzPartsModal');
     if (openParts) openParts.classList.remove('open');
-    var keys = (currentPzKeys && currentPzKeys.length)
-      ? currentPzKeys
-      : pzExtractKeysFromContext(stockId, currentBestellungText);
-    if (!keys.length) {
+    var stockKey = normalizeStockInput(stockId);
+    if (!stockKey) {
       hidePzPartsButton();
       maybeShowNbChooser(stockId, nbOpts);
       return;
@@ -3863,7 +3861,7 @@
       if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
       hidePzPartsButton();
       maybeShowNbChooser(stockId, nbOpts);
-    }).getPackzettelPartsForStock(keys);
+    }).getPackzettelPartsForStock(stockKey);
   }
 
   function openPzPartsPickerManual() {
