@@ -8320,18 +8320,33 @@
   }
 
   function wmsCommentDirty(current, baseline) {
-    var a = String(current == null ? '' : current).replace(/\u00a0/g, ' ').replace(/\r/g, '');
-    var b = String(baseline == null ? '' : baseline).replace(/\u00a0/g, ' ').replace(/\r/g, '');
-    if (a === b) return false;
-    return a.replace(/\n+$/g, '') !== b.replace(/\n+$/g, '');
+    var a = String(current == null ? '' : current).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
+    var b = String(baseline == null ? '' : baseline).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
+    return a !== b;
+  }
+
+  function wmsRegalComparable(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    var m = s.match(/^Regal\s+(\d+)\.(\d+)$/i) || s.match(/^(\d+)\.(\d+)$/);
+    if (!m) return s;
+    return 'Regal ' + parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
   }
 
   function wmsMainHudDirty() {
     if (!currentStock) return false;
     var sel = document.getElementById('shelfSelect');
-    var regal = sel ? String(sel.value || '').trim() : '';
-    var baseR = String(baselineRegal == null ? '' : baselineRegal).trim();
+    var regal = wmsRegalComparable(sel ? sel.value : '');
+    var baseR = wmsRegalComparable(baselineRegal);
     return wmsCommentDirty(getCommentText(), baselineKommentar) || regal !== baseR;
+  }
+
+  function wmsInflightSaveMatchesHud() {
+    var sid = normalizeStockIdJs(currentStock);
+    var job = sid ? saveKommentarRegalInflight[sid] : null;
+    if (!job || job.text == null) return false;
+    var sel = document.getElementById('shelfSelect');
+    var regal = wmsRegalComparable(sel ? sel.value : '');
+    return !wmsCommentDirty(getCommentText(), job.text) && regal === wmsRegalComparable(job.regal);
   }
 
   function formatUnsavedRegalLabel(raw) {
@@ -8416,8 +8431,13 @@
     }
 
     if (!unsavedLoadBypass && wmsMainHudDirty()) {
-      openUnsavedLoadOverlay();
-      return;
+      var sameOpenStock = normalizeStockIdJs(id) === normalizeStockIdJs(currentStock);
+      if (wmsInflightSaveMatchesHud()) {
+        if (sameOpenStock) return;
+      } else {
+        openUnsavedLoadOverlay();
+        return;
+      }
     }
     unsavedLoadBypass = false;
 
@@ -8644,7 +8664,7 @@
       done(false);
     }, SAVE_BG_TIMEOUT_MS);
 
-    saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId };
+    saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId, text: text, regal: regal };
 
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
@@ -8662,6 +8682,7 @@
         }
         if (normalizeStockIdJs(currentStock) === stockId) {
           setBaselines(text, savedRegal);
+          if (!wmsMainHudDirty()) closeUnsavedLoadOverlay();
         }
         handleVerlaufSaveSuccess(res);
         patchRefurbCacheKommentarRegal(stockId, text, savedRegal);

@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.15",
+    date: "23.09.2026",
+    notes:
+      "• Regal-Scan speichert Kommentar und Regal, ohne danach das Overlay „noch nicht gespeichert“ für denselben Auftrag zu zeigen\n\n" +
+      "• Solange dieses Speichern läuft, blockiert ein Enter auf derselben Stock-ID nicht. Ein anderer Auftrag lädt direkt weiter"
+  },
+  {
     version: "2.2.14",
     date: "23.09.2026",
     notes:

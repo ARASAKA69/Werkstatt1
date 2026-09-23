@@ -56,6 +56,7 @@
 - [x] 23.09.2026 / 2.2.13 Fehler-Badge „Jetzt erneut speichern“, grüne Badges nach 2 Minuten weg, Jörg Panik setzt den Stand zurück
 - [x] 23.09.2026 / 2.2.13 Vorherigen Regalplatz im Kommentar-Verlauf als grünes Badge
 - [x] 23.09.2026 / 2.2.14 Alfah-Auftragspositionen in „Teile aus Packzettel“: nur Menge + Bezeichnung derselben Stock-ID, Badge ALFAH, Zählung oben
+- [x] 23.09.2026 / 2.2.15 Regal-Scan: Overlay „noch nicht gespeichert“ kommt nicht mehr, während Kommentar und Regal schon speichern
 
 # Offen
 
