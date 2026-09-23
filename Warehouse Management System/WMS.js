@@ -31,6 +31,14 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.14",
+    date: "23.09.2026",
+    notes:
+      "• Alfah-Auftragsbestätigung liegt jetzt mit in „Teile aus Packzettel“, aber nur für die Stock-ID die gerade offen ist\n\n" +
+      "• Aus Auftragspositionen kommen nur Menge und Bezeichnung, keine Preise, keine Adresse, keine Summen und nicht Seite 2\n\n" +
+      "• Ankreuzen schreibt wie bei den anderen „Name ALFAH da //“ in den Kommentar. Die Zählung oben zeigt ALFAH mit"
+  },
+  {
     version: "2.2.13",
     date: "23.09.2026",
     notes:
@@ -3539,6 +3547,14 @@ function pzIsN4pRow_(row) {
   return false;
 }
 
+function pzIsAlfahRow_(row) {
+  var source = String((row && row[1]) || "").toLowerCase();
+  var raw = String((row && row[13]) || "").toLowerCase();
+  if (source.indexOf("alfah") !== -1) return true;
+  if (raw.indexOf("alfah") === -1) return false;
+  return raw.indexOf("auftragsposition") !== -1 || raw.indexOf("bestellposition") !== -1;
+}
+
 function pzNormalizePartName_(s) {
   return String(s || "").replace(/\s+/g, " ").trim();
 }
@@ -3965,6 +3981,36 @@ function pzDedupeParts_(parts) {
   return out;
 }
 
+function pzParseAlfahPartsFromText_(raw) {
+  var text = String(raw || "").replace(/\r/g, "\n");
+  if (!text.trim()) return [];
+  var start = text.search(/auftragspositionen/i);
+  if (start < 0) start = text.search(/bestellposition/i);
+  if (start < 0) return [];
+  var slice = text.slice(start);
+  var end = slice.search(/\b(zwischensumme|achtung\s*:|bedingungen\s+f[uü]r\s+die\s+abwicklung|seite\s+2\s+von)\b/i);
+  if (end > 0) slice = slice.slice(0, end);
+  slice = slice.replace(/bestellposition\s+menge\s+uvp[\s\S]*?\bbrutto\b/i, "\n");
+  slice = slice.replace(/[.\u00b7\u2022\u2024\u2026]{4,}/g, " ");
+  slice = slice.replace(/\bversand\s*:\s*[^\n]+/ig, " ");
+  slice = slice.replace(/voraussichtl\.?\s*liefertermin\s*:?\s*\d{4}-\d{2}-\d{2}/ig, " ");
+  var out = [];
+  var re = /(\d+)\s*Stk\b([\s\S]*?)(?=\d+\s*Stk\b|$)/gi;
+  var m;
+  while ((m = re.exec(slice))) {
+    var body = String(m[2] || "");
+    body = body.replace(/\d+[.,]\d+\s*€/g, " ");
+    body = body.replace(/\b(?:uvp|netto|gesamt|brutto|mwst|19\s*%)\b/gi, " ");
+    body = pzNormalizePartName_(body).replace(/^[€\s]+/, "").trim();
+    if (body.length < 3) continue;
+    if (!/[a-zäöüß]/i.test(body)) continue;
+    var name = m[1] + " Stk " + body;
+    if (name.length > 220) name = name.slice(0, 220).trim();
+    out.push({ name: name, tag: "ALFAH", supplier: "ALFAH" });
+  }
+  return pzDedupeParts_(out);
+}
+
 function pzRowBelongsToStock_(row, stockId) {
   var want = normalizeStockId(stockId);
   if (!want) return false;
@@ -3997,12 +4043,13 @@ function getPackzettelPartsForStock(stockId) {
     var usedOrders = {};
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
-      if (!pzIsN4pRow_(row)) continue;
+      var alfahRow = pzIsAlfahRow_(row);
+      if (!pzIsN4pRow_(row) && !alfahRow) continue;
       if (!pzRowBelongsToStock_(row, want)) continue;
       var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
       if (on && usedOrders[on]) continue;
       if (on) usedOrders[on] = true;
-      var parsed = pzParseN4pPartsFromText_(row[13]);
+      var parsed = alfahRow ? pzParseAlfahPartsFromText_(row[13]) : pzParseN4pPartsFromText_(row[13]);
       for (var p = 0; p < parsed.length; p++) parts.push(parsed[p]);
     }
     return { success: true, parts: pzDedupeParts_(parts) };

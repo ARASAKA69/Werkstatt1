@@ -50,17 +50,13 @@
 - [x] Add Language change inside Settings and make sure everything inside the HUD get translated, maybe we use Google Translate for this case, so means to make sure all on page get translated to any language we need it to what the WMS windows shows for my collegues which dont speaks german it would be a great help.
 - [x] Lock background inside HUD when anything is loading so we cant miss type anything inside when its blurred + when we save any order with comment and regal not only show saving ontop but lets also blur all out so we cant click and do anything until he is completly done and reloaded the order maybe make a small overlay with loading spinner and telling what its doing.
 - [x] Making sure Reifen annahme will also be minimized in the toolbar on bottom so we can reoppen it anytime we need it (this window is not in the list so it does not appear in the Toolbar on bottom as minimized) 
------
-
-
-
+- [x] ESC to end an operation if needed eg. when saving anything.
 - [x] 23.09.2026 / 2.2.13 Verschwunden-Aufträge drucken den Werkstattauftrag; Druck läuft parallel zu Speichern und Carol
 - [x] 23.09.2026 / 2.2.13 Ungespeicherten Kommentar oder Regal nicht überschreiben (Overlay: Jetzt speichern oder nächsten Auftrag laden)
 - [x] 23.09.2026 / 2.2.13 Fehler-Badge „Jetzt erneut speichern“, grüne Badges nach 2 Minuten weg, Jörg Panik setzt den Stand zurück
 - [x] 23.09.2026 / 2.2.13 Vorherigen Regalplatz im Kommentar-Verlauf als grünes Badge
+- [x] 23.09.2026 / 2.2.14 Alfah-Auftragspositionen in „Teile aus Packzettel“: nur Menge + Bezeichnung derselben Stock-ID, Badge ALFAH, Zählung oben
 
 # Offen
 
-- [] ESC to end an operation if needed eg. when saving anything.
-- [] Alfah-Lieferscheine in „Teile aus Packzettel“: Zeilen derselben Stock-ID mit parsen, Badge ALFAH, Zählung oben erweitern. Später.
 - [] WSS Einbuchen: Fenster gesperrt lassen bis Vasold-Zeile, Refurbishment-Kommentar und Chat wirklich durch sind. Chat-Fehler nicht schlucken. Später.
