@@ -999,6 +999,7 @@
       if (t.indexOf('nachbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
       if (t.indexOf('mechanik') !== -1 && t.indexOf('nachbestellung') !== -1) return true;
       if (t.indexOf('q-check') !== -1 || t.indexOf('qcheck') !== -1) return true;
+      if (t.indexOf('verschwunden') !== -1) return true;
       return false;
     }
 
@@ -1171,9 +1172,9 @@
       }
       var doCarol = currentNbEntry && nbShouldStartCarol(value, currentNbEntry.typ);
       var doDymo = nbShouldAutoPrintDymo(value);
-      var doWerkstatt = !!(res && res.printB64) || (doDymo && currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ));
+      var doWerkstatt = !!(currentNbEntry && nbTypShouldPrintWerkstattauftrag(currentNbEntry.typ) && (doCarol || doDymo));
       if (doCarol || doDymo || doWerkstatt) {
-        if (pcOk) enqueue('nbprocess', { doCarol: doCarol, doDymo: doDymo, doWerkstatt: doWerkstatt });
+        if (pcOk) enqueue('nbprocess', { doCarol: doCarol, doDymo: doDymo, doWerkstatt: doWerkstatt, printB64: '' });
         else setStatus((res && res.message ? res.message + ' — ' : '') + 'PC nicht verbunden für Carol/Druck', '#F59E0B');
       }
     }
@@ -1531,6 +1532,7 @@
           doCarol: !!extra.doCarol,
           doDymo: !!extra.doDymo,
           doWerkstatt: !!extra.doWerkstatt,
+          printB64: extra.printB64 || '',
           teil: extra.teil || (currentNbEntry && currentNbEntry.teil) || '',
           typ: extra.typ || (currentNbEntry && currentNbEntry.typ) || ''
         });

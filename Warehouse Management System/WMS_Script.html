@@ -38,6 +38,7 @@
   var shelfSelectIgnoreChange = false;
   var baselineKommentar = "";
   var baselineRegal = "";
+  var unsavedLoadBypass = false;
   var stockLockHeldId = "";
   var stockLockBlocked = false;
   var stockLockBlockedId = "";
@@ -412,40 +413,39 @@
 
   function executeCastNbProcess(job) {
     var notes = [];
+    if (job.doWerkstatt) {
+      if (job.printB64 && typeof sendWerkstattauftragPrint === 'function') {
+        sendWerkstattauftragPrint(job.printB64, null, null);
+        notes.push('Auftrag gedruckt');
+      } else {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success && res.printB64 && typeof sendWerkstattauftragPrint === 'function') {
+              sendWerkstattauftragPrint(res.printB64, null, null);
+            } else {
+              showStickyToast('err', 'Auftrag-Druck', (res && res.message) || 'Auftrag nicht gedruckt');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showStickyToast('err', 'Auftrag-Druck', err && err.message ? err.message : 'Auftrag-Fehler');
+          })
+          .requestWerkstattauftragPrint(job.stockId, job.teil || '', job.typ || '');
+        notes.push('Auftrag wird gedruckt');
+      }
+    }
     if (job.doDymo) {
       var printed = sendDymoPrint({ stockId: job.stockId, copies: job.copies || 1, silent: false });
       var okD = !!(printed && printed.success);
       notes.push(printed && printed.skipped ? 'DYMO übersprungen' : (okD ? 'DYMO gesendet' : ((printed && printed.message) || 'DYMO fehlgeschlagen')));
     }
-    function afterWerkstatt() {
-      if (job.doCarol) {
-        launchCastCarol(job);
-        return;
-      }
-      var ok = notes.join(' ').indexOf('fehlgeschlagen') === -1;
-      ackCastJob(job, ok, notes.join(' · ') || 'OK');
-      setStatus('📱 Handy: ' + (notes.join(' · ') || 'OK') + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
-      if (ok) showStickyToast('ok', 'Handy: Nachbestellung', job.stockId || '');
-    }
-    if (job.doWerkstatt) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.printB64 && typeof sendWerkstattauftragPrint === 'function') {
-            sendWerkstattauftragPrint(res.printB64, null, null);
-            notes.push('Auftrag gedruckt');
-          } else {
-            notes.push((res && res.message) || 'Auftrag nicht gedruckt');
-          }
-          afterWerkstatt();
-        })
-        .withFailureHandler(function(err) {
-          notes.push(err && err.message ? err.message : 'Auftrag-Fehler');
-          afterWerkstatt();
-        })
-        .requestWerkstattauftragPrint(job.stockId, job.teil || '', job.typ || '');
+    if (job.doCarol) {
+      launchCastCarol(job);
       return;
     }
-    afterWerkstatt();
+    var ok = notes.join(' ').indexOf('fehlgeschlagen') === -1;
+    ackCastJob(job, ok, notes.join(' · ') || 'OK');
+    setStatus('📱 Handy: ' + (notes.join(' · ') || 'OK') + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
+    if (ok) showStickyToast('ok', 'Handy: Nachbestellung', job.stockId || '');
   }
 
   function onCastPcHeartbeat(res) {
@@ -1114,25 +1114,288 @@
     if (isError) wmsBeep('err');
   }
 
-  function showStickyToast(type, title, message) {
+  var WMS_TOAST_OK_MS = 120000;
+
+  function clearToastTimer(toast) {
+    if (toast && toast._wmsTimer) {
+      clearTimeout(toast._wmsTimer);
+      toast._wmsTimer = null;
+    }
+  }
+
+  function armToastOkTimer(toast) {
+    clearToastTimer(toast);
+    if (!toast || toast._wmsPanicHold) return;
+    if (!toast.classList.contains('wms-toast--ok')) return;
+    toast._wmsTimer = setTimeout(function() {
+      if (!toast || toast._wmsPanicHold) return;
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, WMS_TOAST_OK_MS);
+  }
+
+  function showStickyToast(type, title, message, extra) {
+    extra = extra || {};
     var stack = document.getElementById('wmsToastStack');
-    if (!stack) return;
+    if (!stack) return null;
+    var isOk = type === 'ok';
     var toast = document.createElement('div');
-    toast.className = 'wms-toast wms-toast--' + (type === 'ok' ? 'ok' : 'err');
-    toast.setAttribute('role', type === 'ok' ? 'status' : 'alert');
-    toast.innerHTML =
-      '<div class="wms-toast-body">' +
-        '<div class="wms-toast-title">' + escapeHtml(title || '') + '</div>' +
-        '<div class="wms-toast-msg">' + escapeHtml(message || '') + '</div>' +
-      '</div>' +
-      '<button type="button" class="wms-toast-x" onclick="dismissWmsToast(this)" aria-label="Schließen">&times;</button>';
+    toast.className = 'wms-toast wms-toast--' + (isOk ? 'ok' : 'err');
+    toast.setAttribute('role', isOk ? 'status' : 'alert');
+    var body = document.createElement('div');
+    body.className = 'wms-toast-body';
+    var titleEl = document.createElement('div');
+    titleEl.className = 'wms-toast-title';
+    titleEl.textContent = title || '';
+    var msgEl = document.createElement('div');
+    msgEl.className = 'wms-toast-msg';
+    msgEl.textContent = message || '';
+    body.appendChild(titleEl);
+    body.appendChild(msgEl);
+    var actions = document.createElement('div');
+    actions.className = 'wms-toast-actions';
+    if (!isOk && extra.retry) {
+      var retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'wms-toast-retry';
+      retryBtn.textContent = 'Jetzt erneut speichern';
+      retryBtn.addEventListener('click', function() { runToastRetry(toast, extra.retry); });
+      actions.appendChild(retryBtn);
+    }
+    if (isOk && extra.priorSnapshot && extra.stockId) {
+      var panikBtn = document.createElement('button');
+      panikBtn.type = 'button';
+      panikBtn.className = 'wms-toast-panik';
+      panikBtn.textContent = 'Jörg Panik';
+      panikBtn.addEventListener('click', function() { runToastPanik(toast, extra.stockId, extra.priorSnapshot, panikBtn); });
+      actions.appendChild(panikBtn);
+    }
+    if (actions.childNodes.length) body.appendChild(actions);
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'wms-toast-x';
+    closeBtn.setAttribute('aria-label', 'Schließen');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', function() { dismissWmsToast(closeBtn); });
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
     stack.appendChild(toast);
-    wmsBeep(type === 'ok' ? 'ok' : 'err');
+    if (isOk) armToastOkTimer(toast);
+    wmsBeep(isOk ? 'ok' : 'err');
+    return toast;
   }
 
   function dismissWmsToast(btn) {
     var toast = btn && btn.closest ? btn.closest('.wms-toast') : null;
-    if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+    if (!toast) return;
+    clearToastTimer(toast);
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }
+
+  function setToastVisual(toast, kind, title, message) {
+    toast.classList.remove('wms-toast--ok', 'wms-toast--err', 'wms-toast--panic');
+    toast.classList.add('wms-toast--' + kind);
+    var titleEl = toast.querySelector('.wms-toast-title');
+    var msgEl = toast.querySelector('.wms-toast-msg');
+    if (titleEl) {
+      titleEl.classList.remove('is-loading');
+      titleEl.textContent = title || '';
+    }
+    if (msgEl) msgEl.textContent = message || '';
+  }
+
+  function setToastLoading(toast, title, message) {
+    var titleEl = toast.querySelector('.wms-toast-title');
+    var msgEl = toast.querySelector('.wms-toast-msg');
+    if (titleEl) {
+      titleEl.classList.add('is-loading');
+      titleEl.textContent = '';
+      var spin = document.createElement('span');
+      spin.className = 'hud-spin hud-spin--sm';
+      titleEl.appendChild(spin);
+      titleEl.appendChild(document.createTextNode(' ' + (title || 'Speichere erneut…')));
+    }
+    if (msgEl) msgEl.textContent = message || '';
+  }
+
+  function toastEnsureActions(toast) {
+    var actions = toast.querySelector('.wms-toast-actions');
+    if (actions) return actions;
+    var body = toast.querySelector('.wms-toast-body');
+    if (!body) return null;
+    actions = document.createElement('div');
+    actions.className = 'wms-toast-actions';
+    body.appendChild(actions);
+    return actions;
+  }
+
+  function toastRetryButton(toast, retry) {
+    var actions = toastEnsureActions(toast);
+    if (!actions) return;
+    actions.innerHTML = '';
+    var retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'wms-toast-retry';
+    retryBtn.textContent = 'Jetzt erneut speichern';
+    retryBtn.addEventListener('click', function() { runToastRetry(toast, retry); });
+    actions.appendChild(retryBtn);
+  }
+
+  function toastPanikButton(toast, stockId, snapshot) {
+    if (!snapshot || !stockId) return;
+    var actions = toastEnsureActions(toast);
+    if (!actions) return;
+    var old = actions.querySelector('.wms-toast-panik');
+    if (old) old.parentNode.removeChild(old);
+    var panikBtn = document.createElement('button');
+    panikBtn.type = 'button';
+    panikBtn.className = 'wms-toast-panik';
+    panikBtn.textContent = 'Jörg Panik';
+    panikBtn.addEventListener('click', function() { runToastPanik(toast, stockId, snapshot, panikBtn); });
+    actions.appendChild(panikBtn);
+  }
+
+  function applyToastSaveSideEffects(retry, res) {
+    var stockId = normalizeStockIdJs(retry.stockId);
+    handleVerlaufSaveSuccess(res);
+    if (retry.kind === 'tagesliste') {
+      if (res && res.oldRegal != null) showOldRegalModal(res.oldRegal, stockId);
+      loadRefurbishmentCache(true);
+      loadKommentarVerlaufCache(true);
+      if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
+        resetWmsHudForNextOrder('✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.');
+      }
+      return;
+    }
+    var savedText = retry.text != null ? retry.text : ((res && res.savedKommentar) || '');
+    var savedRegal = retry.regal || retry.expectedRegal || '';
+    if (res && res.savedRegal != null && String(res.savedRegal).trim() !== '') savedRegal = String(res.savedRegal).trim();
+    else if (!retry.regal) savedRegal = retry.expectedRegal || '';
+    if (normalizeStockIdJs(currentStock) === stockId) {
+      setBaselines(savedText, savedRegal);
+      if ((retry.kind === 'einlagern' || retry.kind === 'kommentarRegal') && savedRegal) {
+        applyShelfUiFromRegal(savedRegal);
+      }
+    }
+    if (retry.kind === 'kommentarRegal') patchRefurbCacheKommentarRegal(stockId, savedText, savedRegal);
+    loadRefurbishmentCache(true);
+    loadKommentarVerlaufCache(true);
+    if (retry.kind === 'einlagern' && normalizeStockIdJs(currentStock) === stockId) {
+      var searchEl = document.getElementById('searchInput');
+      if (searchEl) searchEl.value = currentStock;
+      unsavedLoadBypass = true;
+      loadData();
+    }
+  }
+
+  function finishToastRetryFail(toast, retry, message) {
+    toast._wmsBusy = false;
+    setToastVisual(toast, 'err', '❌ Speichern fehlgeschlagen — ' + (retry.stockId || ''), message || 'Unbekannter Fehler');
+    toastRetryButton(toast, retry);
+    wmsBeep('err');
+  }
+
+  function finishToastRetryOk(toast, retry, res) {
+    toast._wmsBusy = false;
+    toast._wmsPanicHold = false;
+    setToastVisual(toast, 'ok', '✅ Gespeichert — ' + (retry.stockId || ''), (res && res.message) || 'Gespeichert.');
+    var actions = toast.querySelector('.wms-toast-actions');
+    if (actions) actions.innerHTML = '';
+    var snap = (retry && retry.priorSnapshot) || (res && res.priorSnapshot) || null;
+    if (snap) toastPanikButton(toast, retry.stockId, snap);
+    armToastOkTimer(toast);
+    wmsBeep('ok');
+  }
+
+  function runToastRetry(toast, retry) {
+    if (!toast || !retry || toast._wmsBusy) return;
+    toast._wmsBusy = true;
+    var retryBtn = toast.querySelector('.wms-toast-retry');
+    if (retryBtn) retryBtn.disabled = true;
+    setToastLoading(toast, 'Speichere erneut…', retry.stockId || '');
+    var runner = google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.conflict) {
+          toast._wmsBusy = false;
+          handleSaveConcurrencyConflict(res, retry.stockId);
+          finishToastRetryFail(toast, retry, (res && res.message) || 'Konflikt');
+          return;
+        }
+        if (res && res.success) {
+          applyToastSaveSideEffects(retry, res);
+          finishToastRetryOk(toast, retry, res);
+          return;
+        }
+        finishToastRetryFail(toast, retry, (res && res.message) || 'Unbekannter Fehler');
+      })
+      .withFailureHandler(function(err) {
+        finishToastRetryFail(toast, retry, err && err.message ? err.message : 'Serverfehler');
+      });
+    if (retry.kind === 'kommentarRegal') {
+      runner.saveKommentarUndRegal(retry.stockId, retry.text, retry.regal, retry.expectedKommentar, retry.expectedRegal, retry.source || '');
+    } else if (retry.kind === 'kommentar' || retry.kind === 'carol') {
+      runner.saveKommentar(retry.stockId, retry.text, retry.action || (retry.kind === 'carol' ? 'carol' : 'speichern'), retry.expectedKommentar, retry.expectedRegal, retry.source || '');
+    } else if (retry.kind === 'tagesliste') {
+      runner.triggerCarolMission(retry.stockId);
+    } else if (retry.kind === 'einlagern') {
+      runner.einlagern(retry.stockId, retry.regal, retry.expectedKommentar, retry.expectedRegal);
+    } else {
+      finishToastRetryFail(toast, retry, 'Erneut speichern nicht möglich');
+    }
+  }
+
+  function runToastPanik(toast, stockId, snapshot, btn) {
+    if (!toast || toast._wmsBusy) return;
+    if (!btn._panikArmed) {
+      btn._panikArmed = true;
+      btn.textContent = 'Wirklich zurücksetzen?';
+      toast._wmsPanicHold = true;
+      clearToastTimer(toast);
+      return;
+    }
+    toast._wmsBusy = true;
+    toast._wmsPanicHold = true;
+    clearToastTimer(toast);
+    btn.disabled = true;
+    setToastLoading(toast, 'Setze zurück…', stockId || '');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        toast._wmsBusy = false;
+        if (res && res.success) {
+          toast._wmsPanicHold = true;
+          clearToastTimer(toast);
+          setToastVisual(toast, 'panic', 'Zurückgesetzt — ' + stockId, res.message || 'Kommentar, Farbe, Status und Regal sind wieder wie vorher.');
+          var actions = toast.querySelector('.wms-toast-actions');
+          if (actions) actions.innerHTML = '';
+          var sid = normalizeStockIdJs(stockId);
+          if (normalizeStockIdJs(currentStock) === sid) {
+            setCommentText(res.savedKommentar || '');
+            setBaselines(res.savedKommentar || '', res.savedRegal || '');
+            applyShelfUiFromRegal(res.savedRegal || '');
+          }
+          handleVerlaufSaveSuccess(res);
+          loadRefurbishmentCache(true);
+          loadKommentarVerlaufCache(true);
+          wmsBeep('ok');
+          return;
+        }
+        btn.disabled = false;
+        btn._panikArmed = false;
+        btn.textContent = 'Jörg Panik';
+        setToastVisual(toast, 'err', 'Zurücksetzen fehlgeschlagen — ' + stockId, (res && res.message) || 'Zurücksetzen fehlgeschlagen');
+        toast._wmsPanicHold = true;
+        clearToastTimer(toast);
+        wmsBeep('err');
+      })
+      .withFailureHandler(function(err) {
+        toast._wmsBusy = false;
+        btn.disabled = false;
+        btn._panikArmed = false;
+        btn.textContent = 'Jörg Panik';
+        var msgEl = toast.querySelector('.wms-toast-msg');
+        if (msgEl) msgEl.textContent = err && err.message ? err.message : 'Zurücksetzen fehlgeschlagen';
+        wmsBeep('err');
+      })
+      .joergPanikRestore(stockId, snapshot);
   }
 
   var wmsAudioCtx = null;
@@ -1290,6 +1553,11 @@
     function consumeEsc() {
       e.preventDefault();
       e.stopPropagation();
+    }
+
+    if (wmsElIsOpen('unsavedLoadOverlay')) {
+      consumeEsc();
+      return;
     }
 
     var oldRegal = document.getElementById('oldRegalModal');
@@ -2818,6 +3086,7 @@
     if (t.indexOf('nachbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
     if (t.indexOf('mechanik') !== -1 && t.indexOf('nachbestellung') !== -1) return true;
     if (t.indexOf('q-check') !== -1 || t.indexOf('qcheck') !== -1) return true;
+    if (t.indexOf('verschwunden') !== -1) return true;
     return false;
   }
 
@@ -3208,9 +3477,12 @@
 
   function sendWerkstattauftragPrint(printB64, badgeEl, msgEl) {
     if (!printB64) return;
-    showWerkstattPrintStatus(badgeEl, msgEl, 'Drucke Auftrag…', '#9da7b3');
-    if (badgeEl && !msgEl) {
-      badgeEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Drucke Auftrag…</span>';
+    var quiet = !badgeEl && !msgEl;
+    if (!quiet) {
+      showWerkstattPrintStatus(badgeEl, msgEl, 'Drucke Auftrag…', '#9da7b3');
+      if (badgeEl && !msgEl) {
+        badgeEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Drucke Auftrag…</span>';
+      }
     }
     fetch(BRIDGE_URL + '/print-b64', {
       method: 'POST',
@@ -3222,11 +3494,33 @@
         return data;
       });
     }).then(function() {
+      if (quiet) {
+        showStickyToast('ok', 'Auftrag gedruckt', 'Werkstattauftrag ist an den Drucker.');
+        return;
+      }
       showWerkstattPrintStatus(badgeEl, msgEl, 'Auftrag gedruckt!', '#56d364', badgeEl && !msgEl ? 4000 : 0);
     }).catch(function(err) {
       var errTxt = 'Druck fehlgeschlagen: ' + (err && err.message ? err.message : 'Bridge nicht erreichbar');
-      showWerkstattPrintStatus(badgeEl, msgEl, errTxt, '#f85149', badgeEl && !msgEl ? 10000 : 0);
+      if (quiet) {
+        showStickyToast('err', 'Auftrag-Druck', errTxt);
+        return;
+      }
+      showWerkstattPrintStatus(badgeEl, msgEl, errTxt, '#f85149', 0);
     });
+  }
+
+  function kickNbWerkstattPrint(nbEnt) {
+    if (!nbEnt || !nbEnt.stockId) return;
+    if (!nbTypShouldPrintWerkstattauftrag(nbEnt.typ)) return;
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success || !res.printB64) {
+        showStickyToast('err', 'Auftrag-Druck', (res && res.message) || 'Auftrag konnte nicht vorbereitet werden');
+        return;
+      }
+      sendWerkstattauftragPrint(res.printB64, null, null);
+    }).withFailureHandler(function(err) {
+      showStickyToast('err', 'Auftrag-Druck', (err && err.message) ? err.message : 'Auftrag-Fehler');
+    }).requestWerkstattauftragPrint(nbEnt.stockId, nbEnt.teil || '', nbEnt.typ || '');
   }
 
   function printNbWerkstattauftrag(event, index) {
@@ -3331,6 +3625,7 @@
     var showErr = function(msg) {
       carolReturnRestoreNb = null;
       wmsBeep('err');
+      setStatus(msg, '#f85149');
       if(badge) { badge.innerText = msg; badge.style.color = '#f85149'; }
     };
     carolReturnRestoreNb = stockId || true;
@@ -3511,8 +3806,14 @@
       badge.style.color = '';
       badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
     }
+    var wantPrint = !!(nbEnt.stockId && nbIsKomplettStatus(value) && nbTypShouldPrintWerkstattauftrag(nbEnt.typ));
+    if (wantPrint) kickNbWerkstattPrint(nbEnt);
     if (nbShouldStartCarol(value, nbEnt.typ) && nbEnt.stockId) {
-      startNbCarol(nbEnt.stockId, badge);
+      startNbCarol(nbEnt.stockId, null);
+    }
+    var didDymo = false;
+    if (nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
+      didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
     }
     google.script.run.withSuccessHandler(function(res) {
       if (sel) sel.disabled = false;
@@ -3548,17 +3849,9 @@
           }
         }
         if (btn && nbIsKomplettStatus(value)) btn.remove();
-        var didDymo = false;
-        if (nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
-          didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
-        }
         if (!didDymo) {
           var hintTeil = nbIsTeilweiseStatus(value) && document.getElementById('nb-comment-' + index) && !String((document.getElementById('nb-comment-' + index).value || '')).trim();
           if (badge) badge.innerText = hintTeil ? 'Teilweise — bitte eintragen, welche Teile schon da sind' : (res.message || 'Gespeichert!');
-        }
-        if (res.printB64) {
-          sendWerkstattauftragPrint(res.printB64, badge, null);
-        } else {
           setTimeout(function() { if (badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         }
       } else {
@@ -7612,7 +7905,8 @@
       entry.ts,
       entry.email,
       entry.text,
-      entry.action || 'speichern'
+      entry.action || 'speichern',
+      entry.regal || ''
     ]);
   }
 
@@ -7670,6 +7964,7 @@
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         html += '<div class="verlauf-entry">' +
+          (r[5] ? '<div class="verlauf-regal-badge">' + escapeHtml(r[5]) + '</div>' : '') +
           '<div class="verlauf-meta"><span class="verlauf-email">' + escapeHtml(r[2]) + '</span>' +
           '<span class="verlauf-ts">' + escapeHtml(formatVerlaufTsDisplay(r[1])) + '</span></div>' +
           '<div class="verlauf-text">' + escapeHtml(r[3]).replace(/\n/g, '<br>') + '</div>' +
@@ -8024,6 +8319,93 @@
     }).rememberStellantisTracking(track, sid);
   }
 
+  function wmsCommentDirty(current, baseline) {
+    var a = String(current == null ? '' : current).replace(/\u00a0/g, ' ').replace(/\r/g, '');
+    var b = String(baseline == null ? '' : baseline).replace(/\u00a0/g, ' ').replace(/\r/g, '');
+    if (a === b) return false;
+    return a.replace(/\n+$/g, '') !== b.replace(/\n+$/g, '');
+  }
+
+  function wmsMainHudDirty() {
+    if (!currentStock) return false;
+    var sel = document.getElementById('shelfSelect');
+    var regal = sel ? String(sel.value || '').trim() : '';
+    var baseR = String(baselineRegal == null ? '' : baselineRegal).trim();
+    return wmsCommentDirty(getCommentText(), baselineKommentar) || regal !== baseR;
+  }
+
+  function formatUnsavedRegalLabel(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return 'kein Regal';
+    if (/^\d+\.\d+$/.test(s)) return 'Regal ' + s;
+    return s;
+  }
+
+  function openUnsavedLoadOverlay() {
+    var el = document.getElementById('unsavedLoadOverlay');
+    if (!el) return;
+    var stockEl = document.getElementById('unsavedLoadStock');
+    var commentEl = document.getElementById('unsavedLoadComment');
+    var regalEl = document.getElementById('unsavedLoadRegal');
+    var errEl = document.getElementById('unsavedLoadError');
+    var saveBtn = document.getElementById('unsavedLoadSaveBtn');
+    var skipBtn = document.getElementById('unsavedLoadSkipBtn');
+    if (stockEl) stockEl.textContent = currentStock || '';
+    if (commentEl) commentEl.textContent = getCommentText() || '—';
+    var sel = document.getElementById('shelfSelect');
+    if (regalEl) regalEl.textContent = formatUnsavedRegalLabel(sel ? sel.value : '');
+    if (errEl) errEl.textContent = '';
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Jetzt speichern'; }
+    if (skipBtn) skipBtn.disabled = false;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    try {
+      var ae = document.activeElement;
+      if (ae && typeof ae.blur === 'function') ae.blur();
+    } catch (eBlur) {}
+  }
+
+  function closeUnsavedLoadOverlay() {
+    var el = document.getElementById('unsavedLoadOverlay');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
+  function unsavedOverlaySave() {
+    var errEl = document.getElementById('unsavedLoadError');
+    var saveBtn = document.getElementById('unsavedLoadSaveBtn');
+    var skipBtn = document.getElementById('unsavedLoadSkipBtn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Speichere…'; }
+    if (skipBtn) skipBtn.disabled = true;
+    if (errEl) errEl.textContent = '';
+    saveKommentarUndRegalFlow({
+      onDone: function(ok) {
+        if (!ok) {
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Jetzt speichern'; }
+          if (skipBtn) skipBtn.disabled = false;
+          if (errEl) errEl.textContent = 'Speichern fehlgeschlagen — der neue Auftrag wird nicht geladen.';
+          return;
+        }
+        closeUnsavedLoadOverlay();
+        unsavedLoadBypass = true;
+        loadData();
+      }
+    });
+  }
+
+  function unsavedOverlayDiscard() {
+    setCommentText(baselineKommentar);
+    var sel = document.getElementById('shelfSelect');
+    if (sel) {
+      sel.value = baselineRegal || '';
+      if (typeof syncShelfTriggerFromNative === 'function') syncShelfTriggerFromNative();
+    }
+    closeUnsavedLoadOverlay();
+    unsavedLoadBypass = true;
+    loadData();
+  }
+
   function loadData() {
     var id = document.getElementById('searchInput').value.trim();
     if(!id) return;
@@ -8032,6 +8414,12 @@
       openReifenModalWithSizeSearch(id);
       return;
     }
+
+    if (!unsavedLoadBypass && wmsMainHudDirty()) {
+      openUnsavedLoadOverlay();
+      return;
+    }
+    unsavedLoadBypass = false;
 
     var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(id) : null;
     if (stel && stel.stockId && isStockIdFormat(stel.stockId)) {
@@ -8129,11 +8517,40 @@
         handleVerlaufSaveSuccess(res);
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
+        showStickyToast('ok', '✅ Kommentar gespeichert — ' + stockId, res.message || 'Gespeichert.', {
+          stockId: stockId,
+          priorSnapshot: res.priorSnapshot || null
+        });
+      } else {
+        var kommErr = (res && res.message) || 'Unbekannter Fehler';
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, kommErr, {
+          retry: {
+            kind: 'kommentar',
+            stockId: stockId,
+            text: text,
+            action: 'speichern',
+            expectedKommentar: expectedKommentar,
+            expectedRegal: expectedRegal,
+            source: currentWmsSource || ''
+          }
+        });
       }
     }).withFailureHandler(function(err) {
-      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      var kommFail = err && err.message ? err.message : String(err || 'Serverfehler');
+      setStatus("❌ Fehler: " + kommFail, "#f85149");
       setHudBusy(false);
       toggleUI(true);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, kommFail, {
+        retry: {
+          kind: 'kommentar',
+          stockId: stockId,
+          text: text,
+          action: 'speichern',
+          expectedKommentar: expectedKommentar,
+          expectedRegal: expectedRegal,
+          source: currentWmsSource || ''
+        }
+      });
     }).saveKommentar(stockId, text, "speichern", expectedKommentar, expectedRegal, currentWmsSource);
   }
 
@@ -8163,18 +8580,41 @@
 
   function saveKommentarUndRegalFlow(opts) {
     opts = opts || {};
+    function done(ok) {
+      if (typeof opts.onDone === 'function') opts.onDone(!!ok);
+    }
     var text = getCommentText().trim();
     var regal = String(document.getElementById('shelfSelect').value || '').trim();
     var stockId = normalizeStockIdJs(currentStock);
     var expectedKommentar = baselineKommentar;
     var expectedRegal = baselineRegal;
-    if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
-    if (isStockEditBlocked(stockId)) {
-      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    var retrySave = {
+      kind: 'kommentarRegal',
+      stockId: stockId,
+      text: text,
+      regal: regal,
+      expectedKommentar: expectedKommentar,
+      expectedRegal: expectedRegal,
+      source: currentWmsSource || ''
+    };
+    if (!stockId) {
+      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+      done(false);
+      return;
     }
-    if (!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+    if (isStockEditBlocked(stockId)) {
+      setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+      done(false);
+      return;
+    }
+    if (!text) {
+      setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      done(false);
+      return;
+    }
     if (saveKommentarRegalInflight[stockId]) {
       setStatus("⏳ Speichern für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
+      done(false);
       return;
     }
 
@@ -8198,8 +8638,10 @@
       showStickyToast(
         'err',
         'Speichern unklar / Timeout',
-        stockId + ' — Bitte neu öffnen und erneut speichern.'
+        stockId + ' — Bitte neu öffnen und erneut speichern.',
+        { retry: retrySave }
       );
+      done(false);
     }, SAVE_BG_TIMEOUT_MS);
 
     saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId };
@@ -8208,6 +8650,7 @@
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       if (res && res.conflict) {
         handleSaveConcurrencyConflict(res, stockId);
+        done(false);
         return;
       }
       if (res && res.success) {
@@ -8234,28 +8677,33 @@
           showStickyToast(
             'ok',
             '✅ Kommentar gespeichert — ' + stockId,
-            (res.message || 'Gespeichert.') + ' ⚠️ Kein Regal vergeben!'
+            (res.message || 'Gespeichert.') + ' ⚠️ Kein Regal vergeben!',
+            { stockId: stockId, priorSnapshot: res.priorSnapshot || null }
           );
         } else {
           setStatus("✅ " + res.message, "#56d364");
           showStickyToast(
             'ok',
             '✅ Kommentar + Regal gespeichert — ' + stockId,
-            res.message || 'Gespeichert.'
+            res.message || 'Gespeichert.',
+            { stockId: stockId, priorSnapshot: res.priorSnapshot || null }
           );
         }
+        done(true);
       } else {
         patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
         var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
         setStatus("❌ " + errMsg, "#f85149");
-        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg);
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg, { retry: retrySave });
+        done(false);
       }
     }).withFailureHandler(function(err) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
       setStatus("❌ Fehler: " + failMsg, "#f85149");
-      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg, { retry: retrySave });
+      done(false);
     }).saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal, currentWmsSource);
   }
 
@@ -8286,17 +8734,41 @@
         setStatus("✅ " + res.message, "#56d364");
         document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
         document.getElementById('searchInput').value = currentStock;
+        showStickyToast('ok', '✅ Eingelagert — ' + stockId, res.message || 'Gespeichert.', {
+          stockId: stockId,
+          priorSnapshot: res.priorSnapshot || null
+        });
         setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
-        loadRefurbishmentCache(true, function() { loadData(); });
+        loadRefurbishmentCache(true, function() { unsavedLoadBypass = true; loadData(); });
       } else {
-        setStatus("❌ " + ((res && res.message) || "Unbekannter Fehler"), "#f85149");
+        var regalErr = (res && res.message) || "Unbekannter Fehler";
+        setStatus("❌ " + regalErr, "#f85149");
         setHudBusy(false);
         toggleUI(true);
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, regalErr, {
+          retry: {
+            kind: 'einlagern',
+            stockId: stockId,
+            regal: regal,
+            expectedKommentar: expectedKommentar,
+            expectedRegal: expectedRegal
+          }
+        });
       }
     }).withFailureHandler(function(err) {
-      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      var regalFail = err && err.message ? err.message : String(err || 'Serverfehler');
+      setStatus("❌ Fehler: " + regalFail, "#f85149");
       setHudBusy(false);
       toggleUI(true);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, regalFail, {
+        retry: {
+          kind: 'einlagern',
+          stockId: stockId,
+          regal: regal,
+          expectedKommentar: expectedKommentar,
+          expectedRegal: expectedRegal
+        }
+      });
     }).einlagern(stockId, regal, expectedKommentar, expectedRegal);
   }
 
@@ -8586,6 +9058,18 @@
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
     setStatus("🚀 Carol gestartet. Tagesliste läuft im Hintergrund…", "#3FA0DB");
+    var carolPriorSnapshot = null;
+    var carolExpectedKommentar = baselineKommentar;
+    var carolExpectedRegal = baselineRegal;
+    var carolRetry = {
+      kind: 'carol',
+      stockId: stockId,
+      text: text,
+      action: 'carol',
+      expectedKommentar: carolExpectedKommentar,
+      expectedRegal: carolExpectedRegal,
+      source: currentWmsSource || ''
+    };
 
     var timerId = setTimeout(function() {
       if (!finishCarolMissionJob(stockId, token)) return;
@@ -8593,17 +9077,18 @@
         document.getElementById('btnCarol').disabled = false;
       }
       setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
+      var timeoutRetry = carolPriorSnapshot
+        ? { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+        : carolRetry;
       showStickyToast(
         'err',
         'Speichern unklar / Timeout',
-        stockId + ' — Tagesliste/Carol: Bitte neu öffnen und erneut speichern.'
+        stockId + ' — Tagesliste/Carol: Bitte neu öffnen und erneut speichern.',
+        { retry: timeoutRetry }
       );
     }, CAROL_BG_TIMEOUT_MS);
 
     carolMissionInflight[stockId] = { token: token, timerId: timerId };
-
-    var carolExpectedKommentar = baselineKommentar;
-    var carolExpectedRegal = baselineRegal;
 
     google.script.run
       .withSuccessHandler(function(res) {
@@ -8624,9 +9109,10 @@
           }
           var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
           setStatus("❌ FEHLER: " + errMsg, "#f85149");
-          showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg);
+          showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg, { retry: carolRetry });
           return;
         }
+        carolPriorSnapshot = res.priorSnapshot || null;
         if (normalizeStockIdJs(currentStock) === stockId) {
           setBaselines(text, carolExpectedRegal);
         }
@@ -8643,7 +9129,10 @@
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
               if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
               setStatus(finalStatus, "#56d364");
-              showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus);
+              showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus, {
+                stockId: stockId,
+                priorSnapshot: carolPriorSnapshot || (res2 && res2.priorSnapshot) || null
+              });
               loadRefurbishmentCache(true);
               loadKommentarVerlaufCache(true);
               if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
@@ -8655,7 +9144,9 @@
               }
               var failMsg = (res2 && res2.message) ? res2.message : 'Unbekannter Fehler';
               setStatus("❌ FEHLER: " + failMsg, "#f85149");
-              showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
+              showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg, {
+                retry: { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+              });
             }
           })
           .withFailureHandler(function(err) {
@@ -8665,7 +9156,9 @@
             }
             var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
             setStatus("❌ Serverfehler: " + failMsg, "#f85149");
-            showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
+            showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg, {
+              retry: { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+            });
           })
           .triggerCarolMission(stockId);
       })
@@ -8676,7 +9169,7 @@
         }
         var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
         setStatus("❌ Kommentarfehler: " + failMsg, "#f85149");
-        showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
+        showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg, { retry: carolRetry });
       })
       .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal, currentWmsSource);
     return { success: true };

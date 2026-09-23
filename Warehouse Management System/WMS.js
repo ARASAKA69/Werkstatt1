@@ -31,6 +31,14 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.13",
+    date: "23.09.2026",
+    notes:
+      "• Ich stelle vor, den Jörg Panik knopf.\n\n" +
+      "• Fehler-Badge hat „Jetzt erneut speichern“ mit Ladesymbol statt jede stock nochmal manuel auf zu machen. Grüne Badges verschwinden nach 2 Minuten, Fehler und Jörg-Panik bleiben bis zum manuellen Schließen\n\n" +
+      "• Nach jedem Speichern sitzt im grünen Badge ein oranger Button „Jörg Panik“. Zweiter Klick setzt Kommentar und farbe + Status und Regal zurück ohne es nochmal manuel in refurbishment machen zu müssen\n\n"
+  },
+  {
     version: "2.2.12",
     date: "22.09.2026",
     notes:
@@ -1558,7 +1566,7 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
     if (!/wss\s+da\b/i.test(curCom)) {
       var wssCom = curCom ? "WSS da // " + curCom : "WSS da // ";
       sheetRef.getRange(refurbRow, 25).setValue(wssCom);
-      logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
+      logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
     }
 
     SpreadsheetApp.flush();
@@ -1697,7 +1705,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       if (!/wss\s+da\b/i.test(curCom)) {
         var wssCom2 = curCom ? "WSS da // " + curCom : "WSS da // ";
         sheetRef.getRange(refurbRow, 25).setValue(wssCom2);
-        logKommentarVerlauf_(stockId, curCom, wssCom2, "wss");
+        logKommentarVerlauf_(stockId, curCom, wssCom2, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
     }
 
@@ -1843,7 +1851,7 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
       if (!/wss\s+da\b/i.test(curCom)) {
         var wssCom = curCom ? (curCom + " // WSS da //") : "WSS da //";
         sheetRef.getRange(refurbRow, 25).setValue(wssCom);
-        logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
+        logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
     }
 
@@ -3017,6 +3025,10 @@ function castEnqueueJob(wsId, type, payload) {
       result: null,
       message: ""
     };
+    var printB64 = String(payload.printB64 || "");
+    if (printB64 && (JSON.stringify(job).length + printB64.length) < 90000) {
+      job.printB64 = printB64;
+    }
     castWriteJob_(cache, wsId, job);
     return { success: true, job: job };
   } catch (err) {
@@ -3056,6 +3068,57 @@ function buildConcurrencyConflict_(currentKommentar, currentRegal) {
     currentRegal: String(currentRegal == null ? "" : currentRegal).trim(),
     message: "Konflikt: Ein Kollege hat Kommentar/Regal bereits geändert. Daten neu geladen – bitte prüfen und erneut speichern."
   };
+}
+
+function readRefurbPriorSnapshot_(sheet, row) {
+  return {
+    kommentar: String(sheet.getRange(row, 25).getValue() || ""),
+    farbe: String(sheet.getRange(row, 25).getBackground() || ""),
+    status: String(sheet.getRange(row, 26).getValue() || ""),
+    regal: String(sheet.getRange(row, 28).getValue() || "").trim()
+  };
+}
+
+function joergPanikRestore(stockId, snapshot) {
+  return withRefurbDocumentLock_(function() {
+    stockId = normalizeStockId(stockId);
+    snapshot = snapshot || {};
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+    var i;
+    for (i = 1; i < data.length; i++) {
+      if (!cellMatchesStockId(data[i][0], stockId)) continue;
+      var row = i + 1;
+      var beforeRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+      var kommentar = String(snapshot.kommentar == null ? "" : snapshot.kommentar);
+      var farbe = String(snapshot.farbe || "").trim();
+      var status = String(snapshot.status == null ? "" : snapshot.status);
+      var regal = String(snapshot.regal == null ? "" : snapshot.regal).trim();
+      sheet.getRange(row, 25).setValue(kommentar);
+      if (/^#[0-9a-fA-F]{6}$/.test(farbe)) sheet.getRange(row, 25).setBackground(farbe);
+      sheet.getRange(row, 26).setValue(status);
+      sheet.getRange(row, 28).setValue(regal);
+      SpreadsheetApp.flush();
+      var checkKommentar = String(sheet.getRange(row, 25).getValue() || "");
+      var checkStatus = String(sheet.getRange(row, 26).getValue() || "");
+      var checkRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+      if (checkKommentar !== kommentar || checkStatus !== status || checkRegal !== regal) {
+        return { success: false, message: "Zurücksetzen nicht verifiziert" };
+      }
+      var verlaufEntry = logPanikVerlauf_(stockId, beforeRegal);
+      return {
+        success: true,
+        message: stockId + " zurückgesetzt (Kommentar, Farbe, Status, Regal).",
+        savedKommentar: kommentar,
+        savedRegal: regal,
+        verlaufEntry: verlaufEntry
+      };
+    }
+    return { success: false, message: "Stock-ID nicht gefunden!" };
+  });
 }
 
 function baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal) {
@@ -3157,32 +3220,43 @@ function ensureKommentarVerlaufSheet_() {
   if (!sheet) return null;
   var header = String(sheet.getRange(1, 1).getValue() || "").trim();
   if (sheet.getLastRow() < 1 || header === "") {
-    sheet.getRange(1, 1, 1, 5).setValues([["Zeitstempel", "Stock-ID", "Email", "Änderung", "Aktion"]]);
+    sheet.getRange(1, 1, 1, 6).setValues([["Zeitstempel", "Stock-ID", "Email", "Änderung", "Aktion", "Regal"]]);
     sheet.setFrozenRows(1);
+  } else if (!String(sheet.getRange(1, 6).getValue() || "").trim()) {
+    sheet.getRange(1, 6).setValue("Regal");
   }
   return sheet;
+}
+
+function verlaufRegalBadgeLabel_(raw) {
+  var norm = normalizeRegalKeyForCount(raw);
+  if (norm) return norm;
+  var s = String(raw || "").trim();
+  if (!s) return "kein Platz";
+  return s;
 }
 
 function logRegalVerlauf_(stockId, fromRegal, toRegal, action) {
   try {
     stockId = normalizeStockId(stockId);
     if (!stockId) return null;
-    var fromTxt = normalizeRegalKeyForCount(fromRegal) || String(fromRegal || "").trim() || "kein Platz";
-    var toTxt = normalizeRegalKeyForCount(toRegal) || String(toRegal || "").trim() || "kein Platz";
+    var fromTxt = verlaufRegalBadgeLabel_(fromRegal);
+    var toTxt = verlaufRegalBadgeLabel_(toRegal);
     if (fromTxt === toTxt) return null;
     var sheet = ensureKommentarVerlaufSheet_();
     if (!sheet) return null;
     var tsStr = formatVerlaufTimestamp_(new Date());
     var email = getActiveUserEmail_();
     var text = "von " + fromTxt + " nach " + toTxt;
-    sheet.appendRow([tsStr, stockId, email, text, action || "speichern+regal"]);
-    return { ts: tsStr, stockId: stockId, email: email, text: text, action: action || "speichern+regal" };
+    var regalLabel = fromTxt;
+    sheet.appendRow([tsStr, stockId, email, text, action || "speichern+regal", regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: text, action: action || "speichern+regal", regal: regalLabel };
   } catch (e) {
     return null;
   }
 }
 
-function logKommentarVerlauf_(stockId, oldText, newText, action) {
+function logKommentarVerlauf_(stockId, oldText, newText, action, previousRegal) {
   try {
     stockId = normalizeStockId(stockId);
     action = String(action || "speichern");
@@ -3193,8 +3267,26 @@ function logKommentarVerlauf_(stockId, oldText, newText, action) {
     if (!sheet) return null;
     var tsStr = formatVerlaufTimestamp_(new Date());
     var email = getActiveUserEmail_();
-    sheet.appendRow([tsStr, stockId, email, delta, action]);
-    return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action };
+    var regalLabel = previousRegal === undefined ? "" : verlaufRegalBadgeLabel_(previousRegal);
+    sheet.appendRow([tsStr, stockId, email, delta, action, regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action, regal: regalLabel };
+  } catch (e) {
+    return null;
+  }
+}
+
+function logPanikVerlauf_(stockId, previousRegal) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return null;
+    var sheet = ensureKommentarVerlaufSheet_();
+    if (!sheet) return null;
+    var tsStr = formatVerlaufTimestamp_(new Date());
+    var email = getActiveUserEmail_();
+    var regalLabel = verlaufRegalBadgeLabel_(previousRegal);
+    var text = "Jörg Panik — zurückgesetzt";
+    sheet.appendRow([tsStr, stockId, email, text, "panik", regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: text, action: "panik", regal: regalLabel };
   } catch (e) {
     return null;
   }
@@ -3210,7 +3302,7 @@ function getKommentarVerlaufCachePayload() {
       return { success: true, version: Date.now(), rows: [], configured: true };
     }
     var lastRow = sheet.getLastRow();
-    var data = sheet.getRange(2, 1, lastRow, 5).getValues();
+    var data = sheet.getRange(2, 1, lastRow, 6).getValues();
     var rows = [];
     var i;
     for (i = data.length - 1; i >= 0; i--) {
@@ -3222,7 +3314,8 @@ function getKommentarVerlaufCachePayload() {
         verlaufTimestampStr_(r[0]),
         String(r[2] || ""),
         String(r[3] || ""),
-        String(r[4] || "speichern")
+        String(r[4] || "speichern"),
+        String(r[5] || "")
       ]);
     }
     return { success: true, version: Date.now(), rows: rows, configured: true };
@@ -4031,12 +4124,13 @@ function getPackzettelPartsForStock(stockId) {
           if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(oldText, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 25).setValue(text);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 25).getValue();
           if (check != text) return { success: false, message: "Fehler beim Verifizieren!" };
 
-          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action);
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action, sheetRegal);
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = "Kommentar gespeichert!";
           if (dateResult.updated) msg += " Datum gesetzt!";
@@ -4046,7 +4140,8 @@ function getPackzettelPartsForStock(stockId) {
             message: msg,
             verlaufEntry: verlaufEntry,
             savedKommentar: text,
-            savedRegal: sheetRegal
+            savedRegal: sheetRegal,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -4075,6 +4170,7 @@ function getPackzettelPartsForStock(stockId) {
           if (!baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(sheetKommentar, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 28).setValue(regal);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 28).getValue();
@@ -4085,7 +4181,8 @@ function getPackzettelPartsForStock(stockId) {
             message: "In " + regal + " eingelagert!",
             savedKommentar: sheetKommentar,
             savedRegal: regal,
-            verlaufEntry: verlaufEntry
+            verlaufEntry: verlaufEntry,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -4346,6 +4443,7 @@ function getPackzettelPartsForStock(stockId) {
           if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(oldText, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 25).setValue(text);
           sheet.getRange(row, 25).setBackground("#ff0000");
           sheet.getRange(row, 26).setValue("Teilweise angeliefert");
@@ -4367,7 +4465,7 @@ function getPackzettelPartsForStock(stockId) {
           }
 
           var verlaufAction = regal ? "speichern+regal" : "speichern+status";
-          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, verlaufAction);
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, verlaufAction, sheetRegal);
           var verlaufRegalEntry = regal ? logRegalVerlauf_(stockId, sheetRegal, regal, "speichern+regal") : null;
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = regal
@@ -4381,7 +4479,8 @@ function getPackzettelPartsForStock(stockId) {
             verlaufEntry: verlaufEntry,
             verlaufRegalEntry: verlaufRegalEntry,
             savedKommentar: text,
-            savedRegal: finalRegal
+            savedRegal: finalRegal,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -4540,6 +4639,7 @@ function getPackzettelPartsForStock(stockId) {
 
       result.oldRegal = String(sheetRefurb.getRange(foundRow, 28).getValue() || "LEER");
       result.carolUrl = getSheetCarolUrl_(sheetRefurb, foundRow) || String(sheetRefurb.getRange(foundRow, 3).getValue() || "");
+      result.priorSnapshot = readRefurbPriorSnapshot_(sheetRefurb, foundRow);
 
       sheetRefurb.getRange(foundRow, 25).setBackground("#00FF00");
       sheetRefurb.getRange(foundRow, 26).setValue("Herausgegeben");
@@ -4928,7 +5028,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
 
       var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var extraMsgs = [];
-      var printB64 = "";
       if (fieldName === "status") {
         var rowTyp = getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol);
         var rowStockId = normalizeStockId(sheet.getRange(sheetRow, getNachbestellungStockIdCol(sheet, nbLayout)).getValue());
@@ -4955,34 +5054,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
           }
           extraMsgs.push(sendInfoLagerExitChat_(rowStockId, exitBeschreibung));
         }
-
-        if (valLcStatus.indexOf("angeliefert") !== -1) {
-          var rowBeschreibung = "";
-          var hdrData = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
-          var teilCol = getColIndex(hdrData, ["ersatzteil", "teil", "benennung"]);
-          if (teilCol !== -1) rowBeschreibung = String(sheet.getRange(sheetRow, teilCol).getValue() || "").trim();
-          if (!rowStockId) {
-            var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
-            for (var r = 0; r < rowData.length; r++) {
-              var cellVal = String(rowData[r] || "").trim();
-              if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
-            }
-          }
-
-          var valStr = String(value || "");
-          var valLc = valStr.toLowerCase();
-          var shouldWerkstattAuftrag = nachbestellungTypShouldPrintWerkstattauftrag(rowTyp);
-          if (shouldWerkstattAuftrag && rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
-            var waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, true);
-            if (!waPrep.success) {
-              waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, false);
-            }
-            if (waPrep.message) extraMsgs.push(waPrep.message);
-            if (waPrep.success && waPrep.printB64) {
-              printB64 = waPrep.printB64;
-            }
-          }
-        }
       }
 
       var msg = "Gespeichert!";
@@ -4991,9 +5062,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
         if (extraMsgs[m]) msg += " | " + extraMsgs[m];
       }
       var result = { success: true, message: msg };
-      if (printB64) {
-        result.printB64 = printB64;
-      }
       if (autoLagerortWrite) {
         result.newRegal = nachbestellungRegalUiFromCell(autoLagerortWrite) || autoLagerortWrite;
       }
@@ -5195,6 +5263,7 @@ function nachbestellungTypShouldPrintWerkstattauftrag(typ) {
   if (t.indexOf("nachbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
   if (t.indexOf("mechanik") !== -1 && t.indexOf("nachbestellung") !== -1) return true;
   if (t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return true;
+  if (t.indexOf("verschwunden") !== -1) return true;
   return false;
 }
 

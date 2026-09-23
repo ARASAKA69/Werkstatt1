@@ -54,6 +54,13 @@
 
 
 
+- [x] 23.09.2026 / 2.2.13 Verschwunden-Aufträge drucken den Werkstattauftrag; Druck läuft parallel zu Speichern und Carol
+- [x] 23.09.2026 / 2.2.13 Ungespeicherten Kommentar oder Regal nicht überschreiben (Overlay: Jetzt speichern oder nächsten Auftrag laden)
+- [x] 23.09.2026 / 2.2.13 Fehler-Badge „Jetzt erneut speichern“, grüne Badges nach 2 Minuten weg, Jörg Panik setzt den Stand zurück
+- [x] 23.09.2026 / 2.2.13 Vorherigen Regalplatz im Kommentar-Verlauf als grünes Badge
+
 # Offen
 
 - [] ESC to end an operation if needed eg. when saving anything.
+- [] Alfah-Lieferscheine in „Teile aus Packzettel“: Zeilen derselben Stock-ID mit parsen, Badge ALFAH, Zählung oben erweitern. Später.
+- [] WSS Einbuchen: Fenster gesperrt lassen bis Vasold-Zeile, Refurbishment-Kommentar und Chat wirklich durch sind. Chat-Fehler nicht schlucken. Später.
