@@ -59,6 +59,7 @@
 - [x] 23.09.2026 / 2.2.15 Regal-Scan: Overlay „noch nicht gespeichert“ kommt nicht mehr, während Kommentar und Regal schon speichern
 - [x] 24.09.2026 / 2.2.16 WSS Einbuchen bleibt gesperrt bis Vasold-Zeile, Refurbishment-Kommentar und Chat geprüft sind. Chat-Fehler werden angezeigt
 - [x] 24.09.2026 / 2.2.17 Teile aus Packzettel: Hersteller, Artnr., Name, Menge. N4P nur über Referenznummer. Bosch-Zeile mit Leerzeichen in der Artnr. fehlt nicht mehr. Alfah volle Zeile, Fenster verschiebbar und größer ziehbar, Badges und Zählung größer
+- [x] 24.09.2026 / 2.2.15 N4P-Belege und Teile nur über die Referenznummer im Beleg, nicht über Kennzeichen oder die Stock-ID-Spalte
 
 # Offen
 

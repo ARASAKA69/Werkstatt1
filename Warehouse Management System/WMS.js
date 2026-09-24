@@ -31,12 +31,19 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.15",
+    date: "24.09.2026",
+    notes:
+      "• N4P-Belege und Teile aus Packzettel hängen nur an der Referenznummer im Belegtext\n\n" +
+      "• Kennzeichen und die alte Stock-ID-Spalte zählen dafür nicht mehr. JN41055 kommt aus Referenznummer, nicht aus BX66519"
+  },
+  {
     version: "2.2.14",
     date: "24.09.2026",
     notes:
       "• Teile aus Packzettel Fenster ist jetzt größer und zeigt jetzt auch -> Hersteller, Hersteller-Artnr., Artikelname und Menge\n\n" +
-      "• Alfah habe ich in einer Zeile gelassen ist übersichtlicher." +
-      "• N4P-Beleg hängt nur noch an der Referenznummer, nicht mehr am Kennzeichen.\n\n" +
+      "• Alfah habe ich in einer Zeile gelassen ist übersichtlicher.\n\n" +
+      "• N4P-Beleg hängt nur an der Referenznummer im Belegtext, nicht an Kennzeichen oder der Stock-ID-Spalte\n\n" +
       "• Fenster ist verschiebbar und in der Größe änderbar. Badges, Häkchen, Alle/Keine und die Zählung sind größer und farbig allgemein alles an den infos angepasst."
   },
   {
@@ -2259,7 +2266,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
           row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]
         ].join(" ");
         if (!hayContainsQuery_(hay, query)) continue;
-        var stockId = String(row[5] || "").trim();
+        var stockId = pzIsN4pRow_(row) ? pzN4pReferenzStock_(row) : String(row[5] || "").trim();
         if (!stockId) {
           var fromText = extractStockIdFromEmailText_(hay);
           if (fromText) stockId = fromText;
@@ -3438,16 +3445,31 @@ function getRefurbishmentCachePayload() {
     return String(v || "");
   }
 
+  function pzN4pReferenzStock_(row) {
+    if (!pzIsN4pRow_(row)) return "";
+    var plain = [row[4], row[8], row[12], row[13]].join("\n");
+    plain = plain.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
+    var at = plain.search(/referenz\s*-?\s*(?:nummer|nr\.?)/i);
+    if (at >= 0) {
+      var tail = plain.slice(at, at + 90);
+      var m = tail.match(/([A-Z]{2}\d{3,8})/i);
+      if (m) return normalizeStockId(m[1]);
+    }
+    return "";
+  }
+
   function packzettelRowLight_(row, rowNumber) {
+    var refStock = pzN4pReferenzStock_(row);
+    var kennzeichen = String(row[6] || "").trim();
     return {
       row: rowNumber,
       messageDate: packzettelDateStr_(row[0]),
       source: String(row[1] || ""),
       kind: String(row[2] || ""),
       orderNumber: String(row[3] || "").trim(),
-      referenceNumber: String(row[4] || "").trim(),
-      stockId: String(row[5] || "").trim(),
-      kennzeichen: String(row[6] || "").trim(),
+      referenceNumber: refStock || String(row[4] || "").trim(),
+      stockId: refStock || (pzIsN4pRow_(row) ? "" : String(row[5] || "").trim()),
+      kennzeichen: kennzeichen,
       orderDate: String(row[7] || "").trim(),
       subject: String(row[8] || "").trim(),
       previewUrl: String(row[10] || "").trim(),
@@ -3516,6 +3538,10 @@ function getRefurbishmentCachePayload() {
       var out = [];
       for (var i = 0; i < values.length; i++) {
         var row = values[i];
+        if (pzIsN4pRow_(row)) {
+          if (pzN4pReferenzStock_(row) === want) out.push(packzettelRowLight_(row, i + 2));
+          continue;
+        }
         var idNorm = normalizeStockId(row[5]);
         var rawHas = row[13] && normalizeStockId(row[13]).indexOf(want) !== -1;
         var subjHas = row[8] && normalizeStockId(row[8]).indexOf(want) !== -1;
@@ -3546,6 +3572,15 @@ function getRefurbishmentCachePayload() {
       var out = [];
       for (var i = 0; i < values.length; i++) {
         var row = values[i];
+        if (pzIsN4pRow_(row)) {
+          var refStock = pzN4pReferenzStock_(row);
+          var hitN4 = false;
+          for (var n = 0; n < normKeys.length; n++) {
+            if (refStock && refStock === normKeys[n]) { hitN4 = true; break; }
+          }
+          if (hitN4) out.push(packzettelRowLight_(row, i + 2));
+          continue;
+        }
         var haystack = [row[3], row[4], row[5], row[8], row[13]]
           .join(" ").toUpperCase().replace(/\s+/g, "");
         var hit = false;
@@ -4129,11 +4164,7 @@ function pzParseAlfahPartsFromText_(raw) {
 }
 
 function pzReferenzMatchesStock_(row, want) {
-  var ref = normalizeStockId(row && row[4]);
-  if (ref && ref === want) return true;
-  var raw = String((row && row[13]) || "");
-  var m = raw.match(/referenznummer\s*:?\s*([A-Za-z0-9]+)/i);
-  return !!(m && normalizeStockId(m[1]) === want);
+  return pzN4pReferenzStock_(row) === want;
 }
 
 function pzRowBelongsToStock_(row, stockId) {
