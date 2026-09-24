@@ -1316,7 +1316,7 @@
       .withSuccessHandler(function(res) {
         if (res && res.conflict) {
           toast._wmsBusy = false;
-          handleSaveConcurrencyConflict(res, retry.stockId);
+          handleSaveConcurrencyConflict(res, retry.stockId, retry);
           finishToastRetryFail(toast, retry, (res && res.message) || 'Konflikt');
           return;
         }
@@ -2005,7 +2005,7 @@
     }
   }
 
-  function handleSaveConcurrencyConflict(res, stockId) {
+  function handleSaveConcurrencyConflict(res, stockId, retry) {
     var kommentar = String(res && res.currentKommentar != null ? res.currentKommentar : "");
     var regal = String(res && res.currentRegal != null ? res.currentRegal : "").trim();
     var sid = normalizeStockIdJs(stockId || currentStock);
@@ -2018,10 +2018,24 @@
     var msg = (res && res.message) ||
       "Konflikt: Daten von Kollegen neu geladen – bitte prüfen, eigenen Kommentar ergänzen, erneut speichern.";
     setStatus("⚠️ " + msg, "#F27420");
+    var nextRetry = null;
+    if (retry && retry.kind) {
+      nextRetry = {
+        kind: retry.kind,
+        stockId: sid,
+        text: retry.text,
+        regal: retry.regal,
+        action: retry.action,
+        source: retry.source || '',
+        expectedKommentar: kommentar,
+        expectedRegal: regal
+      };
+    }
     showStickyToast(
       "err",
       "⚠️ Konflikt — " + sid,
-      msg
+      msg,
+      nextRetry ? { retry: nextRetry } : null
     );
   }
 
@@ -8656,7 +8670,12 @@
       setHudBusy(false);
       toggleUI(true);
       if (res && res.conflict) {
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, {
+          kind: 'kommentar',
+          text: text,
+          action: 'speichern',
+          source: currentWmsSource || ''
+        });
         return;
       }
       setStatus(res && res.success ? "✅ " + res.message : "❌ " + ((res && res.message) || "Unbekannter Fehler"), res && res.success ? "#56d364" : "#f85149");
@@ -8799,7 +8818,7 @@
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       if (res && res.conflict) {
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, retrySave);
         done(false);
         return;
       }
@@ -8874,7 +8893,10 @@
       if (res && res.conflict) {
         setHudBusy(false);
         toggleUI(true);
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, {
+          kind: 'einlagern',
+          regal: regal
+        });
         return;
       }
       if(res && res.success) {
@@ -9250,7 +9272,7 @@
           if (normalizeStockIdJs(currentStock) === stockId) {
             document.getElementById('btnCarol').disabled = false;
           }
-          handleSaveConcurrencyConflict(res, stockId);
+          handleSaveConcurrencyConflict(res, stockId, carolRetry);
           return;
         }
         if(!res || !res.success) {

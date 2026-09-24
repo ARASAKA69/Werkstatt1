@@ -60,6 +60,9 @@
 - [x] 24.09.2026 / 2.2.16 WSS Einbuchen bleibt gesperrt bis Vasold-Zeile, Refurbishment-Kommentar und Chat geprüft sind. Chat-Fehler werden angezeigt
 - [x] 24.09.2026 / 2.2.17 Teile aus Packzettel: Hersteller, Artnr., Name, Menge. N4P nur über Referenznummer. Bosch-Zeile mit Leerzeichen in der Artnr. fehlt nicht mehr. Alfah volle Zeile, Fenster verschiebbar und größer ziehbar, Badges und Zählung größer
 - [x] 24.09.2026 / 2.2.15 N4P-Belege und Teile nur über die Referenznummer im Beleg, nicht über Kennzeichen oder die Stock-ID-Spalte
+- [x] 24.09.2026 / 2.2.16 Konflikt-Badge hat „Jetzt erneut speichern“ wie die anderen Fehler-Badges
+- [x] 24.09.2026 / 2.2.17 N4P-Beleg JN41055 wieder sichtbar: Referenznummer robuster gelesen, Belegtext als Fallback, Kennzeichen zählt weiterhin nicht
+- [x] 24.09.2026 / 2.2.18 N4P mit mehreren Lieferanten korrekt getrennt (Stahlgruber = STA, Wessels Müller = WM), keine Namen-Überläufe, LIQUI MOLY bleibt zusammen
 
 # Offen
 

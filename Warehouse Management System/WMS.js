@@ -31,11 +31,11 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.15",
+    version: "2.2.18",
     date: "24.09.2026",
     notes:
-      "• N4P-Belege und Teile aus Packzettel hängen nur an der Referenznummer im Belegtext\n\n" +
-      "• Kennzeichen und die alte Stock-ID-Spalte zählen dafür nicht mehr. JN41055 kommt aus Referenznummer, nicht aus BX66519"
+      "• N4P-Belege mit mehreren Lieferanten werden jetzt richtig getrennt. Stahlgruber ist STA, Wessels Müller ist WM\n\n" +
+      "• Die letzte Zeile eines Blocks zieht nicht mehr den nächsten Lieferanten in ihren Namen. Hersteller aus zwei Wörtern wie LIQUI MOLY bleiben zusammen"
   },
   {
     version: "2.2.14",
@@ -3445,22 +3445,39 @@ function getRefurbishmentCachePayload() {
     return String(v || "");
   }
 
+  function pzRowPlainText_(row) {
+    var plain = [row[4], row[8], row[12], row[13]].join("\n");
+    return plain.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
+  }
+
   function pzN4pReferenzStock_(row) {
     if (!pzIsN4pRow_(row)) return "";
-    var plain = [row[4], row[8], row[12], row[13]].join("\n");
-    plain = plain.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
-    var at = plain.search(/referenz\s*-?\s*(?:nummer|nr\.?)/i);
+    var plain = pzRowPlainText_(row);
+    var at = plain.search(/referenz\s*-?\s*(?:nummer|nr)\b/i);
     if (at >= 0) {
-      var tail = plain.slice(at, at + 90);
-      var m = tail.match(/([A-Z]{2}\d{3,8})/i);
+      var tail = plain.slice(at + 8, at + 120);
+      var m = tail.match(/([A-Z]{2}\s?\d{3,8})/i);
       if (m) return normalizeStockId(m[1]);
     }
     return "";
   }
 
+  function pzN4pKennzeichen_(row) {
+    var plain = pzRowPlainText_(row);
+    var at = plain.search(/kennzeichen\b/i);
+    if (at >= 0) {
+      var tail = plain.slice(at + 11, at + 120);
+      var m = tail.match(/([A-Z]{1,3}\s?[A-Z]{0,2}\s?\d{1,5})/i);
+      if (m) return normalizeStockId(m[1]);
+    }
+    return normalizeStockId(row && row[6]);
+  }
+
   function packzettelRowLight_(row, rowNumber) {
-    var refStock = pzN4pReferenzStock_(row);
+    var isN4 = pzIsN4pRow_(row);
+    var refStock = isN4 ? pzN4pReferenzStock_(row) : "";
     var kennzeichen = String(row[6] || "").trim();
+    var shownStock = isN4 ? (refStock || String(row[5] || "").trim()) : String(row[5] || "").trim();
     return {
       row: rowNumber,
       messageDate: packzettelDateStr_(row[0]),
@@ -3468,7 +3485,7 @@ function getRefurbishmentCachePayload() {
       kind: String(row[2] || ""),
       orderNumber: String(row[3] || "").trim(),
       referenceNumber: refStock || String(row[4] || "").trim(),
-      stockId: refStock || (pzIsN4pRow_(row) ? "" : String(row[5] || "").trim()),
+      stockId: shownStock,
       kennzeichen: kennzeichen,
       orderDate: String(row[7] || "").trim(),
       subject: String(row[8] || "").trim(),
@@ -3502,7 +3519,7 @@ function getRefurbishmentCachePayload() {
   function packzettelRowMatchesQuery_(row, query) {
     if (!query) return true;
     var haystack = [
-      row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]
+      row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[12], row[13]
     ].join(" ").toLowerCase().replace(/\s+/g, "");
     return haystack.indexOf(query) !== -1;
   }
@@ -4003,6 +4020,10 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     }
     var hersteller = String(tokens[i]).replace(/[,.:;]+$/g, "");
     i++;
+    while (i < tokens.length && /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(tokens[i]) && !/\d/.test(tokens[i]) && !/^\d{6,}$/.test(tokens[i + 1] || "") ) {
+      hersteller += " " + String(tokens[i]).replace(/[,.:;]+$/g, "");
+      i++;
+    }
     var art = [];
     var guard = 0;
     while (i < tokens.length && !/^\d{6,}$/.test(tokens[i]) && guard < 12) {
@@ -4039,9 +4060,50 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
   return out.length ? out : null;
 }
 
+function pzFindAllSupplierHeaders_(text) {
+  var patterns = [
+    { re: /\blkq[_\s-]*stahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" },
+    { re: /\bwessels\s*m(?:ü|ue?|u)ller\b/ig, tag: "WM", supplier: "Wessels Müller" },
+    { re: /\bknoll(?=_|\b)/ig, tag: "KNOLL", supplier: "KNOLL" },
+    { re: /\bstahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" }
+  ];
+  var hits = [];
+  for (var p = 0; p < patterns.length; p++) {
+    var re = patterns[p].re;
+    re.lastIndex = 0;
+    var m;
+    while ((m = re.exec(text))) {
+      hits.push({ index: m.index, tag: patterns[p].tag, supplier: patterns[p].supplier });
+    }
+  }
+  hits.sort(function(a, b) { return a.index - b.index; });
+  var out = [];
+  for (var i = 0; i < hits.length; i++) {
+    if (out.length && Math.abs(hits[i].index - out[out.length - 1].index) < 30) {
+      if (hits[i].tag === "STA" && out[out.length - 1].tag === "STA") continue;
+    }
+    out.push(hits[i]);
+  }
+  return out;
+}
+
 function pzParseN4pPartsFromText_(raw) {
-  var text = String(raw || "").replace(/\r/g, "");
+  var text = String(raw || "").replace(/\r/g, "\n");
   if (!text.trim()) return [];
+  var headers = pzFindAllSupplierHeaders_(text);
+  if (headers.length) {
+    var all = [];
+    for (var h = 0; h < headers.length; h++) {
+      var from = headers[h].index;
+      var to = h + 1 < headers.length ? headers[h + 1].index : text.length;
+      var segment = text.slice(from, to);
+      var segParts = pzParseN4pTableParts_(segment, headers[h].tag, headers[h].supplier);
+      if (segParts && segParts.length) {
+        for (var s = 0; s < segParts.length; s++) all.push(segParts[s]);
+      }
+    }
+    if (all.length) return pzDedupeParts_(all);
+  }
   var supplierLoc = pzLocateSupplierHeader_(text);
   var tableParts = pzParseN4pTableParts_(text, supplierLoc ? supplierLoc.tag : "", supplierLoc ? supplierLoc.supplier : "");
   if (tableParts && tableParts.length) return pzDedupeParts_(tableParts);
@@ -4164,7 +4226,10 @@ function pzParseAlfahPartsFromText_(raw) {
 }
 
 function pzReferenzMatchesStock_(row, want) {
-  return pzN4pReferenzStock_(row) === want;
+  if (pzN4pReferenzStock_(row) === want) return true;
+  if (pzN4pKennzeichen_(row) === want) return false;
+  var plain = pzRowPlainText_(row).toUpperCase();
+  return plain.indexOf(want) !== -1 && new RegExp("(^|[^A-Z0-9])" + want + "([^A-Z0-9]|$)").test(plain);
 }
 
 function pzRowBelongsToStock_(row, stockId) {
