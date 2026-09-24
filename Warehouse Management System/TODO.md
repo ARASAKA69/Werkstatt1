@@ -57,7 +57,7 @@
 - [x] 23.09.2026 / 2.2.13 Vorherigen Regalplatz im Kommentar-Verlauf als grünes Badge
 - [x] 23.09.2026 / 2.2.14 Alfah-Auftragspositionen in „Teile aus Packzettel“: nur Menge + Bezeichnung derselben Stock-ID, Badge ALFAH, Zählung oben
 - [x] 23.09.2026 / 2.2.15 Regal-Scan: Overlay „noch nicht gespeichert“ kommt nicht mehr, während Kommentar und Regal schon speichern
+- [x] 24.09.2026 / 2.2.16 WSS Einbuchen bleibt gesperrt bis Vasold-Zeile, Refurbishment-Kommentar und Chat geprüft sind. Chat-Fehler werden angezeigt
 
 # Offen
 
-- [] WSS Einbuchen: Fenster gesperrt lassen bis Vasold-Zeile, Refurbishment-Kommentar und Chat wirklich durch sind. Chat-Fehler nicht schlucken. Später.

@@ -5212,12 +5212,29 @@
     }, 90000);
   }
 
+  var wssEbBusy = false;
+
+  function setWssEbBusy(active, message) {
+    wssEbBusy = !!active;
+    var lock = document.getElementById('wssEbLock');
+    var tx = document.getElementById('wssEbLockText');
+    var btn = document.getElementById('wssEbSubmitBtn');
+    if (lock) {
+      lock.classList.toggle('open', wssEbBusy);
+      lock.setAttribute('aria-hidden', wssEbBusy ? 'false' : 'true');
+    }
+    if (tx) tx.textContent = message || '';
+    if (btn) btn.disabled = wssEbBusy;
+  }
+
   function minimizeWssEinbuchenModal() {
+    if (wssEbBusy) return;
     document.getElementById('wssEinbuchenModal').classList.remove('open');
     if (wssEbBgTimer) { clearInterval(wssEbBgTimer); wssEbBgTimer = null; }
   }
 
   function closeWssEinbuchenModal() {
+    if (wssEbBusy) return;
     document.getElementById('wssEinbuchenModal').classList.remove('open');
     wssEbSessionActive = false;
     wssEbCurrentStock = '';
@@ -5498,19 +5515,24 @@
     var stockAtSubmit = wssEbCurrentStock;
     st.textContent = 'Sende Chat-Nachricht…';
     st.style.color = '#F27420';
+    setWssEbBusy(true, 'Sende Chat-Nachricht…');
     google.script.run
       .withSuccessHandler(function(res) {
+        setWssEbBusy(false);
         if (!res || !res.success) {
           st.textContent = '❌ ' + (res && res.message ? res.message : 'Senden fehlgeschlagen.');
           st.style.color = '#f85149';
+          showWssEbAlreadyActions(pending.wss, pending.gummi);
           return;
         }
         st.textContent = '✅ ' + res.message;
         st.style.color = '#56d364';
       })
       .withFailureHandler(function(err) {
+        setWssEbBusy(false);
         st.textContent = '❌ ' + ((err && err.message) || String(err));
         st.style.color = '#f85149';
+        showWssEbAlreadyActions(pending.wss, pending.gummi);
       })
       .forceNotifyWssEinbuchenChat(stockAtSubmit, pending.wss, pending.gummi);
   }
@@ -5539,16 +5561,17 @@
       showWssEbAlreadyActions(wssChecked, gummiChecked);
       return;
     }
-    btn.disabled = true;
-    st.textContent = 'Speichere in Vasold…';
+    setWssEbBusy(true, 'Vasold, Kommentar und Chat…');
+    st.textContent = 'Vasold, Kommentar und Chat…';
     st.style.color = '#F27420';
     var stockAtSubmit = wssEbCurrentStock;
     google.script.run
       .withSuccessHandler(function(res) {
-        btn.disabled = false;
+        setWssEbBusy(false);
         if (!res || !res.success) {
           st.textContent = '❌ ' + (res && res.message ? res.message : 'Vorgang fehlgeschlagen.');
           st.style.color = '#f85149';
+          if (res && res.chatFailed) showWssEbAlreadyActions(wssYes, gummiYes);
           return;
         }
         st.textContent = '✅ ' + res.message;
@@ -5564,7 +5587,7 @@
         resolveWssEbStock(stockAtSubmit);
       })
       .withFailureHandler(function(err) {
-        btn.disabled = false;
+        setWssEbBusy(false);
         st.textContent = '❌ ' + ((err && err.message) || String(err));
         st.style.color = '#f85149';
       })

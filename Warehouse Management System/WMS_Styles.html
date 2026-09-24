@@ -3553,8 +3553,40 @@
 
   /* WSS Einbuchen — golden section borders */
   #wssEinbuchenModal .nb-dialog {
+    position: relative;
     border: 1.5px solid rgba(212, 175, 55, 0.45);
     box-shadow: 0 22px 56px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(212, 175, 55, 0.1) inset;
+  }
+  .wss-eb-lock {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    align-items: center;
+    justify-content: center;
+    background: rgba(9, 13, 19, 0.62);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .wss-eb-lock.open {
+    display: flex;
+  }
+  .wss-eb-lock-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 26px 36px;
+    border-radius: 18px;
+    background: rgba(14, 19, 26, 0.96);
+    border: 2px solid rgba(212, 175, 55, 0.45);
+  }
+  .wss-eb-lock-text {
+    color: #D4AF37;
+    font-size: 16px;
+    font-weight: 800;
+    text-align: center;
+    max-width: 420px;
   }
   #wssEinbuchenModal .nb-header {
     border-bottom: 1px solid rgba(212, 175, 55, 0.35);

@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.16",
+    date: "24.09.2026",
+    notes:
+      "• WSS Einbuchen bleibt gesperrt, bis Vasold-Zeile, Refurbishment-Kommentar und Chat geprüft sind\n\n" +
+      "• Chat-Fehler werden nicht mehr verschluckt. Scheitert die Nachricht, bleiben Vasold und Kommentar stehen und der Fehler steht im Fenster"
+  },
+  {
     version: "2.2.15",
     date: "23.09.2026",
     notes:
@@ -1481,18 +1488,29 @@ function extractHuDateOnlyFromNachuntersuchungSegment(segment) {
 }
 
 function notifyWssGummiChat_(stockId, wssNew, gummiNew) {
+  if (!wssNew && !gummiNew) return { success: true, skipped: true };
+  var lines = [];
+  if (wssNew) lines.push(stockId + " -> WSS da");
+  if (gummiNew) lines.push(stockId + " -> Gummileiste da");
+  var res;
   try {
-    if (!wssNew && !gummiNew) return;
-    var lines = [];
-    if (wssNew) lines.push(stockId + " -> WSS da");
-    if (gummiNew) lines.push(stockId + " -> Gummileiste da");
-    UrlFetchApp.fetch(WSS_CHAT_WEBHOOK_URL, {
+    res = UrlFetchApp.fetch(WSS_CHAT_WEBHOOK_URL, {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ text: lines.join("\n") }),
       muteHttpExceptions: true
     });
-  } catch (err) {}
+  } catch (err) {
+    return { success: false, message: err && err.message ? err.message : String(err) };
+  }
+  var code = 0;
+  try { code = res.getResponseCode(); } catch (eCode) { code = 0; }
+  if (code < 200 || code >= 300) {
+    var body = "";
+    try { body = String(res.getContentText() || "").replace(/\s+/g, " ").trim().slice(0, 160); } catch (eBody) {}
+    return { success: false, message: "Chat HTTP " + code + (body ? " — " + body : "") };
+  }
+  return { success: true };
 }
 
 function huVasoldValueFromSchaedenText(wText) {
@@ -1871,17 +1889,50 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
     }
 
     SpreadsheetApp.flush();
-    notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
+
+    var wroteStock = String(sheetV.getRange(targetRow, 1).getValue() || "").trim();
+    if (!cellMatchesStockId(wroteStock, stockId)) {
+      return { success: false, message: "Vasold-Zeile nicht bestätigt." };
+    }
+    if (needWssWrite) {
+      var wroteE = String(sheetV.getRange(targetRow, 5).getValue() || "").trim().toLowerCase();
+      if (wroteE !== "ja") return { success: false, message: "Vasold: WSS „Ja“ nicht bestätigt." };
+    }
+    if (needGummiWrite) {
+      var wroteF = String(sheetV.getRange(targetRow, 6).getValue() || "").trim().toLowerCase();
+      var gummiOk = wroteF === "vorhanden" || wroteF === "da" || wroteF.indexOf("vorhanden") !== -1;
+      if (!gummiOk) return { success: false, message: "Vasold: Gummileiste nicht bestätigt." };
+    }
+    if (needWssWrite && refurbRow !== -1) {
+      var wroteCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
+      if (!/wss\s+da\b/i.test(wroteCom)) {
+        return { success: false, message: "Refurbishment-Kommentar nicht bestätigt." };
+      }
+    }
+
+    var chat = notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
     var parts = [];
     if (needWssWrite) parts.push("WSS Ja");
     if (needGummiWrite) parts.push("Gummileiste");
+    var baseMsg = "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert");
+    if (!chat || !chat.success) {
+      return {
+        success: false,
+        sheetsSaved: true,
+        chatFailed: true,
+        message: baseMsg + ". Chat fehlgeschlagen: " + ((chat && chat.message) || "unbekannt")
+      };
+    }
+    var commentNote = "";
+    if (needWssWrite && refurbRow !== -1) commentNote = " Kommentar: WSS da //.";
+    else if (needWssWrite) commentNote = " Kein Refurbishment-Eintrag, Kommentar übersprungen.";
     return {
       success: true,
       skipped: false,
       isNew: isNew,
       stockId: stockId,
       row: targetRow,
-      message: "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert")
+      message: baseMsg + "." + commentNote + " Chat gesendet."
     };
   } catch (err) {
     return { success: false, message: "Fehler: " + err.message };
@@ -1897,7 +1948,10 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     if (!wssYes && !gummiYes) {
       return { success: false, message: "Nichts zum Senden ausgewählt." };
     }
-    notifyWssGummiChat_(stockId, wssYes, gummiYes);
+    var chat = notifyWssGummiChat_(stockId, wssYes, gummiYes);
+    if (!chat || !chat.success) {
+      return { success: false, chatFailed: true, message: "Chat fehlgeschlagen: " + ((chat && chat.message) || "unbekannt") };
+    }
     var parts = [];
     if (wssYes) parts.push("WSS Ja");
     if (gummiYes) parts.push("Gummileiste");
