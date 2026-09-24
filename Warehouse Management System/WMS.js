@@ -31,6 +31,19 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.20",
+    date: "24.09.2026",
+    notes:
+      "• Angekreuzte Zeilen in „Teile aus Packzettel“ leuchten jetzt grün, damit man auf einen Blick sieht was gewählt ist"
+  },
+  {
+    version: "2.2.19",
+    date: "24.09.2026",
+    notes:
+      "• Zeilen mit sechsstelliger Hersteller-Artnr. (z. B. SWF 119273) fehlen nicht mehr und verschieben nicht die anderen Zeilen\n\n" +
+      "• Die Großhändler-Nummer wird jetzt an 7+ Stellen erkannt, damit sie nicht mit der Hersteller-Nummer verwechselt wird"
+  },
+  {
     version: "2.2.18",
     date: "24.09.2026",
     notes:
@@ -4020,18 +4033,18 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     }
     var hersteller = String(tokens[i]).replace(/[,.:;]+$/g, "");
     i++;
-    while (i < tokens.length && /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(tokens[i]) && !/\d/.test(tokens[i]) && !/^\d{6,}$/.test(tokens[i + 1] || "") ) {
+    while (i < tokens.length && /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(tokens[i]) && !/\d/.test(tokens[i]) && !/^\d{7,}$/.test(tokens[i + 1] || "") ) {
       hersteller += " " + String(tokens[i]).replace(/[,.:;]+$/g, "");
       i++;
     }
     var art = [];
     var guard = 0;
-    while (i < tokens.length && !/^\d{6,}$/.test(tokens[i]) && guard < 12) {
+    while (i < tokens.length && !/^\d{7,}$/.test(tokens[i]) && guard < 12) {
       art.push(String(tokens[i]).replace(/[,.:;]+$/g, ""));
       i++;
       guard++;
     }
-    if (i >= tokens.length || !/^\d{6,}$/.test(tokens[i]) || !art.length) continue;
+    if (i >= tokens.length || !/^\d{7,}$/.test(tokens[i]) || !art.length) continue;
     i++;
     var nameBits = [];
     var menge = "";
