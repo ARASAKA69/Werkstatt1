@@ -3165,7 +3165,7 @@
     z-index: 10070;
   }
   .pz-parts-dialog {
-    width: min(620px, calc(100vw - 32px));
+    width: min(1080px, calc(100vw - 32px));
   }
   .pz-parts-counts {
     display: flex;
@@ -3228,13 +3228,24 @@
     flex-direction: column;
     gap: 8px;
     margin-bottom: 20px;
-    max-height: min(52vh, 420px);
+    max-height: min(68vh, 640px);
     overflow-y: auto;
   }
-  .pz-parts-item {
-    display: flex;
+  .pz-parts-head, .pz-parts-item {
+    display: grid;
+    grid-template-columns: 28px minmax(90px, 0.7fr) minmax(110px, 0.9fr) minmax(180px, 1.6fr) 64px 72px;
+    gap: 10px;
     align-items: center;
-    gap: 12px;
+  }
+  .pz-parts-head {
+    color: #8b97a6;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    padding: 0 12px 4px;
+  }
+  .pz-parts-item {
     border: 1px solid #2a333f;
     border-radius: 12px;
     padding: 12px 14px;

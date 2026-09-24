@@ -4182,13 +4182,23 @@
     return tagged.length >= 5 && c.indexOf(tagged) !== -1;
   }
 
+  function pzPartCommentLine(hersteller, artnr, name, menge, tag) {
+    var bits = [];
+    if (hersteller) bits.push(hersteller);
+    if (artnr) bits.push(artnr);
+    if (name) bits.push(name);
+    if (menge) bits.push(String(menge));
+    if (tag) bits.push(tag);
+    return bits.join(' ') + ' da //';
+  }
+
   function showPzPartsPicker(parts) {
     var list = document.getElementById('pzPartsList');
     var modal = document.getElementById('pzPartsModal');
     var countsEl = document.getElementById('pzPartsCounts');
     if (!list || !modal) return;
     var comment = getCommentText();
-    var html = '';
+    var html = '<div class="pz-parts-head"><span></span><span>Hersteller</span><span>Hersteller Artnr.</span><span>Artikelname</span><span>Menge</span><span></span></div>';
     var counts = {};
     var total = 0;
     var order = ['KNOLL', 'WM', 'STA', 'ALFAH'];
@@ -4197,13 +4207,21 @@
       var name = String(p.name || '');
       var tag = String(p.tag || '').toUpperCase();
       if (!name) continue;
+      var hersteller = String(p.hersteller || '');
+      var artnr = String(p.herstellerArtnr || '');
+      var menge = String(p.menge || '');
       var id = 'pzPartChk' + i;
-      var checked = pzPartAlreadyInComment(name, tag, comment) ? ' checked' : '';
+      var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+      var checked = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment) ? ' checked' : '';
       var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
       html += '<label class="pz-parts-item" for="' + id + '">';
-      html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '"' + checked + '>';
+      html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
+      html += '<span class="pz-parts-col">' + escapeHtml(hersteller || '—') + '</span>';
+      html += '<span class="pz-parts-col">' + escapeHtml(artnr || '—') + '</span>';
       html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
+      html += '<span class="pz-parts-qty">' + escapeHtml(menge || '—') + '</span>';
       if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
+      else html += '<span></span>';
       html += '</label>';
       if (tag) {
         if (counts[tag] == null) counts[tag] = 0;
@@ -4212,7 +4230,7 @@
         if (order.indexOf(tag) === -1) order.push(tag);
       }
     }
-    list.innerHTML = html || '<div class="nb-choose-sub">Keine Artikel gefunden.</div>';
+    list.innerHTML = total ? html : '<div class="nb-choose-sub">Keine Artikel gefunden.</div>';
     if (countsEl) {
       var bits = [];
       if (total) bits.push('<span class="pz-parts-count-total">' + total + ' Positionen</span>');
@@ -4240,9 +4258,12 @@
       if (!boxes[i].checked) continue;
       var name = boxes[i].getAttribute('data-name') || '';
       var tag = boxes[i].getAttribute('data-tag') || '';
+      var hersteller = boxes[i].getAttribute('data-hersteller') || '';
+      var artnr = boxes[i].getAttribute('data-artnr') || '';
+      var menge = boxes[i].getAttribute('data-menge') || '';
       if (!name) continue;
-      if (pzPartAlreadyInComment(name, tag, probe)) continue;
-      var line = name + (tag ? (' ' + tag) : '') + ' da //';
+      var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+      if (pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, probe)) continue;
       extras.push(line);
       probe = probe + ' ' + line;
     }
