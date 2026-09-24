@@ -31,33 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.17",
-    date: "24.09.2026",
-    notes:
-      "• Teile aus Packzettel ist größer und zeigt Hersteller, Hersteller-Artnr., Artikelname und Menge\n\n" +
-      "• N4P-Beleg hängt nur noch an der Referenznummer, nicht am Kennzeichen. Der Bosch-Satz mit Leerzeichen in der Artnr. bleibt als eigene Zeile"
-  },
-  {
-    version: "2.2.16",
-    date: "24.09.2026",
-    notes:
-      "• WSS Einbuchen bleibt gesperrt, bis Vasold-Zeile, Refurbishment-Kommentar und Chat geprüft sind\n\n" +
-      "• Chat-Fehler werden nicht mehr verschluckt. Scheitert die Nachricht, bleiben Vasold und Kommentar stehen und der Fehler steht im Fenster"
-  },
-  {
-    version: "2.2.15",
-    date: "23.09.2026",
-    notes:
-      "• Regal-Scan speichert Kommentar und Regal, ohne danach das Overlay „noch nicht gespeichert“ für denselben Auftrag zu zeigen\n\n" +
-      "• Solange dieses Speichern läuft, blockiert ein Enter auf derselben Stock-ID nicht. Ein anderer Auftrag lädt direkt weiter"
-  },
-  {
     version: "2.2.14",
-    date: "23.09.2026",
+    date: "24.09.2026",
     notes:
-      "• Alfah-Auftragsbestätigung liegt jetzt mit in „Teile aus Packzettel“, aber nur für die Stock-ID die gerade offen ist\n\n" +
-      "• Aus Auftragspositionen kommen nur Menge und Bezeichnung, keine Preise, keine Adresse, keine Summen und nicht Seite 2\n\n" +
-      "• Ankreuzen schreibt wie bei den anderen „Name ALFAH da //“ in den Kommentar. Die Zählung oben zeigt ALFAH mit"
+      "• Teile aus Packzettel Fenster ist jetzt größer und zeigt jetzt auch -> Hersteller, Hersteller-Artnr., Artikelname und Menge\n\n" +
+      "• Alfah habe ich in einer Zeile gelassen ist übersichtlicher." +
+      "• N4P-Beleg hängt nur noch an der Referenznummer, nicht mehr am Kennzeichen.\n\n" +
+      "• Fenster ist verschiebbar und in der Größe änderbar. Badges, Häkchen, Alle/Keine und die Zählung sind größer und farbig allgemein alles an den infos angepasst."
   },
   {
     version: "2.2.13",

@@ -4214,12 +4214,17 @@
       var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
       var checked = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment) ? ' checked' : '';
       var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
-      html += '<label class="pz-parts-item" for="' + id + '">';
+      var fullLine = tag === 'ALFAH' || (!hersteller && !artnr && !menge);
+      html += '<label class="pz-parts-item' + (fullLine ? ' pz-parts-item--full' : '') + '" for="' + id + '">';
       html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
-      html += '<span class="pz-parts-col">' + escapeHtml(hersteller || '—') + '</span>';
-      html += '<span class="pz-parts-col">' + escapeHtml(artnr || '—') + '</span>';
-      html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
-      html += '<span class="pz-parts-qty">' + escapeHtml(menge || '—') + '</span>';
+      if (fullLine) {
+        html += '<span class="pz-parts-name pz-parts-name--full">' + escapeHtml(name) + '</span>';
+      } else {
+        html += '<span class="pz-parts-col">' + escapeHtml(hersteller || '—') + '</span>';
+        html += '<span class="pz-parts-col">' + escapeHtml(artnr || '—') + '</span>';
+        html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
+        html += '<span class="pz-parts-qty">' + escapeHtml(menge || '—') + '</span>';
+      }
       if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
       else html += '<span></span>';
       html += '</label>';
@@ -4242,6 +4247,87 @@
       countsEl.innerHTML = bits.join('');
     }
     modal.classList.add('open');
+    initPzPartsWindowChrome();
+  }
+
+  function initPzPartsWindowChrome() {
+    var dialog = document.querySelector('#pzPartsModal .pz-parts-dialog');
+    if (!dialog || dialog.getAttribute('data-pz-chrome') === '1') return;
+    dialog.setAttribute('data-pz-chrome', '1');
+    var head = dialog.querySelector('.nb-choose-head');
+    if (head) {
+      head.addEventListener('mousedown', function(e) {
+        if (e.button !== 0 || e.target.closest('button')) return;
+        e.preventDefault();
+        var rect = dialog.getBoundingClientRect();
+        dialog.style.position = 'fixed';
+        dialog.style.margin = '0';
+        dialog.style.left = rect.left + 'px';
+        dialog.style.top = rect.top + 'px';
+        dialog.style.width = rect.width + 'px';
+        dialog.style.height = rect.height + 'px';
+        var sx = e.clientX, sy = e.clientY, ox = rect.left, oy = rect.top;
+        function move(ev) {
+          var nx = ox + (ev.clientX - sx);
+          var ny = oy + (ev.clientY - sy);
+          nx = Math.max(8, Math.min(nx, window.innerWidth - 80));
+          ny = Math.max(8, Math.min(ny, window.innerHeight - 80));
+          dialog.style.left = Math.round(nx) + 'px';
+          dialog.style.top = Math.round(ny) + 'px';
+        }
+        function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+    }
+    var dirs = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+    for (var d = 0; d < dirs.length; d++) {
+      var handle = document.createElement('div');
+      handle.className = 'pz-parts-resize pz-parts-resize--' + dirs[d];
+      handle.setAttribute('data-dir', dirs[d]);
+      dialog.appendChild(handle);
+    }
+    dialog.addEventListener('mousedown', function(e) {
+      var handle = e.target.closest('.pz-parts-resize');
+      if (!handle) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var dir = handle.getAttribute('data-dir') || 'se';
+      var rect = dialog.getBoundingClientRect();
+      dialog.style.position = 'fixed';
+      dialog.style.margin = '0';
+      dialog.style.left = rect.left + 'px';
+      dialog.style.top = rect.top + 'px';
+      dialog.style.width = rect.width + 'px';
+      dialog.style.height = rect.height + 'px';
+      var sx = e.clientX, sy = e.clientY;
+      var ow = rect.width, oh = rect.height, oLeft = rect.left, oTop = rect.top;
+      function move(ev) {
+        var dx = ev.clientX - sx, dy = ev.clientY - sy;
+        var newL = oLeft, newT = oTop, newW = ow, newH = oh;
+        if (dir.indexOf('e') !== -1) newW = ow + dx;
+        if (dir.indexOf('s') !== -1) newH = oh + dy;
+        if (dir.indexOf('w') !== -1) { newW = ow - dx; newL = oLeft + dx; }
+        if (dir.indexOf('n') !== -1) { newH = oh - dy; newT = oTop + dy; }
+        newW = Math.max(720, Math.round(newW));
+        newH = Math.max(420, Math.round(newH));
+        if (dir.indexOf('w') !== -1) newL = oLeft + (ow - newW);
+        if (dir.indexOf('n') !== -1) newT = oTop + (oh - newH);
+        dialog.style.left = newL + 'px';
+        dialog.style.top = newT + 'px';
+        dialog.style.width = newW + 'px';
+        dialog.style.height = newH + 'px';
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
   }
 
   function setPzPartsChecks(on) {
