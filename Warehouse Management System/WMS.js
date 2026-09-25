@@ -31,26 +31,6 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.20",
-    date: "24.09.2026",
-    notes:
-      "• Angekreuzte Zeilen in „Teile aus Packzettel“ leuchten jetzt grün, damit man auf einen Blick sieht was gewählt ist"
-  },
-  {
-    version: "2.2.19",
-    date: "24.09.2026",
-    notes:
-      "• Zeilen mit sechsstelliger Hersteller-Artnr. (z. B. SWF 119273) fehlen nicht mehr und verschieben nicht die anderen Zeilen\n\n" +
-      "• Die Großhändler-Nummer wird jetzt an 7+ Stellen erkannt, damit sie nicht mit der Hersteller-Nummer verwechselt wird"
-  },
-  {
-    version: "2.2.18",
-    date: "24.09.2026",
-    notes:
-      "• N4P-Belege mit mehreren Lieferanten werden jetzt richtig getrennt. Stahlgruber ist STA, Wessels Müller ist WM\n\n" +
-      "• Die letzte Zeile eines Blocks zieht nicht mehr den nächsten Lieferanten in ihren Namen. Hersteller aus zwei Wörtern wie LIQUI MOLY bleiben zusammen"
-  },
-  {
     version: "2.2.14",
     date: "24.09.2026",
     notes:
@@ -4046,6 +4026,9 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     }
     if (i >= tokens.length || !/^\d{7,}$/.test(tokens[i]) || !art.length) continue;
     i++;
+    while (i < tokens.length && /^\d+$/.test(tokens[i])) {
+      i++;
+    }
     var nameBits = [];
     var menge = "";
     while (i < tokens.length) {
