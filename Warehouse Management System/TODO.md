@@ -66,6 +66,7 @@
 - [x] 24.09.2026 / 2.2.14 N4P: Zeilen mit 6-stelliger Hersteller-Artnr. (SWF 119273) fehlen nicht mehr; Großhändler-Nummer erst ab 7 Stellen
 - [x] 24.09.2026 / 2.2.14 Teile aus Packzettel: angekreuzte Zeilen leuchten grün
 - [x] 25.09.2026 / 2.2.14 N4P: umgebrochene Großhändler-Nummern lassen keinen Ziffernrest mehr vor dem Artikelnamen
+- [x] 25.09.2026 / 2.2.14 Teile aus Packzettel gecacht: Fenster öffnet sofort beim Laden einer Stock-ID, Hintergrund-Refresh alle 75s
 
 # Offen
 

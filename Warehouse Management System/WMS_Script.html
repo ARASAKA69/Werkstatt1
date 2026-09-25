@@ -28,6 +28,8 @@
   var refurbCacheLoading = false;
   var refurbCacheProgressTimer = null;
   var refurbBackgroundTimer = null;
+  var pzPartsCacheMap = null;
+  var pzPartsCacheLoading = false;
   var kommentarVerlaufCache = null;
   var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
@@ -4142,6 +4144,33 @@
     }
   }
 
+  function loadPzPartsCache(force, onDone) {
+    if (pzPartsCacheLoading && !force) {
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    pzPartsCacheLoading = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        pzPartsCacheLoading = false;
+        if (res && res.success && res.byStock) pzPartsCacheMap = res.byStock;
+        if (typeof onDone === 'function') onDone();
+      })
+      .withFailureHandler(function() {
+        pzPartsCacheLoading = false;
+        if (typeof onDone === 'function') onDone();
+      })
+      .getPackzettelPartsCache();
+  }
+
+  function pzPartsFromCache(stockId) {
+    if (!pzPartsCacheMap) return null;
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return null;
+    if (pzPartsCacheMap[sid]) return pzPartsCacheMap[sid];
+    return [];
+  }
+
   function maybeShowPzPartsThenNb(stockId, nbOpts) {
     pzPartsPendingNb = null;
     var openParts = document.getElementById('pzPartsModal');
@@ -4150,6 +4179,19 @@
     if (!stockKey) {
       hidePzPartsButton();
       maybeShowNbChooser(stockId, nbOpts);
+      return;
+    }
+    var cached = pzPartsFromCache(stockKey);
+    if (cached !== null) {
+      pzPartsCache = cached;
+      pzPartsStock = stockId;
+      updatePzPartsButton(cached.length);
+      if (!cached.length) {
+        maybeShowNbChooser(stockId, nbOpts);
+        return;
+      }
+      pzPartsPendingNb = { stockId: stockId, opts: nbOpts || {} };
+      showPzPartsPicker(cached);
       return;
     }
     google.script.run.withSuccessHandler(function(res) {
@@ -9439,12 +9481,15 @@
   loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();
   loadNbChooserCache(true);
+  loadPzPartsCache(true);
+  setInterval(function() { loadPzPartsCache(true); }, REFURB_CACHE_POLL_MS);
   setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
       loadRefurbishmentCache(true);
       loadKommentarVerlaufCache(true);
       loadNbChooserCache(true);
+      loadPzPartsCache(true);
       if (stockLockHeldId && normalizeStockIdJs(currentStock) === stockLockHeldId) {
         google.script.run
           .withSuccessHandler(function() {})

@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.22",
+    date: "25.09.2026",
+    notes:
+      "• Teile aus Packzettel sind jetzt gecacht. Das Fenster öffnet beim Laden einer Stock-ID sofort, ohne Wartezeit\n\n" +
+      "• Der Cache lädt beim Start, alle 75 Sekunden im Hintergrund und wenn der Tab wieder aktiv wird. Ist eine Stock-ID noch nicht im Cache, fragt er wie bisher einzeln nach"
+  },
+  {
     version: "2.2.14",
     date: "24.09.2026",
     notes:
@@ -4272,6 +4279,42 @@ function getPackzettelPartsForStock(stockId) {
     return { success: true, parts: pzDedupeParts_(parts) };
   } catch (err) {
     return { success: false, message: err.message, parts: [] };
+  }
+}
+
+function getPackzettelPartsCache() {
+  try {
+    var data = readPackzettelSheet_();
+    var values = data.values || [];
+    var byStock = {};
+    var usedOrdersByStock = {};
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var alfahRow = pzIsAlfahRow_(row);
+      if (!pzIsN4pRow_(row) && !alfahRow) continue;
+      var want = alfahRow ? normalizeStockId(row[5]) : pzN4pReferenzStock_(row);
+      if (!want && alfahRow) {
+        var plainA = pzRowPlainText_(row).toUpperCase();
+        var mA = plainA.match(/\b([A-Z]{2}\d{4,8})\b/);
+        if (mA) want = normalizeStockId(mA[1]);
+      }
+      if (!want) continue;
+      var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
+      if (!usedOrdersByStock[want]) usedOrdersByStock[want] = {};
+      if (on && usedOrdersByStock[want][on]) continue;
+      if (on) usedOrdersByStock[want][on] = true;
+      var parsed = alfahRow ? pzParseAlfahPartsFromText_(row[13]) : pzParseN4pPartsFromText_(row[13]);
+      if (!parsed || !parsed.length) continue;
+      if (!byStock[want]) byStock[want] = [];
+      for (var p = 0; p < parsed.length; p++) byStock[want].push(parsed[p]);
+    }
+    var out = {};
+    for (var sid in byStock) {
+      if (byStock.hasOwnProperty(sid)) out[sid] = pzDedupeParts_(byStock[sid]);
+    }
+    return { success: true, byStock: out, version: Date.now() };
+  } catch (err) {
+    return { success: false, message: err.message, byStock: {} };
   }
 }
 
