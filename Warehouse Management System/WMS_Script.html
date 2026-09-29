@@ -2931,7 +2931,11 @@
 
   function closeNbChooser() {
     var m = document.getElementById('nbChooseModal');
+    var wasOpen = !!(m && m.classList.contains('open'));
     if(m) m.classList.remove('open');
+    hudNbOpen = false;
+    if (!wasOpen || hudSkipParts) return;
+    revealPzParts(nbChooserStock || currentStock);
   }
 
   function openNachbestellungOnly(stockId, opts) {
@@ -2957,6 +2961,7 @@
 
   function openNbFromChooser() {
     var stock = nbChooserStock;
+    hudSkipParts = true;
     closeNbChooser();
     if(!stock) return;
     openNachbestellungOnly(stock, { clearHud: false });
@@ -3022,13 +3027,22 @@
     });
   }
 
-  function maybeShowNbChooser(stockId, opts) {
-    if(!stockId) return;
-    if(currentWmsSource === 'nachbestellung') return;
+  function maybeShowNbChooser(stockId, opts, done) {
+    function finish(shown) {
+      if (!done) return;
+      var cb = done;
+      done = null;
+      cb(!!shown);
+    }
+    if(!stockId || currentWmsSource === 'nachbestellung') {
+      finish(false);
+      return;
+    }
     opts = opts || {};
     var local = nbEntriesForStock(stockId);
     if(local.length) {
       showNbChooser(stockId, local, opts);
+      finish(true);
       return;
     }
     function askServer() {
@@ -3037,8 +3051,11 @@
           && normalizeStockInput(stockId) === normalizeStockInput(currentStock)
           && currentWmsSource !== 'nachbestellung') {
           showNbChooser(stockId, res.entries, opts);
+          finish(true);
+        } else {
+          finish(false);
         }
-      }).withFailureHandler(function() {}).getNachbestellungenForStock(stockId);
+      }).withFailureHandler(function() { finish(false); }).getNachbestellungenForStock(stockId);
     }
     if(!nbChooserCacheReady) {
       loadNbChooserCache(false);
@@ -3047,17 +3064,23 @@
         tries += 1;
         if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
           clearInterval(timer);
+          finish(false);
           return;
         }
         var later = nbEntriesForStock(stockId);
         if(later.length) {
           clearInterval(timer);
           showNbChooser(stockId, later, opts);
+          finish(true);
           return;
         }
         if(nbChooserCacheReady || tries >= 15) {
           clearInterval(timer);
           if(!nbEntriesForStock(stockId).length) askServer();
+          else {
+            showNbChooser(stockId, nbEntriesForStock(stockId), opts);
+            finish(true);
+          }
         }
       }, 400);
       return;
@@ -4171,45 +4194,65 @@
     return [];
   }
 
+  var hudNbOpen = false;
+  var hudSkipParts = false;
+  var hudPopupStock = '';
+
+  function revealPzParts(stockId) {
+    if (hudSkipParts || hudNbOpen) return;
+    if (!stockId) return;
+    if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+    if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+    if (normalizeStockInput(pzPartsStock) !== normalizeStockInput(stockId)) return;
+    if (!pzPartsCache || !pzPartsCache.length) return;
+    var modal = document.getElementById('pzPartsModal');
+    if (modal && modal.classList.contains('open')) return;
+    showPzPartsPicker(pzPartsCache);
+  }
+
   function maybeShowPzPartsThenNb(stockId, nbOpts) {
     pzPartsPendingNb = null;
+    hudNbOpen = false;
+    hudSkipParts = false;
+    hudPopupStock = stockId || '';
     var openParts = document.getElementById('pzPartsModal');
     if (openParts) openParts.classList.remove('open');
+    var nbDecided = false;
+    var nbShown = false;
+    maybeShowNbChooser(stockId, nbOpts, function(shown) {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+      nbDecided = true;
+      nbShown = !!shown;
+      hudNbOpen = nbShown;
+      if (!nbShown) revealPzParts(stockId);
+    });
     var stockKey = normalizeStockInput(stockId);
+    function onParts(parts) {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+      pzPartsCache = parts || [];
+      pzPartsStock = stockId;
+      updatePzPartsButton(pzPartsCache.length);
+      if (nbDecided && !hudNbOpen) revealPzParts(stockId);
+    }
     if (!stockKey) {
       hidePzPartsButton();
-      maybeShowNbChooser(stockId, nbOpts);
+      onParts([]);
       return;
     }
     var cached = pzPartsFromCache(stockKey);
     if (cached !== null) {
-      pzPartsCache = cached;
-      pzPartsStock = stockId;
-      updatePzPartsButton(cached.length);
-      if (!cached.length) {
-        maybeShowNbChooser(stockId, nbOpts);
-        return;
-      }
-      pzPartsPendingNb = { stockId: stockId, opts: nbOpts || {} };
-      showPzPartsPicker(cached);
+      onParts(cached);
       return;
     }
     google.script.run.withSuccessHandler(function(res) {
-      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
       var parts = (res && res.success && res.parts) ? res.parts : [];
-      pzPartsCache = parts;
-      pzPartsStock = stockId;
-      updatePzPartsButton(parts.length);
-      if (!parts.length) {
-        maybeShowNbChooser(stockId, nbOpts);
-        return;
-      }
-      pzPartsPendingNb = { stockId: stockId, opts: nbOpts || {} };
-      showPzPartsPicker(parts);
+      onParts(parts);
     }).withFailureHandler(function() {
       if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
       hidePzPartsButton();
-      maybeShowNbChooser(stockId, nbOpts);
+      onParts([]);
     }).getPackzettelPartsForStock(stockKey);
   }
 
@@ -4418,11 +4461,7 @@
   function closePzPartsPicker() {
     var m = document.getElementById('pzPartsModal');
     if (m) m.classList.remove('open');
-    var pending = pzPartsPendingNb;
     pzPartsPendingNb = null;
-    if (pending && pending.stockId && normalizeStockInput(pending.stockId) === normalizeStockInput(currentStock)) {
-      maybeShowNbChooser(pending.stockId, pending.opts);
-    }
   }
 
   function confirmPzPartsPicker() {

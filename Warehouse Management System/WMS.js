@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.24",
+    date: "29.09.2026",
+    notes:
+      "• Stock-ID laden: wenn eine Nachbestellung da ist, kommt die zuerst — Teile aus Packzettel erst danach, und nur wenn ihr beim Refurbishment bleibt\n\n" +
+      "• Geht ihr auf Nachbestellung, bleibt die Teileauswahl zu. Ohne Nachbestellung poppt die Teileauswahl wie bisher"
+  },
+  {
     version: "2.2.23",
     date: "29.09.2026",
     notes:
