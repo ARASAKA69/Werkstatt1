@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.23",
+    date: "29.09.2026",
+    notes:
+      "• Packzettel-OCR: zweiter Lieferantenblock (z.B. NCI_AAG) bleibt nicht mehr im Artikelname vom Teil davor hängen\n\n" +
+      "• Tabellenkopf (Herstellername / Artnr. / geliefert) und Hersteller wie AAGVarta werden nicht mehr in die nächste Zeile reingezogen — Batterie und Ölfilter sind wieder eigene Positionen"
+  },
+  {
     version: "2.2.22",
     date: "25.09.2026",
     notes:
@@ -3996,10 +4003,22 @@ function pzArtikelNameFromRow_(tokens) {
 
 function pzLooksLikeHerstellerToken_(tok) {
   var t = String(tok || "").replace(/[,.:;]+$/g, "").trim();
+  if (!t) return false;
+  if (/^[A-Z]{2,}[a-z][A-Za-z0-9]{1,20}$/.test(t)) return true;
   if (!/^[A-Z][A-Z0-9+.-]{1,24}$/.test(t)) return false;
-  if (/^(SINGLE|PRIME|LINE|PLUS|KIT|KITS|PREMIUM|ORIGINAL|EXPERT|EVO|SATZ|BG|TRW|NEW)$/.test(t) && t !== "TRW" && t !== "ATE") return false;
   if (/^(SINGLE|PRIME|LINE|PLUS|KIT|KITS|PREMIUM|ORIGINAL|EXPERT|EVO|SATZ|BG|NEW)$/.test(t)) return false;
   return true;
+}
+
+function pzSupplierFromBanner_(label) {
+  var u = String(label || "").toUpperCase();
+  if (/STAHLGRUBER/.test(u)) return { tag: "STA", supplier: "Stahlgruber" };
+  if (/KNOLL/.test(u)) return { tag: "KNOLL", supplier: "KNOLL" };
+  if (/WESSELS|MULLER|MUELLER/.test(u)) return { tag: "WM", supplier: "Wessels Müller" };
+  var bits = u.split(/[^A-Z0-9]+/).filter(function(b) { return !!b; });
+  var tag = bits.length > 1 ? bits[bits.length - 1] : u.replace(/[^A-Z0-9]/g, "");
+  if (tag.length > 8) tag = tag.slice(0, 8);
+  return { tag: tag || "N4P", supplier: String(label || tag) };
 }
 
 function pzParseN4pTableParts_(raw, tag, supplier) {
@@ -4009,7 +4028,8 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
   var slice = text.slice(headerAt);
   var end = slice.search(/\b(bemerkung|unterschrift|geplante\s+arbeiten|weitere\s+positionen)\b/i);
   if (end > 0) slice = slice.slice(0, end);
-  slice = slice.replace(/herstellername[\s\S]*?\bgeliefert\??/i, " ");
+  slice = slice.replace(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\s*[-–—]\s*[A-Z0-9]+\s*[-–—]\s*\d{6,}/g, " ");
+  slice = slice.replace(/herstellername[\s\S]*?\bgeliefert\??/ig, " ");
   var tokens = String(slice).split(/\s+/).filter(function(t) { return !!t && t !== "|" && t !== "☐"; });
   var out = [];
   var i = 0;
@@ -4068,22 +4088,31 @@ function pzFindAllSupplierHeaders_(text) {
     { re: /\blkq[_\s-]*stahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" },
     { re: /\bwessels\s*m(?:ü|ue?|u)ller\b/ig, tag: "WM", supplier: "Wessels Müller" },
     { re: /\bknoll(?=_|\b)/ig, tag: "KNOLL", supplier: "KNOLL" },
-    { re: /\bstahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" }
+    { re: /\bstahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" },
+    { re: /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\s*[-–—]\s*[A-Z0-9]+\s*[-–—]\s*\d{6,}/g, banner: true }
   ];
   var hits = [];
+  var knownRank = { STA: 0, KNOLL: 0, WM: 0, ALFAH: 0 };
   for (var p = 0; p < patterns.length; p++) {
     var re = patterns[p].re;
     re.lastIndex = 0;
     var m;
     while ((m = re.exec(text))) {
-      hits.push({ index: m.index, tag: patterns[p].tag, supplier: patterns[p].supplier });
+      var info = patterns[p].banner ? pzSupplierFromBanner_(m[0].split(/\s*[-–—]\s*/)[0]) : { tag: patterns[p].tag, supplier: patterns[p].supplier };
+      hits.push({ index: m.index, tag: info.tag, supplier: info.supplier });
     }
   }
-  hits.sort(function(a, b) { return a.index - b.index; });
+  hits.sort(function(a, b) {
+    if (a.index !== b.index) return a.index - b.index;
+    var ar = knownRank[a.tag] == null ? 1 : 0;
+    var br = knownRank[b.tag] == null ? 1 : 0;
+    return ar - br;
+  });
   var out = [];
   for (var i = 0; i < hits.length; i++) {
-    if (out.length && Math.abs(hits[i].index - out[out.length - 1].index) < 30) {
-      if (hits[i].tag === "STA" && out[out.length - 1].tag === "STA") continue;
+    if (out.length && Math.abs(hits[i].index - out[out.length - 1].index) < 40) {
+      if (knownRank[hits[i].tag] != null && knownRank[out[out.length - 1].tag] == null) out[out.length - 1] = hits[i];
+      continue;
     }
     out.push(hits[i]);
   }
