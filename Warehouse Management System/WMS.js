@@ -30,26 +30,16 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
+  
   {
-    version: "2.2.24",
+    version: "2.2.15",
     date: "29.09.2026",
     notes:
       "• Stock-ID laden: wenn eine Nachbestellung da ist, kommt die zuerst — Teile aus Packzettel erst danach, und nur wenn ihr beim Refurbishment bleibt\n\n" +
-      "• Geht ihr auf Nachbestellung, bleibt die Teileauswahl zu. Ohne Nachbestellung poppt die Teileauswahl wie bisher"
-  },
-  {
-    version: "2.2.23",
-    date: "29.09.2026",
-    notes:
-      "• Packzettel-OCR: zweiter Lieferantenblock (z.B. NCI_AAG) bleibt nicht mehr im Artikelname vom Teil davor hängen\n\n" +
-      "• Tabellenkopf (Herstellername / Artnr. / geliefert) und Hersteller wie AAGVarta werden nicht mehr in die nächste Zeile reingezogen — Batterie und Ölfilter sind wieder eigene Positionen"
-  },
-  {
-    version: "2.2.22",
-    date: "25.09.2026",
-    notes:
+      "• Geht ihr auf Nachbestellung, bleibt die Teileauswahl zu. Ohne Nachbestellung poppt die Teileauswahl wie bisher\n\n" +
       "• Teile aus Packzettel sind jetzt gecacht. Das Fenster öffnet beim Laden einer Stock-ID sofort, ohne Wartezeit\n\n" +
       "• Der Cache lädt beim Start, alle 75 Sekunden im Hintergrund und wenn der Tab wieder aktiv wird. Ist eine Stock-ID noch nicht im Cache, fragt er wie bisher einzeln nach"
+
   },
   {
     version: "2.2.14",
