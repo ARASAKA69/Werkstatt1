@@ -30,7 +30,13 @@ const INPUT_EXIT_STATUS_DATE_COL = 12;
 const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
-  
+  {
+    version: "2.2.16",
+    date: "29.09.2026",
+    notes:
+      "• Packzettel-Liste: N4P-Mail (z.B. AD30823 / N4P2112861) wurde nicht ins Sheet geholt, deshalb 0 Belege obwohl die Mail da ist. N4P und Alfah werden jetzt extra gesucht, nicht mehr in der großen Mail-Suche untergehen\n\n" +
+      "• Ein Beleg zählt auch über die Bestellnummer N4P, nicht nur über die Referenz im OCR-Text"
+  },
   {
     version: "2.2.15",
     date: "29.09.2026",
@@ -3463,6 +3469,10 @@ function getRefurbishmentCachePayload() {
       var m = tail.match(/([A-Z]{2}\s?\d{3,8})/i);
       if (m) return normalizeStockId(m[1]);
     }
+    var storedRef = normalizeStockId(row && row[4]);
+    if (/^[A-Z]{2}\d{3,8}$/.test(storedRef) && storedRef.indexOf("N4P") !== 0) return storedRef;
+    var storedStock = normalizeStockId(row && row[5]);
+    if (/^[A-Z]{2}\d{3,8}$/.test(storedStock) && storedStock.indexOf("N4P") !== 0) return storedStock;
     return "";
   }
 
@@ -3595,9 +3605,11 @@ function getRefurbishmentCachePayload() {
         var row = values[i];
         if (pzIsN4pRow_(row)) {
           var refStock = pzN4pReferenzStock_(row);
+          var orderKey = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
           var hitN4 = false;
           for (var n = 0; n < normKeys.length; n++) {
             if (refStock && refStock === normKeys[n]) { hitN4 = true; break; }
+            if (orderKey && orderKey === normKeys[n]) { hitN4 = true; break; }
           }
           if (hitN4) out.push(packzettelRowLight_(row, i + 2));
           continue;

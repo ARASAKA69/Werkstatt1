@@ -834,9 +834,18 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
     searchAfter = new Date(incrementalSince.getTime() - GMAIL_INCREMENTAL_OVERLAP_MS);
     if (searchAfter.getTime() < cutoff.getTime()) searchAfter = cutoff;
   }
-  var query = PACKZETTEL_QUERY + " after:" + getGmailSyncAfterQuery_(searchAfter);
+  var afterQuery = getGmailSyncAfterQuery_(searchAfter);
   var seenThreads = {};
-  var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, isIncremental ? 5 : 15);
+  var queries = [
+    "from:noreply@n4.parts has:attachment after:" + afterQuery,
+    "from:alfah.de has:attachment after:" + afterQuery,
+    PACKZETTEL_QUERY + " after:" + afterQuery
+  ];
+  var threads = [];
+  for (var qi = 0; qi < queries.length; qi++) {
+    var found = fetchGmailThreadsSince_(queries[qi], cutoff, seenThreads, qi < 2 ? 10 : (isIncremental ? 8 : 15));
+    for (var ti = 0; ti < found.length; ti++) threads.push(found[ti]);
+  }
 
   var folder = pzGetOrCreateFolder_();
   var buffer = [];
@@ -870,7 +879,12 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
       var sender = pzSenderLabel_(message.getFrom());
       if (pzIsExcludedMessage_(sender, subject)) continue;
       var messageId = message.getId();
-      var attachments = message.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
+      var attachments = [];
+      try {
+        attachments = message.getAttachments() || [];
+      } catch (attErr) {
+        attachments = [];
+      }
       var pdfs = [];
       for (var a = 0; a < attachments.length; a++) {
         var ct = String(attachments[a].getContentType() || "").toLowerCase();
@@ -883,9 +897,13 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
           if (!budgetLeft()) { reachedLimit = true; break; }
           var dk = messageId + "|" + (pdfs[p].getName() || ("pdf" + p));
           if (existingKeys[dk]) continue;
-          existingKeys[dk] = true;
-          buffer.push(pzBuildRowFromPdf_(folder, message, pdfs[p], sender, subject, msgDate, dk));
-          processed++;
+          try {
+            buffer.push(pzBuildRowFromPdf_(folder, message, pdfs[p], sender, subject, msgDate, dk));
+            existingKeys[dk] = true;
+            processed++;
+          } catch (rowErr) {
+            continue;
+          }
           if (buffer.length >= 8) flush();
         }
       }
