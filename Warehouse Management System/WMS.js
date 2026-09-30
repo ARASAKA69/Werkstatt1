@@ -31,13 +31,6 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.16",
-    date: "29.09.2026",
-    notes:
-      "• Packzettel-Liste: N4P-Mail (z.B. AD30823 / N4P2112861) wurde nicht ins Sheet geholt, deshalb 0 Belege obwohl die Mail da ist. N4P und Alfah werden jetzt extra gesucht, nicht mehr in der großen Mail-Suche untergehen\n\n" +
-      "• Ein Beleg zählt auch über die Bestellnummer N4P, nicht nur über die Referenz im OCR-Text"
-  },
-  {
     version: "2.2.15",
     date: "29.09.2026",
     notes:

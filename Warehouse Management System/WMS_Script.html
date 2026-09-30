@@ -3057,35 +3057,45 @@
         }
       }).withFailureHandler(function() { finish(false); }).getNachbestellungenForStock(stockId);
     }
-    if(!nbChooserCacheReady) {
-      loadNbChooserCache(false);
-      var tries = 0;
-      var timer = setInterval(function() {
-        tries += 1;
-        if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
-          clearInterval(timer);
-          finish(false);
-          return;
-        }
-        var later = nbEntriesForStock(stockId);
-        if(later.length) {
-          clearInterval(timer);
-          showNbChooser(stockId, later, opts);
-          finish(true);
-          return;
-        }
-        if(nbChooserCacheReady || tries >= 15) {
-          clearInterval(timer);
-          if(!nbEntriesForStock(stockId).length) askServer();
-          else {
-            showNbChooser(stockId, nbEntriesForStock(stockId), opts);
-            finish(true);
-          }
-        }
-      }, 400);
+    if(nbChooserCacheReady) {
+      finish(false);
+      google.script.run.withSuccessHandler(function(res) {
+        if(!(res && res.success && res.entries && res.entries.length)) return;
+        if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+        if(currentWmsSource === 'nachbestellung') return;
+        var partsModal = document.getElementById('pzPartsModal');
+        if(partsModal) partsModal.classList.remove('open');
+        hudNbOpen = true;
+        showNbChooser(stockId, res.entries, opts);
+      }).withFailureHandler(function() {}).getNachbestellungenForStock(stockId);
       return;
     }
-    askServer();
+    loadNbChooserCache(false);
+    var tries = 0;
+    var timer = setInterval(function() {
+      tries += 1;
+      if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
+        clearInterval(timer);
+        finish(false);
+        return;
+      }
+      var later = nbEntriesForStock(stockId);
+      if(later.length) {
+        clearInterval(timer);
+        showNbChooser(stockId, later, opts);
+        finish(true);
+        return;
+      }
+      if(nbChooserCacheReady) {
+        clearInterval(timer);
+        finish(false);
+        return;
+      }
+      if(tries >= 15) {
+        clearInterval(timer);
+        askServer();
+      }
+    }, 400);
   }
 
   function loadNbIntoHud(stockId, alsoOpenModal) {
