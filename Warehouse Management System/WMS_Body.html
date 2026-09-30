@@ -952,6 +952,24 @@
   </div>
 </div>
 
+<div class="nb-choose-modal" id="regalRequiredModal" aria-hidden="true">
+  <div class="nb-choose-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Regal fehlt</div>
+      <button type="button" class="nb-choose-x" onclick="closeRegalRequiredModal()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub">Ohne Regalplatz (z.B. 3.4) wird hier nichts gespeichert. Sonst sucht ihr die Kiste später im ganzen Lager.</div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" onclick="closeRegalRequiredModal()">
+        <span class="nb-choose-btn-txt">Abbrechen</span>
+      </button>
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="regalRequiredOpenScan()">
+        <span class="nb-choose-btn-txt">Regal scannen und speichern</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="regal-scan-overlay" id="regalScanOverlay" aria-hidden="true">
   <div class="regal-scan-card">
     <div class="regal-scan-icon">📷</div>

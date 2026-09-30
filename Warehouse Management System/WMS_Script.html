@@ -1057,6 +1057,7 @@
     }
     setRegalScanStatus("✅ " + regal + " erkannt – speichere…", '#56d364');
     closeRegalScan();
+    closeRegalRequiredModal();
   }
 
   var regalScanInputEl = document.getElementById('regalScanInput');
@@ -1684,6 +1685,11 @@
       consumeEsc();
       closeRegalScan();
       focusSearchBar();
+      return;
+    }
+    if (wmsElIsOpen('regalRequiredModal')) {
+      consumeEsc();
+      closeRegalRequiredModal();
       return;
     }
     var busy = document.getElementById('hudBusyOverlay');
@@ -8872,6 +8878,12 @@
       done(false);
       return;
     }
+    if (!isRegalShelfValue(regal)) {
+      openRegalRequiredModal();
+      setStatus("❌ Regalplatz fehlt — erst Regal x.x setzen, dann speichern.", "#f85149");
+      done(false);
+      return;
+    }
     if (saveKommentarRegalInflight[stockId]) {
       setStatus("⏳ Speichern für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
       done(false);
@@ -8879,13 +8891,7 @@
     }
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
-    var noRegal = !regal;
-    setStatus(
-      noRegal
-        ? "💾 Speichere Kommentar im Hintergrund (kein Regal)…"
-        : "💾 Speichere Kommentar + Regal im Hintergrund…",
-      "#F27420"
-    );
+    setStatus("💾 Speichere Kommentar + Regal im Hintergrund…", "#F27420");
     patchRefurbCacheKommentarRegal(stockId, text, regal);
     applyLocalSaveUiIfCurrent(stockId, regal);
     if (opts.focusSearchAfter) {
@@ -9444,6 +9450,7 @@
     { keys: ['Strg', 'R'], where: 'Überall', text: 'Macht dir direkt das Reifen Annahme Fenster auf, ohne dass du erst durchs Menü klicken musst.' },
     { keys: ['Strg', 'X'], where: 'Überall', text: 'Springt direkt in die Suchleiste und markiert den kompletten Inhalt – einfach lostippen oder scannen und die alte Stock-ID wird ersetzt.' },
     { keys: ['Strg', 'S'], where: 'Kommentarfeld', text: 'Speichert nur den Kommentartext – rührt Tagesliste, Regal oder die Farbe im Sheet nicht an. Reine Textspeicherung, sonst nichts.' },
+    { keys: ['Alt', 'X'], where: 'Überall', text: 'Speichert Kommentar und Regal zusammen, gleicher Knopf wie „Kommentar + Regal speichern“. Ohne Regalplatz (z.B. 3.4) geht das nicht durch.' },
     { keys: ['Tab'], where: 'Kommentarfeld', text: 'Steht da ein grauer Textvorschlag? Tab drücken und der wird direkt übernommen.' },
     { keys: ['Esc'], where: 'Überall', text: 'Macht das, was gerade offen ist, wieder zu – Menüs, Fenster, Popups, einfach alles.' }
   ];
@@ -9487,12 +9494,36 @@
       openReifenModal();
       return;
     }
-    if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)) {
+    if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
       focusSearchBar({ select: true, delay: 0 });
+      return;
+    }
+    if ((e.key === 'x' || e.key === 'X') && e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveKommentarUndRegalFlow();
     }
   });
+
+  function openRegalRequiredModal() {
+    var el = document.getElementById('regalRequiredModal');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeRegalRequiredModal() {
+    var el = document.getElementById('regalRequiredModal');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
+  function regalRequiredOpenScan() {
+    openRegalScan();
+  }
 
   function closeWmsMainMenu() {
     var trig = document.getElementById('wmsMainMenuTrigger');

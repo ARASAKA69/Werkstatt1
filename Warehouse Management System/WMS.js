@@ -31,6 +31,14 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.16",
+    date: "30.09.2026",
+    notes:
+      "• Kommentar + Regal speichern geht nicht mehr durch ohne Regalplatz (z.B. Regal 3.4). Fenster blockt und erinnert, Button öffnet Regal scannen und speichert danach\n\n" +
+      "• Neu: Alt+X speichert Kommentar und Regal, steht auch in der Shortcut-Liste\n\n" +
+      "• Hab Persönlich keinen bock mehr jedesmal nach einer Kiste zu suchen, viel zu viel verschwendete Zeit die man sinnvoller investieren könnte."
+  },
+  {
     version: "2.2.15",
     date: "29.09.2026",
     notes:
