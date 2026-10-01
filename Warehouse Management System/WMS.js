@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.17",
+    date: "01.10.2026",
+    notes:
+      "• Übersicht „Drucken + ET“ geht nicht mehr über die Bridge. Die hat nach ein paar Seiten abgebrochen, weil das PDF bei euch nicht fertig wurde\n\n" +
+      "• Es öffnet jetzt die Vorschau. Dort auf Drucken, dann kommt der Windows-Dialog — Drucker und Seiten könnt ihr selbst einstellen und alles rauslassen, sollte also jetzt funktionieren."
+  },
+  {
     version: "2.2.16",
     date: "30.09.2026",
     notes:
@@ -3461,31 +3468,78 @@ function getRefurbishmentCachePayload() {
     return plain.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
   }
 
+  function pzIsWorkshopStockId_(v) {
+    var s = normalizeStockId(v);
+    if (!/^[A-Z]{2,3}\d{3,8}$/.test(s)) return "";
+    if (/^N4P/.test(s) || /^(PDE|RDE)/.test(s)) return "";
+    return s;
+  }
+
+  function pzWorkshopIdsIn_(text) {
+    var re = /(?:^|[^A-Z0-9])([A-Z]{2,3})\s?(\d{3,8})(?!\d)/ig;
+    var out = [];
+    var seen = {};
+    var m;
+    while ((m = re.exec(String(text || "")))) {
+      var id = pzIsWorkshopStockId_(String(m[1] || "") + String(m[2] || ""));
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      out.push(id);
+    }
+    return out;
+  }
+
+  function pzIdsAfterLabel_(plain, labelRe) {
+    var re = new RegExp(labelRe, "ig");
+    var out = [];
+    var seen = {};
+    var m;
+    while ((m = re.exec(plain))) {
+      var tail = plain.slice(m.index + m[0].length, m.index + m[0].length + 180);
+      var ids = pzWorkshopIdsIn_(tail);
+      for (var i = 0; i < ids.length; i++) {
+        if (seen[ids[i]]) continue;
+        seen[ids[i]] = true;
+        out.push(ids[i]);
+      }
+    }
+    return out;
+  }
+
+  function pzPickWorkshopId_(candidates, prefer) {
+    var i;
+    if (prefer) {
+      for (i = 0; i < candidates.length; i++) {
+        if (candidates[i] === prefer) return prefer;
+      }
+    }
+    return candidates.length ? candidates[0] : "";
+  }
+
   function pzN4pReferenzStock_(row) {
     if (!pzIsN4pRow_(row)) return "";
     var plain = pzRowPlainText_(row);
-    var at = plain.search(/referenz\s*-?\s*(?:nummer|nr)\b/i);
-    if (at >= 0) {
-      var tail = plain.slice(at + 8, at + 120);
-      var m = tail.match(/([A-Z]{2}\s?\d{3,8})/i);
-      if (m) return normalizeStockId(m[1]);
-    }
-    var storedRef = normalizeStockId(row && row[4]);
-    if (/^[A-Z]{2}\d{3,8}$/.test(storedRef) && storedRef.indexOf("N4P") !== 0) return storedRef;
-    var storedStock = normalizeStockId(row && row[5]);
-    if (/^[A-Z]{2}\d{3,8}$/.test(storedStock) && storedStock.indexOf("N4P") !== 0) return storedStock;
+    var refs = pzIdsAfterLabel_(plain, "referenz\\s*-?\\s*(?:nummer|nr\\.?)\\b");
+    var ihre = pzIdsAfterLabel_(plain, "ihre\\s+referenz\\b");
+    var kzList = pzIdsAfterLabel_(plain, "kennzeichen\\b");
+    var kz = kzList.length ? kzList[0] : "";
+    var labeled = refs.concat(ihre);
+    var picked = pzPickWorkshopId_(labeled, kz);
+    if (picked) return picked;
+    var storedRef = pzIsWorkshopStockId_(row && row[4]);
+    var storedStock = pzIsWorkshopStockId_(row && row[5]);
+    if (kz && (storedRef === kz || storedStock === kz)) return kz;
+    if (storedRef) return storedRef;
+    if (storedStock) return storedStock;
+    if (kz) return kz;
     return "";
   }
 
   function pzN4pKennzeichen_(row) {
     var plain = pzRowPlainText_(row);
-    var at = plain.search(/kennzeichen\b/i);
-    if (at >= 0) {
-      var tail = plain.slice(at + 11, at + 120);
-      var m = tail.match(/([A-Z]{1,3}\s?[A-Z]{0,2}\s?\d{1,5})/i);
-      if (m) return normalizeStockId(m[1]);
-    }
-    return normalizeStockId(row && row[6]);
+    var kzList = pzIdsAfterLabel_(plain, "kennzeichen\\b");
+    if (kzList.length) return kzList[0];
+    return pzIsWorkshopStockId_(row && row[6]);
   }
 
   function packzettelRowLight_(row, rowNumber) {
@@ -4014,8 +4068,8 @@ function pzArtikelNameFromRow_(tokens) {
 function pzLooksLikeHerstellerToken_(tok) {
   var t = String(tok || "").replace(/[,.:;]+$/g, "").trim();
   if (!t) return false;
-  if (/^[A-Z]{2,}[a-z][A-Za-z0-9]{1,20}$/.test(t)) return true;
-  if (!/^[A-Z][A-Z0-9+.-]{1,24}$/.test(t)) return false;
+  if (/^[A-ZÄÖÜ]{2,}[a-zäöü][A-Za-zÄÖÜäöü0-9]{1,20}$/.test(t)) return true;
+  if (!/^[A-ZÄÖÜ][A-ZÄÖÜ0-9+.-]{1,24}$/.test(t)) return false;
   if (/^(SINGLE|PRIME|LINE|PLUS|KIT|KITS|PREMIUM|ORIGINAL|EXPERT|EVO|SATZ|BG|NEW)$/.test(t)) return false;
   return true;
 }
@@ -4268,10 +4322,8 @@ function pzParseAlfahPartsFromText_(raw) {
 }
 
 function pzReferenzMatchesStock_(row, want) {
-  if (pzN4pReferenzStock_(row) === want) return true;
-  if (pzN4pKennzeichen_(row) === want) return false;
-  var plain = pzRowPlainText_(row).toUpperCase();
-  return plain.indexOf(want) !== -1 && new RegExp("(^|[^A-Z0-9])" + want + "([^A-Z0-9]|$)").test(plain);
+  var ref = pzN4pReferenzStock_(row);
+  return !!ref && ref === want;
 }
 
 function pzRowBelongsToStock_(row, stockId) {

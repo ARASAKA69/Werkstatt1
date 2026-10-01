@@ -2546,6 +2546,7 @@
       + 'td.sid,td.reg{font-weight:700;}'
       + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
       + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-st{width:72px;}col.c-rf{width:52px;}col.c-sch{width:20%;}col.c-et{width:auto;}col.c-an{width:auto;}'
+      + 'thead{display:table-header-group;}'
       + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
@@ -2583,13 +2584,31 @@
     sendOverviewPrint(html, document.querySelector('.ov-btn-print'), '\ud83d\udda8\ufe0f Drucken');
   }
 
+  function openOverviewPrintPreview(html) {
+    var extra = '.ov-print-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-16px -16px 14px -16px;padding:10px 16px;background:#1a1a1a;color:#fff;font-family:Arial,sans-serif;font-size:13px;}'
+      + '.ov-print-go{background:#F27420;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;font-size:14px;cursor:pointer;}'
+      + '@media print{.ov-print-bar{display:none !important;}}';
+    var doc = String(html || '').replace('</style>', extra + '</style>');
+    var bar = '<div class="ov-print-bar"><span>Vorschau. Drucken öffnet den Windows-Dialog — Drucker und Seiten dort ändern.</span><button type="button" class="ov-print-go" onclick="window.print()">Drucken</button></div>';
+    doc = doc.replace('<body>', '<body>' + bar);
+    var w = window.open('', '_blank');
+    if (!w) {
+      alert('Popup blockiert. Popups für WMS erlauben und nochmal auf Drucken + ET.');
+      return;
+    }
+    w.document.open();
+    w.document.write(doc);
+    w.document.close();
+    try { w.focus(); } catch (e) {}
+  }
+
   function printOverviewDetailList() {
     if (!ovAllEntries || !ovAllEntries.length) {
       alert('Keine Einträge zum Drucken.');
       return;
     }
     var html = buildOverviewDetailHtml(ovAllEntries, overviewPrintDateHeader());
-    sendOverviewPrint(html, document.querySelector('.ov-btn-print-detail'), '\ud83d\udda8\ufe0f Drucken + ET');
+    openOverviewPrintPreview(html);
   }
 
   function normalizeStockInput(value) {

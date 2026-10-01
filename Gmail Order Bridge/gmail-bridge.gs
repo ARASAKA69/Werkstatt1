@@ -608,44 +608,41 @@ function pzIsRejectedRef_(v) {
   return /^(PDE|RDE)/i.test(String(v || "").trim());
 }
 
+function pzIsWorkshopStockId_(v) {
+  var s = String(v || "").replace(/[\s-]+/g, "").toUpperCase();
+  if (!/^[A-Z]{2,3}\d{3,8}$/.test(s)) return "";
+  if (/^N4P/.test(s) || pzIsRejectedRef_(s)) return "";
+  return s;
+}
+
+function pzTakeWorkshopRef_(raw) {
+  if (pzIsLabelToken_(raw)) return "";
+  return pzIsWorkshopStockId_(raw);
+}
+
 function pzExtractReference_(text, orderNumber) {
   var t = String(text || "");
   var order = String(orderNumber || "").toUpperCase().replace(/\s+/g, "");
-
-  var m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
-    return String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
-  }
-
-  m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
-    return String(m[1]).replace(/\s+/g, "").toUpperCase();
-  }
-
-  m = t.match(/Kunden-?Referenz[:\s]+([A-Z]{1,4}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
-
-  m = t.match(/Referenznummer[:\s]*[\r\n: ]+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) return m[1];
-
-  m = t.match(/N4P\s?\d{5,}\s+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
-
-  var labelPatterns = [
-    /Kommission[:\s]+([A-Z]{2,3}\d{3,})\b/i,
-    /Kennzeichen[:\s]+([A-Z]{2,3}\d{3,})\b/i,
-    /Bemerkung[:\s]+([A-Z]{2,3}\d{3,})\b/i
+  var patterns = [
+    /Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{3,8})(?!\d)/i,
+    /Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kunden-?Referenz[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Referenznummer[:\s]*[\r\n: ]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /N4P\s?\d{5,}\s+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kommission[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kennzeichen[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Bemerkung[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i
   ];
-  for (var lp = 0; lp < labelPatterns.length; lp++) {
-    m = t.match(labelPatterns[lp]);
-    if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) {
-      return m[1].toUpperCase();
-    }
+  var i;
+  for (i = 0; i < patterns.length; i++) {
+    var m = t.match(patterns[i]);
+    var id = m && m[1] ? pzTakeWorkshopRef_(m[1]) : "";
+    if (id) return id;
   }
 
-  m = t.match(/(N4P\s?\d{5,})/i);
-  if (m && m[1]) {
-    var cand = m[1].replace(/\s+/g, "").toUpperCase();
+  var n4 = t.match(/(N4P\s?\d{5,})/i);
+  if (n4 && n4[1]) {
+    var cand = n4[1].replace(/\s+/g, "").toUpperCase();
     if (cand !== order) return cand;
   }
 
@@ -689,9 +686,10 @@ function pzExtractStockId_(text) {
 }
 
 function pzDeriveStockFromRef_(stockId, reference) {
-  if (stockId) return stockId;
-  var ref = String(reference || "").replace(/[\s-]+/g, "").toUpperCase();
-  if (/^[A-Z]{2,3}\d{3,}$/.test(ref) && !/^N4P/.test(ref)) return ref;
+  var stock = pzIsWorkshopStockId_(stockId);
+  if (stock) return stock;
+  var ref = pzIsWorkshopStockId_(reference);
+  if (ref) return ref;
   return "";
 }
 
