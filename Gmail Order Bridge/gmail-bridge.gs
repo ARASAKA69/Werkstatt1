@@ -807,6 +807,55 @@ function pzBuildRowFromPdf_(folder, message, attachment, sender, subject, msgDat
   ];
 }
 
+function pzIsWmOrderMail_(sender, subject) {
+  if (String(sender || "") !== "wm.de") return false;
+  return /online\s+bestellung/i.test(String(subject || ""));
+}
+
+function pzCleanMailHtml_(html) {
+  var h = String(html || "");
+  h = h.replace(/<head[\s\S]*?<\/head>/gi, "");
+  h = h.replace(/<style[\s\S]*?<\/style>/gi, "");
+  h = h.replace(/<script[\s\S]*?<\/script>/gi, "");
+  h = h.replace(/<!--[\s\S]*?-->/g, "");
+  h = h.replace(/<img[^>]*>/gi, "");
+  h = h.replace(/<(\/?)(table|thead|tbody|tr|td|th|br|p|div|b|strong)\b[^>]*>/gi, "<$1$2>");
+  h = h.replace(/<(?!\/?(table|thead|tbody|tr|td|th|br|p|div|b|strong)\b)[^>]+>/gi, "");
+  h = h.replace(/&nbsp;/gi, " ").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n");
+  var css = "<style>body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:14px;}table{border-collapse:collapse;}td,th{border:1px solid #ccc;padding:4px 8px;vertical-align:top;text-align:left;}</style>";
+  return css + h.trim();
+}
+
+function pzBuildRowFromWmMail_(message, sender, subject, msgDate, dedupKey) {
+  var html = "";
+  try { html = message.getBody() || ""; } catch (e) { html = ""; }
+  var plain = "";
+  try { plain = message.getPlainBody() || ""; } catch (e2) { plain = ""; }
+  var cleaned = pzCleanMailHtml_(html);
+  if (!cleaned && !plain) return null;
+  var haystack = subject + "\n" + plain;
+  var order = pzExtractOrderNumber_(haystack);
+  var ref = pzExtractReference_(haystack, order);
+  var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+  return [
+    msgDate,
+    sender,
+    "wm-order",
+    order,
+    ref,
+    stock,
+    pzExtractKennzeichen_(haystack),
+    pzExtractOrderDate_(haystack),
+    subject,
+    "",
+    "",
+    "",
+    cleaned.substring(0, PACKZETTEL_MAX_TEXT),
+    plain.substring(0, PACKZETTEL_MAX_TEXT),
+    dedupKey
+  ];
+}
+
 function pzIsExcludedMessage_(sender, subject) {
   if (String(sender || "") === "wm.de") return true;
   var s = String(subject || "").toLowerCase();
@@ -837,11 +886,12 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
   var queries = [
     "from:noreply@n4.parts has:attachment after:" + afterQuery,
     "from:alfah.de has:attachment after:" + afterQuery,
+    "from:wm.de subject:\"Online Bestellung\" after:" + afterQuery,
     PACKZETTEL_QUERY + " after:" + afterQuery
   ];
   var threads = [];
   for (var qi = 0; qi < queries.length; qi++) {
-    var found = fetchGmailThreadsSince_(queries[qi], cutoff, seenThreads, qi < 2 ? 10 : (isIncremental ? 8 : 15));
+    var found = fetchGmailThreadsSince_(queries[qi], cutoff, seenThreads, qi < 3 ? 10 : (isIncremental ? 8 : 15));
     for (var ti = 0; ti < found.length; ti++) threads.push(found[ti]);
   }
 
@@ -875,8 +925,22 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
 
       var subject = String(message.getSubject() || "");
       var sender = pzSenderLabel_(message.getFrom());
-      if (pzIsExcludedMessage_(sender, subject)) continue;
       var messageId = message.getId();
+      if (pzIsWmOrderMail_(sender, subject)) {
+        var wmKey = messageId + "|wm-order";
+        if (existingKeys[wmKey]) continue;
+        try {
+          var wmRow = pzBuildRowFromWmMail_(message, sender, subject, msgDate, wmKey);
+          if (wmRow) {
+            buffer.push(wmRow);
+            existingKeys[wmKey] = true;
+            processed++;
+          }
+        } catch (wmErr) {}
+        if (buffer.length >= 8) flush();
+        continue;
+      }
+      if (pzIsExcludedMessage_(sender, subject)) continue;
       var attachments = [];
       try {
         attachments = message.getAttachments() || [];
@@ -1079,6 +1143,45 @@ function reprocessPackzettelMissing() {
   return { success: true, updated: updated, ocred: ocred, remaining: remaining };
 }
 
+function backfillWmOrders() {
+  var sheet = pzGetOrCreateSheet_();
+  var existingKeys = pzReadExistingKeys_(sheet);
+  var cutoff = pzGetSyncCutoff_();
+  var query = "from:wm.de subject:\"Online Bestellung\" after:" + getGmailSyncAfterQuery_(cutoff);
+  var threads = fetchGmailThreadsSince_(query, cutoff, {}, 10);
+  var rows = [];
+  var startMs = Date.now();
+  var stopped = false;
+  for (var t = 0; t < threads.length; t++) {
+    if (Date.now() - startMs > 240000) { stopped = true; break; }
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      var message = messages[m];
+      var msgDate = message.getDate();
+      if (msgDate.getTime() < cutoff.getTime()) continue;
+      var subject = String(message.getSubject() || "");
+      var sender = pzSenderLabel_(message.getFrom());
+      if (!pzIsWmOrderMail_(sender, subject)) continue;
+      var key = message.getId() + "|wm-order";
+      if (existingKeys[key]) continue;
+      try {
+        var row = pzBuildRowFromWmMail_(message, sender, subject, msgDate, key);
+        if (row) {
+          rows.push(row);
+          existingKeys[key] = true;
+        }
+      } catch (e) {}
+    }
+  }
+  pzAppendRows_(sheet, rows);
+  SpreadsheetApp.flush();
+  return { success: true, added: rows.length, threads: threads.length, partial: stopped };
+}
+
+function testBackfillWmOrders() {
+  Logger.log(JSON.stringify(backfillWmOrders(), null, 2));
+}
+
 function testReprocessPackzettel() {
   Logger.log(JSON.stringify(reprocessPackzettelMissing(), null, 2));
 }
@@ -1098,7 +1201,7 @@ function cleanupPackzettelWmRows() {
     var row = values[i];
     var sender = String(row[1] || "").trim();
     var subject = String(row[8] || "");
-    if (!pzIsExcludedMessage_(sender, subject)) {
+    if (String(row[2] || "") === "wm-order" || !pzIsExcludedMessage_(sender, subject)) {
       keep.push(row);
       continue;
     }

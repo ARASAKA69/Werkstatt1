@@ -31,13 +31,6 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.19",
-    date: "02.10.2026",
-    notes:
-      "• Suche nach Belegnummer (z.B. 2611419562, AU…, N4P…) geht jetzt sofort aus dem Cache. Vorher hat er erst 4 Sheets nacheinander am Server durchsucht, deshalb das lange Warten\n\n" +
-      "• Nummern die auf mehreren Belegen mit verschiedenen Stock-IDs stehen (z.B. Kunden-Nr.) laufen weiter über den Server, damit nicht die falsche Stock-ID aufgeht"
-  },
-  {
     version: "2.2.18",
     date: "02.10.2026",
     notes:
@@ -3723,6 +3716,7 @@ function getRefurbishmentCachePayload() {
   }
 
 function pzIsN4pRow_(row) {
+  if (String((row && row[2]) || "") === "wm-order") return false;
   var source = String((row && row[1]) || "").toLowerCase();
   var order = String((row && row[3]) || "").toUpperCase().replace(/\s+/g, "");
   var raw = String((row && row[13]) || "").toUpperCase();
@@ -3740,7 +3734,91 @@ function pzIsAagConfirmRow_(row) {
   return /AAG\s+Distribution/i.test(raw);
 }
 
+function pzIsWmOrderRow_(row) {
+  return String((row && row[2]) || "") === "wm-order";
+}
+
+function pzDecodeHtmlEntities_(s) {
+  var named = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", auml: "ä", ouml: "ö", uuml: "ü", Auml: "Ä", Ouml: "Ö", Uuml: "Ü", szlig: "ß", euro: "€" };
+  return String(s || "")
+    .replace(/&#(\d+);/g, function(_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function(_, n) { return String.fromCharCode(parseInt(n, 16)); })
+    .replace(/&([a-z]+);/gi, function(m, n) { return named.hasOwnProperty(n) ? named[n] : m; });
+}
+
+function pzHtmlCellLines_(cellHtml) {
+  var t = String(cellHtml || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div)>/gi, "\n").replace(/<[^>]+>/g, " ");
+  t = pzDecodeHtmlEntities_(t);
+  var lines = t.split(/\n/);
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].replace(/\s+/g, " ").trim();
+    if (l) out.push(l);
+  }
+  return out;
+}
+
+function pzParseWmOrderParts_(html) {
+  var h = String(html || "");
+  if (!h) return [];
+  var rowRe = /<tr\b[^>]*>((?:(?!<tr\b)[\s\S])*?)<\/tr>/gi;
+  var cellRe = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+  var rows = [];
+  var m;
+  while ((m = rowRe.exec(h))) {
+    var cells = [];
+    var c;
+    cellRe.lastIndex = 0;
+    while ((c = cellRe.exec(m[1]))) cells.push(pzHtmlCellLines_(c[1]));
+    if (cells.length) rows.push(cells);
+  }
+  var col = null;
+  var out = [];
+  for (var r = 0; r < rows.length; r++) {
+    var cells2 = rows[r];
+    var heads = cells2.map(function(x) { return String(x.join(" ")).toLowerCase(); });
+    if (!col) {
+      var kat = -1, txt = -1, pos = -1, hlk = -1, qty = -1;
+      for (var k = 0; k < heads.length; k++) {
+        if (/katalog/.test(heads[k])) kat = k;
+        else if (/^text$/.test(heads[k])) txt = k;
+        else if (/^pos/.test(heads[k])) pos = k;
+        else if (/^hlk$/.test(heads[k])) hlk = k;
+        else if (/bestell\s*me/.test(heads[k])) qty = k;
+      }
+      if (kat >= 0 && txt >= 0) col = { kat: kat, txt: txt, pos: pos, hlk: hlk, qty: qty };
+      continue;
+    }
+    if (col.pos >= 0 && !/^\d{1,3}$/.test(String((cells2[col.pos] || [])[0] || ""))) continue;
+    var txtLines = cells2[col.txt] || [];
+    var name = "";
+    for (var t = 0; t < txtLines.length; t++) {
+      if (/^(verf(ü|ue)gbar|tour$|abholung$|lieferung$)/i.test(txtLines[t])) continue;
+      name = txtLines[t];
+      break;
+    }
+    if (!name || !/[a-zäöüß]/i.test(name)) continue;
+    var artnr = String((cells2[col.kat] || [])[0] || "");
+    var hersteller = col.hlk >= 0 ? String((cells2[col.hlk] || [])[0] || "") : "";
+    var menge = "";
+    if (col.qty >= 0) {
+      var q = String((cells2[col.qty] || [])[0] || "").match(/^(\d+)(?:,(\d+))?$/);
+      if (q) menge = (!q[2] || /^0+$/.test(q[2])) ? q[1] : q[1] + "," + q[2];
+    }
+    out.push({
+      name: name,
+      tag: "WM",
+      supplier: "Wessels Müller",
+      hersteller: hersteller,
+      herstellerArtnr: artnr,
+      menge: menge
+    });
+  }
+  return pzDedupeParts_(out);
+}
+
 function pzIsPartsSourceRow_(row) {
+  if (pzIsWmOrderRow_(row)) return true;
   if (pzIsN4pRow_(row)) return true;
   if (pzIsAlfahRow_(row)) return true;
   if (pzIsAagConfirmRow_(row)) return true;
@@ -3748,6 +3826,7 @@ function pzIsPartsSourceRow_(row) {
 }
 
 function pzParseRowParts_(row) {
+  if (pzIsWmOrderRow_(row)) return pzParseWmOrderParts_(row[12]);
   if (pzIsAlfahRow_(row)) return pzParseAlfahPartsFromText_(row[13]);
   if (!pzIsN4pRow_(row) && pzIsAagConfirmRow_(row)) return pzParseAagConfirmParts_(row[13]);
   return pzParseN4pPartsFromText_(row[13]);
