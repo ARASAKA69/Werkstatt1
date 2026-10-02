@@ -29,6 +29,7 @@
   var refurbCacheProgressTimer = null;
   var refurbBackgroundTimer = null;
   var pzPartsCacheMap = null;
+  var pzSearchIndex = null;
   var pzPartsCacheLoading = false;
   var kommentarVerlaufCache = null;
   var kommentarVerlaufLoading = false;
@@ -4212,6 +4213,7 @@
       .withSuccessHandler(function(res) {
         pzPartsCacheLoading = false;
         if (res && res.success && res.byStock) pzPartsCacheMap = res.byStock;
+        if (res && res.success && res.searchIndex) pzSearchIndex = res.searchIndex;
         if (typeof onDone === 'function') onDone();
       })
       .withFailureHandler(function() {
@@ -7963,6 +7965,16 @@
       return { found: true, stockId: stockId, message: 'Gefunden via Gmail Lookup', source: 'gmail' };
     }
 
+    if (pzSearchIndex) {
+      var pzKeys = [query, cleanQuery, q0];
+      for (var pk = 0; pk < pzKeys.length; pk++) {
+        var pzKey = pzKeys[pk];
+        if (!pzKey || pzKey.length < 6) continue;
+        var pzSid = pzSearchIndex[pzKey];
+        if (pzSid) return { found: true, stockId: pzSid, message: 'Gefunden via Belege', source: 'packzettel' };
+      }
+    }
+
     return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet noch in Gmail Lookup gefunden." };
   }
 
@@ -8459,7 +8471,7 @@
       setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
       document.getElementById('searchInput').value = res.stockId;
       setHudBusy(true, 'Lade Auftrag…');
-      setTimeout(function() { loadData(); }, 600);
+      setTimeout(function() { loadData(); }, 80);
     } else if (pendingStellantisTracking) {
       showStellantisPackageWait();
     } else {

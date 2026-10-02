@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.19",
+    date: "02.10.2026",
+    notes:
+      "• Suche nach Belegnummer (z.B. 2611419562, AU…, N4P…) geht jetzt sofort aus dem Cache. Vorher hat er erst 4 Sheets nacheinander am Server durchsucht, deshalb das lange Warten\n\n" +
+      "• Nummern die auf mehreren Belegen mit verschiedenen Stock-IDs stehen (z.B. Kunden-Nr.) laufen weiter über den Server, damit nicht die falsche Stock-ID aufgeht"
+  },
+  {
     version: "2.2.18",
     date: "02.10.2026",
     notes:
@@ -4468,12 +4475,55 @@ function getPackzettelPartsForStock(stockId) {
   }
 }
 
+function pzRowStockForSearch_(row) {
+  var sid = pzIsN4pRow_(row) ? pzN4pReferenzStock_(row) : (pzIsWorkshopStockId_(row[5]) || pzIsWorkshopStockId_(row[4]));
+  if (!sid) {
+    var hay = [row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]].join(" ");
+    sid = pzIsWorkshopStockId_(extractStockIdFromEmailText_(hay));
+  }
+  return sid || "";
+}
+
+function pzBuildSearchIndex_(values) {
+  var map = {};
+  var bad = {};
+  function add(key, sid) {
+    var k = String(key || "").replace(/\s+/g, "").toUpperCase();
+    if (k.length < 6 || bad[k]) return;
+    if (map[k] && map[k] !== sid) {
+      delete map[k];
+      bad[k] = true;
+      return;
+    }
+    map[k] = sid;
+  }
+  for (var i = 0; i < (values || []).length; i++) {
+    var row = values[i];
+    var sid = pzRowStockForSearch_(row);
+    if (!sid) continue;
+    var text = [row[3], row[4], row[8], row[13]].join(" ");
+    var seen = {};
+    var re = /\b(N4P\s?\d{5,}|[A-Z]{2}\d{8,}(?:-\d+)?|\d{6,})\b/gi;
+    var m;
+    while ((m = re.exec(text))) {
+      var k = String(m[1]).replace(/\s+/g, "").toUpperCase();
+      if (seen[k]) continue;
+      seen[k] = true;
+      add(k, sid);
+      var k0 = k.replace(/^N4P/, "").replace(/^0+/, "");
+      if (k0 !== k) add(k0, sid);
+    }
+  }
+  return map;
+}
+
 function getPackzettelPartsCache() {
   try {
     var data = readPackzettelSheet_();
     var values = data.values || [];
     var byStock = {};
     var usedOrdersByStock = {};
+    var searchIndex = pzBuildSearchIndex_(values);
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
       var alfahRow = pzIsAlfahRow_(row);
@@ -4499,7 +4549,7 @@ function getPackzettelPartsCache() {
     for (var sid in byStock) {
       if (byStock.hasOwnProperty(sid)) out[sid] = pzDedupeParts_(byStock[sid]);
     }
-    return { success: true, byStock: out, version: Date.now() };
+    return { success: true, byStock: out, searchIndex: searchIndex, version: Date.now() };
   } catch (err) {
     return { success: false, message: err.message, byStock: {} };
   }
