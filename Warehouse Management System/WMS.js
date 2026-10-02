@@ -34,10 +34,8 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.18",
     date: "02.10.2026",
     notes:
-      "• Teile aus Packzettel: TEXTAR mit 7-stelliger Artnr. (z.B. 2253105 Bremsbelagsatz) wurde verschluckt, deshalb 7 statt 8 Positionen. Die Zeile kommt jetzt mit.\n\n" +
-      "• Beleg da aber kein „Teile aus Packzettel“ (z.B. FL40410): Stock-ID nicht im Cache hieß bisher einfach „keine Teile“. Jetzt fragt er dann direkt nach\n\n" +
-      "• Belege mit Artikel-Daten Tabelle zählen jetzt auch, wenn sie nicht von n4.parts kommen\n\n" +
-      "• Gmail Bridge: PDFs wo das Auslesen beim Import schiefging werden bei jedem Sync nochmal gelesen (10 pro Lauf), vorher blieben die für immer leer"
+      "• Belege mit Artikel-Daten von AAG (KNOLL) zählen jetzt auch, wenn sie nicht von n4.parts kommen\n\n" +
+      "• NEU: AAG Auftragsbestätigung (allianceautomotive.de) wird jetzt auch gelesen — Teile aus Packzettel zeigt Marke, Artnr., Bezeichnung und Menge mit AAG Badge. Batteriepfand (UWB) wird weggelassen da diese nicht in der BOX sein wird."
   },
   {
     version: "2.2.17",
@@ -3727,6 +3725,82 @@ function pzIsN4pRow_(row) {
   return false;
 }
 
+function pzIsAagConfirmRow_(row) {
+  var source = String((row && row[1]) || "").toLowerCase();
+  var raw = String((row && row[13]) || "");
+  if (!/artikel\s*nr\.?\s*\/\s*marke\s*\/\s*bezeichnung/i.test(raw)) return false;
+  if (source.indexOf("allianceautomotive") !== -1) return true;
+  return /AAG\s+Distribution/i.test(raw);
+}
+
+function pzIsPartsSourceRow_(row) {
+  if (pzIsN4pRow_(row)) return true;
+  if (pzIsAlfahRow_(row)) return true;
+  if (pzIsAagConfirmRow_(row)) return true;
+  return pzHasArtikelTable_(row);
+}
+
+function pzParseRowParts_(row) {
+  if (pzIsAlfahRow_(row)) return pzParseAlfahPartsFromText_(row[13]);
+  if (!pzIsN4pRow_(row) && pzIsAagConfirmRow_(row)) return pzParseAagConfirmParts_(row[13]);
+  return pzParseN4pPartsFromText_(row[13]);
+}
+
+function pzParseAagConfirmParts_(raw) {
+  var lines = String(raw || "").replace(/\r/g, "\n").split(/\n/);
+  var headRe = /^(.+?)\s+\/\s+(.+?)\s+(\d{1,3}),(\d{2})\s*$/;
+  var stopRe = /^(ust\.?-?pflichtiger|es\s+gelten|übertrag|uebertrag|auftragsbest|kunden-?nr|seite\b|gesamt\b|geplantes|artikel\s*nr|lieferdatum|menge\b|wir\s+bedanken|aag\s+distribution|sitz\s+und|banken|iban|st\.?nr|debug\s+info|knoll-online)/i;
+  var out = [];
+  var cur = null;
+  function flush() {
+    if (!cur) return;
+    var name = cur.name.join(" ").replace(/\s+/g, " ").trim();
+    if (name && /[a-zäöüß]/i.test(name) && !/^uwb$/i.test(cur.hersteller)) {
+      out.push({
+        name: name,
+        tag: "AAG",
+        supplier: "AAG",
+        hersteller: cur.hersteller,
+        herstellerArtnr: cur.artnr,
+        menge: cur.menge
+      });
+    }
+    cur = null;
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = String(lines[i] || "").replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    var m = line.match(headRe);
+    if (m && /[A-Z]/.test(m[2]) && !/[€|]/.test(line)) {
+      flush();
+      var qty = parseInt(m[3], 10);
+      cur = {
+        artnr: m[1].trim(),
+        hersteller: m[2].trim(),
+        menge: m[4] === "00" ? String(qty) : m[3] + "," + m[4],
+        name: [],
+        done: false
+      };
+      continue;
+    }
+    if (!cur) continue;
+    if (stopRe.test(line)) {
+      flush();
+      continue;
+    }
+    if (cur.done) continue;
+    if (/^[\d\s.,:€%-]+$/.test(line)) continue;
+    if (cur.name.length && /^[A-ZÄÖÜ]{3,}$/.test(line)) {
+      cur.done = true;
+      continue;
+    }
+    if (!cur.name.length && /^[A-ZÄÖÜ]{3,}$/.test(line)) continue;
+    cur.name.push(line);
+  }
+  flush();
+  return pzDedupeParts_(out);
+}
+
 function pzHasArtikelTable_(row) {
   var raw = String((row && row[13]) || "");
   return /herstellername/i.test(raw) && /artikelname/i.test(raw);
@@ -4380,13 +4454,12 @@ function getPackzettelPartsForStock(stockId) {
     var usedOrders = {};
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
-      var alfahRow = pzIsAlfahRow_(row);
-      if (!pzIsN4pRow_(row) && !alfahRow && !pzHasArtikelTable_(row)) continue;
+      if (!pzIsPartsSourceRow_(row)) continue;
       if (!pzRowBelongsToStock_(row, want)) continue;
       var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
       if (on && usedOrders[on]) continue;
       if (on) usedOrders[on] = true;
-      var parsed = alfahRow ? pzParseAlfahPartsFromText_(row[13]) : pzParseN4pPartsFromText_(row[13]);
+      var parsed = pzParseRowParts_(row);
       for (var p = 0; p < parsed.length; p++) parts.push(parsed[p]);
     }
     return { success: true, parts: pzDedupeParts_(parts) };
@@ -4405,7 +4478,7 @@ function getPackzettelPartsCache() {
       var row = values[i];
       var alfahRow = pzIsAlfahRow_(row);
       var n4Row = pzIsN4pRow_(row);
-      if (!n4Row && !alfahRow && !pzHasArtikelTable_(row)) continue;
+      if (!pzIsPartsSourceRow_(row)) continue;
       var want = n4Row ? pzN4pReferenzStock_(row) : (pzIsWorkshopStockId_(row[5]) || pzIsWorkshopStockId_(row[4]));
       if (!want && alfahRow) {
         var plainA = pzRowPlainText_(row).toUpperCase();
@@ -4417,7 +4490,7 @@ function getPackzettelPartsCache() {
       if (!usedOrdersByStock[want]) usedOrdersByStock[want] = {};
       if (on && usedOrdersByStock[want][on]) continue;
       if (on) usedOrdersByStock[want][on] = true;
-      var parsed = alfahRow ? pzParseAlfahPartsFromText_(row[13]) : pzParseN4pPartsFromText_(row[13]);
+      var parsed = pzParseRowParts_(row);
       if (!parsed || !parsed.length) continue;
       if (!byStock[want]) byStock[want] = [];
       for (var p = 0; p < parsed.length; p++) byStock[want].push(parsed[p]);
