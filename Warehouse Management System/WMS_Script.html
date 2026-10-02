@@ -4225,8 +4225,8 @@
     if (!pzPartsCacheMap) return null;
     var sid = normalizeStockInput(stockId);
     if (!sid) return null;
-    if (pzPartsCacheMap[sid]) return pzPartsCacheMap[sid];
-    return [];
+    if (pzPartsCacheMap[sid] && pzPartsCacheMap[sid].length) return pzPartsCacheMap[sid];
+    return null;
   }
 
   var hudNbOpen = false;

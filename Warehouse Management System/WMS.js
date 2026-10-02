@@ -34,7 +34,10 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.18",
     date: "02.10.2026",
     notes:
-      "• Teile aus Packzettel: TEXTAR mit 7-stelliger Artnr. (z.B. 2253105 Bremsbelagsatz) wurde verschluckt, deshalb 7 statt 8 Positionen. Die Zeile kommt jetzt mit."
+      "• Teile aus Packzettel: TEXTAR mit 7-stelliger Artnr. (z.B. 2253105 Bremsbelagsatz) wurde verschluckt, deshalb 7 statt 8 Positionen. Die Zeile kommt jetzt mit.\n\n" +
+      "• Beleg da aber kein „Teile aus Packzettel“ (z.B. FL40410): Stock-ID nicht im Cache hieß bisher einfach „keine Teile“. Jetzt fragt er dann direkt nach\n\n" +
+      "• Belege mit Artikel-Daten Tabelle zählen jetzt auch, wenn sie nicht von n4.parts kommen\n\n" +
+      "• Gmail Bridge: PDFs wo das Auslesen beim Import schiefging werden bei jedem Sync nochmal gelesen (10 pro Lauf), vorher blieben die für immer leer"
   },
   {
     version: "2.2.17",
@@ -3724,6 +3727,11 @@ function pzIsN4pRow_(row) {
   return false;
 }
 
+function pzHasArtikelTable_(row) {
+  var raw = String((row && row[13]) || "");
+  return /herstellername/i.test(raw) && /artikelname/i.test(raw);
+}
+
 function pzIsAlfahRow_(row) {
   var source = String((row && row[1]) || "").toLowerCase();
   var raw = String((row && row[13]) || "").toLowerCase();
@@ -4373,7 +4381,7 @@ function getPackzettelPartsForStock(stockId) {
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
       var alfahRow = pzIsAlfahRow_(row);
-      if (!pzIsN4pRow_(row) && !alfahRow) continue;
+      if (!pzIsN4pRow_(row) && !alfahRow && !pzHasArtikelTable_(row)) continue;
       if (!pzRowBelongsToStock_(row, want)) continue;
       var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
       if (on && usedOrders[on]) continue;
@@ -4396,8 +4404,9 @@ function getPackzettelPartsCache() {
     for (var i = 0; i < values.length; i++) {
       var row = values[i];
       var alfahRow = pzIsAlfahRow_(row);
-      if (!pzIsN4pRow_(row) && !alfahRow) continue;
-      var want = alfahRow ? normalizeStockId(row[5]) : pzN4pReferenzStock_(row);
+      var n4Row = pzIsN4pRow_(row);
+      if (!n4Row && !alfahRow && !pzHasArtikelTable_(row)) continue;
+      var want = n4Row ? pzN4pReferenzStock_(row) : (pzIsWorkshopStockId_(row[5]) || pzIsWorkshopStockId_(row[4]));
       if (!want && alfahRow) {
         var plainA = pzRowPlainText_(row).toUpperCase();
         var mA = plainA.match(/\b([A-Z]{2}\d{4,8})\b/);

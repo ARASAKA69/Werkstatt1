@@ -953,7 +953,56 @@ function syncPackzettelToSheet() {
 
   var partial = !!result.reachedLimit;
   if (!partial) pzSetLastSync_(sheet, new Date());
-  return { success: true, added: result.added, partial: partial, incremental: !!lastSync };
+  var retried = { ocred: 0, remaining: 0 };
+  try { retried = pzRetryEmptyOcr_(sheet, 10, 90000); } catch (retryErr) {}
+  return { success: true, added: result.added, partial: partial, incremental: !!lastSync, ocrRetried: retried.ocred, ocrRemaining: retried.remaining };
+}
+
+function pzRetryEmptyOcr_(sheet, maxDocs, budgetMs) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2 || !PACKZETTEL_ENABLE_OCR) return { ocred: 0, remaining: 0 };
+  var n = lastRow - 1;
+  var values = sheet.getRange(2, 1, n, 15).getValues();
+  var startMs = Date.now();
+  var ocred = 0;
+  var remaining = 0;
+  for (var i = values.length - 1; i >= 0; i--) {
+    var row = values[i];
+    if (String(row[2] || "") !== "pdf") continue;
+    if (String(row[13] || "").trim()) continue;
+    var fileId = String(row[9] || "").trim();
+    if (!fileId) continue;
+    if (ocred >= maxDocs || Date.now() - startMs > budgetMs) {
+      remaining++;
+      continue;
+    }
+    var text = "";
+    try {
+      text = pzOcrPdfText_(DriveApp.getFileById(fileId).getBlob());
+    } catch (e) {
+      text = "";
+    }
+    if (!text) {
+      remaining++;
+      continue;
+    }
+    ocred++;
+    var haystack = text + "\n" + String(row[8] || "");
+    var order = pzExtractOrderNumber_(haystack) || String(row[3] || "");
+    var ref = pzExtractReference_(haystack, order);
+    var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+    var sheetRow = i + 2;
+    sheet.getRange(sheetRow, 4, 1, 5).setValues([[
+      order,
+      ref || row[4],
+      stock || row[5],
+      pzExtractKennzeichen_(haystack) || row[6],
+      pzExtractOrderDate_(haystack) || row[7]
+    ]]);
+    sheet.getRange(sheetRow, 14).setValue(text.substring(0, PACKZETTEL_MAX_TEXT));
+  }
+  if (ocred) SpreadsheetApp.flush();
+  return { ocred: ocred, remaining: remaining };
 }
 
 function syncPackzettelFull() {
