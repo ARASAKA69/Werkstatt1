@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.18",
+    date: "02.10.2026",
+    notes:
+      "• Teile aus Packzettel: TEXTAR mit 7-stelliger Artnr. (z.B. 2253105 Bremsbelagsatz) wurde verschluckt, deshalb 7 statt 8 Positionen. Die Zeile kommt jetzt mit."
+  },
+  {
     version: "2.2.17",
     date: "01.10.2026",
     notes:
@@ -4085,6 +4091,14 @@ function pzSupplierFromBanner_(label) {
   return { tag: tag || "N4P", supplier: String(label || tag) };
 }
 
+function pzIsGrosshaendlerArtnr_(tok, next) {
+  var t = String(tok || "").replace(/[,.:;]+$/g, "");
+  if (!/^\d{7,}$/.test(t)) return false;
+  var n = String(next || "").replace(/[,.:;]+$/g, "");
+  if (/^\d{7,}$/.test(n)) return false;
+  return true;
+}
+
 function pzParseN4pTableParts_(raw, tag, supplier) {
   var text = String(raw || "").replace(/\r/g, "\n");
   var headerAt = text.search(/herstellername/i);
@@ -4110,12 +4124,12 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     }
     var art = [];
     var guard = 0;
-    while (i < tokens.length && !/^\d{7,}$/.test(tokens[i]) && guard < 12) {
+    while (i < tokens.length && !pzIsGrosshaendlerArtnr_(tokens[i], tokens[i + 1]) && guard < 12) {
       art.push(String(tokens[i]).replace(/[,.:;]+$/g, ""));
       i++;
       guard++;
     }
-    if (i >= tokens.length || !/^\d{7,}$/.test(tokens[i]) || !art.length) continue;
+    if (i >= tokens.length || !pzIsGrosshaendlerArtnr_(tokens[i], tokens[i + 1]) || !art.length) continue;
     i++;
     while (i < tokens.length && /^\d+$/.test(tokens[i])) {
       i++;
