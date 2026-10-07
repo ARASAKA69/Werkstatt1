@@ -4332,6 +4332,7 @@
     var list = document.getElementById('pzPartsList');
     var modal = document.getElementById('pzPartsModal');
     var countsEl = document.getElementById('pzPartsCounts');
+    var supplierSelectEl = document.getElementById('pzPartsSupplierSelect');
     if (!list || !modal) return;
     var comment = getCommentText();
     var html = '<div class="pz-parts-head"><span></span><span>Hersteller</span><span>Hersteller Artnr.</span><span>Artikelname</span><span>Menge</span><span></span></div>';
@@ -4381,6 +4382,21 @@
         bits.push('<span class="pz-parts-count pz-parts-count--' + t.toLowerCase() + '">' + counts[t] + ' Pos = ' + escapeHtml(t) + '</span>');
       }
       countsEl.innerHTML = bits.join('');
+    }
+    if (supplierSelectEl) {
+      var supplierButtons = [];
+      for (var b = 0; b < order.length; b++) {
+        var supplierTag = order[b];
+        if (!counts[supplierTag]) continue;
+        supplierButtons.push('<button type="button" class="pz-parts-supplier-btn pz-parts-supplier-btn--' + supplierTag.toLowerCase() + '" data-tag="' + escapeHtml(supplierTag) + '">' + escapeHtml(supplierTag) + ' auswählen (' + counts[supplierTag] + ')</button>');
+      }
+      supplierSelectEl.innerHTML = supplierButtons.join('');
+      var renderedSupplierButtons = supplierSelectEl.querySelectorAll('.pz-parts-supplier-btn');
+      for (var sb = 0; sb < renderedSupplierButtons.length; sb++) {
+        renderedSupplierButtons[sb].addEventListener('click', function() {
+          setPzPartsChecksForTag(this.getAttribute('data-tag'));
+        });
+      }
     }
     modal.classList.add('open');
     initPzPartsWindowChrome();
@@ -4469,6 +4485,14 @@
   function setPzPartsChecks(on) {
     var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
     for (var i = 0; i < boxes.length; i++) boxes[i].checked = !!on;
+  }
+
+  function setPzPartsChecksForTag(tag) {
+    var wanted = String(tag || '').toUpperCase();
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) {
+      if (String(boxes[i].getAttribute('data-tag') || '').toUpperCase() === wanted) boxes[i].checked = true;
+    }
   }
 
   function applyPzPartsToComment() {
