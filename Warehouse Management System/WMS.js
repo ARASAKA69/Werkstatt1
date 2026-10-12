@@ -42,7 +42,8 @@ const WMS_CHANGELOG_HISTORY = [
       "• Blattname auf History 2026 korrigiert\n\n" +
       "• AAG synchronisiert jetzt vier Kalendertage, prüft alle 2 Minuten auf neue Lieferscheine und entfernt doppelte Lieferschein-Positionen automatisch\n\n" +
       "• Der AAG-Portal-Tab aktualisiert sich im Hintergrund alle 10 Minuten automatisch\n\n" +
-      "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden"
+      "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden\n\n" +
+      "• Abgelaufene AAG API-Tokens werden jetzt automatisch durch einmaliges Neuladen des weiterhin angemeldeten Portals erneuert"
   },
   {
     version: "2.2.19",

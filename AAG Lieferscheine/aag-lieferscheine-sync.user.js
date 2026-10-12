@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Lieferschein Sync
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Synchronisiert AAG Lieferscheine ins WMS
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -298,7 +298,11 @@
     } catch (err) {
       const msg = String(err && err.message || err);
       if (msg === 'LOGIN_REQUIRED') {
-        setStatus('AAG Sync: neu einloggen', '#a11d2f');
+        setStatus('AAG Sync: Sitzung wird erneuert…', '#a45b00');
+        GM_setValue(RELOAD_KEY, Date.now());
+        setTimeout(function() {
+          unsafeWindow.location.reload();
+        }, 1200);
       } else {
         setStatus('AAG Sync Fehler: ' + msg, '#a11d2f');
       }
