@@ -62,6 +62,7 @@ function nachbestellungTypShouldPrintWerkstattauftragLocal(typ) {
   if (t.indexOf("erstbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
   if (t.indexOf("mechanik") !== -1 && t.indexOf("nachbestellung") !== -1) return true;
   if (t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return true;
+  if (t.indexOf("verschwunden") !== -1) return true;
   return false;
 }
 

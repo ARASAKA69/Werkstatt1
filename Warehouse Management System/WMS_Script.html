@@ -28,6 +28,13 @@
   var refurbCacheLoading = false;
   var refurbCacheProgressTimer = null;
   var refurbBackgroundTimer = null;
+  var pzPartsCacheMap = null;
+  var pzSearchIndex = null;
+  var pzPartsCacheLoading = false;
+  var aagLieferscheinCacheMap = null;
+  var aagLieferscheinCacheLoading = false;
+  var pendingAagReceipt = null;
+  var pendingAagStock = '';
   var kommentarVerlaufCache = null;
   var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
@@ -38,6 +45,7 @@
   var shelfSelectIgnoreChange = false;
   var baselineKommentar = "";
   var baselineRegal = "";
+  var unsavedLoadBypass = false;
   var stockLockHeldId = "";
   var stockLockBlocked = false;
   var stockLockBlockedId = "";
@@ -120,6 +128,10 @@
   }
   function openReifenKontrolle() {
     var w = window.open(REIFEN_KONTROLLE_URL, '_blank', 'noopener,noreferrer');
+    if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
+  }
+  function openReifenAussenScan() {
+    var w = window.open(REIFEN_KONTROLLE_URL + '?page=aussen', '_blank', 'noopener,noreferrer');
     if(!w) showStickyToast('err', 'Pop-up blockiert', 'Dein Browser hat den neuen Tab blockiert. Bitte Pop-ups für diese Seite erlauben und nochmal klicken.');
   }
   function openRegalScanHud() {
@@ -408,40 +420,39 @@
 
   function executeCastNbProcess(job) {
     var notes = [];
+    if (job.doWerkstatt) {
+      if (job.printB64 && typeof sendWerkstattauftragPrint === 'function') {
+        sendWerkstattauftragPrint(job.printB64, null, null);
+        notes.push('Auftrag gedruckt');
+      } else {
+        google.script.run
+          .withSuccessHandler(function(res) {
+            if (res && res.success && res.printB64 && typeof sendWerkstattauftragPrint === 'function') {
+              sendWerkstattauftragPrint(res.printB64, null, null);
+            } else {
+              showStickyToast('err', 'Auftrag-Druck', (res && res.message) || 'Auftrag nicht gedruckt');
+            }
+          })
+          .withFailureHandler(function(err) {
+            showStickyToast('err', 'Auftrag-Druck', err && err.message ? err.message : 'Auftrag-Fehler');
+          })
+          .requestWerkstattauftragPrint(job.stockId, job.teil || '', job.typ || '');
+        notes.push('Auftrag wird gedruckt');
+      }
+    }
     if (job.doDymo) {
       var printed = sendDymoPrint({ stockId: job.stockId, copies: job.copies || 1, silent: false });
       var okD = !!(printed && printed.success);
       notes.push(printed && printed.skipped ? 'DYMO übersprungen' : (okD ? 'DYMO gesendet' : ((printed && printed.message) || 'DYMO fehlgeschlagen')));
     }
-    function afterWerkstatt() {
-      if (job.doCarol) {
-        launchCastCarol(job);
-        return;
-      }
-      var ok = notes.join(' ').indexOf('fehlgeschlagen') === -1;
-      ackCastJob(job, ok, notes.join(' · ') || 'OK');
-      setStatus('📱 Handy: ' + (notes.join(' · ') || 'OK') + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
-      if (ok) showStickyToast('ok', 'Handy: Nachbestellung', job.stockId || '');
-    }
-    if (job.doWerkstatt) {
-      google.script.run
-        .withSuccessHandler(function(res) {
-          if (res && res.success && res.printB64 && typeof sendWerkstattauftragPrint === 'function') {
-            sendWerkstattauftragPrint(res.printB64, null, null);
-            notes.push('Auftrag gedruckt');
-          } else {
-            notes.push((res && res.message) || 'Auftrag nicht gedruckt');
-          }
-          afterWerkstatt();
-        })
-        .withFailureHandler(function(err) {
-          notes.push(err && err.message ? err.message : 'Auftrag-Fehler');
-          afterWerkstatt();
-        })
-        .requestWerkstattauftragPrint(job.stockId, job.teil || '', job.typ || '');
+    if (job.doCarol) {
+      launchCastCarol(job);
       return;
     }
-    afterWerkstatt();
+    var ok = notes.join(' ').indexOf('fehlgeschlagen') === -1;
+    ackCastJob(job, ok, notes.join(' · ') || 'OK');
+    setStatus('📱 Handy: ' + (notes.join(' · ') || 'OK') + ' — ' + (job.stockId || ''), ok ? '#56d364' : '#f85149');
+    if (ok) showStickyToast('ok', 'Handy: Nachbestellung', job.stockId || '');
   }
 
   function onCastPcHeartbeat(res) {
@@ -1051,6 +1062,7 @@
     }
     setRegalScanStatus("✅ " + regal + " erkannt – speichere…", '#56d364');
     closeRegalScan();
+    closeRegalRequiredModal();
   }
 
   var regalScanInputEl = document.getElementById('regalScanInput');
@@ -1110,25 +1122,288 @@
     if (isError) wmsBeep('err');
   }
 
-  function showStickyToast(type, title, message) {
+  var WMS_TOAST_OK_MS = 120000;
+
+  function clearToastTimer(toast) {
+    if (toast && toast._wmsTimer) {
+      clearTimeout(toast._wmsTimer);
+      toast._wmsTimer = null;
+    }
+  }
+
+  function armToastOkTimer(toast) {
+    clearToastTimer(toast);
+    if (!toast || toast._wmsPanicHold) return;
+    if (!toast.classList.contains('wms-toast--ok')) return;
+    toast._wmsTimer = setTimeout(function() {
+      if (!toast || toast._wmsPanicHold) return;
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, WMS_TOAST_OK_MS);
+  }
+
+  function showStickyToast(type, title, message, extra) {
+    extra = extra || {};
     var stack = document.getElementById('wmsToastStack');
-    if (!stack) return;
+    if (!stack) return null;
+    var isOk = type === 'ok';
     var toast = document.createElement('div');
-    toast.className = 'wms-toast wms-toast--' + (type === 'ok' ? 'ok' : 'err');
-    toast.setAttribute('role', type === 'ok' ? 'status' : 'alert');
-    toast.innerHTML =
-      '<div class="wms-toast-body">' +
-        '<div class="wms-toast-title">' + escapeHtml(title || '') + '</div>' +
-        '<div class="wms-toast-msg">' + escapeHtml(message || '') + '</div>' +
-      '</div>' +
-      '<button type="button" class="wms-toast-x" onclick="dismissWmsToast(this)" aria-label="Schließen">&times;</button>';
+    toast.className = 'wms-toast wms-toast--' + (isOk ? 'ok' : 'err');
+    toast.setAttribute('role', isOk ? 'status' : 'alert');
+    var body = document.createElement('div');
+    body.className = 'wms-toast-body';
+    var titleEl = document.createElement('div');
+    titleEl.className = 'wms-toast-title';
+    titleEl.textContent = title || '';
+    var msgEl = document.createElement('div');
+    msgEl.className = 'wms-toast-msg';
+    msgEl.textContent = message || '';
+    body.appendChild(titleEl);
+    body.appendChild(msgEl);
+    var actions = document.createElement('div');
+    actions.className = 'wms-toast-actions';
+    if (!isOk && extra.retry) {
+      var retryBtn = document.createElement('button');
+      retryBtn.type = 'button';
+      retryBtn.className = 'wms-toast-retry';
+      retryBtn.textContent = 'Jetzt erneut speichern';
+      retryBtn.addEventListener('click', function() { runToastRetry(toast, extra.retry); });
+      actions.appendChild(retryBtn);
+    }
+    if (isOk && extra.priorSnapshot && extra.stockId) {
+      var panikBtn = document.createElement('button');
+      panikBtn.type = 'button';
+      panikBtn.className = 'wms-toast-panik';
+      panikBtn.textContent = 'Jörg Panik';
+      panikBtn.addEventListener('click', function() { runToastPanik(toast, extra.stockId, extra.priorSnapshot, panikBtn); });
+      actions.appendChild(panikBtn);
+    }
+    if (actions.childNodes.length) body.appendChild(actions);
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'wms-toast-x';
+    closeBtn.setAttribute('aria-label', 'Schließen');
+    closeBtn.textContent = '×';
+    closeBtn.addEventListener('click', function() { dismissWmsToast(closeBtn); });
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
     stack.appendChild(toast);
-    wmsBeep(type === 'ok' ? 'ok' : 'err');
+    if (isOk) armToastOkTimer(toast);
+    wmsBeep(isOk ? 'ok' : 'err');
+    return toast;
   }
 
   function dismissWmsToast(btn) {
     var toast = btn && btn.closest ? btn.closest('.wms-toast') : null;
-    if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+    if (!toast) return;
+    clearToastTimer(toast);
+    if (toast.parentNode) toast.parentNode.removeChild(toast);
+  }
+
+  function setToastVisual(toast, kind, title, message) {
+    toast.classList.remove('wms-toast--ok', 'wms-toast--err', 'wms-toast--panic');
+    toast.classList.add('wms-toast--' + kind);
+    var titleEl = toast.querySelector('.wms-toast-title');
+    var msgEl = toast.querySelector('.wms-toast-msg');
+    if (titleEl) {
+      titleEl.classList.remove('is-loading');
+      titleEl.textContent = title || '';
+    }
+    if (msgEl) msgEl.textContent = message || '';
+  }
+
+  function setToastLoading(toast, title, message) {
+    var titleEl = toast.querySelector('.wms-toast-title');
+    var msgEl = toast.querySelector('.wms-toast-msg');
+    if (titleEl) {
+      titleEl.classList.add('is-loading');
+      titleEl.textContent = '';
+      var spin = document.createElement('span');
+      spin.className = 'hud-spin hud-spin--sm';
+      titleEl.appendChild(spin);
+      titleEl.appendChild(document.createTextNode(' ' + (title || 'Speichere erneut…')));
+    }
+    if (msgEl) msgEl.textContent = message || '';
+  }
+
+  function toastEnsureActions(toast) {
+    var actions = toast.querySelector('.wms-toast-actions');
+    if (actions) return actions;
+    var body = toast.querySelector('.wms-toast-body');
+    if (!body) return null;
+    actions = document.createElement('div');
+    actions.className = 'wms-toast-actions';
+    body.appendChild(actions);
+    return actions;
+  }
+
+  function toastRetryButton(toast, retry) {
+    var actions = toastEnsureActions(toast);
+    if (!actions) return;
+    actions.innerHTML = '';
+    var retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'wms-toast-retry';
+    retryBtn.textContent = 'Jetzt erneut speichern';
+    retryBtn.addEventListener('click', function() { runToastRetry(toast, retry); });
+    actions.appendChild(retryBtn);
+  }
+
+  function toastPanikButton(toast, stockId, snapshot) {
+    if (!snapshot || !stockId) return;
+    var actions = toastEnsureActions(toast);
+    if (!actions) return;
+    var old = actions.querySelector('.wms-toast-panik');
+    if (old) old.parentNode.removeChild(old);
+    var panikBtn = document.createElement('button');
+    panikBtn.type = 'button';
+    panikBtn.className = 'wms-toast-panik';
+    panikBtn.textContent = 'Jörg Panik';
+    panikBtn.addEventListener('click', function() { runToastPanik(toast, stockId, snapshot, panikBtn); });
+    actions.appendChild(panikBtn);
+  }
+
+  function applyToastSaveSideEffects(retry, res) {
+    var stockId = normalizeStockIdJs(retry.stockId);
+    handleVerlaufSaveSuccess(res);
+    if (retry.kind === 'tagesliste') {
+      if (res && res.oldRegal != null) showOldRegalModal(res.oldRegal, stockId);
+      loadRefurbishmentCache(true);
+      loadKommentarVerlaufCache(true);
+      if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
+        resetWmsHudForNextOrder('✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.');
+      }
+      return;
+    }
+    var savedText = retry.text != null ? retry.text : ((res && res.savedKommentar) || '');
+    var savedRegal = retry.regal || retry.expectedRegal || '';
+    if (res && res.savedRegal != null && String(res.savedRegal).trim() !== '') savedRegal = String(res.savedRegal).trim();
+    else if (!retry.regal) savedRegal = retry.expectedRegal || '';
+    if (normalizeStockIdJs(currentStock) === stockId) {
+      setBaselines(savedText, savedRegal);
+      if ((retry.kind === 'einlagern' || retry.kind === 'kommentarRegal') && savedRegal) {
+        applyShelfUiFromRegal(savedRegal);
+      }
+    }
+    if (retry.kind === 'kommentarRegal') patchRefurbCacheKommentarRegal(stockId, savedText, savedRegal);
+    loadRefurbishmentCache(true);
+    loadKommentarVerlaufCache(true);
+    if (retry.kind === 'einlagern' && normalizeStockIdJs(currentStock) === stockId) {
+      var searchEl = document.getElementById('searchInput');
+      if (searchEl) searchEl.value = currentStock;
+      unsavedLoadBypass = true;
+      loadData();
+    }
+  }
+
+  function finishToastRetryFail(toast, retry, message) {
+    toast._wmsBusy = false;
+    setToastVisual(toast, 'err', '❌ Speichern fehlgeschlagen — ' + (retry.stockId || ''), message || 'Unbekannter Fehler');
+    toastRetryButton(toast, retry);
+    wmsBeep('err');
+  }
+
+  function finishToastRetryOk(toast, retry, res) {
+    toast._wmsBusy = false;
+    toast._wmsPanicHold = false;
+    setToastVisual(toast, 'ok', '✅ Gespeichert — ' + (retry.stockId || ''), (res && res.message) || 'Gespeichert.');
+    var actions = toast.querySelector('.wms-toast-actions');
+    if (actions) actions.innerHTML = '';
+    var snap = (retry && retry.priorSnapshot) || (res && res.priorSnapshot) || null;
+    if (snap) toastPanikButton(toast, retry.stockId, snap);
+    armToastOkTimer(toast);
+    wmsBeep('ok');
+  }
+
+  function runToastRetry(toast, retry) {
+    if (!toast || !retry || toast._wmsBusy) return;
+    toast._wmsBusy = true;
+    var retryBtn = toast.querySelector('.wms-toast-retry');
+    if (retryBtn) retryBtn.disabled = true;
+    setToastLoading(toast, 'Speichere erneut…', retry.stockId || '');
+    var runner = google.script.run
+      .withSuccessHandler(function(res) {
+        if (res && res.conflict) {
+          toast._wmsBusy = false;
+          handleSaveConcurrencyConflict(res, retry.stockId, retry);
+          finishToastRetryFail(toast, retry, (res && res.message) || 'Konflikt');
+          return;
+        }
+        if (res && res.success) {
+          applyToastSaveSideEffects(retry, res);
+          finishToastRetryOk(toast, retry, res);
+          return;
+        }
+        finishToastRetryFail(toast, retry, (res && res.message) || 'Unbekannter Fehler');
+      })
+      .withFailureHandler(function(err) {
+        finishToastRetryFail(toast, retry, err && err.message ? err.message : 'Serverfehler');
+      });
+    if (retry.kind === 'kommentarRegal') {
+      runner.saveKommentarUndRegal(retry.stockId, retry.text, retry.regal, retry.expectedKommentar, retry.expectedRegal, retry.source || '');
+    } else if (retry.kind === 'kommentar' || retry.kind === 'carol') {
+      runner.saveKommentar(retry.stockId, retry.text, retry.action || (retry.kind === 'carol' ? 'carol' : 'speichern'), retry.expectedKommentar, retry.expectedRegal, retry.source || '');
+    } else if (retry.kind === 'tagesliste') {
+      runner.triggerCarolMission(retry.stockId);
+    } else if (retry.kind === 'einlagern') {
+      runner.einlagern(retry.stockId, retry.regal, retry.expectedKommentar, retry.expectedRegal);
+    } else {
+      finishToastRetryFail(toast, retry, 'Erneut speichern nicht möglich');
+    }
+  }
+
+  function runToastPanik(toast, stockId, snapshot, btn) {
+    if (!toast || toast._wmsBusy) return;
+    if (!btn._panikArmed) {
+      btn._panikArmed = true;
+      btn.textContent = 'Wirklich zurücksetzen?';
+      toast._wmsPanicHold = true;
+      clearToastTimer(toast);
+      return;
+    }
+    toast._wmsBusy = true;
+    toast._wmsPanicHold = true;
+    clearToastTimer(toast);
+    btn.disabled = true;
+    setToastLoading(toast, 'Setze zurück…', stockId || '');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        toast._wmsBusy = false;
+        if (res && res.success) {
+          toast._wmsPanicHold = true;
+          clearToastTimer(toast);
+          setToastVisual(toast, 'panic', 'Zurückgesetzt — ' + stockId, res.message || 'Kommentar, Farbe, Status und Regal sind wieder wie vorher.');
+          var actions = toast.querySelector('.wms-toast-actions');
+          if (actions) actions.innerHTML = '';
+          var sid = normalizeStockIdJs(stockId);
+          if (normalizeStockIdJs(currentStock) === sid) {
+            setCommentText(res.savedKommentar || '');
+            setBaselines(res.savedKommentar || '', res.savedRegal || '');
+            applyShelfUiFromRegal(res.savedRegal || '');
+          }
+          handleVerlaufSaveSuccess(res);
+          loadRefurbishmentCache(true);
+          loadKommentarVerlaufCache(true);
+          wmsBeep('ok');
+          return;
+        }
+        btn.disabled = false;
+        btn._panikArmed = false;
+        btn.textContent = 'Jörg Panik';
+        setToastVisual(toast, 'err', 'Zurücksetzen fehlgeschlagen — ' + stockId, (res && res.message) || 'Zurücksetzen fehlgeschlagen');
+        toast._wmsPanicHold = true;
+        clearToastTimer(toast);
+        wmsBeep('err');
+      })
+      .withFailureHandler(function(err) {
+        toast._wmsBusy = false;
+        btn.disabled = false;
+        btn._panikArmed = false;
+        btn.textContent = 'Jörg Panik';
+        var msgEl = toast.querySelector('.wms-toast-msg');
+        if (msgEl) msgEl.textContent = err && err.message ? err.message : 'Zurücksetzen fehlgeschlagen';
+        wmsBeep('err');
+      })
+      .joergPanikRestore(stockId, snapshot);
   }
 
   var wmsAudioCtx = null;
@@ -1288,6 +1563,11 @@
       e.stopPropagation();
     }
 
+    if (wmsElIsOpen('unsavedLoadOverlay')) {
+      consumeEsc();
+      return;
+    }
+
     var oldRegal = document.getElementById('oldRegalModal');
     if (oldRegal && oldRegal.classList.contains('open') && (isEsc || isEnter)) {
       consumeEsc();
@@ -1373,6 +1653,11 @@
       closeWmsShortcutsModal();
       return;
     }
+    if (wmsElIsOpen('pzPartsModal')) {
+      consumeEsc();
+      closePzPartsPicker();
+      return;
+    }
     if (wmsElIsOpen('nbChooseModal')) {
       consumeEsc();
       closeNbChooser();
@@ -1405,6 +1690,11 @@
       consumeEsc();
       closeRegalScan();
       focusSearchBar();
+      return;
+    }
+    if (wmsElIsOpen('regalRequiredModal')) {
+      consumeEsc();
+      closeRegalRequiredModal();
       return;
     }
     var busy = document.getElementById('hudBusyOverlay');
@@ -1728,7 +2018,7 @@
     }
   }
 
-  function handleSaveConcurrencyConflict(res, stockId) {
+  function handleSaveConcurrencyConflict(res, stockId, retry) {
     var kommentar = String(res && res.currentKommentar != null ? res.currentKommentar : "");
     var regal = String(res && res.currentRegal != null ? res.currentRegal : "").trim();
     var sid = normalizeStockIdJs(stockId || currentStock);
@@ -1741,10 +2031,24 @@
     var msg = (res && res.message) ||
       "Konflikt: Daten von Kollegen neu geladen – bitte prüfen, eigenen Kommentar ergänzen, erneut speichern.";
     setStatus("⚠️ " + msg, "#F27420");
+    var nextRetry = null;
+    if (retry && retry.kind) {
+      nextRetry = {
+        kind: retry.kind,
+        stockId: sid,
+        text: retry.text,
+        regal: retry.regal,
+        action: retry.action,
+        source: retry.source || '',
+        expectedKommentar: kommentar,
+        expectedRegal: regal
+      };
+    }
     showStickyToast(
       "err",
       "⚠️ Konflikt — " + sid,
-      msg
+      msg,
+      nextRetry ? { retry: nextRetry } : null
     );
   }
 
@@ -2247,6 +2551,7 @@
       + 'td.sid,td.reg{font-weight:700;}'
       + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
       + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-st{width:72px;}col.c-rf{width:52px;}col.c-sch{width:20%;}col.c-et{width:auto;}col.c-an{width:auto;}'
+      + 'thead{display:table-header-group;}'
       + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
@@ -2284,13 +2589,31 @@
     sendOverviewPrint(html, document.querySelector('.ov-btn-print'), '\ud83d\udda8\ufe0f Drucken');
   }
 
+  function openOverviewPrintPreview(html) {
+    var extra = '.ov-print-bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-16px -16px 14px -16px;padding:10px 16px;background:#1a1a1a;color:#fff;font-family:Arial,sans-serif;font-size:13px;}'
+      + '.ov-print-go{background:#F27420;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;font-size:14px;cursor:pointer;}'
+      + '@media print{.ov-print-bar{display:none !important;}}';
+    var doc = String(html || '').replace('</style>', extra + '</style>');
+    var bar = '<div class="ov-print-bar"><span>Vorschau. Drucken öffnet den Windows-Dialog — Drucker und Seiten dort ändern.</span><button type="button" class="ov-print-go" onclick="window.print()">Drucken</button></div>';
+    doc = doc.replace('<body>', '<body>' + bar);
+    var w = window.open('', '_blank');
+    if (!w) {
+      alert('Popup blockiert. Popups für WMS erlauben und nochmal auf Drucken + ET.');
+      return;
+    }
+    w.document.open();
+    w.document.write(doc);
+    w.document.close();
+    try { w.focus(); } catch (e) {}
+  }
+
   function printOverviewDetailList() {
     if (!ovAllEntries || !ovAllEntries.length) {
       alert('Keine Einträge zum Drucken.');
       return;
     }
     var html = buildOverviewDetailHtml(ovAllEntries, overviewPrintDateHeader());
-    sendOverviewPrint(html, document.querySelector('.ov-btn-print-detail'), '\ud83d\udda8\ufe0f Drucken + ET');
+    openOverviewPrintPreview(html);
   }
 
   function normalizeStockInput(value) {
@@ -2638,7 +2961,11 @@
 
   function closeNbChooser() {
     var m = document.getElementById('nbChooseModal');
+    var wasOpen = !!(m && m.classList.contains('open'));
     if(m) m.classList.remove('open');
+    hudNbOpen = false;
+    if (!wasOpen || hudSkipParts) return;
+    revealPzParts(nbChooserStock || currentStock);
   }
 
   function openNachbestellungOnly(stockId, opts) {
@@ -2664,6 +2991,7 @@
 
   function openNbFromChooser() {
     var stock = nbChooserStock;
+    hudSkipParts = true;
     closeNbChooser();
     if(!stock) return;
     openNachbestellungOnly(stock, { clearHud: false });
@@ -2729,13 +3057,22 @@
     });
   }
 
-  function maybeShowNbChooser(stockId, opts) {
-    if(!stockId) return;
-    if(currentWmsSource === 'nachbestellung') return;
+  function maybeShowNbChooser(stockId, opts, done) {
+    function finish(shown) {
+      if (!done) return;
+      var cb = done;
+      done = null;
+      cb(!!shown);
+    }
+    if(!stockId || currentWmsSource === 'nachbestellung') {
+      finish(false);
+      return;
+    }
     opts = opts || {};
     var local = nbEntriesForStock(stockId);
     if(local.length) {
       showNbChooser(stockId, local, opts);
+      finish(true);
       return;
     }
     function askServer() {
@@ -2744,32 +3081,51 @@
           && normalizeStockInput(stockId) === normalizeStockInput(currentStock)
           && currentWmsSource !== 'nachbestellung') {
           showNbChooser(stockId, res.entries, opts);
+          finish(true);
+        } else {
+          finish(false);
         }
-      }).withFailureHandler(function() {}).getNachbestellungenForStock(stockId);
+      }).withFailureHandler(function() { finish(false); }).getNachbestellungenForStock(stockId);
     }
-    if(!nbChooserCacheReady) {
-      loadNbChooserCache(false);
-      var tries = 0;
-      var timer = setInterval(function() {
-        tries += 1;
-        if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
-          clearInterval(timer);
-          return;
-        }
-        var later = nbEntriesForStock(stockId);
-        if(later.length) {
-          clearInterval(timer);
-          showNbChooser(stockId, later, opts);
-          return;
-        }
-        if(nbChooserCacheReady || tries >= 15) {
-          clearInterval(timer);
-          if(!nbEntriesForStock(stockId).length) askServer();
-        }
-      }, 400);
+    if(nbChooserCacheReady) {
+      finish(false);
+      google.script.run.withSuccessHandler(function(res) {
+        if(!(res && res.success && res.entries && res.entries.length)) return;
+        if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+        if(currentWmsSource === 'nachbestellung') return;
+        var partsModal = document.getElementById('pzPartsModal');
+        if(partsModal) partsModal.classList.remove('open');
+        hudNbOpen = true;
+        showNbChooser(stockId, res.entries, opts);
+      }).withFailureHandler(function() {}).getNachbestellungenForStock(stockId);
       return;
     }
-    askServer();
+    loadNbChooserCache(false);
+    var tries = 0;
+    var timer = setInterval(function() {
+      tries += 1;
+      if(normalizeStockInput(stockId) !== normalizeStockInput(currentStock) || currentWmsSource === 'nachbestellung') {
+        clearInterval(timer);
+        finish(false);
+        return;
+      }
+      var later = nbEntriesForStock(stockId);
+      if(later.length) {
+        clearInterval(timer);
+        showNbChooser(stockId, later, opts);
+        finish(true);
+        return;
+      }
+      if(nbChooserCacheReady) {
+        clearInterval(timer);
+        finish(false);
+        return;
+      }
+      if(tries >= 15) {
+        clearInterval(timer);
+        askServer();
+      }
+    }, 400);
   }
 
   function loadNbIntoHud(stockId, alsoOpenModal) {
@@ -2809,6 +3165,7 @@
     if (t.indexOf('nachbestellung') !== -1 && t.indexOf('falsch') !== -1) return true;
     if (t.indexOf('mechanik') !== -1 && t.indexOf('nachbestellung') !== -1) return true;
     if (t.indexOf('q-check') !== -1 || t.indexOf('qcheck') !== -1) return true;
+    if (t.indexOf('verschwunden') !== -1) return true;
     return false;
   }
 
@@ -3199,9 +3556,12 @@
 
   function sendWerkstattauftragPrint(printB64, badgeEl, msgEl) {
     if (!printB64) return;
-    showWerkstattPrintStatus(badgeEl, msgEl, 'Drucke Auftrag…', '#9da7b3');
-    if (badgeEl && !msgEl) {
-      badgeEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Drucke Auftrag…</span>';
+    var quiet = !badgeEl && !msgEl;
+    if (!quiet) {
+      showWerkstattPrintStatus(badgeEl, msgEl, 'Drucke Auftrag…', '#9da7b3');
+      if (badgeEl && !msgEl) {
+        badgeEl.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Drucke Auftrag…</span>';
+      }
     }
     fetch(BRIDGE_URL + '/print-b64', {
       method: 'POST',
@@ -3213,11 +3573,33 @@
         return data;
       });
     }).then(function() {
+      if (quiet) {
+        showStickyToast('ok', 'Auftrag gedruckt', 'Werkstattauftrag ist an den Drucker.');
+        return;
+      }
       showWerkstattPrintStatus(badgeEl, msgEl, 'Auftrag gedruckt!', '#56d364', badgeEl && !msgEl ? 4000 : 0);
     }).catch(function(err) {
       var errTxt = 'Druck fehlgeschlagen: ' + (err && err.message ? err.message : 'Bridge nicht erreichbar');
-      showWerkstattPrintStatus(badgeEl, msgEl, errTxt, '#f85149', badgeEl && !msgEl ? 10000 : 0);
+      if (quiet) {
+        showStickyToast('err', 'Auftrag-Druck', errTxt);
+        return;
+      }
+      showWerkstattPrintStatus(badgeEl, msgEl, errTxt, '#f85149', 0);
     });
+  }
+
+  function kickNbWerkstattPrint(nbEnt) {
+    if (!nbEnt || !nbEnt.stockId) return;
+    if (!nbTypShouldPrintWerkstattauftrag(nbEnt.typ)) return;
+    google.script.run.withSuccessHandler(function(res) {
+      if (!res || !res.success || !res.printB64) {
+        showStickyToast('err', 'Auftrag-Druck', (res && res.message) || 'Auftrag konnte nicht vorbereitet werden');
+        return;
+      }
+      sendWerkstattauftragPrint(res.printB64, null, null);
+    }).withFailureHandler(function(err) {
+      showStickyToast('err', 'Auftrag-Druck', (err && err.message) ? err.message : 'Auftrag-Fehler');
+    }).requestWerkstattauftragPrint(nbEnt.stockId, nbEnt.teil || '', nbEnt.typ || '');
   }
 
   function printNbWerkstattauftrag(event, index) {
@@ -3322,6 +3704,7 @@
     var showErr = function(msg) {
       carolReturnRestoreNb = null;
       wmsBeep('err');
+      setStatus(msg, '#f85149');
       if(badge) { badge.innerText = msg; badge.style.color = '#f85149'; }
     };
     carolReturnRestoreNb = stockId || true;
@@ -3502,8 +3885,14 @@
       badge.style.color = '';
       badge.innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Speichere…</span>';
     }
+    var wantPrint = !!(nbEnt.stockId && nbIsKomplettStatus(value) && nbTypShouldPrintWerkstattauftrag(nbEnt.typ));
+    if (wantPrint) kickNbWerkstattPrint(nbEnt);
     if (nbShouldStartCarol(value, nbEnt.typ) && nbEnt.stockId) {
-      startNbCarol(nbEnt.stockId, badge);
+      startNbCarol(nbEnt.stockId, null);
+    }
+    var didDymo = false;
+    if (nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
+      didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
     }
     google.script.run.withSuccessHandler(function(res) {
       if (sel) sel.disabled = false;
@@ -3539,17 +3928,9 @@
           }
         }
         if (btn && nbIsKomplettStatus(value)) btn.remove();
-        var didDymo = false;
-        if (nbShouldAutoPrintDymo(value) && nbEnt.stockId) {
-          didDymo = autoPrintNbDymo(nbEnt.stockId, index, badge);
-        }
         if (!didDymo) {
           var hintTeil = nbIsTeilweiseStatus(value) && document.getElementById('nb-comment-' + index) && !String((document.getElementById('nb-comment-' + index).value || '')).trim();
           if (badge) badge.innerText = hintTeil ? 'Teilweise — bitte eintragen, welche Teile schon da sind' : (res.message || 'Gespeichert!');
-        }
-        if (res.printB64) {
-          sendWerkstattauftragPrint(res.printB64, badge, null);
-        } else {
           setTimeout(function() { if (badge) badge.innerText = nbAllEntries.length + ' offen'; }, 4000);
         }
       } else {
@@ -3683,6 +4064,9 @@
   var currentPzKeys = [];
   var pzPendingKeys = null;
   var pzPendingLabel = '';
+  var pzPartsCache = [];
+  var pzPartsStock = '';
+  var pzPartsPendingNb = null;
 
   function minimizePzModal() {
     document.getElementById('pzModal').classList.remove('open');
@@ -3797,8 +4181,398 @@
 
   function hidePzContext() {
     currentPzKeys = [];
+    pzPartsCache = [];
+    pzPartsStock = '';
+    pzPartsPendingNb = null;
     var action = document.getElementById('pzCardAction');
     if(action) action.style.display = 'none';
+    hidePzPartsButton();
+    var partsModal = document.getElementById('pzPartsModal');
+    if (partsModal) partsModal.classList.remove('open');
+  }
+
+  function hidePzPartsButton() {
+    var btn = document.getElementById('btnPzParts');
+    if (btn) btn.style.display = 'none';
+  }
+
+  function updatePzPartsButton(n) {
+    var btn = document.getElementById('btnPzParts');
+    if (!btn) return;
+    if (n > 0) {
+      btn.style.display = '';
+      btn.innerText = 'Teile aus Packzettel (' + n + ')';
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function loadPzPartsCache(force, onDone) {
+    if (pzPartsCacheLoading && !force) {
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    pzPartsCacheLoading = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        pzPartsCacheLoading = false;
+        if (res && res.success && res.byStock) pzPartsCacheMap = res.byStock;
+        if (res && res.success && res.searchIndex) pzSearchIndex = res.searchIndex;
+        if (typeof onDone === 'function') onDone();
+      })
+      .withFailureHandler(function() {
+        pzPartsCacheLoading = false;
+        if (typeof onDone === 'function') onDone();
+      })
+      .getPackzettelPartsCache();
+  }
+
+  function loadAagLieferscheinCache(force, onDone) {
+    if (aagLieferscheinCacheLoading && !force) {
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    aagLieferscheinCacheLoading = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        aagLieferscheinCacheLoading = false;
+        if (res && res.success && res.byLs) aagLieferscheinCacheMap = res.byLs;
+        if (typeof onDone === 'function') onDone();
+      })
+      .withFailureHandler(function() {
+        aagLieferscheinCacheLoading = false;
+        if (typeof onDone === 'function') onDone();
+      })
+      .getAagLieferscheinCache();
+  }
+
+  function aagLieferscheinFromCache(receiptNumber) {
+    if (!aagLieferscheinCacheMap) return null;
+    var key = String(receiptNumber || '').replace(/\s+/g, '').toUpperCase();
+    return aagLieferscheinCacheMap[key] || null;
+  }
+
+  function pzMergeScannedAagParts(parts, stockId) {
+    var base = [];
+    var sid = normalizeStockInput(stockId);
+    if (!pendingAagReceipt || normalizeStockInput(pendingAagStock) !== sid) return (parts || []).slice();
+    for (var b = 0; b < (parts || []).length; b++) {
+      if (String((parts[b] && parts[b].tag) || '').toUpperCase() !== 'AAG') base.push(parts[b]);
+    }
+    var delivered = pendingAagReceipt.parts || [];
+    for (var i = 0; i < delivered.length; i++) {
+      if (delivered[i] && delivered[i].name) base.push(delivered[i]);
+    }
+    pendingAagReceipt = null;
+    pendingAagStock = '';
+    return base;
+  }
+
+  function pzPartsFromCache(stockId) {
+    if (!pzPartsCacheMap) return null;
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return null;
+    if (pzPartsCacheMap[sid] && pzPartsCacheMap[sid].length) return pzPartsCacheMap[sid];
+    return null;
+  }
+
+  var hudNbOpen = false;
+  var hudSkipParts = false;
+  var hudPopupStock = '';
+
+  function revealPzParts(stockId) {
+    if (hudSkipParts || hudNbOpen) return;
+    if (!stockId) return;
+    if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+    if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+    if (normalizeStockInput(pzPartsStock) !== normalizeStockInput(stockId)) return;
+    if (!pzPartsCache || !pzPartsCache.length) return;
+    var modal = document.getElementById('pzPartsModal');
+    if (modal && modal.classList.contains('open')) return;
+    showPzPartsPicker(pzPartsCache);
+  }
+
+  function maybeShowPzPartsThenNb(stockId, nbOpts) {
+    pzPartsPendingNb = null;
+    hudNbOpen = false;
+    hudSkipParts = false;
+    hudPopupStock = stockId || '';
+    var openParts = document.getElementById('pzPartsModal');
+    if (openParts) openParts.classList.remove('open');
+    var nbDecided = false;
+    var nbShown = false;
+    maybeShowNbChooser(stockId, nbOpts, function(shown) {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+      nbDecided = true;
+      nbShown = !!shown;
+      hudNbOpen = nbShown;
+      if (!nbShown) revealPzParts(stockId);
+    });
+    var stockKey = normalizeStockInput(stockId);
+    function onParts(parts) {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
+      pzPartsCache = pzMergeScannedAagParts(parts || [], stockId);
+      pzPartsStock = stockId;
+      updatePzPartsButton(pzPartsCache.length);
+      if (nbDecided && !hudNbOpen) revealPzParts(stockId);
+    }
+    if (!stockKey) {
+      hidePzPartsButton();
+      onParts([]);
+      return;
+    }
+    var cached = pzPartsFromCache(stockKey);
+    if (cached !== null) {
+      onParts(cached);
+      return;
+    }
+    google.script.run.withSuccessHandler(function(res) {
+      var parts = (res && res.success && res.parts) ? res.parts : [];
+      onParts(parts);
+    }).withFailureHandler(function() {
+      if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
+      hidePzPartsButton();
+      onParts([]);
+    }).getPackzettelPartsForStock(stockKey);
+  }
+
+  function openPzPartsPickerManual() {
+    if (!pzPartsCache.length) return;
+    pzPartsPendingNb = null;
+    showPzPartsPicker(pzPartsCache);
+  }
+
+  function pzCompactPartText(s) {
+    return String(s || '')
+      .toLowerCase()
+      .replace(/ä/g, 'a')
+      .replace(/ö/g, 'o')
+      .replace(/ü/g, 'u')
+      .replace(/ß/g, 'ss')
+      .replace(/[^a-z0-9]+/g, '');
+  }
+
+  function pzPartAlreadyInComment(name, tag, comment) {
+    var c = pzCompactPartText(comment);
+    var n = pzCompactPartText(name);
+    if (!c || n.length < 4) return false;
+    if (c.indexOf(n) !== -1) return true;
+    var tagged = pzCompactPartText(String(name || '') + ' ' + String(tag || ''));
+    return tagged.length >= 5 && c.indexOf(tagged) !== -1;
+  }
+
+  function pzPartCommentLine(hersteller, artnr, name, menge, tag) {
+    var bits = [];
+    if (hersteller) bits.push(hersteller);
+    if (artnr) bits.push(artnr);
+    if (name) bits.push(name);
+    if (menge) bits.push(String(menge));
+    if (tag) bits.push(tag);
+    return bits.join(' ') + ' da //';
+  }
+
+  function showPzPartsPicker(parts) {
+    var list = document.getElementById('pzPartsList');
+    var modal = document.getElementById('pzPartsModal');
+    var countsEl = document.getElementById('pzPartsCounts');
+    var supplierSelectEl = document.getElementById('pzPartsSupplierSelect');
+    if (!list || !modal) return;
+    var comment = getCommentText();
+    var html = '<div class="pz-parts-head"><span></span><span>Hersteller</span><span>Hersteller Artnr.</span><span>Artikelname</span><span>Menge</span><span></span></div>';
+    var counts = {};
+    var total = 0;
+    var order = ['KNOLL', 'WM', 'STA', 'ALFAH'];
+    for (var i = 0; i < (parts || []).length; i++) {
+      var p = parts[i] || {};
+      var name = String(p.name || '');
+      var tag = String(p.tag || '').toUpperCase();
+      if (!name) continue;
+      var hersteller = String(p.hersteller || '');
+      var artnr = String(p.herstellerArtnr || '');
+      var menge = String(p.menge || '');
+      var id = 'pzPartChk' + i;
+      var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+      var checked = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment) ? ' checked' : '';
+      var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
+      var fullLine = tag === 'ALFAH' || (!hersteller && !artnr && !menge);
+      html += '<label class="pz-parts-item' + (fullLine ? ' pz-parts-item--full' : '') + '" for="' + id + '">';
+      html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
+      if (fullLine) {
+        html += '<span class="pz-parts-name pz-parts-name--full">' + escapeHtml(name) + '</span>';
+      } else {
+        html += '<span class="pz-parts-col">' + escapeHtml(hersteller || '—') + '</span>';
+        html += '<span class="pz-parts-col">' + escapeHtml(artnr || '—') + '</span>';
+        html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
+        html += '<span class="pz-parts-qty">' + escapeHtml(menge || '—') + '</span>';
+      }
+      if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
+      else html += '<span></span>';
+      html += '</label>';
+      if (tag) {
+        if (counts[tag] == null) counts[tag] = 0;
+        counts[tag]++;
+        total++;
+        if (order.indexOf(tag) === -1) order.push(tag);
+      }
+    }
+    list.innerHTML = total ? html : '<div class="nb-choose-sub">Keine Artikel gefunden.</div>';
+    if (countsEl) {
+      var bits = [];
+      if (total) bits.push('<span class="pz-parts-count-total">' + total + ' Positionen</span>');
+      for (var o = 0; o < order.length; o++) {
+        var t = order[o];
+        if (!counts[t]) continue;
+        bits.push('<span class="pz-parts-count pz-parts-count--' + t.toLowerCase() + '">' + counts[t] + ' Pos = ' + escapeHtml(t) + '</span>');
+      }
+      countsEl.innerHTML = bits.join('');
+    }
+    if (supplierSelectEl) {
+      var supplierButtons = [];
+      for (var b = 0; b < order.length; b++) {
+        var supplierTag = order[b];
+        if (!counts[supplierTag]) continue;
+        supplierButtons.push('<button type="button" class="pz-parts-supplier-btn pz-parts-supplier-btn--' + supplierTag.toLowerCase() + '" data-tag="' + escapeHtml(supplierTag) + '">' + escapeHtml(supplierTag) + ' auswählen (' + counts[supplierTag] + ')</button>');
+      }
+      supplierSelectEl.innerHTML = supplierButtons.join('');
+      var renderedSupplierButtons = supplierSelectEl.querySelectorAll('.pz-parts-supplier-btn');
+      for (var sb = 0; sb < renderedSupplierButtons.length; sb++) {
+        renderedSupplierButtons[sb].addEventListener('click', function() {
+          setPzPartsChecksForTag(this.getAttribute('data-tag'));
+        });
+      }
+    }
+    modal.classList.add('open');
+    initPzPartsWindowChrome();
+  }
+
+  function initPzPartsWindowChrome() {
+    var dialog = document.querySelector('#pzPartsModal .pz-parts-dialog');
+    if (!dialog || dialog.getAttribute('data-pz-chrome') === '1') return;
+    dialog.setAttribute('data-pz-chrome', '1');
+    var head = dialog.querySelector('.nb-choose-head');
+    if (head) {
+      head.addEventListener('mousedown', function(e) {
+        if (e.button !== 0 || e.target.closest('button')) return;
+        e.preventDefault();
+        var rect = dialog.getBoundingClientRect();
+        dialog.style.position = 'fixed';
+        dialog.style.margin = '0';
+        dialog.style.left = rect.left + 'px';
+        dialog.style.top = rect.top + 'px';
+        dialog.style.width = rect.width + 'px';
+        dialog.style.height = rect.height + 'px';
+        var sx = e.clientX, sy = e.clientY, ox = rect.left, oy = rect.top;
+        function move(ev) {
+          var nx = ox + (ev.clientX - sx);
+          var ny = oy + (ev.clientY - sy);
+          nx = Math.max(8, Math.min(nx, window.innerWidth - 80));
+          ny = Math.max(8, Math.min(ny, window.innerHeight - 80));
+          dialog.style.left = Math.round(nx) + 'px';
+          dialog.style.top = Math.round(ny) + 'px';
+        }
+        function up() {
+          document.removeEventListener('mousemove', move);
+          document.removeEventListener('mouseup', up);
+        }
+        document.addEventListener('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+    }
+    var dirs = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
+    for (var d = 0; d < dirs.length; d++) {
+      var handle = document.createElement('div');
+      handle.className = 'pz-parts-resize pz-parts-resize--' + dirs[d];
+      handle.setAttribute('data-dir', dirs[d]);
+      dialog.appendChild(handle);
+    }
+    dialog.addEventListener('mousedown', function(e) {
+      var handle = e.target.closest('.pz-parts-resize');
+      if (!handle) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var dir = handle.getAttribute('data-dir') || 'se';
+      var rect = dialog.getBoundingClientRect();
+      dialog.style.position = 'fixed';
+      dialog.style.margin = '0';
+      dialog.style.left = rect.left + 'px';
+      dialog.style.top = rect.top + 'px';
+      dialog.style.width = rect.width + 'px';
+      dialog.style.height = rect.height + 'px';
+      var sx = e.clientX, sy = e.clientY;
+      var ow = rect.width, oh = rect.height, oLeft = rect.left, oTop = rect.top;
+      function move(ev) {
+        var dx = ev.clientX - sx, dy = ev.clientY - sy;
+        var newL = oLeft, newT = oTop, newW = ow, newH = oh;
+        if (dir.indexOf('e') !== -1) newW = ow + dx;
+        if (dir.indexOf('s') !== -1) newH = oh + dy;
+        if (dir.indexOf('w') !== -1) { newW = ow - dx; newL = oLeft + dx; }
+        if (dir.indexOf('n') !== -1) { newH = oh - dy; newT = oTop + dy; }
+        newW = Math.max(720, Math.round(newW));
+        newH = Math.max(420, Math.round(newH));
+        if (dir.indexOf('w') !== -1) newL = oLeft + (ow - newW);
+        if (dir.indexOf('n') !== -1) newT = oTop + (oh - newH);
+        dialog.style.left = newL + 'px';
+        dialog.style.top = newT + 'px';
+        dialog.style.width = newW + 'px';
+        dialog.style.height = newH + 'px';
+      }
+      function up() {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+      }
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    });
+  }
+
+  function setPzPartsChecks(on) {
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) boxes[i].checked = !!on;
+  }
+
+  function setPzPartsChecksForTag(tag) {
+    var wanted = String(tag || '').toUpperCase();
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    for (var i = 0; i < boxes.length; i++) {
+      if (String(boxes[i].getAttribute('data-tag') || '').toUpperCase() === wanted) boxes[i].checked = true;
+    }
+  }
+
+  function applyPzPartsToComment() {
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    var comment = getCommentText();
+    var extras = [];
+    var probe = comment;
+    for (var i = 0; i < boxes.length; i++) {
+      if (!boxes[i].checked) continue;
+      var name = boxes[i].getAttribute('data-name') || '';
+      var tag = boxes[i].getAttribute('data-tag') || '';
+      var hersteller = boxes[i].getAttribute('data-hersteller') || '';
+      var artnr = boxes[i].getAttribute('data-artnr') || '';
+      var menge = boxes[i].getAttribute('data-menge') || '';
+      if (!name) continue;
+      var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+      if (pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, probe)) continue;
+      extras.push(line);
+      probe = probe + ' ' + line;
+    }
+    if (!extras.length) return;
+    var next = String(comment || '').replace(/\s+$/, '');
+    var add = extras.join(' ');
+    setCommentText(next ? (next + ' ' + add) : add);
+  }
+
+  function closePzPartsPicker() {
+    var m = document.getElementById('pzPartsModal');
+    if (m) m.classList.remove('open');
+    pzPartsPendingNb = null;
+  }
+
+  function confirmPzPartsPicker() {
+    applyPzPartsToComment();
+    closePzPartsPicker();
   }
 
   function pzLoad(query) {
@@ -4746,12 +5520,29 @@
     }, 90000);
   }
 
+  var wssEbBusy = false;
+
+  function setWssEbBusy(active, message) {
+    wssEbBusy = !!active;
+    var lock = document.getElementById('wssEbLock');
+    var tx = document.getElementById('wssEbLockText');
+    var btn = document.getElementById('wssEbSubmitBtn');
+    if (lock) {
+      lock.classList.toggle('open', wssEbBusy);
+      lock.setAttribute('aria-hidden', wssEbBusy ? 'false' : 'true');
+    }
+    if (tx) tx.textContent = message || '';
+    if (btn) btn.disabled = wssEbBusy;
+  }
+
   function minimizeWssEinbuchenModal() {
+    if (wssEbBusy) return;
     document.getElementById('wssEinbuchenModal').classList.remove('open');
     if (wssEbBgTimer) { clearInterval(wssEbBgTimer); wssEbBgTimer = null; }
   }
 
   function closeWssEinbuchenModal() {
+    if (wssEbBusy) return;
     document.getElementById('wssEinbuchenModal').classList.remove('open');
     wssEbSessionActive = false;
     wssEbCurrentStock = '';
@@ -5032,19 +5823,24 @@
     var stockAtSubmit = wssEbCurrentStock;
     st.textContent = 'Sende Chat-Nachricht…';
     st.style.color = '#F27420';
+    setWssEbBusy(true, 'Sende Chat-Nachricht…');
     google.script.run
       .withSuccessHandler(function(res) {
+        setWssEbBusy(false);
         if (!res || !res.success) {
           st.textContent = '❌ ' + (res && res.message ? res.message : 'Senden fehlgeschlagen.');
           st.style.color = '#f85149';
+          showWssEbAlreadyActions(pending.wss, pending.gummi);
           return;
         }
         st.textContent = '✅ ' + res.message;
         st.style.color = '#56d364';
       })
       .withFailureHandler(function(err) {
+        setWssEbBusy(false);
         st.textContent = '❌ ' + ((err && err.message) || String(err));
         st.style.color = '#f85149';
+        showWssEbAlreadyActions(pending.wss, pending.gummi);
       })
       .forceNotifyWssEinbuchenChat(stockAtSubmit, pending.wss, pending.gummi);
   }
@@ -5073,16 +5869,17 @@
       showWssEbAlreadyActions(wssChecked, gummiChecked);
       return;
     }
-    btn.disabled = true;
-    st.textContent = 'Speichere in Vasold…';
+    setWssEbBusy(true, 'Vasold, Kommentar und Chat…');
+    st.textContent = 'Vasold, Kommentar und Chat…';
     st.style.color = '#F27420';
     var stockAtSubmit = wssEbCurrentStock;
     google.script.run
       .withSuccessHandler(function(res) {
-        btn.disabled = false;
+        setWssEbBusy(false);
         if (!res || !res.success) {
           st.textContent = '❌ ' + (res && res.message ? res.message : 'Vorgang fehlgeschlagen.');
           st.style.color = '#f85149';
+          if (res && res.chatFailed) showWssEbAlreadyActions(wssYes, gummiYes);
           return;
         }
         st.textContent = '✅ ' + res.message;
@@ -5098,7 +5895,7 @@
         resolveWssEbStock(stockAtSubmit);
       })
       .withFailureHandler(function(err) {
-        btn.disabled = false;
+        setWssEbBusy(false);
         st.textContent = '❌ ' + ((err && err.message) || String(err));
         st.style.color = '#f85149';
       })
@@ -7237,6 +8034,16 @@
       return { found: true, stockId: stockId, message: 'Gefunden via Gmail Lookup', source: 'gmail' };
     }
 
+    if (pzSearchIndex) {
+      var pzKeys = [query, cleanQuery, q0];
+      for (var pk = 0; pk < pzKeys.length; pk++) {
+        var pzKey = pzKeys[pk];
+        if (!pzKey || pzKey.length < 6) continue;
+        var pzSid = pzSearchIndex[pzKey];
+        if (pzSid) return { found: true, stockId: pzSid, message: 'Gefunden via Belege', source: 'packzettel' };
+      }
+    }
+
     return { found: false, message: "Bestellnummer '" + query + "' weder im Sheet noch in Gmail Lookup gefunden." };
   }
 
@@ -7439,7 +8246,8 @@
       entry.ts,
       entry.email,
       entry.text,
-      entry.action || 'speichern'
+      entry.action || 'speichern',
+      entry.regal || ''
     ]);
   }
 
@@ -7497,6 +8305,7 @@
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         html += '<div class="verlauf-entry">' +
+          (r[5] ? '<div class="verlauf-regal-badge">' + escapeHtml(r[5]) + '</div>' : '') +
           '<div class="verlauf-meta"><span class="verlauf-email">' + escapeHtml(r[2]) + '</span>' +
           '<span class="verlauf-ts">' + escapeHtml(formatVerlaufTsDisplay(r[1])) + '</span></div>' +
           '<div class="verlauf-text">' + escapeHtml(r[3]).replace(/\n/g, '<br>') + '</div>' +
@@ -7708,7 +8517,7 @@
       rememberPendingStellantisTracking(id);
 
       updatePzContext(id, res.kommBestellung);
-      maybeShowNbChooser(id, { tagesliste: isRegalTagesliste(regalVal) });
+      maybeShowPzPartsThenNb(id, { tagesliste: isRegalTagesliste(regalVal) });
       claimStockEditLockForCurrent(loadedStock);
     } else {
       skipRecentStockPush = false;
@@ -7728,10 +8537,18 @@
 
   function handleOrderNumberSearchResult(res) {
     if(res.found && res.stockId) {
+      if (pendingAagReceipt) pendingAagStock = normalizeStockInput(res.stockId);
       setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
       document.getElementById('searchInput').value = res.stockId;
       setHudBusy(true, 'Lade Auftrag…');
-      setTimeout(function() { loadData(); }, 600);
+      setTimeout(function() { loadData(); }, 80);
+    } else if (pendingAagReceipt) {
+      var unresolvedRef = String(pendingAagReceipt.customerRef || '');
+      pendingAagReceipt = null;
+      pendingAagStock = '';
+      setHudBusy(false);
+      toggleUI(true);
+      setStatus("❌ AAG Kundenreferenz '" + unresolvedRef + "' konnte keiner Stock-ID zugeordnet werden.", "#f85149");
     } else if (pendingStellantisTracking) {
       showStellantisPackageWait();
     } else {
@@ -7807,10 +8624,82 @@
 
   function requestOrderNumberSearch(id) {
     google.script.run.withSuccessHandler(handleOrderNumberSearchResult).withFailureHandler(function(err) {
+      pendingAagReceipt = null;
+      pendingAagStock = '';
       setHudBusy(false);
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       toggleUI(true);
     }).searchByOrderNumber(id);
+  }
+
+  function isAagLieferscheinQuery(value) {
+    return /^LS[A-Z0-9-]{5,}$/i.test(String(value || '').replace(/\s+/g, ''));
+  }
+
+  function resolveAagLieferscheinReceipt(receipt) {
+    var ref = normalizeStockInput(receipt && receipt.customerRef);
+    if (!ref) {
+      setHudBusy(false);
+      toggleUI(true);
+      setStatus('❌ AAG Lieferschein hat keine Kundenreferenz.', '#f85149');
+      return;
+    }
+    pendingAagReceipt = receipt;
+    if (isStockIdFormat(ref)) {
+      pendingAagStock = ref;
+      document.getElementById('searchInput').value = ref;
+      setStatus('✅ ' + receipt.receiptNumber + ' → ' + ref, '#56d364');
+      setHudBusy(true, 'Lade Auftrag…');
+      setTimeout(function() { loadData(); }, 80);
+      return;
+    }
+    document.getElementById('searchInput').value = ref;
+    setStatus('🔍 ' + receipt.receiptNumber + ' → Kundenreferenz ' + ref, '#3FA0DB');
+    var local = searchByOrderNumberFromCache(ref, refurbCache);
+    if (local && local.found) {
+      handleOrderNumberSearchResult(local);
+      return;
+    }
+    requestOrderNumberSearch(ref);
+  }
+
+  function loadAagLieferschein(receiptNumber) {
+    var ls = String(receiptNumber || '').replace(/\s+/g, '').toUpperCase();
+    var cached = aagLieferscheinFromCache(ls);
+    setStatus(cached ? '📦 Lade AAG Lieferschein ' + ls + '…' : '🔍 Suche AAG Lieferschein ' + ls + '…', '#F27420');
+    toggleUI(false);
+    setHudBusy(true, 'Lade AAG Lieferschein…');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          setHudBusy(false);
+          toggleUI(true);
+          setStatus('❌ AAG Lieferschein konnte nicht gelesen werden: ' + ((res && res.message) || 'Unbekannter Fehler'), '#f85149');
+          return;
+        }
+        if (!res.found || !res.receipt) {
+          setHudBusy(false);
+          toggleUI(true);
+          setStatus('❌ ' + ls + ' noch nicht im AAG Sync. Portal prüfen oder bis zum nächsten Sync warten.', '#f85149');
+          return;
+        }
+        if (!aagLieferscheinCacheMap) aagLieferscheinCacheMap = {};
+        aagLieferscheinCacheMap[ls] = {
+          receiptNumber: res.receipt.receiptNumber,
+          receiptDate: res.receipt.receiptDate,
+          customerRef: res.receipt.customerRef,
+          orderNumber: res.receipt.orderNumber,
+          priceGross: res.receipt.priceGross,
+          status: res.receipt.status
+        };
+        resolveAagLieferscheinReceipt(res.receipt);
+      })
+      .withFailureHandler(function(err) {
+        setHudBusy(false);
+        toggleUI(true);
+        setStatus('❌ AAG Sheet Fehler: ' + (err && err.message ? err.message : String(err)), '#f85149');
+      })
+      .getAagLieferscheinByLs(ls);
   }
 
   var wmsLoadSeq = 0;
@@ -7851,12 +8740,130 @@
     }).rememberStellantisTracking(track, sid);
   }
 
+  function wmsCommentDirty(current, baseline) {
+    var a = String(current == null ? '' : current).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
+    var b = String(baseline == null ? '' : baseline).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
+    return a !== b;
+  }
+
+  function wmsRegalComparable(raw) {
+    var s = String(raw == null ? '' : raw).trim();
+    var m = s.match(/^Regal\s+(\d+)\.(\d+)$/i) || s.match(/^(\d+)\.(\d+)$/);
+    if (!m) return s;
+    return 'Regal ' + parseInt(m[1], 10) + '.' + parseInt(m[2], 10);
+  }
+
+  function wmsMainHudDirty() {
+    if (!currentStock) return false;
+    var sel = document.getElementById('shelfSelect');
+    var regal = wmsRegalComparable(sel ? sel.value : '');
+    var baseR = wmsRegalComparable(baselineRegal);
+    return wmsCommentDirty(getCommentText(), baselineKommentar) || regal !== baseR;
+  }
+
+  function wmsInflightSaveMatchesHud() {
+    var sid = normalizeStockIdJs(currentStock);
+    var job = sid ? saveKommentarRegalInflight[sid] : null;
+    if (!job || job.text == null) return false;
+    var sel = document.getElementById('shelfSelect');
+    var regal = wmsRegalComparable(sel ? sel.value : '');
+    return !wmsCommentDirty(getCommentText(), job.text) && regal === wmsRegalComparable(job.regal);
+  }
+
+  function formatUnsavedRegalLabel(raw) {
+    var s = String(raw || '').trim();
+    if (!s) return 'kein Regal';
+    if (/^\d+\.\d+$/.test(s)) return 'Regal ' + s;
+    return s;
+  }
+
+  function openUnsavedLoadOverlay() {
+    var el = document.getElementById('unsavedLoadOverlay');
+    if (!el) return;
+    var stockEl = document.getElementById('unsavedLoadStock');
+    var commentEl = document.getElementById('unsavedLoadComment');
+    var regalEl = document.getElementById('unsavedLoadRegal');
+    var errEl = document.getElementById('unsavedLoadError');
+    var saveBtn = document.getElementById('unsavedLoadSaveBtn');
+    var skipBtn = document.getElementById('unsavedLoadSkipBtn');
+    if (stockEl) stockEl.textContent = currentStock || '';
+    if (commentEl) commentEl.textContent = getCommentText() || '—';
+    var sel = document.getElementById('shelfSelect');
+    if (regalEl) regalEl.textContent = formatUnsavedRegalLabel(sel ? sel.value : '');
+    if (errEl) errEl.textContent = '';
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Jetzt speichern'; }
+    if (skipBtn) skipBtn.disabled = false;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    try {
+      var ae = document.activeElement;
+      if (ae && typeof ae.blur === 'function') ae.blur();
+    } catch (eBlur) {}
+  }
+
+  function closeUnsavedLoadOverlay() {
+    var el = document.getElementById('unsavedLoadOverlay');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
+  function unsavedOverlaySave() {
+    var errEl = document.getElementById('unsavedLoadError');
+    var saveBtn = document.getElementById('unsavedLoadSaveBtn');
+    var skipBtn = document.getElementById('unsavedLoadSkipBtn');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Speichere…'; }
+    if (skipBtn) skipBtn.disabled = true;
+    if (errEl) errEl.textContent = '';
+    saveKommentarUndRegalFlow({
+      onDone: function(ok) {
+        if (!ok) {
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Jetzt speichern'; }
+          if (skipBtn) skipBtn.disabled = false;
+          if (errEl) errEl.textContent = 'Speichern fehlgeschlagen — der neue Auftrag wird nicht geladen.';
+          return;
+        }
+        closeUnsavedLoadOverlay();
+        unsavedLoadBypass = true;
+        loadData();
+      }
+    });
+  }
+
+  function unsavedOverlayDiscard() {
+    setCommentText(baselineKommentar);
+    var sel = document.getElementById('shelfSelect');
+    if (sel) {
+      sel.value = baselineRegal || '';
+      if (typeof syncShelfTriggerFromNative === 'function') syncShelfTriggerFromNative();
+    }
+    closeUnsavedLoadOverlay();
+    unsavedLoadBypass = true;
+    loadData();
+  }
+
   function loadData() {
     var id = document.getElementById('searchInput').value.trim();
     if(!id) return;
 
     if (isTireSizeQuery(id)) {
       openReifenModalWithSizeSearch(id);
+      return;
+    }
+
+    if (!unsavedLoadBypass && wmsMainHudDirty()) {
+      var sameOpenStock = normalizeStockIdJs(id) === normalizeStockIdJs(currentStock);
+      if (wmsInflightSaveMatchesHud()) {
+        if (sameOpenStock) return;
+      } else {
+        openUnsavedLoadOverlay();
+        return;
+      }
+    }
+    unsavedLoadBypass = false;
+
+    if (isAagLieferscheinQuery(id)) {
+      loadAagLieferschein(id);
       return;
     }
 
@@ -7945,7 +8952,12 @@
       setHudBusy(false);
       toggleUI(true);
       if (res && res.conflict) {
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, {
+          kind: 'kommentar',
+          text: text,
+          action: 'speichern',
+          source: currentWmsSource || ''
+        });
         return;
       }
       setStatus(res && res.success ? "✅ " + res.message : "❌ " + ((res && res.message) || "Unbekannter Fehler"), res && res.success ? "#56d364" : "#f85149");
@@ -7956,11 +8968,40 @@
         handleVerlaufSaveSuccess(res);
         loadRefurbishmentCache(true);
         loadKommentarVerlaufCache(true);
+        showStickyToast('ok', '✅ Kommentar gespeichert — ' + stockId, res.message || 'Gespeichert.', {
+          stockId: stockId,
+          priorSnapshot: res.priorSnapshot || null
+        });
+      } else {
+        var kommErr = (res && res.message) || 'Unbekannter Fehler';
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, kommErr, {
+          retry: {
+            kind: 'kommentar',
+            stockId: stockId,
+            text: text,
+            action: 'speichern',
+            expectedKommentar: expectedKommentar,
+            expectedRegal: expectedRegal,
+            source: currentWmsSource || ''
+          }
+        });
       }
     }).withFailureHandler(function(err) {
-      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      var kommFail = err && err.message ? err.message : String(err || 'Serverfehler');
+      setStatus("❌ Fehler: " + kommFail, "#f85149");
       setHudBusy(false);
       toggleUI(true);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, kommFail, {
+        retry: {
+          kind: 'kommentar',
+          stockId: stockId,
+          text: text,
+          action: 'speichern',
+          expectedKommentar: expectedKommentar,
+          expectedRegal: expectedRegal,
+          source: currentWmsSource || ''
+        }
+      });
     }).saveKommentar(stockId, text, "speichern", expectedKommentar, expectedRegal, currentWmsSource);
   }
 
@@ -7990,29 +9031,52 @@
 
   function saveKommentarUndRegalFlow(opts) {
     opts = opts || {};
+    function done(ok) {
+      if (typeof opts.onDone === 'function') opts.onDone(!!ok);
+    }
     var text = getCommentText().trim();
     var regal = String(document.getElementById('shelfSelect').value || '').trim();
     var stockId = normalizeStockIdJs(currentStock);
     var expectedKommentar = baselineKommentar;
     var expectedRegal = baselineRegal;
-    if (!stockId) return setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
-    if (isStockEditBlocked(stockId)) {
-      return setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+    var retrySave = {
+      kind: 'kommentarRegal',
+      stockId: stockId,
+      text: text,
+      regal: regal,
+      expectedKommentar: expectedKommentar,
+      expectedRegal: expectedRegal,
+      source: currentWmsSource || ''
+    };
+    if (!stockId) {
+      setStatus("❌ Keine Stock-ID geladen – zuerst Auftrag laden.", "#f85149");
+      done(false);
+      return;
     }
-    if (!text) return setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+    if (isStockEditBlocked(stockId)) {
+      setStatus("❌ Auftrag gesperrt – Kollege arbeitet noch daran.", "#f85149");
+      done(false);
+      return;
+    }
+    if (!text) {
+      setStatus("❌ Bitte erst Kommentar eintragen!", "#f85149");
+      done(false);
+      return;
+    }
+    if (!isRegalShelfValue(regal)) {
+      openRegalRequiredModal();
+      setStatus("❌ Regalplatz fehlt — erst Regal x.x setzen, dann speichern.", "#f85149");
+      done(false);
+      return;
+    }
     if (saveKommentarRegalInflight[stockId]) {
       setStatus("⏳ Speichern für " + stockId + " läuft bereits im Hintergrund…", "#F27420");
+      done(false);
       return;
     }
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
-    var noRegal = !regal;
-    setStatus(
-      noRegal
-        ? "💾 Speichere Kommentar im Hintergrund (kein Regal)…"
-        : "💾 Speichere Kommentar + Regal im Hintergrund…",
-      "#F27420"
-    );
+    setStatus("💾 Speichere Kommentar + Regal im Hintergrund…", "#F27420");
     patchRefurbCacheKommentarRegal(stockId, text, regal);
     applyLocalSaveUiIfCurrent(stockId, regal);
     if (opts.focusSearchAfter) {
@@ -8025,16 +9089,19 @@
       showStickyToast(
         'err',
         'Speichern unklar / Timeout',
-        stockId + ' — Bitte neu öffnen und erneut speichern.'
+        stockId + ' — Bitte neu öffnen und erneut speichern.',
+        { retry: retrySave }
       );
+      done(false);
     }, SAVE_BG_TIMEOUT_MS);
 
-    saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId };
+    saveKommentarRegalInflight[stockId] = { token: token, timerId: timerId, text: text, regal: regal };
 
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       if (res && res.conflict) {
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, retrySave);
+        done(false);
         return;
       }
       if (res && res.success) {
@@ -8046,6 +9113,7 @@
         }
         if (normalizeStockIdJs(currentStock) === stockId) {
           setBaselines(text, savedRegal);
+          if (!wmsMainHudDirty()) closeUnsavedLoadOverlay();
         }
         handleVerlaufSaveSuccess(res);
         patchRefurbCacheKommentarRegal(stockId, text, savedRegal);
@@ -8061,28 +9129,33 @@
           showStickyToast(
             'ok',
             '✅ Kommentar gespeichert — ' + stockId,
-            (res.message || 'Gespeichert.') + ' ⚠️ Kein Regal vergeben!'
+            (res.message || 'Gespeichert.') + ' ⚠️ Kein Regal vergeben!',
+            { stockId: stockId, priorSnapshot: res.priorSnapshot || null }
           );
         } else {
           setStatus("✅ " + res.message, "#56d364");
           showStickyToast(
             'ok',
             '✅ Kommentar + Regal gespeichert — ' + stockId,
-            res.message || 'Gespeichert.'
+            res.message || 'Gespeichert.',
+            { stockId: stockId, priorSnapshot: res.priorSnapshot || null }
           );
         }
+        done(true);
       } else {
         patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
         var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
         setStatus("❌ " + errMsg, "#f85149");
-        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg);
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, errMsg, { retry: retrySave });
+        done(false);
       }
     }).withFailureHandler(function(err) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
       setStatus("❌ Fehler: " + failMsg, "#f85149");
-      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, failMsg, { retry: retrySave });
+      done(false);
     }).saveKommentarUndRegal(stockId, text, regal, expectedKommentar, expectedRegal, currentWmsSource);
   }
 
@@ -8102,7 +9175,10 @@
       if (res && res.conflict) {
         setHudBusy(false);
         toggleUI(true);
-        handleSaveConcurrencyConflict(res, stockId);
+        handleSaveConcurrencyConflict(res, stockId, {
+          kind: 'einlagern',
+          regal: regal
+        });
         return;
       }
       if(res && res.success) {
@@ -8113,17 +9189,41 @@
         setStatus("✅ " + res.message, "#56d364");
         document.getElementById('currentShelfLabel').innerText = "Aktuell: " + regal;
         document.getElementById('searchInput').value = currentStock;
+        showStickyToast('ok', '✅ Eingelagert — ' + stockId, res.message || 'Gespeichert.', {
+          stockId: stockId,
+          priorSnapshot: res.priorSnapshot || null
+        });
         setHudBusy(true, 'Aktualisiere & lade Auftrag neu…');
-        loadRefurbishmentCache(true, function() { loadData(); });
+        loadRefurbishmentCache(true, function() { unsavedLoadBypass = true; loadData(); });
       } else {
-        setStatus("❌ " + ((res && res.message) || "Unbekannter Fehler"), "#f85149");
+        var regalErr = (res && res.message) || "Unbekannter Fehler";
+        setStatus("❌ " + regalErr, "#f85149");
         setHudBusy(false);
         toggleUI(true);
+        showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, regalErr, {
+          retry: {
+            kind: 'einlagern',
+            stockId: stockId,
+            regal: regal,
+            expectedKommentar: expectedKommentar,
+            expectedRegal: expectedRegal
+          }
+        });
       }
     }).withFailureHandler(function(err) {
-      setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
+      var regalFail = err && err.message ? err.message : String(err || 'Serverfehler');
+      setStatus("❌ Fehler: " + regalFail, "#f85149");
       setHudBusy(false);
       toggleUI(true);
+      showStickyToast('err', '❌ Speichern fehlgeschlagen — ' + stockId, regalFail, {
+        retry: {
+          kind: 'einlagern',
+          stockId: stockId,
+          regal: regal,
+          expectedKommentar: expectedKommentar,
+          expectedRegal: expectedRegal
+        }
+      });
     }).einlagern(stockId, regal, expectedKommentar, expectedRegal);
   }
 
@@ -8413,6 +9513,18 @@
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
     setStatus("🚀 Carol gestartet. Tagesliste läuft im Hintergrund…", "#3FA0DB");
+    var carolPriorSnapshot = null;
+    var carolExpectedKommentar = baselineKommentar;
+    var carolExpectedRegal = baselineRegal;
+    var carolRetry = {
+      kind: 'carol',
+      stockId: stockId,
+      text: text,
+      action: 'carol',
+      expectedKommentar: carolExpectedKommentar,
+      expectedRegal: carolExpectedRegal,
+      source: currentWmsSource || ''
+    };
 
     var timerId = setTimeout(function() {
       if (!finishCarolMissionJob(stockId, token)) return;
@@ -8420,17 +9532,18 @@
         document.getElementById('btnCarol').disabled = false;
       }
       setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
+      var timeoutRetry = carolPriorSnapshot
+        ? { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+        : carolRetry;
       showStickyToast(
         'err',
         'Speichern unklar / Timeout',
-        stockId + ' — Tagesliste/Carol: Bitte neu öffnen und erneut speichern.'
+        stockId + ' — Tagesliste/Carol: Bitte neu öffnen und erneut speichern.',
+        { retry: timeoutRetry }
       );
     }, CAROL_BG_TIMEOUT_MS);
 
     carolMissionInflight[stockId] = { token: token, timerId: timerId };
-
-    var carolExpectedKommentar = baselineKommentar;
-    var carolExpectedRegal = baselineRegal;
 
     google.script.run
       .withSuccessHandler(function(res) {
@@ -8441,7 +9554,7 @@
           if (normalizeStockIdJs(currentStock) === stockId) {
             document.getElementById('btnCarol').disabled = false;
           }
-          handleSaveConcurrencyConflict(res, stockId);
+          handleSaveConcurrencyConflict(res, stockId, carolRetry);
           return;
         }
         if(!res || !res.success) {
@@ -8451,9 +9564,10 @@
           }
           var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
           setStatus("❌ FEHLER: " + errMsg, "#f85149");
-          showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg);
+          showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, errMsg, { retry: carolRetry });
           return;
         }
+        carolPriorSnapshot = res.priorSnapshot || null;
         if (normalizeStockIdJs(currentStock) === stockId) {
           setBaselines(text, carolExpectedRegal);
         }
@@ -8470,7 +9584,10 @@
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
               if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
               setStatus(finalStatus, "#56d364");
-              showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus);
+              showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus, {
+                stockId: stockId,
+                priorSnapshot: carolPriorSnapshot || (res2 && res2.priorSnapshot) || null
+              });
               loadRefurbishmentCache(true);
               loadKommentarVerlaufCache(true);
               if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
@@ -8482,7 +9599,9 @@
               }
               var failMsg = (res2 && res2.message) ? res2.message : 'Unbekannter Fehler';
               setStatus("❌ FEHLER: " + failMsg, "#f85149");
-              showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
+              showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg, {
+                retry: { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+              });
             }
           })
           .withFailureHandler(function(err) {
@@ -8492,7 +9611,9 @@
             }
             var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
             setStatus("❌ Serverfehler: " + failMsg, "#f85149");
-            showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg);
+            showStickyToast('err', '❌ Tagesliste fehlgeschlagen — ' + stockId, failMsg, {
+              retry: { kind: 'tagesliste', stockId: stockId, priorSnapshot: carolPriorSnapshot }
+            });
           })
           .triggerCarolMission(stockId);
       })
@@ -8503,7 +9624,7 @@
         }
         var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
         setStatus("❌ Kommentarfehler: " + failMsg, "#f85149");
-        showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg);
+        showStickyToast('err', '❌ Carol Speichern fehlgeschlagen — ' + stockId, failMsg, { retry: carolRetry });
       })
       .saveKommentar(stockId, text, "carol", carolExpectedKommentar, carolExpectedRegal, currentWmsSource);
     return { success: true };
@@ -8514,6 +9635,7 @@
     { keys: ['Strg', 'R'], where: 'Überall', text: 'Macht dir direkt das Reifen Annahme Fenster auf, ohne dass du erst durchs Menü klicken musst.' },
     { keys: ['Strg', 'X'], where: 'Überall', text: 'Springt direkt in die Suchleiste und markiert den kompletten Inhalt – einfach lostippen oder scannen und die alte Stock-ID wird ersetzt.' },
     { keys: ['Strg', 'S'], where: 'Kommentarfeld', text: 'Speichert nur den Kommentartext – rührt Tagesliste, Regal oder die Farbe im Sheet nicht an. Reine Textspeicherung, sonst nichts.' },
+    { keys: ['Alt', 'X'], where: 'Überall', text: 'Speichert Kommentar und Regal zusammen, gleicher Knopf wie „Kommentar + Regal speichern“. Ohne Regalplatz (z.B. 3.4) geht das nicht durch.' },
     { keys: ['Tab'], where: 'Kommentarfeld', text: 'Steht da ein grauer Textvorschlag? Tab drücken und der wird direkt übernommen.' },
     { keys: ['Esc'], where: 'Überall', text: 'Macht das, was gerade offen ist, wieder zu – Menüs, Fenster, Popups, einfach alles.' }
   ];
@@ -8557,12 +9679,36 @@
       openReifenModal();
       return;
     }
-    if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey)) {
+    if ((e.key === 'x' || e.key === 'X') && (e.ctrlKey || e.metaKey) && !e.altKey) {
       e.preventDefault();
       e.stopPropagation();
       focusSearchBar({ select: true, delay: 0 });
+      return;
+    }
+    if ((e.key === 'x' || e.key === 'X') && e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveKommentarUndRegalFlow();
     }
   });
+
+  function openRegalRequiredModal() {
+    var el = document.getElementById('regalRequiredModal');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeRegalRequiredModal() {
+    var el = document.getElementById('regalRequiredModal');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
+  function regalRequiredOpenScan() {
+    openRegalScan();
+  }
 
   function closeWmsMainMenu() {
     var trig = document.getElementById('wmsMainMenuTrigger');
@@ -8600,12 +9746,18 @@
   loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();
   loadNbChooserCache(true);
+  loadPzPartsCache(true);
+  loadAagLieferscheinCache(true);
+  setInterval(function() { loadPzPartsCache(true); }, REFURB_CACHE_POLL_MS);
+  setInterval(function() { loadAagLieferscheinCache(true); }, REFURB_CACHE_POLL_MS);
   setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
       loadRefurbishmentCache(true);
       loadKommentarVerlaufCache(true);
       loadNbChooserCache(true);
+      loadPzPartsCache(true);
+      loadAagLieferscheinCache(true);
       if (stockLockHeldId && normalizeStockIdJs(currentStock) === stockLockHeldId) {
         google.script.run
           .withSuccessHandler(function() {})

@@ -1,0 +1,2276 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Retoure Scan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-primary: #0D9488;
+      --color-on-primary: #FFFFFF;
+      --color-secondary: #14B8A6;
+      --color-accent: #3a2419;
+      --color-destructive: #DC2626;
+      --color-ring: #0D9488;
+      --bg-deep: #0a0a0f;
+      --bg-base: #050506;
+      --bg-elevated: #0e1014;
+      --surface: rgba(255, 255, 255, 0.05);
+      --surface-2: rgba(255, 255, 255, 0.08);
+      --foreground: #EDEDEF;
+      --foreground-muted: #8A8F98;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --warn: #FBBF24;
+      --ok: #34D399;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --radius-pill: 999px;
+      --space-sm: 5px;
+      --space-md: 12px;
+      --space-lg: 16px;
+      --space-xl: 21px;
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.28);
+      --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.35);
+      --easing: cubic-bezier(0.16, 1, 0.3, 1);
+      --font: "Plus Jakarta Sans", system-ui, sans-serif;
+      --blur: 16px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    html { font-size: 20px; }
+    body {
+      font-family: var(--font);
+      color: var(--foreground);
+      background: linear-gradient(180deg, #0a0a0f 0%, #050506 100%);
+      color-scheme: dark;
+      overflow: hidden;
+    }
+    .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+    .blob {
+      position: absolute; border-radius: 50%; filter: blur(48px); opacity: 0.11;
+      animation: drift 18s var(--easing) infinite alternate;
+    }
+    .blob.a { width: 420px; height: 420px; background: #0D9488; top: -80px; left: -60px; }
+    .blob.b { width: 360px; height: 360px; background: #EA580C; bottom: 10%; right: -80px; animation-duration: 22s; }
+    .blob.c { width: 280px; height: 280px; background: #14B8A6; top: 40%; left: 45%; opacity: 0.07; }
+    @keyframes drift { from { transform: translate(0, 0); } to { transform: translate(28px, -18px); } }
+    @media (prefers-reduced-motion: reduce) {
+      .blob { animation: none; }
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
+    .app {
+      position: relative; z-index: 1;
+      --side-w: 440px;
+      display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr);
+      height: 100%; min-height: 0; zoom: 1.12;
+    }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; grid-template-rows: minmax(240px, 38vh) 1fr; zoom: 1; --side-w: auto; }
+    }
+    .side, .main { min-height: 0; height: 100%; display: flex; flex-direction: column; }
+    .side {
+      border-right: 1px solid var(--border);
+      background: rgba(10, 10, 15, 0.72);
+      backdrop-filter: blur(var(--blur));
+    }
+    .glass-bar {
+      border-bottom: 1px solid var(--border);
+      background: rgba(14, 16, 20, 0.65);
+      backdrop-filter: blur(var(--blur));
+    }
+    .top { padding: var(--space-md); display: flex; flex-direction: column; gap: var(--space-sm); }
+    .brand-row { display: flex; align-items: center; gap: var(--space-md); }
+    .brand-mark {
+      width: 44px; height: 44px; border-radius: 10px;
+      display: grid; place-items: center;
+      background: rgba(13, 148, 136, 0.16);
+      border: 1px solid rgba(13, 148, 136, 0.4);
+      box-shadow: 0 0 18px rgba(13, 148, 136, 0.35);
+      flex-shrink: 0; color: var(--color-secondary);
+    }
+    .brand-mark svg { width: 26px; height: 26px; }
+    .brand-text { min-width: 0; flex: 1; }
+    .brand-text strong { display: block; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand-text span {
+      display: block; font-size: 0.65rem; color: var(--foreground-muted);
+      text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+    }
+    .chip {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground-muted);
+      border-radius: var(--radius-pill); padding: 0.4rem 0.55rem; min-height: 1.9rem;
+      font: 600 0.72rem/1 var(--font); cursor: pointer;
+      transition: background 180ms var(--easing), color 180ms var(--easing), border-color 180ms var(--easing);
+    }
+    .chip:hover { color: var(--foreground); border-color: var(--border-strong); background: var(--surface); }
+    .chip.active { background: rgba(13, 148, 136, 0.2); border-color: var(--color-primary); color: var(--color-secondary); }
+    .dump-wrap { position: relative; }
+    .dump {
+      width: 100%; min-height: 5.2rem; resize: none;
+      padding: 0.7rem 0.85rem; border-radius: var(--radius-sm);
+      border: 1px dashed var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 600 0.95rem/1.35 var(--font); outline: none;
+      transition: border-color 200ms var(--easing), box-shadow 200ms var(--easing);
+    }
+    .dump:focus { border-color: var(--color-ring); box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.28); border-style: solid; }
+    .dump.hot { border-color: #2dd4bf; background: rgba(13, 148, 136, 0.12); }
+    .dump-hint {
+      margin-top: 4px; font-size: 0.72rem; color: var(--foreground-muted); font-weight: 600;
+    }
+    .dump-hint.hot { color: var(--color-secondary); }
+    .filters { display: flex; flex-wrap: wrap; gap: 4px; }
+    .meta {
+      display: flex; justify-content: space-between; align-items: center; gap: 8px;
+      color: var(--foreground-muted); font-size: 0.82rem; font-weight: 500;
+    }
+    .stats {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px;
+    }
+    .stat {
+      border: 1px solid var(--border); border-radius: 10px; padding: 6px 4px; text-align: center;
+      background: var(--surface); cursor: pointer;
+    }
+    .stat .n { font-size: 1.05rem; font-weight: 800; line-height: 1.1; }
+    .stat .l { font-size: 0.58rem; font-weight: 700; color: var(--foreground-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+    .stat.b2a1 .n { color: #fca5a5; }
+    .stat.fertig .n, .stat.raus .n { color: #67e8f9; }
+    .stat.gestellt .n { color: #86efac; }
+    .stat.tagesliste .n { color: #fde047; }
+    .stat.behalten .n { color: var(--foreground-muted); }
+    .stat.active { border-color: var(--color-primary); background: rgba(13, 148, 136, 0.16); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 0.45rem;
+      border: 1px solid var(--border); background: var(--surface); color: var(--foreground);
+      border-radius: var(--radius-sm); padding: 0.7rem 1rem; min-height: 3rem;
+      font: 600 1.05rem/1 var(--font); cursor: pointer;
+      transition: background 180ms var(--easing), border-color 180ms var(--easing), opacity 180ms var(--easing), transform 150ms var(--easing);
+    }
+    .btn svg { width: 1.15rem; height: 1.15rem; flex-shrink: 0; }
+    .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
+    .btn:active:not(:disabled) { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn.primary { background: var(--color-accent); border-color: transparent; color: #fff; }
+    .btn.teal { background: rgba(13, 148, 136, 0.18); border-color: var(--color-primary); color: var(--color-secondary); }
+    .btn.ghost { background: transparent; }
+    .btn.icon { width: 52px; padding: 0; color: var(--foreground-muted); }
+    .btn.danger { border-color: rgba(255, 80, 80, 0.45); color: #fca5a5; background: rgba(255, 0, 0, 0.1); }
+    .row-btns { display: flex; gap: 6px; flex-wrap: wrap; }
+    .row-btns .btn { min-height: 2.4rem; padding: 0.45rem 0.75rem; font-size: 0.85rem; flex: 1; }
+    .sel {
+      width: 100%; padding: 0.45rem 0.6rem; border-radius: 8px;
+      border: 1px solid var(--border-strong); background: var(--surface);
+      color: var(--foreground); font: 600 0.78rem/1.3 var(--font);
+    }
+    .list { overflow: auto; flex: 1; padding: var(--space-md); scrollbar-gutter: stable; }
+    .list::-webkit-scrollbar { width: 8px; }
+    .list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+    .item {
+      width: 100%; text-align: left; border: 1px solid transparent; background: transparent;
+      color: inherit; border-radius: 10px; padding: 8px 10px; cursor: pointer; margin-bottom: 4px;
+    }
+    .item:hover { filter: brightness(1.08); }
+    .item.st-b2a1 { background: rgba(255, 0, 0, 0.18); border-color: rgba(255, 0, 0, 0.45); }
+    .item.st-fertig, .item.st-raus { background: rgba(0, 255, 255, 0.12); border-color: rgba(0, 255, 255, 0.4); }
+    .item.st-gestellt { background: rgba(52, 168, 83, 0.16); border-color: rgba(52, 168, 83, 0.5); }
+    .item.st-tagesliste { background: rgba(255, 255, 0, 0.12); border-color: rgba(255, 255, 0, 0.4); }
+    .item.st-behalten { background: rgba(255,255,255,0.04); border-color: var(--border); }
+    .item.active {
+      position: relative;
+      background: rgba(13, 148, 136, 0.28);
+      border-color: #2dd4bf;
+      box-shadow: 0 0 0 2px rgba(45, 212, 191, 0.55);
+    }
+    .item-top { display: flex; justify-content: space-between; gap: 6px; align-items: center; }
+    .sid { font-weight: 700; font-size: 1rem; letter-spacing: -0.02em; }
+    .status-pill {
+      display: inline-block; font-size: 0.68rem; font-weight: 700;
+      padding: 0.15rem 0.4rem; border-radius: 999px; white-space: nowrap; color: #fff;
+    }
+    .status-pill.b2a1 { background: #ff0000; }
+    .status-pill.fertig, .status-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .status-pill.gestellt { background: #34A853; }
+    .status-pill.tagesliste, .status-pill.heraus { background: #ffff00; color: #1a1a1a; }
+    .status-pill.behalten { background: rgba(255,255,255,0.16); color: var(--foreground-muted); }
+    .status-pill.refurb { background: #7C3AED; color: #fff; }
+    .sub { margin-top: 3px; font-size: 0.78rem; color: var(--foreground-muted); font-weight: 600; }
+    .main-top {
+      padding: var(--space-md) var(--space-lg);
+      display: flex; flex-wrap: wrap; gap: var(--space-md);
+      align-items: center; justify-content: space-between;
+    }
+    .main-title h1 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; }
+    .main-title span { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--foreground-muted); }
+    .sid-row { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+    .btn-copy-sid {
+      height: 32px; padding: 0 12px; flex-shrink: 0;
+      border-radius: 999px; border: 0;
+      background: var(--color-primary); color: #fff;
+      cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      font: 600 0.72rem var(--font); letter-spacing: 0.02em;
+    }
+    .btn-copy-sid:hover { background: var(--color-secondary); }
+    .btn-copy-sid:disabled { opacity: 0.35; cursor: default; }
+    .btn-copy-sid svg { width: 14px; height: 14px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .content { flex: 1; min-height: 0; overflow: auto; padding: var(--space-lg); }
+    .empty { height: 100%; display: grid; place-items: center; }
+    .empty.hide { display: none; }
+    .empty-card {
+      max-width: 460px; text-align: center; padding: var(--space-xl);
+      border: 1px dashed var(--border-strong); border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .empty-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+    .empty-card p { margin: 0; color: var(--foreground-muted); font-size: 0.9rem; line-height: 1.5; }
+    #detail { display: none; }
+    #detail.show { display: block; }
+    .why {
+      margin: 0 0 12px; font-size: 0.92rem; font-weight: 600; line-height: 1.4;
+      padding: 10px 12px; border-radius: 10px; background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .reasons { margin: 0 0 12px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+    .reasons li {
+      font-size: 0.88rem; color: var(--foreground); line-height: 1.35;
+      padding: 6px 10px; border-radius: 8px; background: var(--surface);
+      border-left: 3px solid var(--border-strong);
+    }
+    .check-row.state-none { border-left-color: var(--border-strong); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: var(--space-md); }
+    .stack { display: flex; flex-direction: column; gap: var(--space-md); min-width: 0; }
+    .card {
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: rgba(14, 16, 20, 0.6); box-shadow: var(--shadow-md);
+      padding: var(--space-lg);
+    }
+    .card h2 { margin: 0 0 10px; font-size: 0.95rem; font-weight: 700; }
+    .verdict {
+      display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap;
+      padding: 12px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--surface); margin-bottom: 12px;
+    }
+    .verdict-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+    .verdict .big-pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      align-self: flex-start;
+      font-size: 1.05rem; font-weight: 800; padding: 0.45rem 0.95rem; border-radius: 999px;
+      line-height: 1.2; white-space: nowrap;
+    }
+    .verdict .big-pill.b2a1 { background: #ff0000; color: #fff; }
+    .verdict .big-pill.fertig, .verdict .big-pill.raus { background: #00ffff; color: #1a1a1a; }
+    .verdict .big-pill.gestellt { background: #34A853; color: #fff; }
+    .verdict .big-pill.tagesliste { background: #ffff00; color: #1a1a1a; }
+    .verdict .big-pill.behalten { background: rgba(255,255,255,0.12); color: var(--foreground-muted); }
+    .verdict .big-pill.refurb { background: #7C3AED; color: #fff; }
+    .vlabel { display: block; font-size: 0.75rem; color: var(--foreground-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+    .status-btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+    .sbtn {
+      border: 1px solid var(--border); background: transparent; color: var(--foreground);
+      border-radius: 999px; padding: 0.55rem 0.9rem; min-height: 2.4rem; font: 700 0.82rem/1 var(--font);
+      cursor: pointer; transition: 160ms var(--easing);
+    }
+    .sbtn:hover { filter: brightness(1.15); }
+    .sbtn:active { transform: scale(0.96); }
+    .sbtn:disabled { opacity: 0.4; cursor: not-allowed; filter: none; transform: none; }
+    .sbtn.b2a1 { border-color: rgba(255,0,0,0.5); color: #fca5a5; background: rgba(255,0,0,0.1); }
+    .sbtn.b2a1.set, .sbtn.b2a1:hover { background: #ff0000; color: #fff; }
+    .sbtn.fertig, .sbtn.raus { border-color: rgba(0,255,255,0.5); color: #a5f3fc; background: rgba(0,255,255,0.08); }
+    .sbtn.fertig.set, .sbtn.fertig:hover, .sbtn.raus.set, .sbtn.raus:hover { background: #00ffff; color: #1a1a1a; }
+    .sbtn.tagesliste { border-color: rgba(255,255,0,0.5); color: #fde047; background: rgba(255,255,0,0.08); }
+    .sbtn.tagesliste.set, .sbtn.tagesliste:hover { background: #ffff00; color: #1a1a1a; }
+    .sbtn.behalten { border-color: var(--border-strong); color: var(--foreground-muted); }
+    .sbtn.behalten.set, .sbtn.behalten:hover { background: var(--surface-2); color: var(--foreground); }
+    .skip-banner {
+      margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+      border: 1px dashed rgba(52, 168, 83, 0.45);
+      background: rgba(52, 168, 83, 0.1);
+      color: #86efac; font-size: 0.78rem; font-weight: 700; line-height: 1.35;
+    }
+    .mail-again { color: #7dd3fc; text-decoration: none; font-weight: 700; cursor: pointer; }
+    .checklist { display: flex; flex-direction: column; gap: 8px; }
+    .check-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px;
+      background: var(--surface); border-left: 4px solid var(--border-strong);
+    }
+    .check-row.state-ok { border-left-color: #00ff00; background: rgba(0,255,0,0.07); }
+    .check-row.state-warn { border-left-color: #ffff00; background: rgba(255,255,0,0.07); }
+    .check-row.state-bad { border-left-color: #ff0000; background: rgba(255,0,0,0.1); }
+    .check-row.state-info { border-left-color: #00ffff; background: rgba(0,255,255,0.06); }
+    .check-ico { width: 1.4rem; height: 1.4rem; flex-shrink: 0; color: var(--foreground-muted); }
+    .check-row.state-ok .check-ico { color: #4ade80; }
+    .check-row.state-warn .check-ico { color: #fde047; }
+    .check-row.state-bad .check-ico { color: #f87171; }
+    .check-row.state-info .check-ico { color: #67e8f9; }
+    .ct { font-weight: 700; font-size: 0.92rem; }
+    .cm { margin-top: 2px; font-size: 0.82rem; color: var(--foreground-muted); line-height: 1.4; }
+    .cm a { color: #7dd3fc; text-decoration: none; font-weight: 600; }
+    .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .fact { border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+    .fact.wide { grid-column: 1 / -1; }
+    .fk { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--foreground-muted); margin-bottom: 3px; }
+    .fv { font-size: 0.92rem; font-weight: 600; word-break: break-word; }
+    .fv.green { color: #86efac; }
+    .fv.yellow { color: #fde047; }
+    .fv.red { color: #fca5a5; }
+    .fv.cyan { color: #a5f3fc; }
+    .hint { font-size: 13px; color: var(--foreground-muted); font-weight: 600; }
+    .handy-modal {
+      position: fixed; inset: 0; z-index: 90; display: none; place-items: center;
+      background: rgba(5,5,6,.78); backdrop-filter: blur(8px); padding: 18px;
+    }
+    .handy-modal.show { display: grid; }
+    .handy-card {
+      width: min(420px, 100%); background: #10141c; border: 1px solid var(--border-strong);
+      border-radius: 18px; padding: 18px; text-align: center;
+    }
+    .handy-card h2 { margin: 0 0 8px; font-size: 1.05rem; }
+    .handy-card p { margin: 0 0 14px; color: var(--foreground-muted); font-size: .82rem; font-weight: 600; line-height: 1.4; }
+    .handy-card img { width: 220px; height: 220px; border-radius: 12px; background: #fff; }
+    .handy-card input {
+      width: 100%; margin: 12px 0; padding: 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--surface); color: var(--foreground); font: 600 .72rem/1.3 var(--font);
+    }
+    .pick-app {
+      display: none; position: relative; z-index: 2; min-height: 100%; padding: 16px 16px 28px;
+      flex-direction: column; gap: 14px;
+    }
+    body.pick-on { overflow: auto; }
+    body.pick-on .app, body.pick-on .ambient, body.pick-on .log-card { display: none !important; }
+    body.pick-on .pick-app { display: flex; }
+    .pick-top { display: flex; align-items: center; gap: 12px; }
+    .pick-top strong { font-size: 1.15rem; }
+    .pick-top span { color: var(--foreground-muted); font-size: .75rem; font-weight: 700; }
+    .pick-scan {
+      width: 100%; min-height: 64px; font: 800 1.35rem/1.2 var(--font); letter-spacing: .04em;
+      text-transform: uppercase; text-align: center; padding: 14px;
+      border-radius: 16px; border: 2px solid var(--color-primary);
+      background: var(--surface); color: var(--foreground); outline: none;
+    }
+    .pick-hit {
+      border-radius: 18px; padding: 18px; border: 1px solid var(--border-strong);
+      background: var(--surface); min-height: 140px;
+    }
+    .pick-hit .sid { font-size: 1.8rem; font-weight: 800; letter-spacing: .04em; }
+    .pick-hit .why { margin-top: 8px; font-weight: 700; font-size: 1.05rem; }
+    .pick-hit .sub { margin-top: 6px; color: var(--foreground-muted); font-size: .85rem; font-weight: 600; }
+    .pick-hit.b2a1 { background: rgba(220,38,38,.22); border-color: #ef4444; }
+    .pick-hit.fertig { background: rgba(6,182,212,.2); border-color: #22d3ee; }
+    .pick-hit.heraus, .pick-hit.tagesliste { background: rgba(251,191,36,.18); border-color: #fbbf24; }
+    .pick-hit.ok { background: rgba(52,211,153,.12); border-color: #34d399; }
+    .pick-hit.miss { background: rgba(255,255,255,.04); }
+    .pick-hist { display: flex; flex-direction: column; gap: 8px; }
+    .pick-hist .row {
+      display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px;
+      border-radius: 12px; border: 1px solid var(--border); font-weight: 700; font-size: .85rem;
+    }
+    @media (max-width: 900px) {
+      html { font-size: 18px; }
+      body { overflow: auto; }
+      .app { height: auto; min-height: 100%; }
+      .main-top { flex-wrap: wrap; }
+      .actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+      .log-card { display: none; }
+    }
+    .nb-empty {
+      text-align: center; color: var(--foreground-muted); font-size: 0.9rem;
+      padding: 1.2rem; border: 1px dashed var(--border); border-radius: 12px;
+    }
+    .toast {
+      position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(8px);
+      background: rgba(14, 16, 20, 0.92); border: 1px solid var(--border-strong);
+      color: var(--foreground); border-radius: 12px; padding: 0.7rem 1.1rem;
+      font-size: 0.92rem; font-weight: 600; box-shadow: var(--shadow-lg);
+      opacity: 0; pointer-events: none; transition: opacity 220ms var(--easing), transform 220ms var(--easing);
+      z-index: 60; max-width: min(90vw, 560px); text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.err { border-color: rgba(220, 38, 38, 0.55); }
+    .load-overlay {
+      position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
+      background: rgba(5, 5, 6, 0.72); backdrop-filter: blur(6px);
+      opacity: 0; pointer-events: none; transition: opacity 200ms var(--easing);
+    }
+    .load-overlay.show { opacity: 1; pointer-events: auto; }
+    .load-card {
+      display: flex; flex-direction: column; align-items: center; gap: 14px;
+      padding: 26px 34px; border-radius: 18px; min-width: 280px;
+      background: rgba(14, 16, 20, 0.9); border: 1px solid var(--border-strong);
+    }
+    .load-card.wide { min-width: min(420px, calc(100vw - 40px)); align-items: stretch; text-align: center; }
+    .load-sid { font-size: 1.45rem; font-weight: 800; color: var(--color-secondary); }
+    .load-count { font-size: 0.85rem; color: var(--foreground-muted); font-weight: 600; }
+    .load-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.1); overflow: hidden; width: 100%; }
+    .load-bar > i {
+      display: block; height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--color-secondary), #5eead4);
+      border-radius: inherit; transition: width 280ms var(--easing);
+    }
+    .spinner {
+      width: 42px; height: 42px; border-radius: 50%;
+      border: 4px solid rgba(13, 148, 136, 0.25); border-top-color: var(--color-secondary);
+      animation: spin 0.9s linear infinite; margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .load-elapsed { font-size: 0.72rem; font-weight: 700; color: var(--foreground-muted); }
+    .log-card {
+      position: fixed; right: 16px; bottom: 16px; z-index: 80;
+      width: min(380px, calc(100vw - 24px));
+      border: 1px solid var(--border-strong); border-radius: 14px;
+      background: rgba(14, 16, 20, 0.96); box-shadow: var(--shadow-lg);
+      backdrop-filter: blur(12px);
+      display: flex; flex-direction: column; max-height: 42vh;
+    }
+    .log-card.min { max-height: none; }
+    .log-head {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 10px; border-bottom: 1px solid var(--border);
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+      color: var(--foreground-muted);
+    }
+    .log-card.has-err .log-head { color: #fca5a5; }
+    .log-head span { flex: 1; }
+    .log-head button {
+      border: 0; background: transparent; color: inherit; cursor: pointer;
+      font: 700 0.72rem/1 var(--font); padding: 4px 6px; border-radius: 6px;
+    }
+    .log-head button:hover { background: var(--surface); color: var(--foreground); }
+    .log-body {
+      overflow: auto; padding: 8px; display: flex; flex-direction: column; gap: 5px;
+    }
+    .log-card.min .log-body { display: none; }
+    .log-row {
+      font-size: 0.7rem; font-weight: 600; line-height: 1.35;
+      padding: 6px 8px; border-radius: 8px; border-left: 3px solid var(--border-strong);
+      background: var(--surface); color: var(--foreground);
+      word-break: break-word;
+    }
+    .log-row .t { color: var(--foreground-muted); font-weight: 700; margin-right: 6px; }
+    .log-row.ok { border-left-color: #34d399; }
+    .log-row.err { border-left-color: #ff4d4d; background: rgba(255,0,0,0.1); color: #fecaca; }
+    .log-row.wait { border-left-color: #14b8a6; }
+    .log-empty { color: var(--foreground-muted); font-size: 0.7rem; padding: 6px; }
+    .load-esc kbd {
+      display: inline-block; padding: 0.1rem 0.4rem; border-radius: 6px;
+      border: 1px solid var(--border-strong); background: rgba(255,255,255,0.06);
+      font: inherit; font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true">
+    <div class="blob a"></div>
+    <div class="blob b"></div>
+    <div class="blob c"></div>
+  </div>
+  <div class="load-overlay" id="loadOverlay">
+    <div class="load-card" id="loadCard">
+      <div class="spinner"></div>
+      <span class="load-title" id="loadLabel">Lädt…</span>
+      <div class="load-sid" id="loadSid" style="display:none"></div>
+      <div class="load-count" id="loadCount" style="display:none"></div>
+      <div class="load-bar" id="loadBar" style="display:none"><i id="loadBarFill"></i></div>
+      <div class="load-elapsed" id="loadElapsed" style="display:none"></div>
+      <div class="load-esc" id="loadEsc" style="display:none"><kbd>ESC</kbd> Abbrechen</div>
+    </div>
+  </div>
+  <div class="app">
+    <aside class="side">
+      <div class="top glass-bar">
+        <div class="brand-row">
+          <div class="brand-mark">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/><path d="M12 16v4"/><path d="M7 8h2M7 12h4"/></svg>
+          </div>
+          <div class="brand-text">
+            <strong>Retoure Scan</strong>
+            <span>Reifen + Box Inventur</span>
+          </div>
+          <button class="chip" type="button" id="btnKontrolle">Retoure Lager</button>
+        </div>
+        <div class="dump-wrap">
+          <textarea class="dump" id="dump" placeholder="Hier klicken, dann Dump scannen oder Stock-IDs einfügen…" autocomplete="off" spellcheck="false"></textarea>
+          <div class="dump-hint" id="dumpHint">Bereit — Stock-IDs Reifen und Lagerboxen, 2 Buchstaben + 4–8 Zahlen</div>
+        </div>
+        <div class="row-btns">
+          <button class="btn teal" type="button" id="btnCheck">Prüfen</button>
+          <button class="btn teal" type="button" id="btnCarolCheck">Carol prüfen</button>
+          <button class="btn ghost" type="button" id="btnHandy">Handy</button>
+          <button class="btn ghost" type="button" id="btnNew">Neue Runde</button>
+        </div>
+        <select class="sel" id="batchSel" aria-label="Vorherige Dumps"></select>
+        <div class="stats" id="stats"></div>
+        <div class="filters" id="filters">
+          <button class="chip active" data-f="alle" type="button">Alle</button>
+          <button class="chip" data-f="sort" type="button">Rausziehen</button>
+          <button class="chip" data-f="b2a1" type="button">B2A1</button>
+          <button class="chip" data-f="fertig" type="button">Fertig</button>
+          <button class="chip" data-f="reifen" type="button">Reifen</button>
+          <button class="chip" data-f="lagerbox" type="button">Lagerbox</button>
+          <button class="chip" data-f="behalten" type="button">Behalten</button>
+        </div>
+        <div class="meta">
+          <span id="countLabel">—</span>
+          <button class="btn icon ghost" id="btnDelBatch" type="button" title="Diesen Dump löschen" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+    <section class="main">
+      <div class="main-top glass-bar">
+        <div class="main-title">
+          <div class="sid-row">
+            <button class="btn-copy-sid" id="btnCopySid" type="button" title="Stock-ID kopieren" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              Copy
+            </button>
+            <h1 id="detailSid">—</h1>
+          </div>
+          <span id="detailSub">Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen</span>
+        </div>
+        <div class="actions">
+          <button class="btn primary" id="btnPrintSort" type="button" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            PDF Rausziehen
+          </button>
+          <button class="btn" id="btnPrintAll" type="button" disabled>PDF Alles</button>
+          <button class="btn teal" id="btnCarol" type="button" disabled>Carol</button>
+          <button class="btn" id="btnGmail" type="button" disabled>Gmail</button>
+        </div>
+      </div>
+      <div class="content" id="content">
+        <div class="empty" id="emptyState">
+          <div class="empty-card">
+            <h2>Retoure Inventur</h2>
+            <p>Alle Stock-IDs dumpen (Reifen und Lagerboxen). Die Seite prüft automatisch B2A1-Mail, Carol „Als B2A1 markiert“ und Fertiggestellt / Herausgegeben — PDF für die rauszuziehenden IDs.</p>
+          </div>
+        </div>
+        <div id="detail">
+          <div class="grid">
+            <div class="stack">
+              <div class="card">
+                <h2>Aktion</h2>
+                <div class="verdict">
+                  <div class="verdict-col">
+                    <span class="vlabel">Sortierung</span>
+                    <span class="big-pill behalten" id="actionPill">—</span>
+                  </div>
+                </div>
+                <div class="status-btns" id="actionBtns">
+                  <button type="button" class="sbtn b2a1" data-a="B2A1">B2A1</button>
+                  <button type="button" class="sbtn fertig" data-a="FERTIG">Fertiggestellt</button>
+                  <button type="button" class="sbtn behalten" data-a="BEHALTEN">BEHALTEN</button>
+                </div>
+                <p class="why" id="actionWhy"></p>
+                <ul class="reasons" id="reasonList"></ul>
+                <div class="checklist" id="checkList"></div>
+              </div>
+            </div>
+            <div class="stack">
+              <div class="card">
+                <h2>Fahrzeug</h2>
+                <div class="facts">
+                  <div class="fact"><div class="fk">Typ</div><div class="fv" id="fTyp">—</div></div>
+                  <div class="fact"><div class="fk">Marke &amp; Model</div><div class="fv" id="fMarke">—</div></div>
+                  <div class="fact"><div class="fk">Carol Status</div><div class="fv" id="fStatus">—</div></div>
+                  <div class="fact"><div class="fk">Reifen (Refurb)</div><div class="fv" id="fReifen">—</div></div>
+                  <div class="fact"><div class="fk">Regal</div><div class="fv" id="fRegal">—</div></div>
+                  <div class="fact"><div class="fk">Tagesliste</div><div class="fv" id="fTl">—</div></div>
+                  <div class="fact"><div class="fk">Gestellt</div><div class="fv" id="fGestellt">—</div></div>
+                  <div class="fact wide"><div class="fk">B2A1 Mail</div><div class="fv" id="fMail">—</div></div>
+                  <div class="fact wide"><div class="fk">Geprüft</div><div class="fv" id="fChecked">—</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="pick-app" id="pickApp">
+    <div class="pick-top">
+      <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div>
+      <div>
+        <strong>Retoure Handy</strong>
+        <span id="pickMeta">Scanner bereit</span>
+      </div>
+    </div>
+    <input class="pick-scan" id="pickScan" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Box scannen…">
+    <div class="pick-hit miss" id="pickHit">
+      <div class="sid">—</div>
+      <div class="why">Scanner auf das Feld, dann Barcode</div>
+      <div class="sub">Piept bei B2A1, Fertiggestellt, Herausgegeben und Tagesliste</div>
+    </div>
+    <div class="pick-hist" id="pickHist"></div>
+  </div>
+  <div class="handy-modal" id="handyModal">
+    <div class="handy-card">
+      <h2>Handy mit diesem Dump verbinden</h2>
+      <p>QR scannen oder Link öffnen. Gleicher Dump wie am PC. Scanner piept bei rauszuziehenden Boxen.</p>
+      <img id="handyQr" alt="QR">
+      <input id="handyUrl" readonly>
+      <div class="row-btns" style="justify-content:center">
+        <button class="btn teal" type="button" id="btnHandyCopy">Link kopieren</button>
+        <button class="btn ghost" type="button" id="btnHandyClose">Schließen</button>
+      </div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <aside class="log-card" id="logCard">
+    <div class="log-head">
+      <span id="logTitle">Ablauf</span>
+      <button type="button" id="logCopy">Copy</button>
+      <button type="button" id="logMin">–</button>
+    </div>
+    <div class="log-body" id="logBody"><div class="log-empty">Bereit — Fehler und Schritte erscheinen hier</div></div>
+  </aside>
+  <input type="hidden" id="bootModeVal" value="<?= typeof bootMode === 'undefined' ? 'desk' : bootMode ?>">
+  <input type="hidden" id="bootPickVal" value="<?= typeof bootPick === 'undefined' ? '' : bootPick ?>">
+  <script>
+    var BOOT_MODE = (document.getElementById('bootModeVal') && document.getElementById('bootModeVal').value) || 'desk';
+    var BOOT_PICK = (document.getElementById('bootPickVal') && document.getElementById('bootPickVal').value) || '';
+    var APP_BASE = 'https://script.google.com/a/macros/auto1.com/s/AKfycbwsGB1o_1z0t9nCVXDx0lu3nQv8Ltj81Dgq5BVw8laLHPA4v4oLUpNvj-qx49iMjeVm/exec';
+    var CALL_WAIT = {
+      aussenPing: 12000,
+      startAussenCheck: 35000,
+      aussenCheckStep: 90000,
+      checkAussenMailChunk: 90000,
+      getAussenBatch: 25000,
+      deleteAussenBatch: 25000,
+      setAussenAction: 25000,
+      recheckAussenMail: 90000,
+      aussenCarolQueue: 25000
+    };
+    var state = {
+      busy: false,
+      cancelled: false,
+      opId: 0,
+      items: [],
+      gestelltItems: [],
+      gestelltCount: 0,
+      batchId: '',
+      scannedAt: '',
+      selected: '',
+      filter: 'alle',
+      pending: [],
+      dumpTimer: null,
+      elapsedStart: 0,
+      logLines: [],
+      logErr: 0,
+      carolPoll: null,
+      carolPollBusy: false,
+      carolWin: null,
+      carolDone: false,
+      mailDone: false,
+      carolNav: {},
+      carolStallSid: '',
+      carolStall: 0,
+      pickPoll: null
+    };
+
+    function $(id) { return document.getElementById(id); }
+
+    function toast(msg, err) {
+      var el = $('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (err ? ' err' : '');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(function() { el.className = 'toast'; }, 4200);
+    }
+
+    function playDoneTone() {
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        var ctx = playDoneTone._ctx || new Ctx();
+        playDoneTone._ctx = ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        function beep(at, freq, dur) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.2, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(at);
+          o.stop(at + dur + 0.03);
+        }
+        var t = ctx.currentTime + 0.02;
+        beep(t, 880, 0.14);
+        beep(t + 0.16, 1175, 0.16);
+        beep(t + 0.36, 1568, 0.32);
+      } catch (e) {}
+      try {
+        if (window.Notification && Notification.permission === 'granted') {
+          new Notification('Retoure Scan', { body: 'Carol-Check fertig' });
+        }
+      } catch (e2) {}
+    }
+
+    function unlockAudio() {
+      try {
+        if (window.Notification && Notification.permission === 'default') Notification.requestPermission();
+      } catch (e0) {}
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (Ctx) {
+          playDoneTone._ctx = playDoneTone._ctx || new Ctx();
+          if (playDoneTone._ctx.state === 'suspended') playDoneTone._ctx.resume();
+        }
+      } catch (eA) {}
+    }
+
+    function playPullTone(kind) {
+      try {
+        var Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return;
+        playDoneTone._ctx = playDoneTone._ctx || new Ctx();
+        var ctx = playDoneTone._ctx;
+        if (ctx.state === 'suspended') ctx.resume();
+        function beep(at, freq, dur) {
+          var o = ctx.createOscillator();
+          var g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.value = freq;
+          g.gain.setValueAtTime(0.0001, at);
+          g.gain.exponentialRampToValueAtTime(0.22, at + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(at);
+          o.stop(at + dur + 0.03);
+        }
+        var t = ctx.currentTime + 0.02;
+        if (kind === 'b2a1') {
+          beep(t, 880, 0.12); beep(t + 0.16, 880, 0.12); beep(t + 0.34, 1320, 0.28);
+        } else if (kind === 'fertig') {
+          beep(t, 740, 0.14); beep(t + 0.2, 1175, 0.28);
+        } else {
+          beep(t, 523, 0.16); beep(t + 0.2, 698, 0.26);
+        }
+      } catch (e) {}
+    }
+
+    function handyUrl() {
+      if (!state.batchId) return '';
+      return APP_BASE + '?page=pick&batch=' + encodeURIComponent(state.batchId);
+    }
+
+    function openHandy() {
+      if (!state.batchId) {
+        toast('Zuerst Dump prüfen', true);
+        return;
+      }
+      var url = handyUrl();
+      $('handyUrl').value = url;
+      $('handyQr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
+      $('handyModal').classList.add('show');
+    }
+
+    function findItem(sid) {
+      sid = String(sid || '').replace(/\s+/g, '').toUpperCase();
+      var lists = [state.items, state.gestelltItems];
+      for (var L = 0; L < lists.length; L++) {
+        var arr = lists[L] || [];
+        for (var i = 0; i < arr.length; i++) if (arr[i].stockId === sid) return arr[i];
+      }
+      return null;
+    }
+
+    function showPickHit(sid, it) {
+      var box = $('pickHit');
+      if (!it) {
+        box.className = 'pick-hit miss';
+        box.innerHTML = '<div class="sid">' + esc(sid || '—') + '</div><div class="why">Nicht in diesem Dump</div><div class="sub">Andere Box scannen</div>';
+        return;
+      }
+      var kind = pullKindOf(it);
+      box.className = 'pick-hit ' + (kind || (it.tlGestellt ? 'ok' : 'ok'));
+      var why = kind ? pullKindLabel(kind) : (it.tlGestellt ? 'Gestellt — nicht im Aussenlager' : 'Behalten — bleibt');
+      var sub = [it.itemTyp, it.markeModel, it.carolBadge || it.carolStatus, it.tlDatum ? ('TL ' + it.tlDatum) : ''].filter(Boolean).join(' · ');
+      box.innerHTML = '<div class="sid">' + esc(it.stockId) + '</div><div class="why">' + esc(why) + '</div><div class="sub">' + esc(sub) + '</div>';
+      if (kind) playPullTone(kind);
+      var hist = $('pickHist');
+      var row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span>' + esc(it.stockId) + '</span><span>' + esc(kind ? pullKindLabel(kind) : 'OK') + '</span>';
+      hist.insertBefore(row, hist.firstChild);
+      while (hist.children.length > 12) hist.removeChild(hist.lastChild);
+    }
+
+    function handlePickScan(raw) {
+      var sid = String(raw || '').replace(/\s+/g, '').toUpperCase();
+      if (!/^[A-Z]{2}\d{4,8}$/.test(sid)) return;
+      $('pickScan').value = '';
+      showPickHit(sid, findItem(sid));
+    }
+
+    function startPickMode() {
+      document.body.classList.add('pick-on');
+      if (BOOT_PICK) {
+        loadBatch(BOOT_PICK);
+        $('pickMeta').textContent = BOOT_PICK;
+      } else {
+        $('pickMeta').textContent = 'Kein Dump in der URL — QR am PC scannen';
+      }
+      setTimeout(function() { $('pickScan').focus(); unlockAudio(); }, 300);
+      if (state.pickPoll) clearInterval(state.pickPoll);
+      state.pickPoll = setInterval(function() {
+        if (!state.batchId) return;
+        google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+          if (!res || !res.success) return;
+          applyBatchPayload(res, false);
+          $('pickMeta').textContent = (pullItems().length || 0) + ' rausziehen · ' + (state.items.length || 0) + ' IDs';
+        }).getAussenBatch(state.batchId);
+      }, 8000);
+    }
+
+    function navCarol(url) {
+      if (!url) return false;
+      try {
+        if (state.carolWin && !state.carolWin.closed) {
+          state.carolWin.location.href = url;
+          try { state.carolWin.focus(); } catch (e1) {}
+          return true;
+        }
+      } catch (e2) {}
+      try {
+        state.carolWin = window.open(url, 'retoureCarol');
+        return !!(state.carolWin && !state.carolWin.closed);
+      } catch (e3) {
+        return false;
+      }
+    }
+
+    function focusHud() {
+      try { window.focus(); } catch (e0) {}
+      try { if (window.top) window.top.focus(); } catch (e1) {}
+    }
+
+    function closeCarolSlot() {
+      try {
+        if (state.carolWin && !state.carolWin.closed) state.carolWin.close();
+      } catch (e) {}
+      state.carolWin = null;
+      focusHud();
+    }
+
+    function ackCarol(res, stockId) {
+      var payload = {
+        retoureCarolAck: 1,
+        success: !!(res && res.success),
+        stockId: (res && res.stockId) || stockId || '',
+        batchId: (res && res.batchId) || state.batchId || '',
+        nextId: (res && res.nextId) || '',
+        ids: (res && res.ids) || [],
+        pending: res && res.pending,
+        carolUrl: (res && res.carolUrl) || '',
+        message: (res && res.message) || ''
+      };
+      try {
+        if (state.carolWin && !state.carolWin.closed) state.carolWin.postMessage(payload, '*');
+      } catch (e0) {}
+      return payload;
+    }
+
+    function maybeFinishRun() {
+      if (state.carolDone) closeCarolSlot();
+      if (!state.mailDone || !state.carolDone) return;
+      playDoneTone();
+      var c = countsOf(state.items);
+      toast(c.sort + ' rausziehen · ' + c.b2a1 + ' B2A1 · ' + c.fertig + ' Fertig');
+      loadBatches(state.batchId);
+    }
+
+    function logTime() {
+      var d = new Date();
+      return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+    }
+
+    function logLine(kind, msg) {
+      kind = kind === 'err' || kind === 'ok' || kind === 'wait' ? kind : 'info';
+      var row = { kind: kind, t: logTime(), msg: String(msg || '') };
+      state.logLines.push(row);
+      if (state.logLines.length > 40) state.logLines.shift();
+      if (kind === 'err') {
+        state.logErr++;
+        $('logCard').classList.add('has-err');
+        $('logCard').classList.remove('min');
+        $('logMin').textContent = '–';
+      }
+      var box = $('logBody');
+      if (state.logLines.length === 1) box.innerHTML = '';
+      var el = document.createElement('div');
+      el.className = 'log-row ' + kind;
+      el.innerHTML = '<span class="t">' + esc(row.t) + '</span>' + esc(row.msg);
+      box.appendChild(el);
+      box.scrollTop = box.scrollHeight;
+      $('logTitle').textContent = state.logErr ? ('Ablauf · ' + state.logErr + ' Fehler') : 'Ablauf';
+    }
+
+    function startElapsed() {
+      state.elapsedStart = Date.now();
+      $('loadElapsed').style.display = '';
+      if (startElapsed._iv) clearInterval(startElapsed._iv);
+      function tick() {
+        if (!state.elapsedStart) return;
+        var s = Math.max(0, Math.floor((Date.now() - state.elapsedStart) / 1000));
+        $('loadElapsed').textContent = 'läuft seit ' + s + 's';
+      }
+      tick();
+      startElapsed._iv = setInterval(tick, 500);
+    }
+
+    function stopElapsed() {
+      state.elapsedStart = 0;
+      if (startElapsed._iv) {
+        clearInterval(startElapsed._iv);
+        startElapsed._iv = null;
+      }
+      $('loadElapsed').style.display = 'none';
+    }
+
+    function esc(s) {
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function beginOp() {
+      state.busy = true;
+      state.cancelled = false;
+      state.opId += 1;
+      return state.opId;
+    }
+
+    function isOpActive(opId) {
+      return !!opId && state.opId === opId && state.busy && !state.cancelled;
+    }
+
+    function cancelBusyOp(silent) {
+      if (!state.busy && !$('loadOverlay').classList.contains('show')) return false;
+      state.cancelled = true;
+      state.busy = false;
+      state.opId += 1;
+      hideLoad();
+      logLine('info', 'Abgebrochen');
+      if (!silent) toast('Abgebrochen');
+      return true;
+    }
+
+    function showLoad(label) {
+      $('loadCard').classList.remove('wide');
+      $('loadSid').style.display = 'none';
+      $('loadCount').style.display = 'none';
+      $('loadBar').style.display = 'none';
+      $('loadEsc').style.display = '';
+      $('loadBarFill').style.width = '0%';
+      $('loadLabel').textContent = label || 'Lädt…';
+      $('loadOverlay').classList.add('show');
+      startElapsed();
+    }
+
+    function showLoadProgress(label, sid, count, pct) {
+      $('loadCard').classList.add('wide');
+      $('loadLabel').textContent = label || 'Prüft…';
+      $('loadSid').style.display = sid ? '' : 'none';
+      $('loadSid').textContent = sid || '';
+      $('loadCount').style.display = count ? '' : 'none';
+      $('loadCount').textContent = count || '';
+      $('loadBar').style.display = '';
+      $('loadBarFill').style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+      $('loadEsc').style.display = '';
+      $('loadOverlay').classList.add('show');
+      if (!state.elapsedStart) startElapsed();
+    }
+
+    function hideLoad() {
+      $('loadOverlay').classList.remove('show');
+      $('loadEsc').style.display = 'none';
+      stopElapsed();
+    }
+
+    function runFn(opId, onOk, name) {
+      var args = Array.prototype.slice.call(arguments, 3);
+      var wait = CALL_WAIT[name] || 45000;
+      var t0 = Date.now();
+      var finished = false;
+      var extra = '';
+      if (name === 'aussenCheckStep' && args[1]) extra = ' · ' + args[1];
+      else if (typeof args[0] === 'string' && args[0]) extra = ' · ' + args[0];
+      else if (Object.prototype.toString.call(args[0]) === '[object Array]') extra = ' · ' + args[0].length + ' IDs';
+      logLine('wait', name + extra);
+      var timer = setTimeout(function() {
+        if (finished) return;
+        finished = true;
+        if (opId != null && state.opId !== opId) return;
+        hideLoad();
+        state.busy = false;
+        state.opId += 1;
+        logLine('err', name + ' keine Antwort nach ' + Math.round(wait / 1000) + 's. Oft hängt noch eine alte Ausführung — Apps Script → Ausführungen → laufende abbrechen, dann Seite neu laden.');
+        toast(name + ' Timeout nach ' + Math.round(wait / 1000) + 's', true);
+      }, wait);
+      try {
+        var runner = google.script.run.withFailureHandler(function(err) {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          if (opId != null && state.opId !== opId) return;
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', name + ' ' + msg + ' · ' + (Date.now() - t0) + 'ms');
+          hideLoad();
+          state.busy = false;
+          toast(msg, true);
+        }).withSuccessHandler(function(res) {
+          if (finished) {
+            logLine('info', name + ' späte Antwort ignoriert');
+            return;
+          }
+          finished = true;
+          clearTimeout(timer);
+          if (opId != null && state.opId !== opId) return;
+          var ms = Date.now() - t0;
+          if (!res || res.success === false) {
+            logLine('err', name + ' ' + ((res && res.message) || 'fehlgeschlagen') + ' · ' + ms + 'ms');
+          } else {
+            logLine('ok', name + ' ' + ms + 'ms' + (res.message ? ' · ' + res.message : '') + (res.phase ? ' · ' + res.phase : '') + (res.version ? ' · v' + res.version : ''));
+          }
+          onOk(res);
+        });
+        var fn = runner[name];
+        if (typeof fn !== 'function') {
+          finished = true;
+          clearTimeout(timer);
+          throw new Error(name + ' fehlt im Backend — App.js speichern und Web-App neu deployen');
+        }
+        return fn.apply(runner, args);
+      } catch (err) {
+        finished = true;
+        clearTimeout(timer);
+        if (opId != null && state.opId !== opId) return;
+        hideLoad();
+        state.busy = false;
+        var msg = String(err && err.message ? err.message : err);
+        logLine('err', msg);
+        toast(msg, true);
+      }
+    }
+
+    function quietRun(name, args, onOk) {
+      logLine('wait', name);
+      try {
+        var runner = google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', name + ' ' + msg);
+          toast(msg, true);
+        }).withSuccessHandler(function(res) {
+          if (!res || res.success === false) {
+            logLine('err', name + ' ' + ((res && res.message) || 'fehlgeschlagen'));
+            toast((res && res.message) || (name + ' fehlgeschlagen'), true);
+            return;
+          }
+          logLine('ok', name + (res.message ? ' · ' + res.message : ''));
+          if (onOk) onOk(res);
+        });
+        var fn = runner[name];
+        if (typeof fn !== 'function') throw new Error(name + ' fehlt im Backend — App.js speichern und Web-App neu deployen');
+        fn.apply(runner, args || []);
+      } catch (err) {
+        var msg = String(err && err.message ? err.message : err);
+        logLine('err', msg);
+        toast(msg, true);
+      }
+    }
+
+    function looksLikeStockId(value) {
+      return /^[A-Z]{2}\d{4,8}$/.test(String(value || '').replace(/\s+/g, '').toUpperCase());
+    }
+
+    function isDumpToken(value) {
+      var s = String(value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      if (!s) return true;
+      if (looksLikeStockId(s)) return false;
+      if (/OUTPUT\s*ALL\s*STORED\s*DATA/.test(s)) return true;
+      if (/SEND\s*ALL/.test(s)) return true;
+      if (/DUMP\s*ALL/.test(s)) return true;
+      return false;
+    }
+
+    function parseDumpText(text) {
+      var parts = String(text || '').split(/[\s,;]+/);
+      var out = [];
+      var seen = {};
+      var ignored = 0;
+      for (var i = 0; i < parts.length; i++) {
+        var sid = String(parts[i] || '').replace(/\s+/g, '').toUpperCase();
+        if (!sid) continue;
+        if (isDumpToken(sid)) {
+          ignored++;
+          continue;
+        }
+        if (!looksLikeStockId(sid)) {
+          ignored++;
+          continue;
+        }
+        if (seen[sid]) continue;
+        seen[sid] = true;
+        out.push(sid);
+      }
+      return { ids: out, ignored: ignored };
+    }
+
+    function badgeLooksB2a1(s) {
+      s = String(s || '').replace(/\s+/g, ' ').trim();
+      if (!s) return false;
+      if (/^(return\s+to\s+auto\s*1|zurück\s+zu\s+auto\s*1)$/i.test(s)) return false;
+      if (/als\s+b2a1|b2a1\s+markiert|flagged\s+for\s+return|return\s+to\s+auto\s*1\s+candidate|rückgabe\s+an\s+auto\s*1/i.test(s)) return true;
+      if (/kandidat/i.test(s) && /auto\s*1|b2a1/i.test(s)) return true;
+      if (/return\s+to\s+auto\s*1/i.test(s) && (/\bcandidate\b|\b(on|am)\s+\d/i.test(s))) return true;
+      return false;
+    }
+
+    function applyCarolB2a1FromBadge(it) {
+      if (!it || it.carolB2a1 || !it.carolLive) return it;
+      if (!badgeLooksB2a1(it.carolBadge)) return it;
+      it.carolB2a1 = true;
+      it.carolFertig = false;
+      it.carolDone = false;
+      if (!it.manual) {
+        it.action = 'B2A1';
+        it.actionKey = 'b2a1';
+      }
+      return it;
+    }
+
+    function applyBatchPayload(res, merge) {
+      if (!res) return;
+      if (res.batchId) state.batchId = res.batchId;
+      if (res.scannedAt) state.scannedAt = res.scannedAt;
+      if (res.gestelltItems) state.gestelltItems = res.gestelltItems;
+      if (res.gestelltCount != null) state.gestelltCount = res.gestelltCount;
+      else if (res.gestelltItems) state.gestelltCount = res.gestelltItems.length;
+      if (merge) mergeItems(res.items || []);
+      else if (res.items) {
+        var prevMap = {};
+        for (var p = 0; p < state.items.length; p++) prevMap[state.items[p].stockId] = state.items[p];
+        var next = [];
+        for (var n = 0; n < res.items.length; n++) {
+          var it = res.items[n];
+          var prev = prevMap[it.stockId];
+          if (prev && prev.carolLive && !it.carolLive) {
+            it.carolLive = true;
+            it.carolDetail = true;
+            it.carolB2a1 = !!prev.carolB2a1;
+            it.carolFertig = !!prev.carolFertig;
+            it.carolDone = !!prev.carolDone;
+            it.carolBadge = prev.carolBadge;
+            if (!it.manual && !prev.manual) {
+              it.action = prev.action;
+              it.actionKey = prev.actionKey;
+            }
+          }
+          applyCarolB2a1FromBadge(it);
+          next.push(it);
+        }
+        state.items = next;
+      }
+      if (!state.selected && state.items.length) state.selected = state.items[0].stockId;
+    }
+
+    function patchItemCarol(d) {
+      var sid = String((d && d.stockId) || '').toUpperCase();
+      if (!sid) return false;
+      var lists = [state.items, state.gestelltItems];
+      var it = null;
+      for (var L = 0; L < lists.length && !it; L++) {
+        var arr = lists[L] || [];
+        for (var i = 0; i < arr.length; i++) {
+          if (arr[i].stockId === sid) {
+            it = arr[i];
+            break;
+          }
+        }
+      }
+      if (!it) return false;
+      var notFound = !!d.notFound;
+      it.carolLive = true;
+      it.carolDetail = true;
+      it.carolB2a1 = !notFound && (!!d.carolB2a1 || badgeLooksB2a1(d.carolLabel) || badgeLooksB2a1(it.carolBadge));
+      it.carolFertig = !notFound && !!d.carolFertig && !it.carolB2a1;
+      it.carolDone = !!it.carolFertig;
+      it.carolBadge = notFound
+        ? 'Kein Carol-Auftrag'
+        : (d.carolLabel || (it.carolB2a1 ? 'Als B2A1 markiert' : (it.carolFertig ? 'Fertiggestellt' : 'Kein Badge')));
+      if (!it.manual) {
+        if (it.mailFound || it.carolB2a1 || it.nbB2a1) {
+          it.action = 'B2A1';
+          it.actionKey = 'b2a1';
+        } else if (it.carolFertig || it.nbFertig) {
+          it.action = 'FERTIG';
+          it.actionKey = 'fertig';
+        } else if (it.tlGestellt) {
+          it.action = 'GESTELLT';
+          it.actionKey = 'gestellt';
+        } else if (it.tlFound) {
+          it.action = 'TAGESLISTE';
+          it.actionKey = 'tagesliste';
+        } else {
+          it.action = 'BEHALTEN';
+          it.actionKey = 'behalten';
+        }
+      }
+      renderList();
+      renderDetail();
+      return true;
+    }
+
+    function actionKeyOf(it) {
+      var k = (it && it.actionKey) || 'behalten';
+      if (k === 'raus') return 'fertig';
+      return k;
+    }
+
+    function isHerausgegeben(it) {
+      return /herausgegeben|handed\s*out/i.test(String((it && it.carolStatus) || '') + ' ' + String((it && it.carolBadge) || ''));
+    }
+
+    function pullKindOf(it) {
+      if (!it || it.tlGestellt) return '';
+      var k = actionKeyOf(it);
+      if (k === 'b2a1') return 'b2a1';
+      if (k === 'fertig') return 'fertig';
+      if (isHerausgegeben(it)) return 'heraus';
+      if (k === 'tagesliste' || (it.tlFound && !it.tlGestellt)) return 'tagesliste';
+      return '';
+    }
+
+    function pullItems() {
+      return state.items.filter(function(it) { return !!pullKindOf(it); });
+    }
+
+    function pullKindLabel(kind) {
+      if (kind === 'b2a1') return 'B2A1 — rausziehen';
+      if (kind === 'fertig') return 'Fertiggestellt — rausziehen';
+      if (kind === 'heraus') return 'Herausgegeben — rausziehen';
+      if (kind === 'tagesliste') return 'Tagesliste — noch im Lager';
+      return '';
+    }
+
+    function countsOf(items) {
+      var c = { all: items.length, b2a1: 0, fertig: 0, raus: 0, gestellt: state.gestelltCount || 0, tagesliste: 0, behalten: 0, sort: 0, reifen: 0, box: 0, heraus: 0 };
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        var k = actionKeyOf(it);
+        if (k === 'gestellt') continue;
+        if (k === 'fertig') c.fertig++;
+        else if (c[k] != null) c[k]++;
+        if (pullKindOf(it)) c.sort++;
+        if (isHerausgegeben(it) && k !== 'b2a1' && k !== 'fertig') c.heraus++;
+        var typ = String(it.itemTyp || '');
+        if (typ === 'Reifen' || typ === 'Reifen + Box') c.reifen++;
+        if (typ === 'Lagerbox' || typ === 'Reifen + Box') c.box++;
+      }
+      c.raus = c.fertig;
+      return c;
+    }
+
+    function visibleItems() {
+      var f = String(state.filter || 'alle').toLowerCase();
+      if (f === 'gestellt') return state.gestelltItems || [];
+      var list = state.items.filter(function(it) {
+        var k = actionKeyOf(it);
+        var typ = String(it.itemTyp || '');
+        if (it.tlGestellt) return false;
+        if (f === 'alle') return true;
+        if (f === 'sort') return !!pullKindOf(it);
+        if (f === 'fertig' || f === 'raus') return k === 'fertig';
+        if (f === 'reifen') return typ === 'Reifen' || typ === 'Reifen + Box';
+        if (f === 'lagerbox') return typ === 'Lagerbox' || typ === 'Reifen + Box';
+        return k === f;
+      });
+      var rank = { b2a1: 1, fertig: 2, heraus: 3, tagesliste: 4 };
+      list.sort(function(a, b) {
+        var ra = rank[pullKindOf(a)] || 9;
+        var rb = rank[pullKindOf(b)] || 9;
+        if (ra !== rb) return ra - rb;
+        return String(a.stockId).localeCompare(String(b.stockId));
+      });
+      return list;
+    }
+
+    function actionLabel(key) {
+      if (key === 'b2a1') return 'B2A1';
+      if (key === 'fertig' || key === 'raus') return 'Fertiggestellt';
+      if (key === 'gestellt') return 'GESTELLT';
+      if (key === 'tagesliste') return 'TAGESLISTE';
+      if (key === 'refurb') return 'Refurbishment gestartet';
+      return 'BEHALTEN';
+    }
+
+    function badgeKeyOf(it) {
+      var k = actionKeyOf(it);
+      if (k !== 'behalten' || !it || !it.carolLive) return k;
+      return /refurbishment\s+(started|gestartet)/i.test(String(it.carolBadge || '')) ? 'refurb' : k;
+    }
+
+    function actionHint(it) {
+      if (actionKeyOf(it) === 'b2a1') {
+        if (it.carolB2a1) return 'Carol: Als B2A1 markiert';
+        if (it.nbB2a1) return 'Nachbestellung B2A1';
+        return 'Zurück zu Auto1';
+      }
+      if (actionKeyOf(it) === 'fertig') return 'Fertiggestellt — rausziehen';
+      if (it.actionKey === 'gestellt') return 'Gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + ' — bei Mechanik';
+      if (it.actionKey === 'tagesliste') return 'Auf Tagesliste, nicht gestellt';
+      if (badgeKeyOf(it) === 'refurb') return 'Refurbishment gestartet';
+      return 'Noch behalten';
+    }
+
+    function renderStats() {
+      var c = countsOf(state.items);
+      var keys = [
+        ['b2a1', 'B2A1'],
+        ['fertig', 'Fertig'],
+        ['reifen', 'Reifen'],
+        ['box', 'Box'],
+        ['behalten', 'Behalten']
+      ];
+      var html = '';
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i][0];
+        var on = state.filter === k || (state.filter === 'sort' && (k === 'b2a1' || k === 'fertig' || k === 'tagesliste'));
+        html += '<button type="button" class="stat ' + k + (on ? ' active' : '') + '" data-f="' + k + '"><div class="n">' + c[k] + '</div><div class="l">' + keys[i][1] + '</div></button>';
+      }
+      $('stats').innerHTML = html;
+      $('btnPrintSort').disabled = !c.sort;
+      $('btnPrintAll').disabled = !c.all;
+      $('btnDelBatch').disabled = !state.batchId;
+    }
+
+    function renderList() {
+      var box = $('list');
+      var items = visibleItems();
+      var total = state.items.length + (state.gestelltCount || 0);
+      $('countLabel').textContent = items.length + ' / ' + total + (state.scannedAt ? ' · ' + state.scannedAt : '');
+      renderStats();
+      var html = '';
+      if (!items.length) {
+        html = '<div class="nb-empty">' + (total ? (state.filter === 'gestellt' ? 'Gestellt sind aus der Liste genommen' : 'Kein Treffer in diesem Filter') : 'Noch kein Dump') + '</div>';
+      } else {
+        for (var i = 0; i < items.length; i++) {
+          var it = items[i];
+          var k = badgeKeyOf(it);
+          var pk = pullKindOf(it);
+          html += '<button type="button" class="item st-' + actionKeyOf(it) + (pk ? ' pull' : '') + (state.selected === it.stockId ? ' active' : '') + '" data-sid="' + esc(it.stockId) + '">' +
+            '<div class="item-top"><span class="sid">' + esc(it.stockId) + '</span><span class="status-pill ' + (pk || k) + '">' + esc(pk ? pullKindLabel(pk).split(' —')[0] : actionLabel(k)) + '</span></div>' +
+            '<div class="sub">' + esc((it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel || actionHint(it))) + (it.tlDatum ? ' · ' + esc(it.tlDatum) : '') + '</div>' +
+            '</button>';
+        }
+      }
+      if (state.gestelltCount) {
+        html += '<div class="skip-banner">' + state.gestelltCount + ' bereits gestellt — nicht in der Liste, schon bei Mechanik. Kein Carol/Mail-Check.</div>';
+      }
+      box.innerHTML = html;
+    }
+
+    function ico(stateName) {
+      if (stateName === 'ok') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5"/></svg>';
+      if (stateName === 'bad') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/></svg>';
+      if (stateName === 'warn') return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 9v4M12 17h.01"/><path d="M10.3 4.7L2.6 18a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 4.7a2 2 0 0 0-3.4 0z"/></svg>';
+      return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>';
+    }
+
+    function checkRow(st, title, msg) {
+      return '<div class="check-row state-' + st + '"><div class="check-ico">' + ico(st) + '</div><div><div class="ct">' + esc(title) + '</div><div class="cm">' + msg + '</div></div></div>';
+    }
+
+    function selectedItem() {
+      for (var i = 0; i < state.items.length; i++) {
+        if (state.items[i].stockId === state.selected) return state.items[i];
+      }
+      var g = state.gestelltItems || [];
+      for (var j = 0; j < g.length; j++) {
+        if (g[j].stockId === state.selected) return g[j];
+      }
+      return null;
+    }
+
+    function carolHref(it) {
+      var sid = it && it.stockId ? it.stockId : '';
+      var u = String((it && it.carolUrl) || '');
+      if (!u && sid) u = 'https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(sid);
+      if (!u) return '';
+      if (state.batchId && u.indexOf('retoure_batch=') === -1) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_batch=' + encodeURIComponent(state.batchId);
+      }
+      if (u.indexOf('retoure_force=') === -1) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'retoure_force=1';
+      }
+      return u;
+    }
+
+    function actionWhy(it) {
+      var k = actionKeyOf(it);
+      if (k === 'b2a1') {
+        if (it.carolB2a1) return 'B2A1 — Carol zeigt „Als B2A1 markiert“. Rausziehen.';
+        if (it.nbB2a1) return 'B2A1 — Nachbestellung Status B2A1. Rausziehen.';
+        return 'B2A1 — Return-to-Auto1 Mail gefunden. Rausziehen.';
+      }
+      if (k === 'fertig') {
+        if (it.carolFertig) return 'Fertiggestellt — Carol-Badge „' + (it.carolBadge || 'Fertiggestellt') + '“. Rausziehen.';
+        return 'Fertiggestellt — Nachbestellung fertig. Rausziehen.';
+      }
+      if (k === 'gestellt') return 'Gestellt — bei der Mechanik, nicht mehr im Lager.';
+      if (k === 'tagesliste') return 'Tagesliste — nicht gestellt, noch im Lager.';
+      if (badgeKeyOf(it) === 'refurb') return 'Refurbishment gestartet — kein B2A1, nicht fertiggestellt. Bleibt im Lager.';
+      return 'Behalten — kein B2A1, nicht Fertiggestellt.';
+    }
+
+    function reasonLines(it) {
+      var rows = [];
+      if (it.itemTyp && it.itemTyp !== '—') rows.push('Typ: ' + it.itemTyp);
+      if (it.mailFound) rows.push('B2A1-Mail: ' + (it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + it.mailDate : ''));
+      else rows.push('Keine Return-to-Auto1 Mail');
+      if (it.carolB2a1) rows.push('Carol-Badge: ' + (it.carolBadge || 'Als B2A1 markiert'));
+      else if (it.carolFertig) rows.push('Carol-Badge: ' + (it.carolBadge || 'Fertiggestellt'));
+      else if (it.carolLive) rows.push('Carol-Badge geprüft: ' + (it.carolBadge || 'kein Badge'));
+      else if (it.refurbFound) rows.push('Carol-Badge noch nicht gelesen · Liste: ' + (it.carolStatus || 'ohne Status'));
+      else rows.push('Nicht in der Refurbishment List');
+      if (it.nbB2a1) rows.push('Nachbestellung: B2A1' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
+      else if (it.nbFertig) rows.push('Nachbestellung: Fertiggestellt' + (it.nbLabel ? ' · ' + it.nbLabel : ''));
+      if (it.tlGestellt) {
+        rows.push('Tagesliste gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : '') + ' — bei Mechanik');
+      } else if (it.tlFound) {
+        rows.push('Auf Tagesliste, nicht gestellt' + (it.tlDatum ? ' am ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : ''));
+      }
+      return rows;
+    }
+
+    function renderDetail() {
+      var it = selectedItem();
+      if (!it) {
+        $('detail').classList.remove('show');
+        $('emptyState').classList.remove('hide');
+        $('detailSid').textContent = '—';
+        $('detailSub').textContent = 'Alle Stock-IDs dumpen — B2A1 und Fertiggestellt rausziehen';
+        $('btnCopySid').disabled = true;
+        $('btnCarol').disabled = true;
+        $('btnGmail').disabled = true;
+        return;
+      }
+      $('emptyState').classList.add('hide');
+      $('detail').classList.add('show');
+      $('detailSid').textContent = it.stockId;
+      $('btnCopySid').disabled = !it.stockId;
+      $('detailSub').textContent = (it.itemTyp && it.itemTyp !== '—' ? it.itemTyp + ' · ' : '') + (it.markeModel ? it.markeModel + ' · ' : '') + actionWhy(it);
+      var k = actionKeyOf(it);
+      var bk = badgeKeyOf(it);
+      $('actionPill').className = 'big-pill ' + bk;
+      $('actionPill').textContent = actionLabel(bk);
+      $('actionWhy').textContent = actionWhy(it);
+      var sbtns = $('actionBtns').querySelectorAll('.sbtn');
+      for (var b = 0; b < sbtns.length; b++) {
+        var da = sbtns[b].getAttribute('data-a') || '';
+        var dk = da === 'B2A1' ? 'b2a1' : (da === 'FERTIG' || da === 'RAUS' ? 'fertig' : 'behalten');
+        sbtns[b].classList.toggle('set', dk === k);
+        sbtns[b].disabled = !!it.tlGestellt;
+      }
+      $('reasonList').innerHTML = reasonLines(it).map(function(r) {
+        return '<li>' + esc(r) + '</li>';
+      }).join('');
+      var carolHrefUrl = carolHref(it);
+      var carolSt = it.carolB2a1 ? 'bad' : (it.carolFertig ? 'ok' : (it.carolLive ? 'none' : 'warn'));
+      var carolOpen = carolHrefUrl ? ' · <a href="' + esc(carolHrefUrl) + '" target="_blank" rel="noopener">Carol öffnen</a>' : '';
+      var listInfo = it.carolStatus ? ' · Liste: ' + esc(it.carolStatus) : '';
+      var carolMsg = it.carolLive
+        ? (it.carolB2a1
+          ? ('Badge: <b>' + esc(it.carolBadge || 'Als B2A1 markiert') + '</b>' + listInfo + carolOpen)
+          : (it.carolFertig
+            ? ('Badge: <b>' + esc(it.carolBadge || 'Fertiggestellt') + '</b>' + listInfo + carolOpen)
+            : ('Badge geprüft: <b>' + esc(it.carolBadge || 'kein B2A1, nicht fertiggestellt') + '</b>' + listInfo + carolOpen)))
+        : (it.refurbFound
+          ? ('Badge noch nicht gelesen — Carol prüfen läuft' + listInfo + carolOpen)
+          : ('Nicht (mehr) in der Refurbishment List.' + carolOpen));
+      var gSt = it.tlGestellt ? 'ok' : (it.tlFound ? 'warn' : 'none');
+      var gMsg = it.tlFound
+        ? (it.tlGestellt
+          ? ('Reifen <b>gestellt</b>' + (it.tlDatum ? ' am <b>' + esc(it.tlDatum) + '</b>' : '') + (it.tlSchicht ? ' · ' + esc(it.tlSchicht) : '') + (it.tlReifen ? ' · Wert: <b>' + esc(it.tlReifen) + '</b>' : '') + ' — bei Mechanik, nicht mehr im Aussenlager' + (it.tlGestelltEarlier ? ' · früherer Eintrag' : '') + (it.tlUrl ? ' · <a href="' + esc(it.tlUrl) + '" target="_blank" rel="noopener">Tagesliste</a>' : ''))
+          : ('Auf Tagesliste, <b>nicht gestellt</b>' + (it.tlDatum ? ' am ' + esc(it.tlDatum) : '') + (it.tlReifen ? ' · ' + esc(it.tlReifen) : '') + ' — noch im Lager'))
+        : 'Kein Eintrag auf der Tagesliste';
+      var mSt = it.mailFound ? 'bad' : 'ok';
+      var mMsg = it.mailFound
+        ? ('Mail gefunden: <b>' + esc(it.mailSubject || 'Return to Auto1') + '</b>' + (it.mailFrom ? '<br>' + esc(it.mailFrom) : '') + (it.mailDate ? ' · ' + esc(it.mailDate) : '') + (it.mailUrl ? ' · <a href="' + esc(it.mailUrl) + '" target="_blank" rel="noopener">Mail öffnen</a>' : ''))
+        : ('Keine Return-to-Auto1 Mail' + (it.mailMessage ? ' · ' + esc(it.mailMessage) : '') + (it.gmailSearchUrl ? ' · <a href="' + esc(it.gmailSearchUrl) + '" target="_blank" rel="noopener">In Gmail prüfen</a>' : ''));
+      mMsg += ' · <a href="#" class="mail-again" id="btnMailRecheck">Mail neu</a>';
+      $('checkList').innerHTML =
+        checkRow(mSt, 'B2A1 Mail', mMsg) +
+        checkRow(carolSt, 'Carol', carolMsg) +
+        checkRow(it.nbB2a1 ? 'bad' : (it.nbFertig ? 'ok' : (it.nbReifenCount || it.nbBoxCount ? 'info' : 'none')),
+          'Nachbestellung',
+          it.nbB2a1 ? ('Status <b>B2A1</b>' + (it.nbLabel ? ' — ' + esc(it.nbLabel) : ''))
+            : (it.nbFertig ? ('Status <b>Fertiggestellt</b>' + (it.nbLabel ? ' — ' + esc(it.nbLabel) : ''))
+            : ((it.nbReifenCount || it.nbBoxCount)
+              ? ((it.nbReifenCount ? it.nbReifenCount + '× Reifen' : '') + (it.nbReifenCount && it.nbBoxCount ? ' · ' : '') + (it.nbBoxCount ? it.nbBoxCount + '× Box' : ''))
+              : 'Keine Nachbestellung'))) +
+        checkRow(gSt, 'Tagesliste / Gestellt', gMsg);
+      $('fTyp').textContent = it.itemTyp || '—';
+      $('fMarke').textContent = it.markeModel || '—';
+      $('fStatus').textContent = it.carolLive
+        ? (it.carolBadge || 'kein Badge')
+        : (it.carolStatus ? it.carolStatus + ' (Liste)' : (it.refurbFound ? '—' : 'nicht in Refurb'));
+      $('fStatus').className = 'fv' + (it.carolB2a1 ? ' red' : (it.carolFertig ? ' cyan' : (it.refurbFound ? ' green' : ' red')));
+      $('fReifen').textContent = it.reifenStatus || it.reifenStatusRaw || '—';
+      $('fRegal').textContent = it.regal || '—';
+      $('fTl').textContent = it.tlFound
+        ? ((it.tlDatum || 'ja') + (it.tlSchicht ? ' · ' + it.tlSchicht : '') + (it.tlCount > 1 ? ' · ' + it.tlCount + '×' : ''))
+        : 'nein';
+      $('fGestellt').textContent = it.tlGestellt
+        ? ('ja' + (it.tlDatum ? ' · ' + it.tlDatum : '') + (it.tlReifen ? ' · ' + it.tlReifen : ''))
+        : (it.tlFound ? 'nein — noch im Lager' : '—');
+      $('fMail').innerHTML = it.mailFound
+        ? (esc(it.mailSubject || 'Return to Auto1') + (it.mailDate ? ' · ' + esc(it.mailDate) : ''))
+        : 'keine';
+      $('fChecked').textContent = it.checkedAt || '—';
+      $('btnCarol').disabled = !it.carolUrl && !it.stockId;
+      $('btnGmail').disabled = !it.gmailSearchUrl && !it.mailUrl;
+    }
+
+    function selectStock(sid) {
+      state.selected = sid || '';
+      renderList();
+      renderDetail();
+    }
+
+    function mergeItems(chunk) {
+      var map = {};
+      for (var i = 0; i < state.items.length; i++) map[state.items[i].stockId] = i;
+      for (var j = 0; j < (chunk || []).length; j++) {
+        var it = chunk[j];
+        if (!it || !it.stockId) continue;
+        var idx = map[it.stockId];
+        var prev = idx != null ? state.items[idx] : null;
+        if (prev && prev.carolLive && !it.carolLive) {
+          it.carolLive = true;
+          it.carolDetail = true;
+          it.carolB2a1 = !!prev.carolB2a1;
+          it.carolFertig = !!prev.carolFertig;
+          it.carolDone = !!prev.carolDone;
+          it.carolBadge = prev.carolBadge;
+          if (!it.manual && !prev.manual) {
+            it.action = prev.action;
+            it.actionKey = prev.actionKey;
+          }
+        }
+        if (idx != null) state.items[idx] = it;
+        else state.items.push(it);
+      }
+    }
+
+    function updateDumpHint(parsed) {
+      var el = $('dumpHint');
+      var dump = $('dump');
+      var ids = (parsed && parsed.ids) || [];
+      var ignored = (parsed && parsed.ignored) || 0;
+      if (!ids.length && !ignored) {
+        el.textContent = 'Bereit — Stock-IDs Reifen und Lagerboxen, 2 Buchstaben + 4–8 Zahlen';
+        el.className = 'dump-hint';
+        dump.classList.remove('hot');
+        return;
+      }
+      if (!ids.length) {
+        el.textContent = ignored + ' Code' + (ignored === 1 ? '' : 's') + ' ignoriert — nur Stock-IDs zählen';
+        el.className = 'dump-hint';
+        dump.classList.remove('hot');
+        return;
+      }
+      el.textContent = ids.length + ' Stock-ID' + (ids.length === 1 ? '' : 's') +
+        (ignored ? ' · ' + ignored + ' ignoriert' : '') +
+        ' — Pause = automatisch prüfen';
+      el.className = 'dump-hint hot';
+      dump.classList.add('hot');
+    }
+
+    function startCheck(ids) {
+      var parsed = parseDumpText($('dump').value);
+      ids = ids || parsed.ids;
+      if (!ids.length) {
+        toast(parsed.ignored ? (parsed.ignored + ' Codes ignoriert — keine gültige Stock-ID (AA12345)') : 'Keine Stock-IDs im Dump', true);
+        return;
+      }
+      if (state.busy) return;
+      unlockAudio();
+      state.mailDone = false;
+      state.carolDone = false;
+      var opId = beginOp();
+      showLoadProgress('Dump wird übernommen…', ids[0], '0 / ' + ids.length, 4);
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          toast((res && res.message) || 'Check fehlgeschlagen', true);
+          return;
+        }
+        state.batchId = res.batchId || '';
+        state.scannedAt = res.scannedAt || '';
+        $('dump').value = '';
+        updateDumpHint({ ids: [], ignored: 0 });
+        showLoadProgress(res.phase || 'Tagesliste…', res.currentSid || '', res.message || '', res.percent || 8);
+        runAussenStep(opId, res.nextStep || 'tl', 0, ids.length);
+      }, 'startAussenCheck', ids);
+    }
+
+    function runAussenStep(opId, step, cursor, total) {
+      if (!isOpActive(opId)) return;
+      var label = 'Prüft…';
+      if (step === 'tl') label = 'Tagesliste…';
+      else if (step === 'refurb') label = 'Carol / Refurbishment…';
+      else if (step === 'items') label = 'Liste wird gebaut…';
+      showLoadProgress(label, '', total ? ('0 / ' + total) : '', step === 'tl' ? 16 : (step === 'refurb' ? 50 : 75));
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          toast((res && res.message) || 'Check fehlgeschlagen', true);
+          return;
+        }
+        showLoadProgress(res.phase || label, res.currentSid || '', res.message || '', res.percent || 0);
+        if (!res.done) {
+          runAussenStep(opId, res.nextStep || 'items', res.cursor || 0, total);
+          return;
+        }
+        applyBatchPayload(res, false);
+        if (state.items.length) state.selected = state.items[0].stockId;
+        renderList();
+        renderDetail();
+        loadBatches(state.batchId);
+        checkMails(opId, 0);
+      }, 'aussenCheckStep', state.batchId, step, cursor);
+    }
+
+    function checkMails(opId, offset) {
+      if (!isOpActive(opId)) return;
+      var mailTotal = state.items.length;
+      var sid = state.items[offset] ? state.items[offset].stockId : '';
+      showLoadProgress('B2A1 Mails…', sid, offset + ' / ' + mailTotal, mailTotal ? (82 + Math.round((offset / Math.max(1, mailTotal)) * 16)) : 90);
+      runFn(opId, function(res) {
+        if (!isOpActive(opId)) return;
+        if (!res || !res.success) {
+          state.busy = false;
+          hideLoad();
+          state.mailDone = true;
+          toast((res && res.message) || 'Mail-Check fehlgeschlagen', true);
+          renderList();
+          renderDetail();
+          maybeFinishRun();
+          return;
+        }
+        mergeItems(res.items || []);
+        renderList();
+        renderDetail();
+        var total = res.total != null ? res.total : mailTotal;
+        if (res.done) {
+          state.busy = false;
+          hideLoad();
+          state.mailDone = true;
+          startCarolBridge();
+          $('dump').focus();
+          return;
+        }
+        checkMails(opId, res.nextOffset || (offset + (res.items ? res.items.length : 8)));
+      }, 'checkAussenMailChunk', state.batchId, offset, 16);
+    }
+
+    function stopCarolPoll() {
+      if (state.carolPoll) {
+        clearInterval(state.carolPoll);
+        state.carolPoll = null;
+      }
+    }
+
+    function startCarolPoll() {
+      if (state.carolPoll || !state.batchId) return;
+      state.carolPollBusy = false;
+      state.carolPoll = setInterval(function() {
+        if (state.carolPollBusy) return;
+        state.carolPollBusy = true;
+        google.script.run.withFailureHandler(function() {
+          state.carolPollBusy = false;
+        }).withSuccessHandler(function(res) {
+          state.carolPollBusy = false;
+          if (!res || !res.success) return;
+          applyBatchPayload(res, false);
+          renderList();
+          renderDetail();
+          if (!res.carolPending) {
+            stopCarolPoll();
+            state.carolDone = true;
+            maybeFinishRun();
+            return;
+          }
+          var nextSid = res.nextCarolId || '';
+          if (!nextSid) return;
+          if (nextSid === state.carolStallSid) state.carolStall++;
+          else {
+            state.carolStallSid = nextSid;
+            state.carolStall = 0;
+          }
+          var gone = false;
+          try { gone = !state.carolWin || state.carolWin.closed; } catch (eW) { gone = true; }
+          if (gone) {
+            state.carolWin = null;
+            state.carolNav[nextSid] = 0;
+          }
+          if (!state.carolNav[nextSid]) {
+            state.carolNav[nextSid] = 1;
+            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
+            return;
+          }
+          if (state.carolStall === 4 || state.carolStall === 10) {
+            var forceUrl = res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId));
+            if (forceUrl.indexOf('retoure_force=') < 0) forceUrl += (forceUrl.indexOf('?') >= 0 ? '&' : '?') + 'retoure_force=1';
+            navCarol(forceUrl);
+            toast(nextSid + ' hängt in Carol — neuer Versuch', true);
+          }
+          if (state.carolStall >= 25) {
+            stopCarolPoll();
+            state.carolDone = true;
+            toast(res.carolPending + ' IDs ohne Carol-Badge — Carol prüfen wiederholen', true);
+            maybeFinishRun();
+          }
+        }).getAussenBatch(state.batchId);
+      }, 8000);
+    }
+
+    function startCarolBridge() {
+      if (!state.batchId) {
+        toast('Kein Dump geladen', true);
+        return;
+      }
+      google.script.run.withFailureHandler(function(err) {
+        toast(String(err && err.message ? err.message : err), true);
+      }).withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Carol-Queue fehlgeschlagen', true);
+          return;
+        }
+        if (!res.pending) {
+          state.carolDone = true;
+          maybeFinishRun();
+          return;
+        }
+        var url = res.carolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(res.nextId || '') + '&retoure_batch=' + encodeURIComponent(state.batchId));
+        state.carolNav = {};
+        state.carolStallSid = res.nextId || '';
+        state.carolStall = 0;
+        if (res.nextId) state.carolNav[res.nextId] = 1;
+        var ok = navCarol(url);
+        startCarolPoll();
+        if (!ok) {
+          toast('Carol-Fenster blockiert — einmal Carol prüfen klicken', true);
+          return;
+        }
+        toast('Carol prüft automatisch · ' + res.pending + ' IDs');
+      }).aussenCarolQueue(state.batchId);
+    }
+
+    function loadBatches(selectId) {
+      try {
+        google.script.run.withFailureHandler(function(err) {
+          logLine('err', 'listAussenBatches ' + String(err && err.message ? err.message : err));
+        }).withSuccessHandler(function(res) {
+          if (!res || res.success === false) {
+            logLine('err', 'listAussenBatches ' + ((res && res.message) || 'fehlgeschlagen'));
+            return;
+          }
+          var sel = $('batchSel');
+          var batches = (res && res.batches) || [];
+          var html = '<option value="">Aktueller / neuer Dump</option>';
+          for (var i = 0; i < batches.length; i++) {
+            var b = batches[i];
+            html += '<option value="' + esc(b.batchId) + '"' + (selectId && selectId === b.batchId ? ' selected' : '') + '>' +
+              esc(b.scannedAt || b.batchId) + ' · ' + b.count + ' IDs · ' + (b.b2a1 || 0) + ' B2A1 · ' + (b.fertig || b.raus || 0) + ' Fertig</option>';
+          }
+          sel.innerHTML = html;
+          if (selectId) sel.value = selectId;
+        }).listAussenBatches();
+      } catch (e0) {
+        logLine('err', 'listAussenBatches ' + String(e0 && e0.message ? e0.message : e0));
+      }
+    }
+
+    function loadBatch(id) {
+      if (!id) return;
+      if (state.busy) return;
+      var opId = beginOp();
+      showLoad('Dump wird geladen…');
+      runFn(opId, function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Laden fehlgeschlagen', true);
+          return;
+        }
+        applyBatchPayload(res, false);
+        state.selected = state.items.length ? state.items[0].stockId : '';
+        renderList();
+        renderDetail();
+        if (document.body.classList.contains('pick-on')) {
+          $('pickMeta').textContent = (pullItems().length || 0) + ' rausziehen · ' + (state.items.length || 0) + ' IDs';
+          setTimeout(function() { $('pickScan').focus(); unlockAudio(); }, 200);
+        } else {
+          $('dump').focus();
+        }
+      }, 'getAussenBatch', id);
+    }
+
+    function printItems(items, title, pullOnly) {
+      items = items || [];
+      if (!items.length) {
+        toast('Nichts zu drucken', true);
+        return;
+      }
+      var groups = pullOnly ? [
+        { key: 'b2a1', title: 'B2A1', items: [] },
+        { key: 'fertig', title: 'Fertiggestellt', items: [] },
+        { key: 'heraus', title: 'Herausgegeben', items: [] },
+        { key: 'tagesliste', title: 'Tagesliste — noch im Lager', items: [] }
+      ] : [
+        { key: 'b2a1', title: 'B2A1', items: [] },
+        { key: 'fertig', title: 'Fertiggestellt', items: [] },
+        { key: 'tagesliste', title: 'Tagesliste', items: [] },
+        { key: 'behalten', title: 'Behalten', items: [] }
+      ];
+      var map = {};
+      for (var g = 0; g < groups.length; g++) map[groups[g].key] = groups[g];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].tlGestellt) continue;
+        var pk = pullOnly ? pullKindOf(items[i]) : actionKeyOf(items[i]);
+        if (!pk || !map[pk]) pk = pullOnly ? '' : 'behalten';
+        if (!pk || !map[pk]) continue;
+        map[pk].items.push(items[i]);
+      }
+      var now = new Date();
+      var dateStr = ('0' + now.getDate()).slice(-2) + '.' + ('0' + (now.getMonth() + 1)).slice(-2) + '.' + now.getFullYear() + ' ' +
+        ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2);
+      var body = '';
+      for (var gi = 0; gi < groups.length; gi++) {
+        var grp = groups[gi];
+        if (!grp.items.length) continue;
+        body += '<h2>' + esc(grp.title) + ' (' + grp.items.length + ')</h2><div class="grid">';
+        for (var j = 0; j < grp.items.length; j++) {
+          var it = grp.items[j];
+          var bits = [];
+          if (it.itemTyp && it.itemTyp !== '—') bits.push(it.itemTyp);
+          if (it.markeModel) bits.push(it.markeModel);
+          if (it.carolB2a1) bits.push(it.carolBadge || 'Als B2A1 markiert');
+          else if (it.carolFertig) bits.push(it.carolBadge || 'Fertiggestellt');
+          else if (it.carolStatus) bits.push('Liste: ' + it.carolStatus);
+          if (it.nbB2a1) bits.push('NB B2A1');
+          else if (it.nbFertig) bits.push('NB Fertiggestellt');
+          if (it.mailFound) bits.push(it.mailSubject || 'Return to Auto1');
+          var ek = pullOnly ? (pullKindOf(it) || 'behalten') : actionKeyOf(it);
+          body += '<div class="entry ' + esc(ek) + '">' +
+            '<div class="entry-top"><span class="sid">' + esc(it.stockId) + '</span>' +
+            '<span class="st">' + esc(actionLabel(badgeKeyOf(it))) + '</span></div>' +
+            (bits.length ? '<div class="meta2">' + esc(bits.join(' · ')) + '</div>' : '') +
+            '<svg class="bc" data-sid="' + esc(it.stockId) + '"></svg></div>';
+        }
+        body += '</div>';
+      }
+      var doc = '<!DOCTYPE html><html lang="de"><head><meta charset="utf-8"><title>' + esc(title) + '</title>' +
+        '<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>' +
+        '<style>' +
+        '@page{size:A4 portrait;margin:12mm}' +
+        'body{font-family:Arial,Helvetica,sans-serif;color:#111;margin:18px;font-size:12px}' +
+        'h1{font-size:18px;margin:0 0 2px;text-align:center}' +
+        'h2{font-size:14px;margin:10px 0 6px;border-bottom:2px solid #111;padding-bottom:3px;break-after:avoid;page-break-after:avoid}' +
+        '.head{color:#555;font-size:11px;margin-bottom:10px;text-align:center}' +
+        '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(56mm,1fr));gap:4mm;align-items:start;margin-bottom:6mm}' +
+        '.entry{width:auto;margin:0;page-break-inside:avoid;break-inside:avoid;padding:5px 7px;border:1px solid #ccc;border-radius:6px}' +
+        '.entry.b2a1{background:#f7c5c5;border-color:#c00}' +
+        '.entry.fertig,.entry.raus{background:#c5f0f7;border-color:#088}' +
+        '.entry.gestellt{background:#d4edda;border-color:#2a7}' +
+        '.entry.tagesliste,.entry.heraus{background:#fff3b0;border-color:#aa0}' +
+        '.entry-top{display:flex;justify-content:space-between;align-items:center;gap:8px}' +
+        '.sid{font-weight:bold;font-size:15px;letter-spacing:0.03em}' +
+        '.st{font-weight:bold;font-size:10px;white-space:nowrap}' +
+        '.meta2{font-size:10px;color:#333;margin:2px 0 3px;line-height:1.25}' +
+        '.bc{display:block;height:30px;margin:0;width:100%}' +
+        '@media print{body{margin:0}.grid{gap:3mm}}' +
+        '</style></head><body>' +
+        '<h1>' + esc(title) + '</h1>' +
+        '<div class="head">Stand: ' + esc(dateStr) + (state.scannedAt ? ' · Dump ' + esc(state.scannedAt) : '') + ' · ' + items.length + ' Stock-IDs</div>' +
+        body +
+        '<script>window.onload=function(){' +
+        'var els=document.querySelectorAll("svg.bc");' +
+        'for(var i=0;i<els.length;i++){' +
+        'try{JsBarcode(els[i],els[i].getAttribute("data-sid"),{format:"CODE128",height:26,width:1.15,displayValue:false,margin:0});}catch(e){}' +
+        '}' +
+        'setTimeout(function(){window.print();},250);' +
+        '};<\/script></body></html>';
+      var win = window.open('', '_blank');
+      if (!win) {
+        toast('Popup blockiert — bitte Popups erlauben', true);
+        return;
+      }
+      win.document.open();
+      win.document.write(doc);
+      win.document.close();
+      win.focus();
+    }
+
+    function newRound() {
+      stopCarolPoll();
+      closeCarolSlot();
+      state.items = [];
+      state.gestelltItems = [];
+      state.gestelltCount = 0;
+      state.batchId = '';
+      state.scannedAt = '';
+      state.selected = '';
+      state.pending = [];
+      state.mailDone = false;
+      state.carolDone = false;
+      state.carolNav = {};
+      state.carolStallSid = '';
+      state.carolStall = 0;
+      $('dump').value = '';
+      $('batchSel').value = '';
+      updateDumpHint({ ids: [], ignored: 0 });
+      renderList();
+      renderDetail();
+      $('dump').focus();
+    }
+
+    $('dump').addEventListener('input', function() {
+      var parsed = parseDumpText(this.value);
+      state.pending = parsed.ids;
+      updateDumpHint(parsed);
+      if (parsed.ids.length) unlockAudio();
+      clearTimeout(state.dumpTimer);
+      if (!parsed.ids.length || state.busy) return;
+      state.dumpTimer = setTimeout(function() {
+        startCheck(parsed.ids);
+      }, 2000);
+    });
+
+    $('btnHandy').addEventListener('click', openHandy);
+    $('btnHandyClose').addEventListener('click', function() {
+      $('handyModal').classList.remove('show');
+    });
+    $('btnHandyCopy').addEventListener('click', function() {
+      var url = $('handyUrl').value || handyUrl();
+      if (!url) return;
+      function done() { toast('Handy-Link kopiert'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done).catch(function() {
+          $('handyUrl').select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+        });
+        return;
+      }
+      $('handyUrl').select();
+      try { document.execCommand('copy'); done(); } catch (e2) {}
+    });
+    $('handyModal').addEventListener('click', function(e) {
+      if (e.target === this) this.classList.remove('show');
+    });
+    $('pickScan').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handlePickScan(this.value);
+      }
+    });
+    $('pickScan').addEventListener('input', function() {
+      var v = this.value;
+      clearTimeout(handlePickScan._t);
+      var sid = String(v || '').replace(/\s+/g, '').toUpperCase();
+      if (/^[A-Z]{2}\d{4,8}$/.test(sid)) {
+        handlePickScan._t = setTimeout(function() { handlePickScan(v); }, 60);
+      }
+    });
+    $('pickScan').addEventListener('focus', unlockAudio);
+    $('pickHit').addEventListener('click', function() { $('pickScan').focus(); });
+    $('btnCheck').addEventListener('click', function() {
+      clearTimeout(state.dumpTimer);
+      startCheck();
+    });
+    $('btnCarolCheck').addEventListener('click', startCarolBridge);
+    $('btnCopySid').addEventListener('click', function() {
+      var sid = ($('detailSid').textContent || '').replace(/\s+/g, '').trim();
+      if (!sid || sid === '—') return;
+      function done() { toast(sid + ' kopiert'); }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(sid).then(done).catch(function() {
+          var ta = document.createElement('textarea');
+          ta.value = sid;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) {}
+          document.body.removeChild(ta);
+        });
+        return;
+      }
+      var ta = document.createElement('textarea');
+      ta.value = sid;
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); done(); } catch (e2) {}
+      document.body.removeChild(ta);
+    });
+    $('btnNew').addEventListener('click', newRound);
+    $('btnKontrolle').addEventListener('click', function() {
+      window.open(APP_BASE, '_blank', 'noopener,noreferrer');
+    });
+    $('btnPrintSort').addEventListener('click', function() {
+      printItems(pullItems(), 'Retoure — Rausziehen', true);
+    });
+    $('btnPrintAll').addEventListener('click', function() {
+      printItems(state.items, 'Retoure Scan');
+    });
+    $('btnCarol').addEventListener('click', function() {
+      var it = selectedItem();
+      var url = carolHref(it);
+      if (!url) return;
+      navCarol(url);
+      startCarolPoll();
+    });
+    $('btnGmail').addEventListener('click', function() {
+      var it = selectedItem();
+      if (!it) return;
+      window.open(it.mailUrl || it.gmailSearchUrl, '_blank', 'noopener,noreferrer');
+    });
+    $('actionBtns').addEventListener('click', function(e) {
+      var btn = e.target.closest('.sbtn');
+      if (!btn) return;
+      var it = selectedItem();
+      var action = btn.getAttribute('data-a') || '';
+      if (!it || !state.batchId || !action || it.tlGestellt) return;
+      it.action = action;
+      it.actionKey = action === 'B2A1' ? 'b2a1' : (action === 'FERTIG' || action === 'RAUS' ? 'fertig' : 'behalten');
+      it.manual = true;
+      renderList();
+      renderDetail();
+      quietRun('setAussenAction', [state.batchId, it.stockId, action], function(res) {
+        toast((res && res.message) || (it.stockId + ' → ' + action));
+      });
+    });
+    $('checkList').addEventListener('click', function(e) {
+      var a = e.target.closest('#btnMailRecheck');
+      if (!a) return;
+      e.preventDefault();
+      var it = selectedItem();
+      if (!it || !state.batchId) return;
+      toast('Mail wird neu geprüft…');
+      quietRun('recheckAussenMail', [state.batchId, it.stockId], function(res) {
+        if (res && res.item) mergeItems([res.item]);
+        else if (res && res.items) mergeItems(res.items);
+        renderList();
+        renderDetail();
+        toast((res && res.message) || 'Mail geprüft');
+      });
+    });
+    $('filters').addEventListener('click', function(e) {
+      var chip = e.target.closest('.chip');
+      if (!chip) return;
+      var chips = this.querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+      chip.classList.add('active');
+      state.filter = chip.getAttribute('data-f');
+      renderList();
+    });
+    $('stats').addEventListener('click', function(e) {
+      var st = e.target.closest('.stat');
+      if (!st) return;
+      state.filter = st.getAttribute('data-f');
+      var chips = $('filters').querySelectorAll('.chip');
+      for (var i = 0; i < chips.length; i++) {
+        chips[i].classList.toggle('active', chips[i].getAttribute('data-f') === state.filter);
+      }
+      renderList();
+    });
+    $('list').addEventListener('click', function(e) {
+      var item = e.target.closest('.item');
+      if (!item) return;
+      selectStock(item.getAttribute('data-sid'));
+    });
+    $('batchSel').addEventListener('change', function() {
+      if (this.value) loadBatch(this.value);
+      else newRound();
+    });
+    $('btnDelBatch').addEventListener('click', function() {
+      if (!state.batchId || state.busy) return;
+      if (!confirm('Diesen Dump aus dem Sheet löschen?')) return;
+      var opId = beginOp();
+      showLoad('Dump wird gelöscht…');
+      runFn(opId, function(res) {
+        state.busy = false;
+        hideLoad();
+        if (!res || !res.success) {
+          toast((res && res.message) || 'Löschen fehlgeschlagen', true);
+          return;
+        }
+        toast(res.message || 'Gelöscht');
+        newRound();
+        loadBatches();
+      }, 'deleteAussenBatch', state.batchId);
+    });
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        if ($('handyModal').classList.contains('show')) {
+          $('handyModal').classList.remove('show');
+          return;
+        }
+        if ($('loadOverlay').classList.contains('show') || state.busy) {
+          e.preventDefault();
+          cancelBusyOp();
+        }
+        return;
+      }
+      if (document.body.classList.contains('pick-on')) return;
+      if (e.target === $('dump') || e.target === $('batchSel')) return;
+      if (e.key === '/' || (e.key.length === 1 && /[a-z0-9]/i.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey)) {
+        $('dump').focus();
+        if (e.key === '/') e.preventDefault();
+      }
+    });
+    window.addEventListener('message', function(ev) {
+      var d = ev && ev.data;
+      if (!d) return;
+      if (d.retoureCarolLog === 1) {
+        logLine(d.kind || 'info', String(d.msg || ''));
+        return;
+      }
+      if (d.retoureCarolUpdate === 1) {
+        patchItemCarol(d);
+        if (!state.carolPoll) startCarolPoll();
+        return;
+      }
+      if (d.retoureCarolReport === 1) {
+        var sid = String(d.stockId || '').toUpperCase();
+        logLine('wait', 'Carol Report ' + sid + ' · ' + (d.notFound ? 'kein Auftrag' : (d.carolLabel || 'Badge')));
+        google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', 'Carol Report ' + sid + ' · google.script ' + msg);
+          ackCarol({ success: false, stockId: sid, message: msg }, sid);
+        }).withSuccessHandler(function(res) {
+          if (!res || !res.success) {
+            logLine('err', 'Carol Report ' + sid + ' · ' + ((res && res.message) || 'fehlgeschlagen'));
+            ackCarol(res || { success: false, stockId: sid, message: 'fehlgeschlagen' }, sid);
+            return;
+          }
+          logLine('ok', 'Carol Report ' + sid + ' · ' + (res.message || 'ok') + ' · offen ' + (res.pending != null ? res.pending : '?'));
+          patchItemCarol(d);
+          applyBatchPayload(res, false);
+          renderList();
+          renderDetail();
+          ackCarol(res, sid);
+          if (!state.carolPoll) startCarolPoll();
+          if (!res.pending) {
+            stopCarolPoll();
+            state.carolDone = true;
+            maybeFinishRun();
+          }
+        }).applyAussenCarolFlags({
+          batchId: d.batchId || state.batchId || '',
+          stockId: sid,
+          carolB2a1: !!d.carolB2a1,
+          carolFertig: !!d.carolFertig,
+          carolLabel: d.carolLabel || '',
+          detail: true,
+          notFound: !!d.notFound
+        });
+        return;
+      }
+      if (d.retoureCarolQueue === 1) {
+        logLine('wait', 'Carol Queue…');
+        google.script.run.withFailureHandler(function(err) {
+          var msg = String(err && err.message ? err.message : err);
+          logLine('err', 'Carol Queue · ' + msg);
+          ackCarol({ success: false, message: msg }, d.skip || '');
+        }).withSuccessHandler(function(res) {
+          logLine(res && res.success ? 'ok' : 'err', 'Carol Queue · ' + ((res && res.pending) || 0) + ' offen · next ' + ((res && res.nextId) || '—'));
+          ackCarol(res || { success: false }, d.skip || '');
+          if (res && res.success) {
+            applyBatchPayload(res, false);
+            renderList();
+            renderDetail();
+          }
+        }).aussenCarolQueue(d.batch || state.batchId || '');
+        return;
+      }
+      if (d.retoureCarolDone !== 1) return;
+      if (!state.batchId) return;
+      google.script.run.withFailureHandler(function() {}).withSuccessHandler(function(res) {
+        if (!res || !res.success) return;
+        applyBatchPayload(res, false);
+        renderList();
+        renderDetail();
+        if (res.carolPending) {
+          if (!state.carolPoll) startCarolPoll();
+          var nextSid = res.nextCarolId || '';
+          if (nextSid) {
+            state.carolNav[nextSid] = 0;
+            navCarol(res.nextCarolUrl || ('https://carol.autohero.com/de-DE/refurbishment?rsv=' + encodeURIComponent(nextSid) + '&retoure_batch=' + encodeURIComponent(state.batchId)));
+          }
+          toast('Carol-Check läuft weiter · ' + res.carolPending + ' offen', true);
+          return;
+        }
+        stopCarolPoll();
+        state.carolDone = true;
+        maybeFinishRun();
+      }).getAussenBatch(state.batchId);
+    });
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('button, a, select, textarea, input')) return;
+      if (document.body.classList.contains('pick-on')) {
+        $('pickScan').focus();
+        return;
+      }
+      $('dump').focus();
+    });
+
+    renderList();
+    renderDetail();
+    $('logCopy').addEventListener('click', function() {
+      var txt = state.logLines.map(function(r) { return r.t + ' [' + r.kind + '] ' + r.msg; }).join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt || '').then(function() { toast('Log kopiert'); }, function() { toast('Copy fehlgeschlagen', true); });
+      } else toast('Clipboard nicht verfügbar', true);
+    });
+    $('logMin').addEventListener('click', function() {
+      $('logCard').classList.toggle('min');
+      $('logMin').textContent = $('logCard').classList.contains('min') ? '+' : '–';
+    });
+    logLine('info', 'Seite geladen — Backend-Check…');
+    try {
+      google.script.run.withFailureHandler(function(err) {
+        logLine('err', 'aussenPing ' + String(err && err.message ? err.message : err) + ' — App.js / Deploy prüfen');
+      }).withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          logLine('err', 'aussenPing ' + ((res && res.message) || 'fehlgeschlagen') + ' — alte App.js?');
+          return;
+        }
+        logLine('ok', 'Backend da · v' + (res.version || '?') + ' · ' + (res.ts || ''));
+      }).aussenPing();
+    } catch (e1) {
+      logLine('err', 'aussenPing ' + String(e1 && e1.message ? e1.message : e1));
+    }
+    if (BOOT_MODE === 'pick') {
+      startPickMode();
+    } else {
+      loadBatches();
+      $('dump').focus();
+    }
+  </script>
+</body>
+</html>

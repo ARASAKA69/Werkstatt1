@@ -31,6 +31,104 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.20",
+    date: "12.10.2026",
+    notes:
+      "• AAG Lieferschein Barcode (LS...) kann jetzt direkt in der WMS Suche gescannt werden. WMS holt Kundenreferenz + gelieferte Teile aus dem neuen AAG Lieferscheine Sheet, findet damit die Stock-ID und öffnet den Auftrag\n\n" +
+      "• Genau die Positionen vom gescannten Lieferschein landen mit Menge und AAG Badge in Teile aus Packzettel\n\n" +
+      "• Tampermonkey synchronisiert neue AAG Lieferungen alle 2 Minuten im Hintergrund. Token bleibt nur im Browser, nach Ablauf nur im AAG Portal neu einloggen und Seite aktualisieren\n\n" +
+      "• AAG HTTP 400 beim Abruf behoben: Datumsende und Seitennummerierung entsprechen jetzt exakt der Portal-API\n\n" +
+      "• Gleichzeitige AAG-Synchronisierung aus mehreren Portal-Tabs abgesichert und große Übertragungen in stabile Teilpakete aufgeteilt\n\n" +
+      "• Blattname auf History 2026 korrigiert\n\n" +
+      "• AAG synchronisiert jetzt vier Kalendertage, prüft alle 2 Minuten auf neue Lieferscheine und entfernt doppelte Lieferschein-Positionen automatisch\n\n" +
+      "• Der AAG-Portal-Tab aktualisiert sich im Hintergrund alle 10 Minuten automatisch\n\n" +
+      "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden\n\n" +
+      "• Abgelaufene AAG API-Tokens werden jetzt automatisch durch einmaliges Neuladen des weiterhin angemeldeten Portals erneuert"
+  },
+  {
+    version: "2.2.19",
+    date: "07.10.2026",
+    notes:
+      "• Teile aus Packzettel hat jetzt oben automatisch Auswahl-Buttons für jeden Lieferanten der im Auftrag vorkommt (KNOLL, STA, WM, ALFAH, AAG usw.)\n\n" +
+      "• Ein Klick z.B. auf „AAG auswählen“ hakt alle AAG-Positionen auf einmal an. Alle / Keine bleibt wie bisher."
+  },
+  {
+    version: "2.2.18",
+    date: "02.10.2026",
+    notes:
+      "• Belege mit Artikel-Daten von AAG (KNOLL) zählen jetzt auch, wenn sie nicht von n4.parts kommen\n\n" +
+      "• NEU: AAG Auftragsbestätigung (allianceautomotive.de) wird jetzt auch gelesen — Teile aus Packzettel zeigt Marke, Artnr., Bezeichnung und Menge mit AAG Badge. Batteriepfand (UWB) wird weggelassen da diese nicht in der BOX sein wird."
+  },
+  {
+    version: "2.2.17",
+    date: "01.10.2026",
+    notes:
+      "• Übersicht „Drucken + ET“ geht nicht mehr über die Bridge. Die hat nach ein paar Seiten abgebrochen, weil das PDF bei euch nicht fertig wurde\n\n" +
+      "• Es öffnet jetzt die Vorschau. Dort auf Drucken, dann kommt der Windows-Dialog — Drucker und Seiten könnt ihr selbst einstellen und alles rauslassen, sollte also jetzt funktionieren."
+  },
+  {
+    version: "2.2.16",
+    date: "30.09.2026",
+    notes:
+      "• Kommentar + Regal speichern geht nicht mehr durch ohne Regalplatz (z.B. Regal 3.4). Fenster blockt und erinnert, Button öffnet Regal scannen und speichert danach\n\n" +
+      "• Neu: Alt+X speichert Kommentar und Regal, steht auch in der Shortcut-Liste\n\n" +
+      "• Hab Persönlich keinen bock mehr jedesmal nach einer Kiste zu suchen, viel zu viel verschwendete Zeit die man sinnvoller investieren könnte."
+  },
+  {
+    version: "2.2.15",
+    date: "29.09.2026",
+    notes:
+      "• Stock-ID laden: wenn eine Nachbestellung da ist, kommt die zuerst — Teile aus Packzettel erst danach, und nur wenn ihr beim Refurbishment bleibt\n\n" +
+      "• Geht ihr auf Nachbestellung, bleibt die Teileauswahl zu. Ohne Nachbestellung poppt die Teileauswahl wie bisher\n\n" +
+      "• Teile aus Packzettel sind jetzt gecacht. Das Fenster öffnet beim Laden einer Stock-ID sofort, ohne Wartezeit\n\n" +
+      "• Der Cache lädt beim Start, alle 75 Sekunden im Hintergrund und wenn der Tab wieder aktiv wird. Ist eine Stock-ID noch nicht im Cache, fragt er wie bisher einzeln nach"
+
+  },
+  {
+    version: "2.2.14",
+    date: "24.09.2026",
+    notes:
+      "• Teile aus Packzettel Fenster ist jetzt größer und zeigt jetzt auch -> Hersteller, Hersteller-Artnr., Artikelname und Menge\n\n" +
+      "• Alfah habe ich in einer Zeile gelassen ist übersichtlicher.\n\n" +
+      "• N4P-Beleg hängt nur an der Referenznummer im Belegtext, nicht an Kennzeichen oder der Stock-ID-Spalte\n\n" +
+      "• Fenster ist verschiebbar und in der Größe änderbar. Badges, Häkchen, Alle/Keine und die Zählung sind größer und farbig allgemein alles an den infos angepasst."
+  },
+  {
+    version: "2.2.13",
+    date: "23.09.2026",
+    notes:
+      "• Ich stelle vor, den Jörg Panik knopf.\n\n" +
+      "• Fehler-Badge hat „Jetzt erneut speichern“ mit Ladesymbol statt jede stock nochmal manuel auf zu machen. Grüne Badges verschwinden nach 2 Minuten, Fehler und Jörg-Panik bleiben bis zum manuellen Schließen\n\n" +
+      "• Nach jedem Speichern sitzt im grünen Badge ein oranger Button „Jörg Panik“. Zweiter Klick setzt Kommentar und farbe + Status und Regal zurück ohne es nochmal manuel in refurbishment machen zu müssen\n\n"
+  },
+  {
+    version: "2.2.12",
+    date: "22.09.2026",
+    notes:
+      "• Teile aus Packzettel zeigt nur noch die Teile von der Stock-ID die gerade offen ist — kein fremder Auftrag mehr dazwischen (z.B. JR97017 / VT61454 hatten Teile von TJ51010 drin)\n\n" +
+      "• Stückzahl oben (KNOLL / WM / STA) zählt damit auch nur diesen Auftrag, Abgleich mitm Beleg stimmt wieder"
+  },
+  {
+    version: "2.2.11",
+    date: "18.09.2026",
+    notes:
+      "• Artikelnamen sollten jetzt einigermaßen richtig erkannt werden, STA - WM und KNOLL\n\n" +
+      "• Oben in der Teileauswahl steht jetzt die Stückzahl pro Lieferant (z.B. 3 Pos = KNOLL, 4 Pos = WM) — einfach mitm Beleg abgleichen, nicht mehr selber zählen spart bissl zeit\n\n" +
+      "• Bescheid geben wenn was ist am besten mit screenshot Danke."
+  },
+  {
+    version: "2.2.10",
+    date: "17.09.2026",
+    notes:
+      "• NEU N4P Packzettel: Stock-ID laden und es poppt die Teileauswahl auf — nur bestellte Artikelname, kein Schrott drumrum\n\n" +
+      "• Was ihr ankreuzt geht in den Kommentar Anlieferung, Lieferant hängt automatisch dran: KNOLL, WM (Wessels Müller), STA (Stahlgruber)\n\n" +
+      "• Füllt nur den Kommentar vor, speichern tut ihr selbst unten über Kommentar + Regal speichern wie immer\n\n" +
+      "• Falls ihr was vergessen habt: unter dem Beleg-Button nochmal „Teile aus Packzettel“ aufmachen und nachziehen\n\n" +
+      "• Spart massig Zeit weil man das nicht mehr manuel eintippen muss und im Kommentar dann wirklich nur das steht was in der Kiste ist\n\n" +
+      "• Seite 2 vom Packzettel (Datum / Unterschrift / Name) kommt nicht mehr in die Teileliste rum\n\n" +
+      "• Viel Spass damit, hoffe es klappt alles. Falls nicht einfach Bescheid geben — ist der erste Anlauf. Bis später."
+  },
+  {
     version: "2.2.9",
     date: "28.08.2026",
     notes:
@@ -213,6 +311,9 @@ const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
 const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM";
 const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
+const AAG_LIEFERSCHEINE_SHEET_ID = "1CnV8VDxHAk-xzuOzfS2qjHgVR9zVtQYa90g0L7FHUXA";
+const AAG_LIEFERSCHEINE_TAB = "History 2026";
+const AAG_LIEFERSCHEINE_TAB_ID = 1753611365;
 const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
 const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
 const INFO_LAGER_EXIT_HUD_BUTTON = 1;
@@ -1431,18 +1532,29 @@ function extractHuDateOnlyFromNachuntersuchungSegment(segment) {
 }
 
 function notifyWssGummiChat_(stockId, wssNew, gummiNew) {
+  if (!wssNew && !gummiNew) return { success: true, skipped: true };
+  var lines = [];
+  if (wssNew) lines.push(stockId + " -> WSS da");
+  if (gummiNew) lines.push(stockId + " -> Gummileiste da");
+  var res;
   try {
-    if (!wssNew && !gummiNew) return;
-    var lines = [];
-    if (wssNew) lines.push(stockId + " -> WSS da");
-    if (gummiNew) lines.push(stockId + " -> Gummileiste da");
-    UrlFetchApp.fetch(WSS_CHAT_WEBHOOK_URL, {
+    res = UrlFetchApp.fetch(WSS_CHAT_WEBHOOK_URL, {
       method: "post",
       contentType: "application/json",
       payload: JSON.stringify({ text: lines.join("\n") }),
       muteHttpExceptions: true
     });
-  } catch (err) {}
+  } catch (err) {
+    return { success: false, message: err && err.message ? err.message : String(err) };
+  }
+  var code = 0;
+  try { code = res.getResponseCode(); } catch (eCode) { code = 0; }
+  if (code < 200 || code >= 300) {
+    var body = "";
+    try { body = String(res.getContentText() || "").replace(/\s+/g, " ").trim().slice(0, 160); } catch (eBody) {}
+    return { success: false, message: "Chat HTTP " + code + (body ? " — " + body : "") };
+  }
+  return { success: true };
 }
 
 function huVasoldValueFromSchaedenText(wText) {
@@ -1531,7 +1643,7 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
     if (!/wss\s+da\b/i.test(curCom)) {
       var wssCom = curCom ? "WSS da // " + curCom : "WSS da // ";
       sheetRef.getRange(refurbRow, 25).setValue(wssCom);
-      logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
+      logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
     }
 
     SpreadsheetApp.flush();
@@ -1670,7 +1782,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
       if (!/wss\s+da\b/i.test(curCom)) {
         var wssCom2 = curCom ? "WSS da // " + curCom : "WSS da // ";
         sheetRef.getRange(refurbRow, 25).setValue(wssCom2);
-        logKommentarVerlauf_(stockId, curCom, wssCom2, "wss");
+        logKommentarVerlauf_(stockId, curCom, wssCom2, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
     }
 
@@ -1816,22 +1928,55 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
       if (!/wss\s+da\b/i.test(curCom)) {
         var wssCom = curCom ? (curCom + " // WSS da //") : "WSS da //";
         sheetRef.getRange(refurbRow, 25).setValue(wssCom);
-        logKommentarVerlauf_(stockId, curCom, wssCom, "wss");
+        logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
     }
 
     SpreadsheetApp.flush();
-    notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
+
+    var wroteStock = String(sheetV.getRange(targetRow, 1).getValue() || "").trim();
+    if (!cellMatchesStockId(wroteStock, stockId)) {
+      return { success: false, message: "Vasold-Zeile nicht bestätigt." };
+    }
+    if (needWssWrite) {
+      var wroteE = String(sheetV.getRange(targetRow, 5).getValue() || "").trim().toLowerCase();
+      if (wroteE !== "ja") return { success: false, message: "Vasold: WSS „Ja“ nicht bestätigt." };
+    }
+    if (needGummiWrite) {
+      var wroteF = String(sheetV.getRange(targetRow, 6).getValue() || "").trim().toLowerCase();
+      var gummiOk = wroteF === "vorhanden" || wroteF === "da" || wroteF.indexOf("vorhanden") !== -1;
+      if (!gummiOk) return { success: false, message: "Vasold: Gummileiste nicht bestätigt." };
+    }
+    if (needWssWrite && refurbRow !== -1) {
+      var wroteCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
+      if (!/wss\s+da\b/i.test(wroteCom)) {
+        return { success: false, message: "Refurbishment-Kommentar nicht bestätigt." };
+      }
+    }
+
+    var chat = notifyWssGummiChat_(stockId, needWssWrite, needGummiWrite);
     var parts = [];
     if (needWssWrite) parts.push("WSS Ja");
     if (needGummiWrite) parts.push("Gummileiste");
+    var baseMsg = "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert");
+    if (!chat || !chat.success) {
+      return {
+        success: false,
+        sheetsSaved: true,
+        chatFailed: true,
+        message: baseMsg + ". Chat fehlgeschlagen: " + ((chat && chat.message) || "unbekannt")
+      };
+    }
+    var commentNote = "";
+    if (needWssWrite && refurbRow !== -1) commentNote = " Kommentar: WSS da //.";
+    else if (needWssWrite) commentNote = " Kein Refurbishment-Eintrag, Kommentar übersprungen.";
     return {
       success: true,
       skipped: false,
       isNew: isNew,
       stockId: stockId,
       row: targetRow,
-      message: "Vasold WSS: " + parts.join(", ") + (isNew ? " (neue Zeile)" : " — Zeile aktualisiert")
+      message: baseMsg + "." + commentNote + " Chat gesendet."
     };
   } catch (err) {
     return { success: false, message: "Fehler: " + err.message };
@@ -1847,7 +1992,10 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
     if (!wssYes && !gummiYes) {
       return { success: false, message: "Nichts zum Senden ausgewählt." };
     }
-    notifyWssGummiChat_(stockId, wssYes, gummiYes);
+    var chat = notifyWssGummiChat_(stockId, wssYes, gummiYes);
+    if (!chat || !chat.success) {
+      return { success: false, chatFailed: true, message: "Chat fehlgeschlagen: " + ((chat && chat.message) || "unbekannt") };
+    }
     var parts = [];
     if (wssYes) parts.push("WSS Ja");
     if (gummiYes) parts.push("Gummileiste");
@@ -2168,7 +2316,7 @@ function forceNotifyWssEinbuchenChat(stockId, wssSelected, gummiSelected) {
           row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]
         ].join(" ");
         if (!hayContainsQuery_(hay, query)) continue;
-        var stockId = String(row[5] || "").trim();
+        var stockId = pzIsN4pRow_(row) ? pzN4pReferenzStock_(row) : String(row[5] || "").trim();
         if (!stockId) {
           var fromText = extractStockIdFromEmailText_(hay);
           if (fromText) stockId = fromText;
@@ -2990,6 +3138,10 @@ function castEnqueueJob(wsId, type, payload) {
       result: null,
       message: ""
     };
+    var printB64 = String(payload.printB64 || "");
+    if (printB64 && (JSON.stringify(job).length + printB64.length) < 90000) {
+      job.printB64 = printB64;
+    }
     castWriteJob_(cache, wsId, job);
     return { success: true, job: job };
   } catch (err) {
@@ -3029,6 +3181,57 @@ function buildConcurrencyConflict_(currentKommentar, currentRegal) {
     currentRegal: String(currentRegal == null ? "" : currentRegal).trim(),
     message: "Konflikt: Ein Kollege hat Kommentar/Regal bereits geändert. Daten neu geladen – bitte prüfen und erneut speichern."
   };
+}
+
+function readRefurbPriorSnapshot_(sheet, row) {
+  return {
+    kommentar: String(sheet.getRange(row, 25).getValue() || ""),
+    farbe: String(sheet.getRange(row, 25).getBackground() || ""),
+    status: String(sheet.getRange(row, 26).getValue() || ""),
+    regal: String(sheet.getRange(row, 28).getValue() || "").trim()
+  };
+}
+
+function joergPanikRestore(stockId, snapshot) {
+  return withRefurbDocumentLock_(function() {
+    stockId = normalizeStockId(stockId);
+    snapshot = snapshot || {};
+    if (!stockId) return { success: false, message: "Keine Stock-ID" };
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Refurbisment List");
+    if (!sheet) return { success: false, message: "Reiter 'Refurbisment List' fehlt!" };
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var data = sheet.getRange(1, 2, lastRow, 1).getValues();
+    var i;
+    for (i = 1; i < data.length; i++) {
+      if (!cellMatchesStockId(data[i][0], stockId)) continue;
+      var row = i + 1;
+      var beforeRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+      var kommentar = String(snapshot.kommentar == null ? "" : snapshot.kommentar);
+      var farbe = String(snapshot.farbe || "").trim();
+      var status = String(snapshot.status == null ? "" : snapshot.status);
+      var regal = String(snapshot.regal == null ? "" : snapshot.regal).trim();
+      sheet.getRange(row, 25).setValue(kommentar);
+      if (/^#[0-9a-fA-F]{6}$/.test(farbe)) sheet.getRange(row, 25).setBackground(farbe);
+      sheet.getRange(row, 26).setValue(status);
+      sheet.getRange(row, 28).setValue(regal);
+      SpreadsheetApp.flush();
+      var checkKommentar = String(sheet.getRange(row, 25).getValue() || "");
+      var checkStatus = String(sheet.getRange(row, 26).getValue() || "");
+      var checkRegal = String(sheet.getRange(row, 28).getValue() || "").trim();
+      if (checkKommentar !== kommentar || checkStatus !== status || checkRegal !== regal) {
+        return { success: false, message: "Zurücksetzen nicht verifiziert" };
+      }
+      var verlaufEntry = logPanikVerlauf_(stockId, beforeRegal);
+      return {
+        success: true,
+        message: stockId + " zurückgesetzt (Kommentar, Farbe, Status, Regal).",
+        savedKommentar: kommentar,
+        savedRegal: regal,
+        verlaufEntry: verlaufEntry
+      };
+    }
+    return { success: false, message: "Stock-ID nicht gefunden!" };
+  });
 }
 
 function baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal) {
@@ -3130,32 +3333,43 @@ function ensureKommentarVerlaufSheet_() {
   if (!sheet) return null;
   var header = String(sheet.getRange(1, 1).getValue() || "").trim();
   if (sheet.getLastRow() < 1 || header === "") {
-    sheet.getRange(1, 1, 1, 5).setValues([["Zeitstempel", "Stock-ID", "Email", "Änderung", "Aktion"]]);
+    sheet.getRange(1, 1, 1, 6).setValues([["Zeitstempel", "Stock-ID", "Email", "Änderung", "Aktion", "Regal"]]);
     sheet.setFrozenRows(1);
+  } else if (!String(sheet.getRange(1, 6).getValue() || "").trim()) {
+    sheet.getRange(1, 6).setValue("Regal");
   }
   return sheet;
+}
+
+function verlaufRegalBadgeLabel_(raw) {
+  var norm = normalizeRegalKeyForCount(raw);
+  if (norm) return norm;
+  var s = String(raw || "").trim();
+  if (!s) return "kein Platz";
+  return s;
 }
 
 function logRegalVerlauf_(stockId, fromRegal, toRegal, action) {
   try {
     stockId = normalizeStockId(stockId);
     if (!stockId) return null;
-    var fromTxt = normalizeRegalKeyForCount(fromRegal) || String(fromRegal || "").trim() || "kein Platz";
-    var toTxt = normalizeRegalKeyForCount(toRegal) || String(toRegal || "").trim() || "kein Platz";
+    var fromTxt = verlaufRegalBadgeLabel_(fromRegal);
+    var toTxt = verlaufRegalBadgeLabel_(toRegal);
     if (fromTxt === toTxt) return null;
     var sheet = ensureKommentarVerlaufSheet_();
     if (!sheet) return null;
     var tsStr = formatVerlaufTimestamp_(new Date());
     var email = getActiveUserEmail_();
     var text = "von " + fromTxt + " nach " + toTxt;
-    sheet.appendRow([tsStr, stockId, email, text, action || "speichern+regal"]);
-    return { ts: tsStr, stockId: stockId, email: email, text: text, action: action || "speichern+regal" };
+    var regalLabel = fromTxt;
+    sheet.appendRow([tsStr, stockId, email, text, action || "speichern+regal", regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: text, action: action || "speichern+regal", regal: regalLabel };
   } catch (e) {
     return null;
   }
 }
 
-function logKommentarVerlauf_(stockId, oldText, newText, action) {
+function logKommentarVerlauf_(stockId, oldText, newText, action, previousRegal) {
   try {
     stockId = normalizeStockId(stockId);
     action = String(action || "speichern");
@@ -3166,8 +3380,26 @@ function logKommentarVerlauf_(stockId, oldText, newText, action) {
     if (!sheet) return null;
     var tsStr = formatVerlaufTimestamp_(new Date());
     var email = getActiveUserEmail_();
-    sheet.appendRow([tsStr, stockId, email, delta, action]);
-    return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action };
+    var regalLabel = previousRegal === undefined ? "" : verlaufRegalBadgeLabel_(previousRegal);
+    sheet.appendRow([tsStr, stockId, email, delta, action, regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action, regal: regalLabel };
+  } catch (e) {
+    return null;
+  }
+}
+
+function logPanikVerlauf_(stockId, previousRegal) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId) return null;
+    var sheet = ensureKommentarVerlaufSheet_();
+    if (!sheet) return null;
+    var tsStr = formatVerlaufTimestamp_(new Date());
+    var email = getActiveUserEmail_();
+    var regalLabel = verlaufRegalBadgeLabel_(previousRegal);
+    var text = "Jörg Panik — zurückgesetzt";
+    sheet.appendRow([tsStr, stockId, email, text, "panik", regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: text, action: "panik", regal: regalLabel };
   } catch (e) {
     return null;
   }
@@ -3183,7 +3415,7 @@ function getKommentarVerlaufCachePayload() {
       return { success: true, version: Date.now(), rows: [], configured: true };
     }
     var lastRow = sheet.getLastRow();
-    var data = sheet.getRange(2, 1, lastRow, 5).getValues();
+    var data = sheet.getRange(2, 1, lastRow, 6).getValues();
     var rows = [];
     var i;
     for (i = data.length - 1; i >= 0; i--) {
@@ -3195,7 +3427,8 @@ function getKommentarVerlaufCachePayload() {
         verlaufTimestampStr_(r[0]),
         String(r[2] || ""),
         String(r[3] || ""),
-        String(r[4] || "speichern")
+        String(r[4] || "speichern"),
+        String(r[5] || "")
       ]);
     }
     return { success: true, version: Date.now(), rows: rows, configured: true };
@@ -3262,16 +3495,99 @@ function getRefurbishmentCachePayload() {
     return String(v || "");
   }
 
+  function pzRowPlainText_(row) {
+    var plain = [row[4], row[8], row[12], row[13]].join("\n");
+    return plain.replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").replace(/\s+/g, " ");
+  }
+
+  function pzIsWorkshopStockId_(v) {
+    var s = normalizeStockId(v);
+    if (!/^[A-Z]{2,3}\d{3,8}$/.test(s)) return "";
+    if (/^N4P/.test(s) || /^(PDE|RDE)/.test(s)) return "";
+    return s;
+  }
+
+  function pzWorkshopIdsIn_(text) {
+    var re = /(?:^|[^A-Z0-9])([A-Z]{2,3})\s?(\d{3,8})(?!\d)/ig;
+    var out = [];
+    var seen = {};
+    var m;
+    while ((m = re.exec(String(text || "")))) {
+      var id = pzIsWorkshopStockId_(String(m[1] || "") + String(m[2] || ""));
+      if (!id || seen[id]) continue;
+      seen[id] = true;
+      out.push(id);
+    }
+    return out;
+  }
+
+  function pzIdsAfterLabel_(plain, labelRe) {
+    var re = new RegExp(labelRe, "ig");
+    var out = [];
+    var seen = {};
+    var m;
+    while ((m = re.exec(plain))) {
+      var tail = plain.slice(m.index + m[0].length, m.index + m[0].length + 180);
+      var ids = pzWorkshopIdsIn_(tail);
+      for (var i = 0; i < ids.length; i++) {
+        if (seen[ids[i]]) continue;
+        seen[ids[i]] = true;
+        out.push(ids[i]);
+      }
+    }
+    return out;
+  }
+
+  function pzPickWorkshopId_(candidates, prefer) {
+    var i;
+    if (prefer) {
+      for (i = 0; i < candidates.length; i++) {
+        if (candidates[i] === prefer) return prefer;
+      }
+    }
+    return candidates.length ? candidates[0] : "";
+  }
+
+  function pzN4pReferenzStock_(row) {
+    if (!pzIsN4pRow_(row)) return "";
+    var plain = pzRowPlainText_(row);
+    var refs = pzIdsAfterLabel_(plain, "referenz\\s*-?\\s*(?:nummer|nr\\.?)\\b");
+    var ihre = pzIdsAfterLabel_(plain, "ihre\\s+referenz\\b");
+    var kzList = pzIdsAfterLabel_(plain, "kennzeichen\\b");
+    var kz = kzList.length ? kzList[0] : "";
+    var labeled = refs.concat(ihre);
+    var picked = pzPickWorkshopId_(labeled, kz);
+    if (picked) return picked;
+    var storedRef = pzIsWorkshopStockId_(row && row[4]);
+    var storedStock = pzIsWorkshopStockId_(row && row[5]);
+    if (kz && (storedRef === kz || storedStock === kz)) return kz;
+    if (storedRef) return storedRef;
+    if (storedStock) return storedStock;
+    if (kz) return kz;
+    return "";
+  }
+
+  function pzN4pKennzeichen_(row) {
+    var plain = pzRowPlainText_(row);
+    var kzList = pzIdsAfterLabel_(plain, "kennzeichen\\b");
+    if (kzList.length) return kzList[0];
+    return pzIsWorkshopStockId_(row && row[6]);
+  }
+
   function packzettelRowLight_(row, rowNumber) {
+    var isN4 = pzIsN4pRow_(row);
+    var refStock = isN4 ? pzN4pReferenzStock_(row) : "";
+    var kennzeichen = String(row[6] || "").trim();
+    var shownStock = isN4 ? (refStock || String(row[5] || "").trim()) : String(row[5] || "").trim();
     return {
       row: rowNumber,
       messageDate: packzettelDateStr_(row[0]),
       source: String(row[1] || ""),
       kind: String(row[2] || ""),
       orderNumber: String(row[3] || "").trim(),
-      referenceNumber: String(row[4] || "").trim(),
-      stockId: String(row[5] || "").trim(),
-      kennzeichen: String(row[6] || "").trim(),
+      referenceNumber: refStock || String(row[4] || "").trim(),
+      stockId: shownStock,
+      kennzeichen: kennzeichen,
       orderDate: String(row[7] || "").trim(),
       subject: String(row[8] || "").trim(),
       previewUrl: String(row[10] || "").trim(),
@@ -3304,7 +3620,7 @@ function getRefurbishmentCachePayload() {
   function packzettelRowMatchesQuery_(row, query) {
     if (!query) return true;
     var haystack = [
-      row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]
+      row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[12], row[13]
     ].join(" ").toLowerCase().replace(/\s+/g, "");
     return haystack.indexOf(query) !== -1;
   }
@@ -3340,6 +3656,10 @@ function getRefurbishmentCachePayload() {
       var out = [];
       for (var i = 0; i < values.length; i++) {
         var row = values[i];
+        if (pzIsN4pRow_(row)) {
+          if (pzN4pReferenzStock_(row) === want) out.push(packzettelRowLight_(row, i + 2));
+          continue;
+        }
         var idNorm = normalizeStockId(row[5]);
         var rawHas = row[13] && normalizeStockId(row[13]).indexOf(want) !== -1;
         var subjHas = row[8] && normalizeStockId(row[8]).indexOf(want) !== -1;
@@ -3370,6 +3690,17 @@ function getRefurbishmentCachePayload() {
       var out = [];
       for (var i = 0; i < values.length; i++) {
         var row = values[i];
+        if (pzIsN4pRow_(row)) {
+          var refStock = pzN4pReferenzStock_(row);
+          var orderKey = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
+          var hitN4 = false;
+          for (var n = 0; n < normKeys.length; n++) {
+            if (refStock && refStock === normKeys[n]) { hitN4 = true; break; }
+            if (orderKey && orderKey === normKeys[n]) { hitN4 = true; break; }
+          }
+          if (hitN4) out.push(packzettelRowLight_(row, i + 2));
+          continue;
+        }
         var haystack = [row[3], row[4], row[5], row[8], row[13]]
           .join(" ").toUpperCase().replace(/\s+/g, "");
         var hit = false;
@@ -3408,6 +3739,1020 @@ function getRefurbishmentCachePayload() {
       return { success: false, message: err.message };
     }
   }
+
+function pzIsN4pRow_(row) {
+  if (String((row && row[2]) || "") === "wm-order") return false;
+  var source = String((row && row[1]) || "").toLowerCase();
+  var order = String((row && row[3]) || "").toUpperCase().replace(/\s+/g, "");
+  var raw = String((row && row[13]) || "").toUpperCase();
+  if (source.indexOf("n4.parts") !== -1 || source.indexOf("n4parts") !== -1) return true;
+  if (/^N4P\d{4,}/.test(order)) return true;
+  if (/\bN4P\d{4,}/.test(raw)) return true;
+  return false;
+}
+
+function pzIsAagConfirmRow_(row) {
+  var source = String((row && row[1]) || "").toLowerCase();
+  var raw = String((row && row[13]) || "");
+  if (!/artikel\s*nr\.?\s*\/\s*marke\s*\/\s*bezeichnung/i.test(raw)) return false;
+  if (source.indexOf("allianceautomotive") !== -1) return true;
+  return /AAG\s+Distribution/i.test(raw);
+}
+
+function pzIsWmOrderRow_(row) {
+  return String((row && row[2]) || "") === "wm-order";
+}
+
+function pzDecodeHtmlEntities_(s) {
+  var named = { amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'", nbsp: " ", auml: "ä", ouml: "ö", uuml: "ü", Auml: "Ä", Ouml: "Ö", Uuml: "Ü", szlig: "ß", euro: "€" };
+  return String(s || "")
+    .replace(/&#(\d+);/g, function(_, n) { return String.fromCharCode(parseInt(n, 10)); })
+    .replace(/&#x([0-9a-f]+);/gi, function(_, n) { return String.fromCharCode(parseInt(n, 16)); })
+    .replace(/&([a-z]+);/gi, function(m, n) { return named.hasOwnProperty(n) ? named[n] : m; });
+}
+
+function pzHtmlCellLines_(cellHtml) {
+  var t = String(cellHtml || "").replace(/<br\s*\/?>/gi, "\n").replace(/<\/(p|div)>/gi, "\n").replace(/<[^>]+>/g, " ");
+  t = pzDecodeHtmlEntities_(t);
+  var lines = t.split(/\n/);
+  var out = [];
+  for (var i = 0; i < lines.length; i++) {
+    var l = lines[i].replace(/\s+/g, " ").trim();
+    if (l) out.push(l);
+  }
+  return out;
+}
+
+function pzParseWmOrderParts_(html) {
+  var h = String(html || "");
+  if (!h) return [];
+  var rowRe = /<tr\b[^>]*>((?:(?!<tr\b)[\s\S])*?)<\/tr>/gi;
+  var cellRe = /<t[dh]\b[^>]*>([\s\S]*?)<\/t[dh]>/gi;
+  var rows = [];
+  var m;
+  while ((m = rowRe.exec(h))) {
+    var cells = [];
+    var c;
+    cellRe.lastIndex = 0;
+    while ((c = cellRe.exec(m[1]))) cells.push(pzHtmlCellLines_(c[1]));
+    if (cells.length) rows.push(cells);
+  }
+  var col = null;
+  var out = [];
+  for (var r = 0; r < rows.length; r++) {
+    var cells2 = rows[r];
+    var heads = cells2.map(function(x) { return String(x.join(" ")).toLowerCase(); });
+    if (!col) {
+      var kat = -1, txt = -1, pos = -1, hlk = -1, qty = -1;
+      for (var k = 0; k < heads.length; k++) {
+        if (/katalog/.test(heads[k])) kat = k;
+        else if (/^text$/.test(heads[k])) txt = k;
+        else if (/^pos/.test(heads[k])) pos = k;
+        else if (/^hlk$/.test(heads[k])) hlk = k;
+        else if (/bestell\s*me/.test(heads[k])) qty = k;
+      }
+      if (kat >= 0 && txt >= 0) col = { kat: kat, txt: txt, pos: pos, hlk: hlk, qty: qty };
+      continue;
+    }
+    if (col.pos >= 0 && !/^\d{1,3}$/.test(String((cells2[col.pos] || [])[0] || ""))) continue;
+    var txtLines = cells2[col.txt] || [];
+    var name = "";
+    for (var t = 0; t < txtLines.length; t++) {
+      if (/^(verf(ü|ue)gbar|tour$|abholung$|lieferung$)/i.test(txtLines[t])) continue;
+      name = txtLines[t];
+      break;
+    }
+    if (!name || !/[a-zäöüß]/i.test(name)) continue;
+    var artnr = String((cells2[col.kat] || [])[0] || "");
+    var hersteller = col.hlk >= 0 ? String((cells2[col.hlk] || [])[0] || "") : "";
+    var menge = "";
+    if (col.qty >= 0) {
+      var q = String((cells2[col.qty] || [])[0] || "").match(/^(\d+)(?:,(\d+))?$/);
+      if (q) menge = (!q[2] || /^0+$/.test(q[2])) ? q[1] : q[1] + "," + q[2];
+    }
+    out.push({
+      name: name,
+      tag: "WM",
+      supplier: "Wessels Müller",
+      hersteller: hersteller,
+      herstellerArtnr: artnr,
+      menge: menge
+    });
+  }
+  return pzDedupeParts_(out);
+}
+
+function pzIsPartsSourceRow_(row) {
+  if (pzIsWmOrderRow_(row)) return true;
+  if (pzIsN4pRow_(row)) return true;
+  if (pzIsAlfahRow_(row)) return true;
+  if (pzIsAagConfirmRow_(row)) return true;
+  return pzHasArtikelTable_(row);
+}
+
+function pzParseRowParts_(row) {
+  if (pzIsWmOrderRow_(row)) return pzParseWmOrderParts_(row[12]);
+  if (pzIsAlfahRow_(row)) return pzParseAlfahPartsFromText_(row[13]);
+  if (!pzIsN4pRow_(row) && pzIsAagConfirmRow_(row)) return pzParseAagConfirmParts_(row[13]);
+  return pzParseN4pPartsFromText_(row[13]);
+}
+
+function pzParseAagConfirmParts_(raw) {
+  var lines = String(raw || "").replace(/\r/g, "\n").split(/\n/);
+  var headRe = /^(.+?)\s+\/\s+(.+?)\s+(\d{1,3}),(\d{2})\s*$/;
+  var stopRe = /^(ust\.?-?pflichtiger|es\s+gelten|übertrag|uebertrag|auftragsbest|kunden-?nr|seite\b|gesamt\b|geplantes|artikel\s*nr|lieferdatum|menge\b|wir\s+bedanken|aag\s+distribution|sitz\s+und|banken|iban|st\.?nr|debug\s+info|knoll-online)/i;
+  var out = [];
+  var cur = null;
+  function flush() {
+    if (!cur) return;
+    var name = cur.name.join(" ").replace(/\s+/g, " ").trim();
+    if (name && /[a-zäöüß]/i.test(name) && !/^uwb$/i.test(cur.hersteller)) {
+      out.push({
+        name: name,
+        tag: "AAG",
+        supplier: "AAG",
+        hersteller: cur.hersteller,
+        herstellerArtnr: cur.artnr,
+        menge: cur.menge
+      });
+    }
+    cur = null;
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = String(lines[i] || "").replace(/\s+/g, " ").trim();
+    if (!line) continue;
+    var m = line.match(headRe);
+    if (m && /[A-Z]/.test(m[2]) && !/[€|]/.test(line)) {
+      flush();
+      var qty = parseInt(m[3], 10);
+      cur = {
+        artnr: m[1].trim(),
+        hersteller: m[2].trim(),
+        menge: m[4] === "00" ? String(qty) : m[3] + "," + m[4],
+        name: [],
+        done: false
+      };
+      continue;
+    }
+    if (!cur) continue;
+    if (stopRe.test(line)) {
+      flush();
+      continue;
+    }
+    if (cur.done) continue;
+    if (/^[\d\s.,:€%-]+$/.test(line)) continue;
+    if (cur.name.length && /^[A-ZÄÖÜ]{3,}$/.test(line)) {
+      cur.done = true;
+      continue;
+    }
+    if (!cur.name.length && /^[A-ZÄÖÜ]{3,}$/.test(line)) continue;
+    cur.name.push(line);
+  }
+  flush();
+  return pzDedupeParts_(out);
+}
+
+function pzHasArtikelTable_(row) {
+  var raw = String((row && row[13]) || "");
+  return /herstellername/i.test(raw) && /artikelname/i.test(raw);
+}
+
+function pzIsAlfahRow_(row) {
+  var source = String((row && row[1]) || "").toLowerCase();
+  var raw = String((row && row[13]) || "").toLowerCase();
+  if (source.indexOf("alfah") !== -1) return true;
+  if (raw.indexOf("alfah") === -1) return false;
+  return raw.indexOf("auftragsposition") !== -1 || raw.indexOf("bestellposition") !== -1;
+}
+
+function pzNormalizePartName_(s) {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+
+function pzPartNameKey_(name, tag) {
+  var n = String(name || "").toLowerCase().replace(/[^a-z0-9äöüß]+/g, "");
+  return n + "|" + String(tag || "").toUpperCase();
+}
+
+function pzLooksLikeQty_(s) {
+  return /^[1-9]\d?$/.test(String(s || "").trim());
+}
+
+function pzNormDash_(s) {
+  return String(s || "").replace(/[\u2010-\u2015\u2212]/g, "-");
+}
+
+function pzLooksLikeSpecToken_(tok) {
+  var t = String(tok || "").trim();
+  if (!t) return false;
+  if (/^\d+[.,]?\d*(v|ah|a|l|w|kw|ps|mm)$/i.test(t)) return true;
+  if (/^\d+w-?\d+$/i.test(t)) return true;
+  return false;
+}
+
+function pzLooksLikeArtNr_(s) {
+  var t = pzNormDash_(s).trim();
+  if (!t) return false;
+  if (pzLooksLikeSpecToken_(t)) return false;
+  if (/^[1-9]\d?$/.test(t)) return false;
+  if (/^\d+[.\d]*$/.test(t)) return true;
+  if (/^\d{3,}$/.test(t)) return true;
+  if (/^\d{1,5}[-./]\d{2,8}(?:[-./]\d+)?$/.test(t)) return true;
+  if (/^\d+\/\d+$/.test(t)) return true;
+  if (/^\d+,\d+$/.test(t)) return true;
+  if (/^[A-Z]{1,8}\d+[A-Z0-9.-]*$/i.test(t) && /\d/.test(t)) return true;
+  if (/^[A-Z]{1,8}\d{1,6}[-/][A-Z0-9]+$/i.test(t)) return true;
+  if (/^[A-Z]{1,6}-\d+[A-Z0-9]*$/i.test(t)) return true;
+  if (/^[A-Z]\d{1,4}$/i.test(t)) return true;
+  if (/^\d{4,}[A-Z][A-Z0-9]*$/i.test(t) && t.length >= 8) return true;
+  if (/^\d+[A-Z]\d+[A-Z0-9]*$/i.test(t) && t.length >= 8) return true;
+  return false;
+}
+
+function pzIsArtNrPrefix_(tok, next) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!/^[A-Z]{1,5}$/.test(t)) return false;
+  if (/^(EXPERT|KITS|KIT|PREMIUM|ORIGINAL|IRIDIUM|PLUS|EVO|FA)$/i.test(t)) return false;
+  var n = String(next || "").trim();
+  return pzLooksLikeArtNr_(n) || /^[\d.]+$/.test(n) || /^\d+\/\d+$/.test(n);
+}
+
+function pzIsFooterLabelToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(bemerkung|bemerkungen|datum|unterschrift|name)$/i.test(t);
+}
+
+function pzIsStopSection_(line) {
+  var t = pzNormalizePartName_(line);
+  if (/erledigt\s*\?/i.test(t)) return true;
+  return /^(geplante\s+arbeiten|weitere\s+positionen|hinweise|bemerkungen?|lieferadresse|unterschrift|datum|name)\b/i.test(t);
+}
+
+function pzIsWorkSectionToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(geplante|arbeiten|weitere|positionen|erledigt)$/i.test(t);
+}
+
+function pzIsHeaderToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return true;
+  return /^(herstellername|hersteller|artnr|großhändler|grosshaendler|grosshandler|artikelname|menge|geliefert|arbeitsnr|beschreibung|dauer|packzettel|artikel-?daten|kundenname|kennzeichen|bestellnummer|bestelldatum|referenznummer|seite)$/i.test(t);
+}
+
+function pzIsBrandToken_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return false;
+  if (/^(mann-?filter|herth\+?buss|hecht-?elbs|febi-?bilstein|jacoparts|jakoparts|elparts|victor-?reinz)$/i.test(t)) return true;
+  var key = t.toUpperCase().replace(/[^A-Z0-9+]/g, "");
+  var brands = {
+    BOSCH: 1, VAICO: 1, ELRING: 1, FEBI: 1, BILSTEIN: 1, MEYLE: 1,
+    FERODO: 1, MANN: 1, HERTH: 1, BUSS: 1, ELPARTS: 1, HECHT: 1,
+    ELBS: 1, JACOPARTS: 1, JAKOPARTS: 1, KNOLL: 1, STAHLGRUBER: 1,
+    WESSELS: 1, MULLER: 1, MUELLER: 1, EXIDE: 1, NGK: 1, BERU: 1,
+    MAHLE: 1, PURFLUX: 1, VALEO: 1, HELLA: 1, SWAG: 1, TRW: 1, ATE: 1,
+    TEXTAR: 1, SACHS: 1, GATES: 1, DAYCO: 1, SKF: 1, INA: 1, LUK: 1,
+    HENGST: 1, KNECHT: 1, PIERBURG: 1, CONTINENTAL: 1, CORTECO: 1,
+    BOSAL: 1, FA1: 1, VICTOR: 1, REINZ: 1, WALKER: 1, HJS: 1, ERNST: 1,
+    METZGER: 1, CTAM: 1, AUTOTEILE: 1, LKQ: 1,
+    MASTEROIL: 1, NAPA: 1, OPTIMAL: 1, GERMANY: 1, REPSTAR: 1
+  };
+  return !!brands[key];
+}
+
+function pzIsNameContinueWord_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  return /^(plus|premium|premier|expert|kits|kit|evo|platinum|original|iridium|satz)$/i.test(t);
+}
+
+function pzLooksLikeNameWord_(tok) {
+  var t = String(tok || "").replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return false;
+  if (t === ",") return true;
+  if (pzIsFooterLabelToken_(t) || pzIsHeaderToken_(t) || pzIsBrandToken_(t)) return false;
+  if (pzLooksLikeArtNr_(t) || pzLooksLikeQty_(t) || /^[\d.]+$/.test(t)) return false;
+  if (pzIsNameContinueWord_(t)) return true;
+  return /[a-zäöüß]/.test(t);
+}
+
+function pzBrandRunLength_(tokens, i) {
+  if (!pzIsBrandToken_(tokens[i])) return 0;
+  var n = 1;
+  while (i + n < tokens.length && pzIsBrandToken_(tokens[i + n])) n++;
+  return n;
+}
+
+function pzIsNoiseToken_(tok) {
+  var raw = String(tok || "").trim();
+  if (!raw || raw === ",") return false;
+  if (raw === "+" || raw === ":" || raw === "/") return false;
+  var t = raw.replace(/[.,:;!?]+$/g, "").trim();
+  if (!t) return true;
+  if (pzIsHeaderToken_(t)) return true;
+  if (pzIsFooterLabelToken_(t)) return true;
+  if (pzIsBrandToken_(t)) return true;
+  if (/^n4p/i.test(t) || /^knoll_/i.test(t)) return true;
+  if (/^lkq[_-]?stahlgruber$/i.test(t)) return true;
+  if (pzLooksLikeArtNr_(t)) return true;
+  if (/^[\d.]+$/.test(t)) return true;
+  if (/^[A-Z]$/i.test(t)) return true;
+  if (pzLooksLikeQty_(t)) return true;
+  return false;
+}
+
+function pzLocateSupplierHeader_(line) {
+  var t = String(line || "");
+  if (!t) return null;
+  var best = null;
+  function take(re, tag, supplier) {
+    var m = re.exec(t);
+    if (!m) return;
+    if (best && m.index >= best.index) return;
+    best = { index: m.index, length: m[0].length, tag: tag, supplier: supplier };
+  }
+  take(/\blkq[_\s-]*stahlgruber\b/i, "STA", "Stahlgruber");
+  take(/\bwessels\s*m(?:ü|ue?|u)ller\b/i, "WM", "Wessels Müller");
+  take(/\bknoll(?=_|\b)/i, "KNOLL", "KNOLL");
+  if (!best || best.tag !== "STA") take(/\bstahlgruber\b/i, "STA", "Stahlgruber");
+  return best;
+}
+
+function pzStripSupplierHeaderTail_(s) {
+  var t = pzNormalizePartName_(s);
+  var prev = "";
+  while (t && t !== prev) {
+    prev = t;
+    t = t.replace(/^[-–_:]+/, "").trim();
+    t = t.replace(/^\([^)]*\)/, "").trim();
+    t = t.replace(/^(knoll_)?n4p[a-z0-9]+/i, "").trim();
+    t = t.replace(/^knoll\b/i, "").trim();
+    t = t.replace(/^\d{5,}/, "").trim();
+  }
+  return t;
+}
+
+function pzJoinOcrLines_(lines) {
+  var out = [];
+  for (var i = 0; i < (lines || []).length; i++) {
+    var line = pzNormalizePartName_(lines[i]);
+    if (!line) continue;
+    if (out.length && /-$/.test(out[out.length - 1])) {
+      out[out.length - 1] = out[out.length - 1] + line;
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join(" ");
+}
+
+function pzSplitArtikelTokens_(text) {
+  var raw = pzNormDash_(text).replace(/(\D),(\S)/g, "$1 , $2").replace(/(\D),\s+/g, "$1 , ");
+  var parts = raw.split(/\s+/);
+  var out = [];
+  for (var i = 0; i < parts.length; i++) {
+    var t = String(parts[i] || "").trim();
+    if (t) out.push(t);
+  }
+  return out;
+}
+
+function pzIsValidArtikelName_(name) {
+  var n = pzNormalizePartName_(name);
+  if (!n) return false;
+  if (/^(plus|premium|premier|febi|expert|original|napa|germany|optimal|masteroil|repstar)$/i.test(n)) return false;
+  if (/^napa(\s+germany)?$/i.test(n)) return false;
+  if (/erledigt|weitere\s+positionen|geplante\s+arbeiten/i.test(n)) return false;
+  return true;
+}
+
+function pzRowHasArtikelHint_(row) {
+  var i;
+  for (i = 0; i < (row || []).length; i++) {
+    if (pzLooksLikeNameWord_(row[i]) && row[i] !== ",") return true;
+  }
+  return false;
+}
+
+function pzExtractNamesFromTokens_(tokens) {
+  var names = [];
+  var row = [];
+  var seenArt = false;
+  var seenName = false;
+  var i = 0;
+  function emit() {
+    var name = pzArtikelNameFromRow_(row);
+    row = [];
+    seenArt = false;
+    seenName = false;
+    if (name && pzIsValidArtikelName_(name)) names.push(name);
+  }
+  while (i < (tokens || []).length) {
+    var tok = tokens[i];
+    var next = tokens[i + 1];
+    if (pzIsFooterLabelToken_(tok) || pzIsWorkSectionToken_(tok)) {
+      emit();
+      break;
+    }
+    if (pzLooksLikeQty_(tok) && (seenName || pzRowHasArtikelHint_(row))) {
+      if (!seenArt && next && (pzLooksLikeArtNr_(next) || pzIsArtNrPrefix_(next, tokens[i + 2]))) {
+        i++;
+        continue;
+      }
+      var j = i + 1;
+      while (j < tokens.length && (pzIsNameContinueWord_(tokens[j]) || /^febi$/i.test(tokens[j]))) {
+        row.push(tokens[j]);
+        j++;
+      }
+      i = j;
+      emit();
+      continue;
+    }
+    var run = pzBrandRunLength_(tokens, i);
+    var artHere = pzLooksLikeArtNr_(tok) || pzIsArtNrPrefix_(tok, next);
+    if (seenName && run) {
+      var afterBrand = i + run;
+      if (!(afterBrand < tokens.length && (pzIsNameContinueWord_(tokens[afterBrand]) || /^febi$/i.test(tokens[afterBrand]) || pzLooksLikeQty_(tokens[afterBrand])))) {
+        emit();
+        continue;
+      }
+    }
+    if (seenName && artHere) {
+      emit();
+      continue;
+    }
+    if (!seenName && !row.length && names.length && (pzIsNameContinueWord_(tok) || /^febi$/i.test(tok))) {
+      var extra = tok;
+      i++;
+      while (i < tokens.length && pzIsNameContinueWord_(tokens[i])) {
+        extra += " " + tokens[i];
+        i++;
+      }
+      names[names.length - 1] = pzSanitizeArtikelName_(names[names.length - 1] + " " + extra);
+      continue;
+    }
+    row.push(tok);
+    if (artHere) seenArt = true;
+    if (pzLooksLikeNameWord_(tok) && seenArt) seenName = true;
+    i++;
+  }
+  emit();
+  return names;
+}
+
+function pzSanitizeArtikelName_(s) {
+  var tokens = pzSplitArtikelTokens_(s);
+  var keep = [];
+  var i;
+  for (i = 0; i < tokens.length; i++) {
+    var tok = tokens[i];
+    var next = tokens[i + 1] || "";
+    if (tok === ",") {
+      if (keep.length) keep.push(",");
+      continue;
+    }
+    if (pzIsArtNrPrefix_(tok, next)) {
+      i++;
+      continue;
+    }
+    if (pzIsBrandToken_(tok)) {
+      var prev = keep.length ? keep[keep.length - 1] : "";
+      if (keep.length && (pzLooksLikeNameWord_(prev) || prev === ",") && pzIsNameContinueWord_(next)) {
+        keep.push(tok);
+      }
+      continue;
+    }
+    if (pzIsNoiseToken_(tok)) continue;
+    keep.push(tok);
+  }
+  var name = pzNormalizePartName_(keep.join(" ").replace(/\s+,/g, ",").replace(/,\s*/g, ", "));
+  name = name.replace(/\s+\+/g, " +").replace(/:\s*/g, ": ").replace(/\s+/g, " ").trim();
+  name = name.replace(/\s*(bemerkung|datum|unterschrift|name)\s*:?\s*$/ig, "").trim();
+  name = name.replace(/\s*(bemerkung|datum|unterschrift|name)\s*:?\s*/ig, " ").replace(/\s+/g, " ").trim();
+  if (name.length < 3 || name.length > 180) return "";
+  if (!/[a-zäöüß]/.test(name)) return "";
+  if (/hersteller|artnr|artikelname|großhändler|grosshaendler|\bmenge\b|geliefert/i.test(name)) return "";
+  return name;
+}
+
+function pzArtikelNameFromRow_(tokens) {
+  tokens = tokens || [];
+  var i = 0;
+  var sawArt = false;
+  while (i < tokens.length) {
+    var tok = tokens[i];
+    var next = tokens[i + 1];
+    if (pzLooksLikeArtNr_(tok)) {
+      sawArt = true;
+      i++;
+      continue;
+    }
+    if (pzIsArtNrPrefix_(tok, next)) {
+      sawArt = true;
+      i += 2;
+      continue;
+    }
+    if (pzIsBrandToken_(tok) || pzLooksLikeQty_(tok) || pzIsNoiseToken_(tok)) {
+      i++;
+      continue;
+    }
+    if (!sawArt) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  if (!sawArt) return pzSanitizeArtikelName_(tokens.join(" "));
+  return pzSanitizeArtikelName_(tokens.slice(i).join(" "));
+}
+
+function pzLooksLikeHerstellerToken_(tok) {
+  var t = String(tok || "").replace(/[,.:;]+$/g, "").trim();
+  if (!t) return false;
+  if (/^[A-ZÄÖÜ]{2,}[a-zäöü][A-Za-zÄÖÜäöü0-9]{1,20}$/.test(t)) return true;
+  if (!/^[A-ZÄÖÜ][A-ZÄÖÜ0-9+.-]{1,24}$/.test(t)) return false;
+  if (/^(SINGLE|PRIME|LINE|PLUS|KIT|KITS|PREMIUM|ORIGINAL|EXPERT|EVO|SATZ|BG|NEW)$/.test(t)) return false;
+  return true;
+}
+
+function pzSupplierFromBanner_(label) {
+  var u = String(label || "").toUpperCase();
+  if (/STAHLGRUBER/.test(u)) return { tag: "STA", supplier: "Stahlgruber" };
+  if (/KNOLL/.test(u)) return { tag: "KNOLL", supplier: "KNOLL" };
+  if (/WESSELS|MULLER|MUELLER/.test(u)) return { tag: "WM", supplier: "Wessels Müller" };
+  var bits = u.split(/[^A-Z0-9]+/).filter(function(b) { return !!b; });
+  var tag = bits.length > 1 ? bits[bits.length - 1] : u.replace(/[^A-Z0-9]/g, "");
+  if (tag.length > 8) tag = tag.slice(0, 8);
+  return { tag: tag || "N4P", supplier: String(label || tag) };
+}
+
+function pzIsGrosshaendlerArtnr_(tok, next) {
+  var t = String(tok || "").replace(/[,.:;]+$/g, "");
+  if (!/^\d{7,}$/.test(t)) return false;
+  var n = String(next || "").replace(/[,.:;]+$/g, "");
+  if (/^\d{7,}$/.test(n)) return false;
+  return true;
+}
+
+function pzParseN4pTableParts_(raw, tag, supplier) {
+  var text = String(raw || "").replace(/\r/g, "\n");
+  var headerAt = text.search(/herstellername/i);
+  if (headerAt < 0) return null;
+  var slice = text.slice(headerAt);
+  var end = slice.search(/\b(bemerkung|unterschrift|geplante\s+arbeiten|weitere\s+positionen)\b/i);
+  if (end > 0) slice = slice.slice(0, end);
+  slice = slice.replace(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\s*[-–—]\s*[A-Z0-9]+\s*[-–—]\s*\d{6,}/g, " ");
+  slice = slice.replace(/herstellername[\s\S]*?\bgeliefert\??/ig, " ");
+  var tokens = String(slice).split(/\s+/).filter(function(t) { return !!t && t !== "|" && t !== "☐"; });
+  var out = [];
+  var i = 0;
+  while (i < tokens.length) {
+    if (!pzLooksLikeHerstellerToken_(tokens[i])) {
+      i++;
+      continue;
+    }
+    var hersteller = String(tokens[i]).replace(/[,.:;]+$/g, "");
+    i++;
+    while (i < tokens.length && /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(tokens[i]) && !/\d/.test(tokens[i]) && !/^\d{7,}$/.test(tokens[i + 1] || "") ) {
+      hersteller += " " + String(tokens[i]).replace(/[,.:;]+$/g, "");
+      i++;
+    }
+    var art = [];
+    var guard = 0;
+    while (i < tokens.length && !pzIsGrosshaendlerArtnr_(tokens[i], tokens[i + 1]) && guard < 12) {
+      art.push(String(tokens[i]).replace(/[,.:;]+$/g, ""));
+      i++;
+      guard++;
+    }
+    if (i >= tokens.length || !pzIsGrosshaendlerArtnr_(tokens[i], tokens[i + 1]) || !art.length) continue;
+    i++;
+    while (i < tokens.length && /^\d+$/.test(tokens[i])) {
+      i++;
+    }
+    var nameBits = [];
+    var menge = "";
+    while (i < tokens.length) {
+      var tok = tokens[i];
+      var next = tokens[i + 1];
+      if (/^[1-9]\d?$/.test(tok) && (next == null || pzLooksLikeHerstellerToken_(next))) {
+        menge = tok;
+        i++;
+        break;
+      }
+      nameBits.push(tok);
+      i++;
+    }
+    var name = nameBits.join(" ").replace(/\s+,/g, ",").replace(/,\s*/g, ", ").replace(/[,.\s]+$/g, "").replace(/\s+/g, " ").trim();
+    if (!name || !/[a-zäöüß]/i.test(name)) continue;
+    out.push({
+      name: name,
+      tag: tag || "",
+      supplier: supplier || "",
+      hersteller: hersteller,
+      herstellerArtnr: art.join(" "),
+      menge: menge
+    });
+  }
+  return out.length ? out : null;
+}
+
+function pzFindAllSupplierHeaders_(text) {
+  var patterns = [
+    { re: /\blkq[_\s-]*stahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" },
+    { re: /\bwessels\s*m(?:ü|ue?|u)ller\b/ig, tag: "WM", supplier: "Wessels Müller" },
+    { re: /\bknoll(?=_|\b)/ig, tag: "KNOLL", supplier: "KNOLL" },
+    { re: /\bstahlgruber\b/ig, tag: "STA", supplier: "Stahlgruber" },
+    { re: /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\s*[-–—]\s*[A-Z0-9]+\s*[-–—]\s*\d{6,}/g, banner: true }
+  ];
+  var hits = [];
+  var knownRank = { STA: 0, KNOLL: 0, WM: 0, ALFAH: 0 };
+  for (var p = 0; p < patterns.length; p++) {
+    var re = patterns[p].re;
+    re.lastIndex = 0;
+    var m;
+    while ((m = re.exec(text))) {
+      var info = patterns[p].banner ? pzSupplierFromBanner_(m[0].split(/\s*[-–—]\s*/)[0]) : { tag: patterns[p].tag, supplier: patterns[p].supplier };
+      hits.push({ index: m.index, tag: info.tag, supplier: info.supplier });
+    }
+  }
+  hits.sort(function(a, b) {
+    if (a.index !== b.index) return a.index - b.index;
+    var ar = knownRank[a.tag] == null ? 1 : 0;
+    var br = knownRank[b.tag] == null ? 1 : 0;
+    return ar - br;
+  });
+  var out = [];
+  for (var i = 0; i < hits.length; i++) {
+    if (out.length && Math.abs(hits[i].index - out[out.length - 1].index) < 40) {
+      if (knownRank[hits[i].tag] != null && knownRank[out[out.length - 1].tag] == null) out[out.length - 1] = hits[i];
+      continue;
+    }
+    out.push(hits[i]);
+  }
+  return out;
+}
+
+function pzParseN4pPartsFromText_(raw) {
+  var text = String(raw || "").replace(/\r/g, "\n");
+  if (!text.trim()) return [];
+  var headers = pzFindAllSupplierHeaders_(text);
+  if (headers.length) {
+    var all = [];
+    for (var h = 0; h < headers.length; h++) {
+      var from = headers[h].index;
+      var to = h + 1 < headers.length ? headers[h + 1].index : text.length;
+      var segment = text.slice(from, to);
+      var segParts = pzParseN4pTableParts_(segment, headers[h].tag, headers[h].supplier);
+      if (segParts && segParts.length) {
+        for (var s = 0; s < segParts.length; s++) all.push(segParts[s]);
+      }
+    }
+    if (all.length) return pzDedupeParts_(all);
+  }
+  var supplierLoc = pzLocateSupplierHeader_(text);
+  var tableParts = pzParseN4pTableParts_(text, supplierLoc ? supplierLoc.tag : "", supplierLoc ? supplierLoc.supplier : "");
+  if (tableParts && tableParts.length) return pzDedupeParts_(tableParts);
+  var lines = text.split(/\n+/);
+  var current = null;
+  var block = [];
+  var out = [];
+  function flushBlock() {
+    if (!current || !block.length) {
+      block = [];
+      return;
+    }
+    var joined = pzJoinOcrLines_(block);
+    var tokens = pzSplitArtikelTokens_(joined);
+    var names = pzExtractNamesFromTokens_(tokens);
+    var r;
+    for (r = 0; r < names.length; r++) {
+      out.push({ name: names[r], tag: current.tag, supplier: current.supplier });
+    }
+    block = [];
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var rest = pzNormalizePartName_(lines[i]);
+    if (!rest) continue;
+    if (pzIsStopSection_(rest)) {
+      flushBlock();
+      current = null;
+      continue;
+    }
+    while (rest) {
+      var loc = pzLocateSupplierHeader_(rest);
+      if (!loc) {
+        if (current) block.push(rest);
+        break;
+      }
+      var before = pzNormalizePartName_(rest.slice(0, loc.index));
+      var after = pzStripSupplierHeaderTail_(rest.slice(loc.index + loc.length));
+      if (current && before) block.push(before);
+      flushBlock();
+      current = { tag: loc.tag, supplier: loc.supplier };
+      rest = after;
+    }
+  }
+  flushBlock();
+  return pzDedupeParts_(out);
+}
+
+function pzCompactPartName_(name) {
+  return String(name || "")
+    .toLowerCase()
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function pzDedupeParts_(parts) {
+  var tmp = [];
+  var i;
+  for (i = 0; i < (parts || []).length; i++) {
+    var p = parts[i];
+    if (!p || !p.name) continue;
+    tmp.push({
+      name: p.name,
+      tag: String(p.tag || "").toUpperCase(),
+      supplier: String(p.supplier || ""),
+      hersteller: String(p.hersteller || ""),
+      herstellerArtnr: String(p.herstellerArtnr || ""),
+      menge: String(p.menge || "")
+    });
+  }
+  var drop = {};
+  var j;
+  for (i = 0; i < tmp.length; i++) {
+    var a = pzCompactPartName_(tmp[i].name);
+    if (a.length < 6) continue;
+    for (j = 0; j < tmp.length; j++) {
+      if (i === j || tmp[i].tag !== tmp[j].tag) continue;
+      if (tmp[i].herstellerArtnr && tmp[j].herstellerArtnr && tmp[i].herstellerArtnr !== tmp[j].herstellerArtnr) continue;
+      var b = pzCompactPartName_(tmp[j].name);
+      if (b.length > a.length && b.indexOf(a) === 0) drop[i] = true;
+    }
+  }
+  var out = [];
+  for (i = 0; i < tmp.length; i++) {
+    if (!drop[i]) out.push(tmp[i]);
+  }
+  return out;
+}
+
+function pzParseAlfahPartsFromText_(raw) {
+  var text = String(raw || "").replace(/\r/g, "\n");
+  if (!text.trim()) return [];
+  var start = text.search(/auftragspositionen/i);
+  if (start < 0) start = text.search(/bestellposition/i);
+  if (start < 0) return [];
+  var slice = text.slice(start);
+  var end = slice.search(/\b(zwischensumme|achtung\s*:|bedingungen\s+f[uü]r\s+die\s+abwicklung|seite\s+2\s+von)\b/i);
+  if (end > 0) slice = slice.slice(0, end);
+  slice = slice.replace(/bestellposition\s+menge\s+uvp[\s\S]*?\bbrutto\b/i, "\n");
+  slice = slice.replace(/[.\u00b7\u2022\u2024\u2026]{4,}/g, " ");
+  slice = slice.replace(/\bversand\s*:\s*[^\n]+/ig, " ");
+  slice = slice.replace(/voraussichtl\.?\s*liefertermin\s*:?\s*\d{4}-\d{2}-\d{2}/ig, " ");
+  var out = [];
+  var re = /(\d+)\s*Stk\b([\s\S]*?)(?=\d+\s*Stk\b|$)/gi;
+  var m;
+  while ((m = re.exec(slice))) {
+    var body = String(m[2] || "");
+    body = body.replace(/\d+[.,]\d+\s*€/g, " ");
+    body = body.replace(/\b(?:uvp|netto|gesamt|brutto|mwst|19\s*%)\b/gi, " ");
+    body = pzNormalizePartName_(body).replace(/^[€\s]+/, "").trim();
+    if (body.length < 3) continue;
+    if (!/[a-zäöüß]/i.test(body)) continue;
+    var name = m[1] + " Stk " + body;
+    if (name.length > 220) name = name.slice(0, 220).trim();
+    out.push({ name: name, tag: "ALFAH", supplier: "ALFAH" });
+  }
+  return pzDedupeParts_(out);
+}
+
+function pzReferenzMatchesStock_(row, want) {
+  var ref = pzN4pReferenzStock_(row);
+  return !!ref && ref === want;
+}
+
+function pzRowBelongsToStock_(row, stockId) {
+  var want = normalizeStockId(stockId);
+  if (!want) return false;
+  if (pzIsN4pRow_(row)) return pzReferenzMatchesStock_(row, want);
+  var stock = normalizeStockId(row && row[5]);
+  var ref = normalizeStockId(row && row[4]);
+  if (stock === want || ref === want) return true;
+  if (stock && stock !== want) return false;
+  var raw = String((row && row[13]) || "").toUpperCase();
+  return raw.indexOf(want) !== -1 && new RegExp("(^|[^A-Z0-9])" + want + "([^A-Z0-9]|$)").test(raw);
+}
+
+function getPackzettelPartsForStock(stockId) {
+  try {
+    var want = normalizeStockId(stockId);
+    if (!want && stockId && stockId.length) {
+      for (var k = 0; k < stockId.length; k++) {
+        var cand = normalizeStockId(stockId[k]);
+        if (/^[A-Z]{2}\d{4,8}$/.test(cand)) {
+          want = cand;
+          break;
+        }
+      }
+    }
+    if (!want) return { success: true, parts: [] };
+
+    var data = readPackzettelSheet_();
+    var values = data.values || [];
+    var parts = [];
+    var usedOrders = {};
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      if (!pzIsPartsSourceRow_(row)) continue;
+      if (!pzRowBelongsToStock_(row, want)) continue;
+      var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
+      if (on && usedOrders[on]) continue;
+      if (on) usedOrders[on] = true;
+      var parsed = pzParseRowParts_(row);
+      for (var p = 0; p < parsed.length; p++) parts.push(parsed[p]);
+    }
+    return { success: true, parts: pzDedupeParts_(parts) };
+  } catch (err) {
+    return { success: false, message: err.message, parts: [] };
+  }
+}
+
+function pzRowStockForSearch_(row) {
+  var sid = pzIsN4pRow_(row) ? pzN4pReferenzStock_(row) : (pzIsWorkshopStockId_(row[5]) || pzIsWorkshopStockId_(row[4]));
+  if (!sid) {
+    var hay = [row[3], row[4], row[5], row[6], row[8], row[1], row[7], row[13]].join(" ");
+    sid = pzIsWorkshopStockId_(extractStockIdFromEmailText_(hay));
+  }
+  return sid || "";
+}
+
+function pzBuildSearchIndex_(values) {
+  var map = {};
+  var bad = {};
+  function add(key, sid) {
+    var k = String(key || "").replace(/\s+/g, "").toUpperCase();
+    if (k.length < 6 || bad[k]) return;
+    if (map[k] && map[k] !== sid) {
+      delete map[k];
+      bad[k] = true;
+      return;
+    }
+    map[k] = sid;
+  }
+  for (var i = 0; i < (values || []).length; i++) {
+    var row = values[i];
+    var sid = pzRowStockForSearch_(row);
+    if (!sid) continue;
+    var text = [row[3], row[4], row[8], row[13]].join(" ");
+    var seen = {};
+    var re = /\b(N4P\s?\d{5,}|[A-Z]{2}\d{8,}(?:-\d+)?|\d{6,})\b/gi;
+    var m;
+    while ((m = re.exec(text))) {
+      var k = String(m[1]).replace(/\s+/g, "").toUpperCase();
+      if (seen[k]) continue;
+      seen[k] = true;
+      add(k, sid);
+      var k0 = k.replace(/^N4P/, "").replace(/^0+/, "");
+      if (k0 !== k) add(k0, sid);
+    }
+  }
+  return map;
+}
+
+function getPackzettelPartsCache() {
+  try {
+    var data = readPackzettelSheet_();
+    var values = data.values || [];
+    var byStock = {};
+    var usedOrdersByStock = {};
+    var searchIndex = pzBuildSearchIndex_(values);
+    for (var i = 0; i < values.length; i++) {
+      var row = values[i];
+      var alfahRow = pzIsAlfahRow_(row);
+      var n4Row = pzIsN4pRow_(row);
+      if (!pzIsPartsSourceRow_(row)) continue;
+      var want = n4Row ? pzN4pReferenzStock_(row) : (pzIsWorkshopStockId_(row[5]) || pzIsWorkshopStockId_(row[4]));
+      if (!want && alfahRow) {
+        var plainA = pzRowPlainText_(row).toUpperCase();
+        var mA = plainA.match(/\b([A-Z]{2}\d{4,8})\b/);
+        if (mA) want = normalizeStockId(mA[1]);
+      }
+      if (!want) continue;
+      var on = String(row[3] || "").toUpperCase().replace(/\s+/g, "");
+      if (!usedOrdersByStock[want]) usedOrdersByStock[want] = {};
+      if (on && usedOrdersByStock[want][on]) continue;
+      if (on) usedOrdersByStock[want][on] = true;
+      var parsed = pzParseRowParts_(row);
+      if (!parsed || !parsed.length) continue;
+      if (!byStock[want]) byStock[want] = [];
+      for (var p = 0; p < parsed.length; p++) byStock[want].push(parsed[p]);
+    }
+    var out = {};
+    for (var sid in byStock) {
+      if (byStock.hasOwnProperty(sid)) out[sid] = pzDedupeParts_(byStock[sid]);
+    }
+    return { success: true, byStock: out, searchIndex: searchIndex, version: Date.now() };
+  } catch (err) {
+    return { success: false, message: err.message, byStock: {} };
+  }
+}
+
+function aagLieferscheinSheet_() {
+  var ss = SpreadsheetApp.openById(AAG_LIEFERSCHEINE_SHEET_ID);
+  return ss.getSheetById(AAG_LIEFERSCHEINE_TAB_ID)
+    || ss.getSheetByName(AAG_LIEFERSCHEINE_TAB)
+    || ss.getSheetByName("Hisory 2026");
+}
+
+function aagLieferscheinNorm_(value) {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
+}
+
+function aagLieferscheinDate_(value) {
+  if (value instanceof Date || Object.prototype.toString.call(value) === "[object Date]") {
+    return Utilities.formatDate(new Date(value), "Europe/Berlin", "dd.MM.yyyy");
+  }
+  return String(value || "").trim();
+}
+
+function aagLieferscheinHeaderFromRow_(row) {
+  return {
+    receiptNumber: aagLieferscheinNorm_(row[1]),
+    receiptDate: aagLieferscheinDate_(row[2]),
+    customerRef: aagLieferscheinNorm_(row[3]),
+    orderNumber: aagLieferscheinNorm_(row[4]),
+    priceGross: row[5] === "" || row[5] == null ? "" : Number(row[5]),
+    status: String(row[6] || "").trim()
+  };
+}
+
+function aagLieferscheinPartFromRow_(row) {
+  var name = String(row[10] || "").trim();
+  if (!name) return null;
+  return {
+    name: name,
+    tag: "AAG",
+    supplier: "AAG",
+    hersteller: String(row[8] || "").trim(),
+    herstellerArtnr: String(row[9] || "").trim(),
+    menge: row[11] === "" || row[11] == null ? "" : String(row[11]),
+    itemId: String(row[12] || "").trim(),
+    positionNumber: String(row[7] || "").trim()
+  };
+}
+
+function getAagLieferscheinCache() {
+  try {
+    var sheet = aagLieferscheinSheet_();
+    if (!sheet || sheet.getLastRow() < 2) return { success: true, byLs: {}, version: Date.now() };
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14).getValues();
+    var byLs = {};
+    for (var i = 0; i < values.length; i++) {
+      var header = aagLieferscheinHeaderFromRow_(values[i]);
+      if (!/^LS[A-Z0-9-]{5,}$/.test(header.receiptNumber)) continue;
+      if (!byLs[header.receiptNumber]) byLs[header.receiptNumber] = header;
+    }
+    return { success: true, byLs: byLs, version: Date.now() };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), byLs: {} };
+  }
+}
+
+function getAagLieferscheinByLs(receiptNumber) {
+  try {
+    var want = aagLieferscheinNorm_(receiptNumber);
+    if (!/^LS[A-Z0-9-]{5,}$/.test(want)) return { success: false, message: "Ungültige Lieferscheinnummer", receipt: null };
+    var sheet = aagLieferscheinSheet_();
+    if (!sheet || sheet.getLastRow() < 2) return { success: true, found: false, receipt: null };
+    var matches = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1)
+      .createTextFinder(want)
+      .matchEntireCell(true)
+      .matchCase(false)
+      .findAll();
+    if (!matches.length) return { success: true, found: false, receipt: null };
+    var rows = [];
+    for (var i = 0; i < matches.length; i++) rows.push(matches[i].getRow());
+    rows.sort(function(a, b) { return a - b; });
+    var minRow = rows[0];
+    var maxRow = rows[rows.length - 1];
+    var block = sheet.getRange(minRow, 1, maxRow - minRow + 1, 14).getValues();
+    var receipt = null;
+    var parts = [];
+    for (var b = 0; b < block.length; b++) {
+      if (aagLieferscheinNorm_(block[b][1]) !== want) continue;
+      if (!receipt) receipt = aagLieferscheinHeaderFromRow_(block[b]);
+      var part = aagLieferscheinPartFromRow_(block[b]);
+      if (part) parts.push(part);
+    }
+    if (!receipt) return { success: true, found: false, receipt: null };
+    receipt.parts = parts;
+    return { success: true, found: true, receipt: receipt };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), receipt: null };
+  }
+}
 
   function lagerKistenIsRegalHeader_(v) {
     return /^\s*regal\s+\d+\.\d+\s*$/i.test(String(v == null ? "" : v));
@@ -3522,12 +4867,13 @@ function getRefurbishmentCachePayload() {
           if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(oldText, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 25).setValue(text);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 25).getValue();
           if (check != text) return { success: false, message: "Fehler beim Verifizieren!" };
 
-          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action);
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action, sheetRegal);
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = "Kommentar gespeichert!";
           if (dateResult.updated) msg += " Datum gesetzt!";
@@ -3537,7 +4883,8 @@ function getRefurbishmentCachePayload() {
             message: msg,
             verlaufEntry: verlaufEntry,
             savedKommentar: text,
-            savedRegal: sheetRegal
+            savedRegal: sheetRegal,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -3566,6 +4913,7 @@ function getRefurbishmentCachePayload() {
           if (!baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(sheetKommentar, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 28).setValue(regal);
           SpreadsheetApp.flush();
           var check = sheet.getRange(row, 28).getValue();
@@ -3576,7 +4924,8 @@ function getRefurbishmentCachePayload() {
             message: "In " + regal + " eingelagert!",
             savedKommentar: sheetKommentar,
             savedRegal: regal,
-            verlaufEntry: verlaufEntry
+            verlaufEntry: verlaufEntry,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -3837,6 +5186,7 @@ function getRefurbishmentCachePayload() {
           if (!baselinesMatch_(oldText, sheetRegal, expectedKommentar, expectedRegal)) {
             return buildConcurrencyConflict_(oldText, sheetRegal);
           }
+          var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 25).setValue(text);
           sheet.getRange(row, 25).setBackground("#ff0000");
           sheet.getRange(row, 26).setValue("Teilweise angeliefert");
@@ -3858,7 +5208,7 @@ function getRefurbishmentCachePayload() {
           }
 
           var verlaufAction = regal ? "speichern+regal" : "speichern+status";
-          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, verlaufAction);
+          var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, verlaufAction, sheetRegal);
           var verlaufRegalEntry = regal ? logRegalVerlauf_(stockId, sheetRegal, regal, "speichern+regal") : null;
           var dateResult = applyTrackingDateIfEmpty(stockId);
           var msg = regal
@@ -3872,7 +5222,8 @@ function getRefurbishmentCachePayload() {
             verlaufEntry: verlaufEntry,
             verlaufRegalEntry: verlaufRegalEntry,
             savedKommentar: text,
-            savedRegal: finalRegal
+            savedRegal: finalRegal,
+            priorSnapshot: priorSnapshot
           };
         }
       }
@@ -4031,6 +5382,7 @@ function getRefurbishmentCachePayload() {
 
       result.oldRegal = String(sheetRefurb.getRange(foundRow, 28).getValue() || "LEER");
       result.carolUrl = getSheetCarolUrl_(sheetRefurb, foundRow) || String(sheetRefurb.getRange(foundRow, 3).getValue() || "");
+      result.priorSnapshot = readRefurbPriorSnapshot_(sheetRefurb, foundRow);
 
       sheetRefurb.getRange(foundRow, 25).setBackground("#00FF00");
       sheetRefurb.getRange(foundRow, 26).setValue("Herausgegeben");
@@ -4419,7 +5771,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
 
       var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
       var extraMsgs = [];
-      var printB64 = "";
       if (fieldName === "status") {
         var rowTyp = getNachbestellungRowTyp(sheet, sheetRow, nbLayout, lastCol);
         var rowStockId = normalizeStockId(sheet.getRange(sheetRow, getNachbestellungStockIdCol(sheet, nbLayout)).getValue());
@@ -4446,34 +5797,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
           }
           extraMsgs.push(sendInfoLagerExitChat_(rowStockId, exitBeschreibung));
         }
-
-        if (valLcStatus.indexOf("angeliefert") !== -1) {
-          var rowBeschreibung = "";
-          var hdrData = sheet.getRange(nbLayout.headerRow, 1, 1, lastCol).getValues()[0];
-          var teilCol = getColIndex(hdrData, ["ersatzteil", "teil", "benennung"]);
-          if (teilCol !== -1) rowBeschreibung = String(sheet.getRange(sheetRow, teilCol).getValue() || "").trim();
-          if (!rowStockId) {
-            var rowData = sheet.getRange(sheetRow, 1, 1, lastCol).getValues()[0];
-            for (var r = 0; r < rowData.length; r++) {
-              var cellVal = String(rowData[r] || "").trim();
-              if (!rowStockId && /^[A-Z]{2}\d{4,}/i.test(cellVal)) rowStockId = normalizeStockId(cellVal);
-            }
-          }
-
-          var valStr = String(value || "");
-          var valLc = valStr.toLowerCase();
-          var shouldWerkstattAuftrag = nachbestellungTypShouldPrintWerkstattauftrag(rowTyp);
-          if (shouldWerkstattAuftrag && rowStockId && (valStr.indexOf("Angeliefert/Bereit") !== -1 || valLc.indexOf("komplett angeliefert") !== -1)) {
-            var waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, true);
-            if (!waPrep.success) {
-              waPrep = buildWerkstattauftragPrint_(rowStockId, rowBeschreibung, false);
-            }
-            if (waPrep.message) extraMsgs.push(waPrep.message);
-            if (waPrep.success && waPrep.printB64) {
-              printB64 = waPrep.printB64;
-            }
-          }
-        }
       }
 
       var msg = "Gespeichert!";
@@ -4482,9 +5805,6 @@ function updateNachbestellung(sheetRow, fieldName, value, expectedStockId, expec
         if (extraMsgs[m]) msg += " | " + extraMsgs[m];
       }
       var result = { success: true, message: msg };
-      if (printB64) {
-        result.printB64 = printB64;
-      }
       if (autoLagerortWrite) {
         result.newRegal = nachbestellungRegalUiFromCell(autoLagerortWrite) || autoLagerortWrite;
       }
@@ -4686,6 +6006,7 @@ function nachbestellungTypShouldPrintWerkstattauftrag(typ) {
   if (t.indexOf("nachbestellung") !== -1 && t.indexOf("falsch") !== -1) return true;
   if (t.indexOf("mechanik") !== -1 && t.indexOf("nachbestellung") !== -1) return true;
   if (t.indexOf("q-check") !== -1 || t.indexOf("qcheck") !== -1) return true;
+  if (t.indexOf("verschwunden") !== -1) return true;
   return false;
 }
 

@@ -608,44 +608,41 @@ function pzIsRejectedRef_(v) {
   return /^(PDE|RDE)/i.test(String(v || "").trim());
 }
 
+function pzIsWorkshopStockId_(v) {
+  var s = String(v || "").replace(/[\s-]+/g, "").toUpperCase();
+  if (!/^[A-Z]{2,3}\d{3,8}$/.test(s)) return "";
+  if (/^N4P/.test(s) || pzIsRejectedRef_(s)) return "";
+  return s;
+}
+
+function pzTakeWorkshopRef_(raw) {
+  if (pzIsLabelToken_(raw)) return "";
+  return pzIsWorkshopStockId_(raw);
+}
+
 function pzExtractReference_(text, orderNumber) {
   var t = String(text || "");
   var order = String(orderNumber || "").toUpperCase().replace(/\s+/g, "");
-
-  var m = t.match(/Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{4,8})\b/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
-    return String(m[1]).replace(/[\s-]+/g, "").toUpperCase();
-  }
-
-  m = t.match(/Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{4,8})\b/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) {
-    return String(m[1]).replace(/\s+/g, "").toUpperCase();
-  }
-
-  m = t.match(/Kunden-?Referenz[:\s]+([A-Z]{1,4}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
-
-  m = t.match(/Referenznummer[:\s]*[\r\n: ]+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) return m[1];
-
-  m = t.match(/N4P\s?\d{5,}\s+([A-Z]{1,3}\d{3,})/i);
-  if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1])) return m[1];
-
-  var labelPatterns = [
-    /Kommission[:\s]+([A-Z]{2,3}\d{3,})\b/i,
-    /Kennzeichen[:\s]+([A-Z]{2,3}\d{3,})\b/i,
-    /Bemerkung[:\s]+([A-Z]{2,3}\d{3,})\b/i
+  var patterns = [
+    /Ihre\s*Referenz[:\s]+([A-Z]{2,3}[-]?\d{3,8})(?!\d)/i,
+    /Ext\.?\s*Beleg(?:nr|nummer)?\.?[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kunden-?Referenz[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Referenznummer[:\s]*[\r\n: ]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /N4P\s?\d{5,}\s+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kommission[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Kennzeichen[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i,
+    /Bemerkung[:\s]+([A-Z]{2,3}\d{3,8})(?!\d)/i
   ];
-  for (var lp = 0; lp < labelPatterns.length; lp++) {
-    m = t.match(labelPatterns[lp]);
-    if (m && m[1] && !pzIsLabelToken_(m[1]) && !pzIsRejectedRef_(m[1]) && !/^N4P/i.test(m[1])) {
-      return m[1].toUpperCase();
-    }
+  var i;
+  for (i = 0; i < patterns.length; i++) {
+    var m = t.match(patterns[i]);
+    var id = m && m[1] ? pzTakeWorkshopRef_(m[1]) : "";
+    if (id) return id;
   }
 
-  m = t.match(/(N4P\s?\d{5,})/i);
-  if (m && m[1]) {
-    var cand = m[1].replace(/\s+/g, "").toUpperCase();
+  var n4 = t.match(/(N4P\s?\d{5,})/i);
+  if (n4 && n4[1]) {
+    var cand = n4[1].replace(/\s+/g, "").toUpperCase();
     if (cand !== order) return cand;
   }
 
@@ -689,9 +686,10 @@ function pzExtractStockId_(text) {
 }
 
 function pzDeriveStockFromRef_(stockId, reference) {
-  if (stockId) return stockId;
-  var ref = String(reference || "").replace(/[\s-]+/g, "").toUpperCase();
-  if (/^[A-Z]{2,3}\d{3,}$/.test(ref) && !/^N4P/.test(ref)) return ref;
+  var stock = pzIsWorkshopStockId_(stockId);
+  if (stock) return stock;
+  var ref = pzIsWorkshopStockId_(reference);
+  if (ref) return ref;
   return "";
 }
 
@@ -809,6 +807,55 @@ function pzBuildRowFromPdf_(folder, message, attachment, sender, subject, msgDat
   ];
 }
 
+function pzIsWmOrderMail_(sender, subject) {
+  if (String(sender || "") !== "wm.de") return false;
+  return /online\s+bestellung/i.test(String(subject || ""));
+}
+
+function pzCleanMailHtml_(html) {
+  var h = String(html || "");
+  h = h.replace(/<head[\s\S]*?<\/head>/gi, "");
+  h = h.replace(/<style[\s\S]*?<\/style>/gi, "");
+  h = h.replace(/<script[\s\S]*?<\/script>/gi, "");
+  h = h.replace(/<!--[\s\S]*?-->/g, "");
+  h = h.replace(/<img[^>]*>/gi, "");
+  h = h.replace(/<(\/?)(table|thead|tbody|tr|td|th|br|p|div|b|strong)\b[^>]*>/gi, "<$1$2>");
+  h = h.replace(/<(?!\/?(table|thead|tbody|tr|td|th|br|p|div|b|strong)\b)[^>]+>/gi, "");
+  h = h.replace(/&nbsp;/gi, " ").replace(/[ \t]+/g, " ").replace(/\n\s*\n+/g, "\n");
+  var css = "<style>body{font-family:Arial,sans-serif;font-size:13px;color:#111;padding:14px;}table{border-collapse:collapse;}td,th{border:1px solid #ccc;padding:4px 8px;vertical-align:top;text-align:left;}</style>";
+  return css + h.trim();
+}
+
+function pzBuildRowFromWmMail_(message, sender, subject, msgDate, dedupKey) {
+  var html = "";
+  try { html = message.getBody() || ""; } catch (e) { html = ""; }
+  var plain = "";
+  try { plain = message.getPlainBody() || ""; } catch (e2) { plain = ""; }
+  var cleaned = pzCleanMailHtml_(html);
+  if (!cleaned && !plain) return null;
+  var haystack = subject + "\n" + plain;
+  var order = pzExtractOrderNumber_(haystack);
+  var ref = pzExtractReference_(haystack, order);
+  var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+  return [
+    msgDate,
+    sender,
+    "wm-order",
+    order,
+    ref,
+    stock,
+    pzExtractKennzeichen_(haystack),
+    pzExtractOrderDate_(haystack),
+    subject,
+    "",
+    "",
+    "",
+    cleaned.substring(0, PACKZETTEL_MAX_TEXT),
+    plain.substring(0, PACKZETTEL_MAX_TEXT),
+    dedupKey
+  ];
+}
+
 function pzIsExcludedMessage_(sender, subject) {
   if (String(sender || "") === "wm.de") return true;
   var s = String(subject || "").toLowerCase();
@@ -834,9 +881,19 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
     searchAfter = new Date(incrementalSince.getTime() - GMAIL_INCREMENTAL_OVERLAP_MS);
     if (searchAfter.getTime() < cutoff.getTime()) searchAfter = cutoff;
   }
-  var query = PACKZETTEL_QUERY + " after:" + getGmailSyncAfterQuery_(searchAfter);
+  var afterQuery = getGmailSyncAfterQuery_(searchAfter);
   var seenThreads = {};
-  var threads = fetchGmailThreadsSince_(query, cutoff, seenThreads, isIncremental ? 5 : 15);
+  var queries = [
+    "from:noreply@n4.parts has:attachment after:" + afterQuery,
+    "from:alfah.de has:attachment after:" + afterQuery,
+    "from:wm.de subject:\"Online Bestellung\" after:" + afterQuery,
+    PACKZETTEL_QUERY + " after:" + afterQuery
+  ];
+  var threads = [];
+  for (var qi = 0; qi < queries.length; qi++) {
+    var found = fetchGmailThreadsSince_(queries[qi], cutoff, seenThreads, qi < 3 ? 10 : (isIncremental ? 8 : 15));
+    for (var ti = 0; ti < found.length; ti++) threads.push(found[ti]);
+  }
 
   var folder = pzGetOrCreateFolder_();
   var buffer = [];
@@ -868,9 +925,28 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
 
       var subject = String(message.getSubject() || "");
       var sender = pzSenderLabel_(message.getFrom());
-      if (pzIsExcludedMessage_(sender, subject)) continue;
       var messageId = message.getId();
-      var attachments = message.getAttachments({ includeInlineImages: false, includeAttachments: true }) || [];
+      if (pzIsWmOrderMail_(sender, subject)) {
+        var wmKey = messageId + "|wm-order";
+        if (existingKeys[wmKey]) continue;
+        try {
+          var wmRow = pzBuildRowFromWmMail_(message, sender, subject, msgDate, wmKey);
+          if (wmRow) {
+            buffer.push(wmRow);
+            existingKeys[wmKey] = true;
+            processed++;
+          }
+        } catch (wmErr) {}
+        if (buffer.length >= 8) flush();
+        continue;
+      }
+      if (pzIsExcludedMessage_(sender, subject)) continue;
+      var attachments = [];
+      try {
+        attachments = message.getAttachments() || [];
+      } catch (attErr) {
+        attachments = [];
+      }
       var pdfs = [];
       for (var a = 0; a < attachments.length; a++) {
         var ct = String(attachments[a].getContentType() || "").toLowerCase();
@@ -883,9 +959,13 @@ function pzCollectRows_(sheet, existingKeys, incrementalSince) {
           if (!budgetLeft()) { reachedLimit = true; break; }
           var dk = messageId + "|" + (pdfs[p].getName() || ("pdf" + p));
           if (existingKeys[dk]) continue;
-          existingKeys[dk] = true;
-          buffer.push(pzBuildRowFromPdf_(folder, message, pdfs[p], sender, subject, msgDate, dk));
-          processed++;
+          try {
+            buffer.push(pzBuildRowFromPdf_(folder, message, pdfs[p], sender, subject, msgDate, dk));
+            existingKeys[dk] = true;
+            processed++;
+          } catch (rowErr) {
+            continue;
+          }
           if (buffer.length >= 8) flush();
         }
       }
@@ -937,7 +1017,56 @@ function syncPackzettelToSheet() {
 
   var partial = !!result.reachedLimit;
   if (!partial) pzSetLastSync_(sheet, new Date());
-  return { success: true, added: result.added, partial: partial, incremental: !!lastSync };
+  var retried = { ocred: 0, remaining: 0 };
+  try { retried = pzRetryEmptyOcr_(sheet, 10, 90000); } catch (retryErr) {}
+  return { success: true, added: result.added, partial: partial, incremental: !!lastSync, ocrRetried: retried.ocred, ocrRemaining: retried.remaining };
+}
+
+function pzRetryEmptyOcr_(sheet, maxDocs, budgetMs) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2 || !PACKZETTEL_ENABLE_OCR) return { ocred: 0, remaining: 0 };
+  var n = lastRow - 1;
+  var values = sheet.getRange(2, 1, n, 15).getValues();
+  var startMs = Date.now();
+  var ocred = 0;
+  var remaining = 0;
+  for (var i = values.length - 1; i >= 0; i--) {
+    var row = values[i];
+    if (String(row[2] || "") !== "pdf") continue;
+    if (String(row[13] || "").trim()) continue;
+    var fileId = String(row[9] || "").trim();
+    if (!fileId) continue;
+    if (ocred >= maxDocs || Date.now() - startMs > budgetMs) {
+      remaining++;
+      continue;
+    }
+    var text = "";
+    try {
+      text = pzOcrPdfText_(DriveApp.getFileById(fileId).getBlob());
+    } catch (e) {
+      text = "";
+    }
+    if (!text) {
+      remaining++;
+      continue;
+    }
+    ocred++;
+    var haystack = text + "\n" + String(row[8] || "");
+    var order = pzExtractOrderNumber_(haystack) || String(row[3] || "");
+    var ref = pzExtractReference_(haystack, order);
+    var stock = pzDeriveStockFromRef_(pzExtractStockId_(haystack), ref);
+    var sheetRow = i + 2;
+    sheet.getRange(sheetRow, 4, 1, 5).setValues([[
+      order,
+      ref || row[4],
+      stock || row[5],
+      pzExtractKennzeichen_(haystack) || row[6],
+      pzExtractOrderDate_(haystack) || row[7]
+    ]]);
+    sheet.getRange(sheetRow, 14).setValue(text.substring(0, PACKZETTEL_MAX_TEXT));
+  }
+  if (ocred) SpreadsheetApp.flush();
+  return { ocred: ocred, remaining: remaining };
 }
 
 function syncPackzettelFull() {
@@ -1014,6 +1143,45 @@ function reprocessPackzettelMissing() {
   return { success: true, updated: updated, ocred: ocred, remaining: remaining };
 }
 
+function backfillWmOrders() {
+  var sheet = pzGetOrCreateSheet_();
+  var existingKeys = pzReadExistingKeys_(sheet);
+  var cutoff = pzGetSyncCutoff_();
+  var query = "from:wm.de subject:\"Online Bestellung\" after:" + getGmailSyncAfterQuery_(cutoff);
+  var threads = fetchGmailThreadsSince_(query, cutoff, {}, 10);
+  var rows = [];
+  var startMs = Date.now();
+  var stopped = false;
+  for (var t = 0; t < threads.length; t++) {
+    if (Date.now() - startMs > 240000) { stopped = true; break; }
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      var message = messages[m];
+      var msgDate = message.getDate();
+      if (msgDate.getTime() < cutoff.getTime()) continue;
+      var subject = String(message.getSubject() || "");
+      var sender = pzSenderLabel_(message.getFrom());
+      if (!pzIsWmOrderMail_(sender, subject)) continue;
+      var key = message.getId() + "|wm-order";
+      if (existingKeys[key]) continue;
+      try {
+        var row = pzBuildRowFromWmMail_(message, sender, subject, msgDate, key);
+        if (row) {
+          rows.push(row);
+          existingKeys[key] = true;
+        }
+      } catch (e) {}
+    }
+  }
+  pzAppendRows_(sheet, rows);
+  SpreadsheetApp.flush();
+  return { success: true, added: rows.length, threads: threads.length, partial: stopped };
+}
+
+function testBackfillWmOrders() {
+  Logger.log(JSON.stringify(backfillWmOrders(), null, 2));
+}
+
 function testReprocessPackzettel() {
   Logger.log(JSON.stringify(reprocessPackzettelMissing(), null, 2));
 }
@@ -1033,7 +1201,7 @@ function cleanupPackzettelWmRows() {
     var row = values[i];
     var sender = String(row[1] || "").trim();
     var subject = String(row[8] || "");
-    if (!pzIsExcludedMessage_(sender, subject)) {
+    if (String(row[2] || "") === "wm-order" || !pzIsExcludedMessage_(sender, subject)) {
       keep.push(row);
       continue;
     }

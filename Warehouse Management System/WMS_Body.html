@@ -80,6 +80,13 @@
                   <span class="wms-menuitem-sub">Öffnet Tool in neuem Tab</span>
                 </span>
               </button>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openReifenAussenScan(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">📤</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Reifen Aussen Scan</span>
+                  <span class="wms-menuitem-sub">Store-Mode Dump · Raus / B2A1</span>
+                </span>
+              </button>
             </div>
             <div class="wms-menugroup" role="presentation">
               <div class="wms-menugroup-label">Bestellungen</div>
@@ -240,6 +247,7 @@
     <div class="info-box schaeden-list" id="infoBestellung">-</div>
     <div class="pz-card-action" id="pzCardAction" style="display:none;">
       <button type="button" class="btn-pz-open btn-glow" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
+      <button type="button" class="btn-pz-parts btn-glow" id="btnPzParts" style="display:none;" onclick="openPzPartsPickerManual()">Teile aus Packzettel</button>
     </div>
     <div class="wss-card-action" id="wssCardAction">
       <button type="button" class="btn-wss-open btn-glow" onclick="openWssModal()">🪟 WSS · Vasold bearbeiten</button>
@@ -499,6 +507,31 @@
           <tr><td colspan="8" style="text-align:center;color:var(--foreground-muted);padding:18px;">Lade Nachbestellungen...</td></tr>
         </tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<div class="nb-choose-modal pz-parts-modal" id="pzPartsModal" onclick="if(event.target===this)closePzPartsPicker()">
+  <div class="nb-choose-dialog pz-parts-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Teile aus Packzettel</div>
+      <button type="button" class="nb-choose-x" onclick="closePzPartsPicker()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub">Hersteller, Artikelnummer, Name und Menge. Ankreuzen übernimmt die Zeile in den Kommentar. Speichern danach über Kommentar + Regal.</div>
+    <div class="pz-parts-counts" id="pzPartsCounts"></div>
+    <div class="pz-parts-supplier-select" id="pzPartsSupplierSelect"></div>
+    <div class="pz-parts-toolbar">
+      <button type="button" class="pz-parts-mini" onclick="setPzPartsChecks(true)">Alle</button>
+      <button type="button" class="pz-parts-mini" onclick="setPzPartsChecks(false)">Keine</button>
+    </div>
+    <div class="pz-parts-list" id="pzPartsList"></div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" onclick="closePzPartsPicker()">
+        <span class="nb-choose-btn-txt">Abbrechen</span>
+      </button>
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="confirmPzPartsPicker()">
+        <span class="nb-choose-btn-txt">Übernehmen</span>
+      </button>
     </div>
   </div>
 </div>
@@ -911,6 +944,30 @@
         </div>
       </div>
     </div>
+    <div class="wss-eb-lock" id="wssEbLock" aria-hidden="true">
+      <div class="wss-eb-lock-card">
+        <span class="hud-spin"></span>
+        <div class="wss-eb-lock-text" id="wssEbLockText">Speichere…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nb-choose-modal" id="regalRequiredModal" aria-hidden="true">
+  <div class="nb-choose-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Regal fehlt</div>
+      <button type="button" class="nb-choose-x" onclick="closeRegalRequiredModal()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub">Ohne Regalplatz (z.B. 3.4) wird hier nichts gespeichert. Sonst sucht ihr die Kiste später im ganzen Lager.</div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" onclick="closeRegalRequiredModal()">
+        <span class="nb-choose-btn-txt">Abbrechen</span>
+      </button>
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="regalRequiredOpenScan()">
+        <span class="nb-choose-btn-txt">Regal scannen und speichern</span>
+      </button>
+    </div>
   </div>
 </div>
 
@@ -943,6 +1000,22 @@
       </div>
     </div>
     <div class="hud-busy-text" id="hudBusyText"></div>
+  </div>
+</div>
+
+<div id="unsavedLoadOverlay" class="unsaved-load-overlay" aria-hidden="true" role="alertdialog" aria-modal="true" aria-labelledby="unsavedLoadTitle">
+  <div class="unsaved-load-card">
+    <div class="stock-lock-kicker">Ungespeichert</div>
+    <div class="stock-lock-title" id="unsavedLoadTitle">Kommentar oder Regal noch nicht gespeichert</div>
+    <div class="stock-lock-stock" id="unsavedLoadStock"></div>
+    <div class="unsaved-load-label">Kommentar</div>
+    <div class="unsaved-load-comment" id="unsavedLoadComment"></div>
+    <div class="unsaved-load-regal" id="unsavedLoadRegal"></div>
+    <div class="unsaved-load-error" id="unsavedLoadError"></div>
+    <div class="stock-lock-actions">
+      <button type="button" class="stock-lock-btn stock-lock-btn--primary" id="unsavedLoadSaveBtn" onclick="unsavedOverlaySave()">Jetzt speichern</button>
+      <button type="button" class="stock-lock-btn stock-lock-btn--ghost" id="unsavedLoadSkipBtn" onclick="unsavedOverlayDiscard()">Passt, nächsten Auftrag laden</button>
+    </div>
   </div>
 </div>
 
