@@ -31,6 +31,10 @@
   var pzPartsCacheMap = null;
   var pzSearchIndex = null;
   var pzPartsCacheLoading = false;
+  var aagLieferscheinCacheMap = null;
+  var aagLieferscheinCacheLoading = false;
+  var pendingAagReceipt = null;
+  var pendingAagStock = '';
   var kommentarVerlaufCache = null;
   var kommentarVerlaufLoading = false;
   var REFURB_CACHE_POLL_MS = 75000;
@@ -4223,6 +4227,47 @@
       .getPackzettelPartsCache();
   }
 
+  function loadAagLieferscheinCache(force, onDone) {
+    if (aagLieferscheinCacheLoading && !force) {
+      if (typeof onDone === 'function') onDone();
+      return;
+    }
+    aagLieferscheinCacheLoading = true;
+    google.script.run
+      .withSuccessHandler(function(res) {
+        aagLieferscheinCacheLoading = false;
+        if (res && res.success && res.byLs) aagLieferscheinCacheMap = res.byLs;
+        if (typeof onDone === 'function') onDone();
+      })
+      .withFailureHandler(function() {
+        aagLieferscheinCacheLoading = false;
+        if (typeof onDone === 'function') onDone();
+      })
+      .getAagLieferscheinCache();
+  }
+
+  function aagLieferscheinFromCache(receiptNumber) {
+    if (!aagLieferscheinCacheMap) return null;
+    var key = String(receiptNumber || '').replace(/\s+/g, '').toUpperCase();
+    return aagLieferscheinCacheMap[key] || null;
+  }
+
+  function pzMergeScannedAagParts(parts, stockId) {
+    var base = [];
+    var sid = normalizeStockInput(stockId);
+    if (!pendingAagReceipt || normalizeStockInput(pendingAagStock) !== sid) return (parts || []).slice();
+    for (var b = 0; b < (parts || []).length; b++) {
+      if (String((parts[b] && parts[b].tag) || '').toUpperCase() !== 'AAG') base.push(parts[b]);
+    }
+    var delivered = pendingAagReceipt.parts || [];
+    for (var i = 0; i < delivered.length; i++) {
+      if (delivered[i] && delivered[i].name) base.push(delivered[i]);
+    }
+    pendingAagReceipt = null;
+    pendingAagStock = '';
+    return base;
+  }
+
   function pzPartsFromCache(stockId) {
     if (!pzPartsCacheMap) return null;
     var sid = normalizeStockInput(stockId);
@@ -4268,7 +4313,7 @@
     function onParts(parts) {
       if (normalizeStockInput(stockId) !== normalizeStockInput(currentStock)) return;
       if (normalizeStockInput(hudPopupStock) !== normalizeStockInput(stockId)) return;
-      pzPartsCache = parts || [];
+      pzPartsCache = pzMergeScannedAagParts(parts || [], stockId);
       pzPartsStock = stockId;
       updatePzPartsButton(pzPartsCache.length);
       if (nbDecided && !hudNbOpen) revealPzParts(stockId);
@@ -8492,10 +8537,18 @@
 
   function handleOrderNumberSearchResult(res) {
     if(res.found && res.stockId) {
+      if (pendingAagReceipt) pendingAagStock = normalizeStockInput(res.stockId);
       setStatus("✅ " + res.message + " → " + res.stockId, "#56d364");
       document.getElementById('searchInput').value = res.stockId;
       setHudBusy(true, 'Lade Auftrag…');
       setTimeout(function() { loadData(); }, 80);
+    } else if (pendingAagReceipt) {
+      var unresolvedRef = String(pendingAagReceipt.customerRef || '');
+      pendingAagReceipt = null;
+      pendingAagStock = '';
+      setHudBusy(false);
+      toggleUI(true);
+      setStatus("❌ AAG Kundenreferenz '" + unresolvedRef + "' konnte keiner Stock-ID zugeordnet werden.", "#f85149");
     } else if (pendingStellantisTracking) {
       showStellantisPackageWait();
     } else {
@@ -8571,10 +8624,82 @@
 
   function requestOrderNumberSearch(id) {
     google.script.run.withSuccessHandler(handleOrderNumberSearchResult).withFailureHandler(function(err) {
+      pendingAagReceipt = null;
+      pendingAagStock = '';
       setHudBusy(false);
       setStatus("❌ Fehler: " + (err.message || String(err)), "#f85149");
       toggleUI(true);
     }).searchByOrderNumber(id);
+  }
+
+  function isAagLieferscheinQuery(value) {
+    return /^LS[A-Z0-9-]{5,}$/i.test(String(value || '').replace(/\s+/g, ''));
+  }
+
+  function resolveAagLieferscheinReceipt(receipt) {
+    var ref = normalizeStockInput(receipt && receipt.customerRef);
+    if (!ref) {
+      setHudBusy(false);
+      toggleUI(true);
+      setStatus('❌ AAG Lieferschein hat keine Kundenreferenz.', '#f85149');
+      return;
+    }
+    pendingAagReceipt = receipt;
+    if (isStockIdFormat(ref)) {
+      pendingAagStock = ref;
+      document.getElementById('searchInput').value = ref;
+      setStatus('✅ ' + receipt.receiptNumber + ' → ' + ref, '#56d364');
+      setHudBusy(true, 'Lade Auftrag…');
+      setTimeout(function() { loadData(); }, 80);
+      return;
+    }
+    document.getElementById('searchInput').value = ref;
+    setStatus('🔍 ' + receipt.receiptNumber + ' → Kundenreferenz ' + ref, '#3FA0DB');
+    var local = searchByOrderNumberFromCache(ref, refurbCache);
+    if (local && local.found) {
+      handleOrderNumberSearchResult(local);
+      return;
+    }
+    requestOrderNumberSearch(ref);
+  }
+
+  function loadAagLieferschein(receiptNumber) {
+    var ls = String(receiptNumber || '').replace(/\s+/g, '').toUpperCase();
+    var cached = aagLieferscheinFromCache(ls);
+    setStatus(cached ? '📦 Lade AAG Lieferschein ' + ls + '…' : '🔍 Suche AAG Lieferschein ' + ls + '…', '#F27420');
+    toggleUI(false);
+    setHudBusy(true, 'Lade AAG Lieferschein…');
+    google.script.run
+      .withSuccessHandler(function(res) {
+        if (!res || !res.success) {
+          setHudBusy(false);
+          toggleUI(true);
+          setStatus('❌ AAG Lieferschein konnte nicht gelesen werden: ' + ((res && res.message) || 'Unbekannter Fehler'), '#f85149');
+          return;
+        }
+        if (!res.found || !res.receipt) {
+          setHudBusy(false);
+          toggleUI(true);
+          setStatus('❌ ' + ls + ' noch nicht im AAG Sync. Portal prüfen oder bis zum nächsten Sync warten.', '#f85149');
+          return;
+        }
+        if (!aagLieferscheinCacheMap) aagLieferscheinCacheMap = {};
+        aagLieferscheinCacheMap[ls] = {
+          receiptNumber: res.receipt.receiptNumber,
+          receiptDate: res.receipt.receiptDate,
+          customerRef: res.receipt.customerRef,
+          orderNumber: res.receipt.orderNumber,
+          priceGross: res.receipt.priceGross,
+          status: res.receipt.status
+        };
+        resolveAagLieferscheinReceipt(res.receipt);
+      })
+      .withFailureHandler(function(err) {
+        setHudBusy(false);
+        toggleUI(true);
+        setStatus('❌ AAG Sheet Fehler: ' + (err && err.message ? err.message : String(err)), '#f85149');
+      })
+      .getAagLieferscheinByLs(ls);
   }
 
   var wmsLoadSeq = 0;
@@ -8736,6 +8861,11 @@
       }
     }
     unsavedLoadBypass = false;
+
+    if (isAagLieferscheinQuery(id)) {
+      loadAagLieferschein(id);
+      return;
+    }
 
     var stel = (typeof parseStellantisScan === 'function') ? parseStellantisScan(id) : null;
     if (stel && stel.stockId && isStockIdFormat(stel.stockId)) {
@@ -9617,7 +9747,9 @@
   startRefurbishmentBackgroundRefresh();
   loadNbChooserCache(true);
   loadPzPartsCache(true);
+  loadAagLieferscheinCache(true);
   setInterval(function() { loadPzPartsCache(true); }, REFURB_CACHE_POLL_MS);
+  setInterval(function() { loadAagLieferscheinCache(true); }, REFURB_CACHE_POLL_MS);
   setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
@@ -9625,6 +9757,7 @@
       loadKommentarVerlaufCache(true);
       loadNbChooserCache(true);
       loadPzPartsCache(true);
+      loadAagLieferscheinCache(true);
       if (stockLockHeldId && normalizeStockIdJs(currentStock) === stockLockHeldId) {
         google.script.run
           .withSuccessHandler(function() {})

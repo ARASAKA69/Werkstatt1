@@ -31,6 +31,20 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.20",
+    date: "12.10.2026",
+    notes:
+      "• AAG Lieferschein Barcode (LS...) kann jetzt direkt in der WMS Suche gescannt werden. WMS holt Kundenreferenz + gelieferte Teile aus dem neuen AAG Lieferscheine Sheet, findet damit die Stock-ID und öffnet den Auftrag\n\n" +
+      "• Genau die Positionen vom gescannten Lieferschein landen mit Menge und AAG Badge in Teile aus Packzettel\n\n" +
+      "• Tampermonkey synchronisiert neue AAG Lieferungen alle 2 Minuten im Hintergrund. Token bleibt nur im Browser, nach Ablauf nur im AAG Portal neu einloggen und Seite aktualisieren\n\n" +
+      "• AAG HTTP 400 beim Abruf behoben: Datumsende und Seitennummerierung entsprechen jetzt exakt der Portal-API\n\n" +
+      "• Gleichzeitige AAG-Synchronisierung aus mehreren Portal-Tabs abgesichert und große Übertragungen in stabile Teilpakete aufgeteilt\n\n" +
+      "• Blattname auf History 2026 korrigiert\n\n" +
+      "• AAG synchronisiert jetzt vier Kalendertage, prüft alle 2 Minuten auf neue Lieferscheine und entfernt doppelte Lieferschein-Positionen automatisch\n\n" +
+      "• Der AAG-Portal-Tab aktualisiert sich im Hintergrund alle 10 Minuten automatisch\n\n" +
+      "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden"
+  },
+  {
     version: "2.2.19",
     date: "07.10.2026",
     notes:
@@ -296,6 +310,9 @@ const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
 const KOMMENTAR_VERLAUF_SHEET_ID = "11d2YPM4wqLbGMkTCL7-lZJ1GXcHydNiNjOvRmkSxPEM";
 const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
+const AAG_LIEFERSCHEINE_SHEET_ID = "1CnV8VDxHAk-xzuOzfS2qjHgVR9zVtQYa90g0L7FHUXA";
+const AAG_LIEFERSCHEINE_TAB = "History 2026";
+const AAG_LIEFERSCHEINE_TAB_ID = 1753611365;
 const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
 const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
 const INFO_LAGER_EXIT_HUD_BUTTON = 1;
@@ -4638,6 +4655,101 @@ function getPackzettelPartsCache() {
     return { success: true, byStock: out, searchIndex: searchIndex, version: Date.now() };
   } catch (err) {
     return { success: false, message: err.message, byStock: {} };
+  }
+}
+
+function aagLieferscheinSheet_() {
+  var ss = SpreadsheetApp.openById(AAG_LIEFERSCHEINE_SHEET_ID);
+  return ss.getSheetById(AAG_LIEFERSCHEINE_TAB_ID)
+    || ss.getSheetByName(AAG_LIEFERSCHEINE_TAB)
+    || ss.getSheetByName("Hisory 2026");
+}
+
+function aagLieferscheinNorm_(value) {
+  return String(value || "").replace(/\s+/g, "").toUpperCase();
+}
+
+function aagLieferscheinDate_(value) {
+  if (value instanceof Date || Object.prototype.toString.call(value) === "[object Date]") {
+    return Utilities.formatDate(new Date(value), "Europe/Berlin", "dd.MM.yyyy");
+  }
+  return String(value || "").trim();
+}
+
+function aagLieferscheinHeaderFromRow_(row) {
+  return {
+    receiptNumber: aagLieferscheinNorm_(row[1]),
+    receiptDate: aagLieferscheinDate_(row[2]),
+    customerRef: aagLieferscheinNorm_(row[3]),
+    orderNumber: aagLieferscheinNorm_(row[4]),
+    priceGross: row[5] === "" || row[5] == null ? "" : Number(row[5]),
+    status: String(row[6] || "").trim()
+  };
+}
+
+function aagLieferscheinPartFromRow_(row) {
+  var name = String(row[10] || "").trim();
+  if (!name) return null;
+  return {
+    name: name,
+    tag: "AAG",
+    supplier: "AAG",
+    hersteller: String(row[8] || "").trim(),
+    herstellerArtnr: String(row[9] || "").trim(),
+    menge: row[11] === "" || row[11] == null ? "" : String(row[11]),
+    itemId: String(row[12] || "").trim(),
+    positionNumber: String(row[7] || "").trim()
+  };
+}
+
+function getAagLieferscheinCache() {
+  try {
+    var sheet = aagLieferscheinSheet_();
+    if (!sheet || sheet.getLastRow() < 2) return { success: true, byLs: {}, version: Date.now() };
+    var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 14).getValues();
+    var byLs = {};
+    for (var i = 0; i < values.length; i++) {
+      var header = aagLieferscheinHeaderFromRow_(values[i]);
+      if (!/^LS[A-Z0-9-]{5,}$/.test(header.receiptNumber)) continue;
+      if (!byLs[header.receiptNumber]) byLs[header.receiptNumber] = header;
+    }
+    return { success: true, byLs: byLs, version: Date.now() };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), byLs: {} };
+  }
+}
+
+function getAagLieferscheinByLs(receiptNumber) {
+  try {
+    var want = aagLieferscheinNorm_(receiptNumber);
+    if (!/^LS[A-Z0-9-]{5,}$/.test(want)) return { success: false, message: "Ungültige Lieferscheinnummer", receipt: null };
+    var sheet = aagLieferscheinSheet_();
+    if (!sheet || sheet.getLastRow() < 2) return { success: true, found: false, receipt: null };
+    var matches = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1)
+      .createTextFinder(want)
+      .matchEntireCell(true)
+      .matchCase(false)
+      .findAll();
+    if (!matches.length) return { success: true, found: false, receipt: null };
+    var rows = [];
+    for (var i = 0; i < matches.length; i++) rows.push(matches[i].getRow());
+    rows.sort(function(a, b) { return a - b; });
+    var minRow = rows[0];
+    var maxRow = rows[rows.length - 1];
+    var block = sheet.getRange(minRow, 1, maxRow - minRow + 1, 14).getValues();
+    var receipt = null;
+    var parts = [];
+    for (var b = 0; b < block.length; b++) {
+      if (aagLieferscheinNorm_(block[b][1]) !== want) continue;
+      if (!receipt) receipt = aagLieferscheinHeaderFromRow_(block[b]);
+      var part = aagLieferscheinPartFromRow_(block[b]);
+      if (part) parts.push(part);
+    }
+    if (!receipt) return { success: true, found: false, receipt: null };
+    receipt.parts = parts;
+    return { success: true, found: true, receipt: receipt };
+  } catch (err) {
+    return { success: false, message: String(err.message || err), receipt: null };
   }
 }
 
