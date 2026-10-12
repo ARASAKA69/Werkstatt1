@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Lieferschein Sync
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Synchronisiert AAG Lieferscheine ins WMS
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -23,12 +23,15 @@
   const API_BASE = 'https://portal.allianceautomotive.de/api/v1/customer/receipt';
   const POLL_MS = 2 * 60 * 1000;
   const SEEN_KEY = 'aag_lieferschein_seen_v1';
+  const BACKFILL_KEY = 'aag_lieferschein_backfill_4d_v1';
+  const RELOAD_KEY = 'aag_lieferschein_reload_v1';
   const MAX_RECEIPTS_PER_RUN = 150;
+  const UPLOAD_BATCH_SIZE = 25;
+  const AUTO_RELOAD_MS = 10 * 60 * 1000;
   let bearerToken = '';
   let syncRunning = false;
   let syncTimer = 0;
   let statusEl = null;
-  let lastTokenAt = 0;
 
   function configured() {
     return /^https:\/\/script\.google\.com\/.+\/exec$/i.test(SYNC_WEB_APP_URL)
@@ -62,7 +65,6 @@
     const match = raw.match(/^Bearer\s+(.+)$/i);
     if (!match || match[1].length < 40) return;
     bearerToken = match[1];
-    lastTokenAt = Date.now();
     setStatus(configured() ? 'AAG Sync bereit' : 'AAG Sync nicht eingerichtet', configured() ? '#176b45' : '#a45b00');
     scheduleSync(800);
   }
@@ -120,16 +122,21 @@
       bearerToken = '';
       throw new Error('LOGIN_REQUIRED');
     }
-    if (response.status < 200 || response.status >= 300) throw new Error('AAG_HTTP_' + response.status);
+    if (response.status < 200 || response.status >= 300) {
+      const detail = String(response.responseText || '')
+        .replace(/\s+/g, ' ')
+        .replace(/Bearer\s+[A-Za-z0-9._~-]+/gi, 'Bearer [hidden]')
+        .slice(0, 180);
+      throw new Error('AAG_HTTP_' + response.status + (detail ? ': ' + detail : ''));
+    }
     return JSON.parse(String(response.responseText || '{}'));
   }
 
   function dateWindow() {
     const from = new Date();
-    from.setDate(from.getDate() - 1);
+    from.setDate(from.getDate() - 3);
     from.setHours(0, 0, 0, 0);
     const to = new Date();
-    to.setDate(to.getDate() + 1);
     to.setHours(23, 59, 59, 999);
     return {
       from: Math.floor(from.getTime() / 1000),
@@ -137,22 +144,32 @@
     };
   }
 
-  async function fetchHeaders() {
+  async function fetchHeaders(seen, backfillPending) {
     const dates = dateWindow();
-    let page = 0;
+    let page = 1;
     let pages = 1;
+    let knownPageStreak = 0;
     const all = [];
-    while (page < pages && page < 20) {
+    while (page <= pages && page <= 100) {
       const url = API_BASE + '/header?startDate=' + dates.from
         + '&endDate=' + dates.to
         + '&page=' + page
-        + '&size=100&type=DELIVERY&orderColumn=documentDate&order=DESC';
+        + '&size=10&type=DELIVERY&orderColumn=documentDate&order=DESC';
       const payload = await apiJson(url);
       const data = payload && Array.isArray(payload.data) ? payload.data : [];
+      let unknownOnPage = 0;
       for (let i = 0; i < data.length; i++) {
-        if (/^LS[A-Z0-9-]{5,}$/i.test(String(data[i].receiptNumber || ''))) all.push(data[i]);
+        const ls = String(data[i].receiptNumber || '').toUpperCase();
+        if (/^LS[A-Z0-9-]{5,}$/i.test(ls)) {
+          all.push(data[i]);
+          if (!seen[ls]) unknownOnPage++;
+        }
       }
       pages = Math.max(1, Number(payload.totalPages) || 1);
+      if (!backfillPending) {
+        knownPageStreak = unknownOnPage === 0 ? knownPageStreak + 1 : 0;
+        if (knownPageStreak >= 2) break;
+      }
       page++;
     }
     return all;
@@ -192,11 +209,16 @@
         key: SYNC_KEY,
         receipts: receipts
       }),
-      timeout: 60000
+      timeout: 120000
     });
     if (response.status < 200 || response.status >= 400) throw new Error('SHEET_HTTP_' + response.status);
     const result = JSON.parse(String(response.responseText || '{}'));
-    if (!result.success) throw new Error(result.error || 'SHEET_REJECTED');
+    if (!result.success) {
+      const detail = String(result.error || response.responseText || 'SHEET_REJECTED')
+        .replace(/\s+/g, ' ')
+        .slice(0, 180);
+      throw new Error(detail);
+    }
     return result;
   }
 
@@ -206,6 +228,20 @@
   }
 
   async function runSync() {
+    if (navigator.locks && navigator.locks.request) {
+      await navigator.locks.request('aag-lieferschein-sync-v1', { ifAvailable: true }, async function(lock) {
+        if (!lock) {
+          scheduleSync(POLL_MS);
+          return;
+        }
+        await runSyncExclusive();
+      });
+      return;
+    }
+    await runSyncExclusive();
+  }
+
+  async function runSyncExclusive() {
     if (syncRunning) return;
     if (!configured()) {
       setStatus('AAG Sync: URL/Key eintragen', '#a45b00');
@@ -218,17 +254,25 @@
       return;
     }
     syncRunning = true;
+    let nextSyncDelay = POLL_MS;
     setStatus('AAG Sync läuft…', '#005f8f');
     try {
-      const headers = await fetchHeaders();
       const seen = trimSeen(loadSeen());
-      const fresh = [];
-      for (let i = 0; i < headers.length && fresh.length < MAX_RECEIPTS_PER_RUN; i++) {
+      const backfillPending = !GM_getValue(BACKFILL_KEY, false);
+      const headers = await fetchHeaders(seen, backfillPending);
+      const allFresh = [];
+      const freshSet = {};
+      for (let i = 0; i < headers.length; i++) {
         const ls = String(headers[i].receiptNumber || '').toUpperCase();
-        if (!seen[ls]) fresh.push(ls);
+        if (!seen[ls] && !freshSet[ls]) {
+          freshSet[ls] = true;
+          allFresh.push(ls);
+        }
       }
+      const fresh = allFresh.slice(0, MAX_RECEIPTS_PER_RUN);
       if (!fresh.length) {
         GM_setValue(SEEN_KEY, seen);
+        if (backfillPending) GM_setValue(BACKFILL_KEY, true);
         setStatus('AAG Sync aktuell · ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), '#176b45');
       } else {
         const receipts = [];
@@ -236,11 +280,20 @@
           setStatus('AAG Sync ' + (r + 1) + '/' + fresh.length, '#005f8f');
           receipts.push(await fetchReceipt(fresh[r]));
         }
-        const result = await sendToSheet(receipts);
-        const now = Date.now();
-        for (let s = 0; s < fresh.length; s++) seen[fresh[s]] = now;
-        GM_setValue(SEEN_KEY, seen);
-        setStatus('AAG Sync: ' + result.receipts + ' neu · ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), '#176b45');
+        let synced = 0;
+        for (let offset = 0; offset < receipts.length; offset += UPLOAD_BATCH_SIZE) {
+          const batch = receipts.slice(offset, offset + UPLOAD_BATCH_SIZE);
+          setStatus('AAG speichert ' + (offset + 1) + '–' + Math.min(offset + batch.length, receipts.length) + '/' + receipts.length, '#005f8f');
+          await sendToSheet(batch);
+          const now = Date.now();
+          for (let s = offset; s < offset + batch.length; s++) seen[fresh[s]] = now;
+          synced += batch.length;
+          GM_setValue(SEEN_KEY, seen);
+        }
+        const backfillHasMore = backfillPending && allFresh.length > MAX_RECEIPTS_PER_RUN;
+        if (backfillPending && !backfillHasMore) GM_setValue(BACKFILL_KEY, true);
+        if (backfillHasMore) nextSyncDelay = 5000;
+        setStatus('AAG Sync: ' + synced + ' neu' + (backfillHasMore ? ' · Rückstand folgt' : '') + ' · ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), '#176b45');
       }
     } catch (err) {
       const msg = String(err && err.message || err);
@@ -251,16 +304,24 @@
       }
     } finally {
       syncRunning = false;
-      scheduleSync(POLL_MS);
+      scheduleSync(nextSyncDelay);
     }
   }
 
   patchPortalRequests();
   document.addEventListener('DOMContentLoaded', function() {
     ensureStatus();
+    if (!GM_getValue(RELOAD_KEY, 0)) GM_setValue(RELOAD_KEY, Date.now());
     if (!bearerToken) setStatus(configured() ? 'AAG Sync wartet auf Portal…' : 'AAG Sync: URL/Key eintragen', configured() ? '#005f8f' : '#a45b00');
   });
   setInterval(function() {
     patchPortalRequests();
+  }, 30000);
+  setInterval(function() {
+    if (!document.hidden || syncRunning) return;
+    const lastReload = Number(GM_getValue(RELOAD_KEY, 0)) || 0;
+    if (Date.now() - lastReload < AUTO_RELOAD_MS) return;
+    GM_setValue(RELOAD_KEY, Date.now());
+    unsafeWindow.location.reload();
   }, 30000);
 })();
