@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.21",
+    date: "13.10.2026",
+    notes:
+      "• Beim Scan eines AAG-Lieferscheins nutzt Teile aus Packzettel wieder ausschließlich die bestellten AAG/KNOLL-Positionen aus dem Gmail Lookup. Das AAG Lieferschein Sheet dient nur noch zum Auflösen von LS-Nummer zu Kundenreferenz und Stock-ID"
+  },
+  {
     version: "2.2.20",
     date: "12.10.2026",
     notes:

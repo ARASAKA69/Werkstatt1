@@ -4253,19 +4253,12 @@
   }
 
   function pzMergeScannedAagParts(parts, stockId) {
-    var base = [];
     var sid = normalizeStockInput(stockId);
-    if (!pendingAagReceipt || normalizeStockInput(pendingAagStock) !== sid) return (parts || []).slice();
-    for (var b = 0; b < (parts || []).length; b++) {
-      if (String((parts[b] && parts[b].tag) || '').toUpperCase() !== 'AAG') base.push(parts[b]);
+    if (pendingAagReceipt && normalizeStockInput(pendingAagStock) === sid) {
+      pendingAagReceipt = null;
+      pendingAagStock = '';
     }
-    var delivered = pendingAagReceipt.parts || [];
-    for (var i = 0; i < delivered.length; i++) {
-      if (delivered[i] && delivered[i].name) base.push(delivered[i]);
-    }
-    pendingAagReceipt = null;
-    pendingAagStock = '';
-    return base;
+    return (parts || []).slice();
   }
 
   function pzPartsFromCache(stockId) {
