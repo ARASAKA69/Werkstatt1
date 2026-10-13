@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>KVA HUD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #090a0d;
+      --panel: #101218;
+      --side: #0c0e12;
+      --ink: #f4f1ea;
+      --soft: #d9d3c7;
+      --muted: #9a9488;
+      --gold: #e6c36a;
+      --line: rgba(255, 255, 255, 0.08);
+      --ok: #8fd0ae;
+      --damage: #e7a090;
+      --maint: #9ebbd6;
+      --font: "Plus Jakarta Sans", system-ui, sans-serif;
+      --mono: "IBM Plex Mono", ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: var(--font);
+      color: var(--ink);
+      background:
+        radial-gradient(880px 360px at 0% -10%, rgba(230, 195, 106, 0.08), transparent 58%),
+        var(--bg);
+      color-scheme: dark;
+    }
+    button, input { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: default; opacity: 0.55; }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .vh {
+      position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0, 0, 0, 0); border: 0;
+    }
+
+    .app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+    .top {
+      display: flex; align-items: center; gap: 22px;
+      padding: 16px 20px 14px;
+    }
+    .brand { display: flex; align-items: center; gap: 12px; min-width: 220px; }
+    .mark {
+      width: 40px; height: 40px; border-radius: 11px;
+      display: grid; place-items: center;
+      border: 1px solid rgba(230, 195, 106, 0.45);
+      color: var(--gold); font-weight: 700; letter-spacing: 0.04em;
+      background: rgba(230, 195, 106, 0.06);
+    }
+    .name { font-size: 18px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.1; }
+    .sub { margin-top: 3px; color: var(--muted); font-size: 12px; letter-spacing: 0.04em; }
+    .search { flex: 1; min-width: 0; position: relative; }
+    .search input {
+      width: 100%; height: 46px; border-radius: 12px;
+      border: 1px solid var(--line); background: var(--panel);
+      padding: 0 14px; font-size: 15px;
+    }
+    .search input::placeholder { color: #6f6a62; }
+    .search input:focus { border-color: rgba(230, 195, 106, 0.65); outline: none; }
+    .tools { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
+    .reload {
+      height: 36px; padding: 0 14px; border-radius: 999px;
+      border: 1px solid rgba(230, 195, 106, 0.35);
+      background: transparent; color: var(--gold);
+      font-size: 13px; font-weight: 650;
+    }
+    .reload:hover { background: rgba(230, 195, 106, 0.08); }
+    .meta {
+      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
+    }
+    .cache-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex: none;
+      background: #3ddc84;
+      box-shadow: 0 0 0 0 rgba(61, 220, 132, 0.65);
+    }
+    .cache-dot[hidden] { display: none; }
+    .cache-dot.bump { animation: cacheBump 0.7s ease; }
+    @keyframes cacheBump {
+      0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(61, 220, 132, 0.7); }
+      35% { transform: scale(1.75); box-shadow: 0 0 0 8px rgba(61, 220, 132, 0); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(61, 220, 132, 0); }
+    }
+
+    .preview {
+      margin: 0 20px 12px; padding: 8px 12px; border-radius: 10px;
+      background: rgba(230, 195, 106, 0.08); color: var(--gold); font-size: 12px;
+    }
+    .preview[hidden] { display: none; }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 1px; background: var(--line);
+      border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    }
+    .stat {
+      background: #0e1014; border: 0; text-align: left; padding: 12px 16px;
+    }
+    .stat:hover { background: #14171d; }
+    .stat b {
+      display: block; font-family: var(--mono); font-size: 22px; font-weight: 500; letter-spacing: -0.04em;
+    }
+    .stat span {
+      display: block; margin-top: 3px; color: var(--muted);
+      font-size: 11px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .stat.is-on { background: rgba(230, 195, 106, 0.08); }
+    .stat.is-on b { color: var(--gold); }
+
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      padding: 12px 18px; border-bottom: 1px solid var(--line);
+    }
+    .chip {
+      border: 1px solid var(--line); background: transparent; color: var(--soft);
+      border-radius: 999px; padding: 7px 12px; font-size: 13px; font-weight: 600;
+    }
+    .chip em {
+      font-style: normal; margin-left: 6px; color: var(--muted);
+      font-family: var(--mono); font-size: 12px; font-weight: 500;
+    }
+    .chip.is-on { background: var(--gold); border-color: var(--gold); color: #1a160c; }
+    .chip.is-on em { color: #1a160c; }
+    .chip:hover { border-color: rgba(230, 195, 106, 0.4); }
+
+    .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 380px minmax(0, 1fr); }
+    .side, .detail { min-height: 0; min-width: 0; }
+    .side { background: rgba(12, 14, 18, 0.92); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+    .side-head {
+      flex: none; display: flex; justify-content: space-between; align-items: baseline;
+      padding: 14px 16px 10px; color: var(--muted); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+    .side-head strong { color: var(--ink); font-weight: 650; letter-spacing: 0; text-transform: none; font-size: 13px; }
+    .list, .detail { overflow: auto; }
+    .list::-webkit-scrollbar, .detail::-webkit-scrollbar { width: 10px; }
+    .list::-webkit-scrollbar-thumb, .detail::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.14); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box;
+    }
+
+    .item {
+      width: 100%; text-align: left; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      background: transparent; padding: 13px 16px 13px 18px;
+    }
+    .item:hover { background: rgba(255, 255, 255, 0.03); }
+    .item.is-on { background: rgba(230, 195, 106, 0.07); box-shadow: inset 2px 0 0 var(--gold); }
+    .sid { font-family: var(--mono); font-size: 15px; font-weight: 600; letter-spacing: 0.02em; }
+    .hint {
+      margin-top: 4px; color: var(--soft); font-size: 13px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .mix { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .empty { padding: 28px 18px; color: var(--muted); font-size: 14px; }
+
+    .detail { padding: 26px 32px 48px; }
+    .detail-top { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
+    .stock {
+      margin: 0; font-family: var(--mono); font-size: 40px; font-weight: 500;
+      letter-spacing: -0.04em; line-height: 1;
+    }
+    .lead { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+    .note { margin: 14px 0 0; color: var(--gold); font-size: 14px; }
+    .ghost, .textbtn {
+      border: 1px solid var(--line); background: transparent; color: var(--ink);
+      border-radius: 999px; padding: 7px 12px; font-size: 12px; font-weight: 650;
+    }
+    .ghost:hover, .textbtn:hover { border-color: rgba(230, 195, 106, 0.45); color: var(--gold); }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+    .group { margin-top: 26px; }
+    .group h3 {
+      margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 700;
+    }
+    .group h3 em { font-style: normal; margin-left: 8px; font-family: var(--mono); letter-spacing: 0; }
+    .cat-vehicle { color: var(--gold); }
+    .cat-maint { color: var(--maint); }
+    .cat-damage { color: var(--damage); }
+    .cat-other { color: var(--soft); }
+    .part { padding: 16px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
+    .part-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .part-name { font-size: 17px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.3; }
+    .pill {
+      flex: none; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .st-ordered { background: var(--gold); color: #1a160c; }
+    .st-handed { background: rgba(143, 208, 174, 0.14); color: var(--ok); border: 1px solid rgba(143, 208, 174, 0.28); }
+    .st-other { background: rgba(255, 255, 255, 0.06); color: var(--soft); }
+    .comment { margin: 8px 0 0; color: var(--soft); font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .xtras { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+    .xtras em { font-style: normal; color: #6f6a62; margin-right: 4px; }
+    .xtras a { color: var(--gold); text-underline-offset: 2px; }
+    .empty-detail { max-width: 420px; padding-top: 48px; color: var(--muted); }
+    .empty-detail h2 { margin: 0 0 8px; color: var(--ink); font-size: 22px; letter-spacing: -0.03em; font-weight: 650; }
+    .empty-detail p { margin: 0; line-height: 1.5; }
+
+    .foot {
+      flex: none; height: 44px; display: flex; align-items: center; justify-content: center;
+      border-top: 1px solid rgba(230, 195, 106, 0.22);
+      color: var(--gold); font-size: 12px; font-weight: 650; letter-spacing: 0.12em;
+      background: rgba(9, 10, 13, 0.94);
+    }
+
+    @media (max-width: 980px) {
+      .top { flex-wrap: wrap; }
+      .search { order: 3; flex: 1 1 100%; }
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    @media (max-width: 860px) {
+      html, body { height: auto; overflow: auto; }
+      .app { height: auto; min-height: 100%; }
+      .main { grid-template-columns: 1fr; }
+      .list { max-height: 46vh; }
+      .detail { padding: 20px 16px 36px; }
+      .stock { font-size: 32px; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stat:last-child { grid-column: 1 / -1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { scroll-behavior: auto !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand">
+        <div class="mark">K</div>
+        <div>
+          <div class="name">KVA HUD</div>
+          <div class="sub" id="sub">Carol Teilestatus</div>
+        </div>
+      </div>
+      <label class="search">
+        <span class="vh">Suche</span>
+        <input id="q" type="search" placeholder="Stock-ID, Teil oder Kommentar" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="tools">
+        <button type="button" class="reload" id="reload">Aktualisieren</button>
+        <div class="meta" id="meta">
+          <span class="cache-dot" id="cacheDot" hidden></span>
+          <span id="cacheWhen"></span>
+        </div>
+      </div>
+    </header>
+    <div id="preview" class="preview" hidden>Lokale Vorschau. Im Sheet wird Carol_Teilestatus gelesen.</div>
+    <div class="stats" id="stats"></div>
+    <div class="filters" id="filters"></div>
+    <div class="main">
+      <aside class="side">
+        <div class="side-head"><span>Fahrzeuge</span><strong id="listCount">0</strong></div>
+        <div class="list" id="list"></div>
+      </aside>
+      <section class="detail" id="detail"></section>
+    </div>
+    <footer class="foot">By Arasaka <span id="year"></span></footer>
+  </div>
+  <script>
+    var BOARD = null;
+    var state = { q: '', status: 'all', category: 'all', showEmpty: false, selected: '' };
+    var CAT_ORDER = ['Vehicle services', 'Maintenance', 'Damage', 'Sonstig'];
+    var STATUS_ORDER = ['Ordered', 'Handed out'];
+
+    var PREVIEW = {
+      version: '0.1.0',
+      loadedAt: '12.10.2026 21:20',
+      sourceTab: 'Carol_Teilestatus',
+      rowCount: 8,
+      preview: true,
+      stocks: [
+        {
+          stockId: 'SA73797',
+          needsNothing: false,
+          blankLines: 0,
+          parts: [
+            part('Replace front right tire', 'Ordered', 'Vehicle services', 'Vehicle services parts : EQA · Reifen 225/45R18 95W bei SENG bestellen · €47.00 · 22 Sep 2026, 05:43'),
+            part('Replace cracked right wiper', 'Handed out', 'Damage', 'Damage parts : Dichtgummi Vorderachse links und rechts unten hinten innen Gummiringe fehlt bei Nachrüstung / B013 · OE 7N0 867 913 A · 22 Sep 2026, 05:43'),
+            part('Engine Oil Including Filter Change', 'Ordered', 'Maintenance', 'Maintenance parts : EQA · OE 04E 115 561 H, OE N 902 889 01 · €14.45 · 22 Sep 2026, 05:43'),
+            part('Interior Filter Change', 'Ordered', 'Maintenance', 'Maintenance parts : EQA · OE 1K1 819 669 · €5.59 · 22 Sep 2026, 05:37')
+          ]
+        },
+        {
+          stockId: 'AX02641',
+          needsNothing: false,
+          blankLines: 1,
+          parts: [
+            part('Replace front left tire', 'Ordered', 'Vehicle services', 'Vehicle services parts : 205/60 R16 92 V Sommer Reifen Seng · €47.00 · 22 Sep 2026, 05:37'),
+            part('Engine Oil Including Filter Change', 'Ordered', 'Maintenance', 'Maintenance parts : 4,0 Liter SYNTIUM PRIME FR 5W-30 · €3.50 · 22 Sep 2026, 05:37')
+          ]
+        },
+        {
+          stockId: 'WU64328',
+          needsNothing: false,
+          blankLines: 0,
+          parts: [
+            part('Other', 'Handed out', 'Vehicle services', 'Vehicle services parts : Kennzeichenbeleuchtung links einseitig ohne Funktion · €1.30 · 21 Sep 2026, 09:12'),
+            part('Replace front brake axle disks and pads', 'Handed out', 'Damage', 'Damage parts : Bremsscheibe 1 Achse links und rechts innen mit Riefenbildung / 4249 Js · €76.65 · 21 Sep 2026, 09:12')
+          ]
+        },
+        {
+          stockId: 'LEER01',
+          needsNothing: true,
+          blankLines: 1,
+          parts: []
+        }
+      ]
+    };
+
+    function part(ersatzteil, status, category, kommentar) {
+      return {
+        ersatzteil: ersatzteil,
+        status: status,
+        category: category,
+        kommentar: kommentar,
+        extras: [
+          { label: 'Date', value: '22 Sep 2026, 05:43', href: '' },
+          { label: 'User', value: 'kva.hemau', href: '' },
+          { label: 'Link URL', value: 'https://carol.autohero.com/en-GB/refurbishment/', href: 'https://carol.autohero.com/en-GB/refurbishment/' },
+          { label: 'Conversation', value: status, href: '' }
+        ]
+      };
+    }
+
+    function esc(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function num(value) {
+      return String(value || 0).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    function pieces(count, one, many) {
+      return num(count) + ' ' + (Number(count) === 1 ? one : many);
+    }
+
+    function low(value) {
+      return String(value || '').trim().toLowerCase();
+    }
+
+    function safeUrl(url) {
+      var s = String(url || '').trim();
+      if (/^https?:\/\//i.test(s)) return s;
+      return '';
+    }
+
+    function catClass(cat) {
+      if (cat === 'Vehicle services') return 'cat-vehicle';
+      if (cat === 'Maintenance') return 'cat-maint';
+      if (cat === 'Damage') return 'cat-damage';
+      return 'cat-other';
+    }
+
+    function statusClass(status) {
+      var s = low(status);
+      if (s === 'ordered') return 'st-ordered';
+      if (s === 'handed out') return 'st-handed';
+      return 'st-other';
+    }
+
+    function totals() {
+      var out = { cars: 0, parts: 0, ordered: 0, handed: 0, empty: 0, status: {}, category: {} };
+      if (!BOARD) return out;
+      BOARD.stocks.forEach(function (stock) {
+        if (stock.needsNothing || !stock.parts.length) {
+          out.empty++;
+          return;
+        }
+        out.cars++;
+        stock.parts.forEach(function (p) {
+          out.parts++;
+          var st = p.status || 'Ohne Status';
+          var cat = p.category || 'Sonstig';
+          out.status[st] = (out.status[st] || 0) + 1;
+          out.category[cat] = (out.category[cat] || 0) + 1;
+          if (low(st) === 'ordered') out.ordered++;
+          else if (low(st) === 'handed out') out.handed++;
+        });
+      });
+      return out;
+    }
+
+    function orderedKeys(map, pref) {
+      var keys = Object.keys(map);
+      keys.sort(function (a, b) {
+        var ia = pref.indexOf(a);
+        var ib = pref.indexOf(b);
+        if (ia < 0) ia = 99;
+        if (ib < 0) ib = 99;
+        if (ia !== ib) return ia - ib;
+        return a.localeCompare(b);
+      });
+      return keys;
+    }
+
+    function matchesQuery(stock, q) {
+      if (!q) return true;
+      if (stock.stockId.toLowerCase().indexOf(q) !== -1) return true;
+      for (var i = 0; i < stock.parts.length; i++) {
+        var p = stock.parts[i];
+        if (low(p.ersatzteil).indexOf(q) !== -1) return true;
+        if (low(p.kommentar).indexOf(q) !== -1) return true;
+        var extras = p.extras || [];
+        for (var j = 0; j < extras.length; j++) {
+          if (low(extras[j].value).indexOf(q) !== -1) return true;
+        }
+      }
+      return false;
+    }
+
+    function partVisible(p) {
+      if (state.status !== 'all' && low(p.status) !== low(state.status)) return false;
+      if (state.category !== 'all' && (p.category || 'Sonstig') !== state.category) return false;
+      return true;
+    }
+
+    function visibleParts(stock) {
+      return (stock.parts || []).filter(partVisible);
+    }
+
+    function stockVisible(stock, q) {
+      var compact = q.replace(/\s+/g, '').toUpperCase();
+      var exact = !!compact && stock.stockId === compact;
+      if (stock.needsNothing || !(stock.parts || []).length) {
+        if (!state.showEmpty && !exact) return false;
+        if (!exact && (state.status !== 'all' || state.category !== 'all')) return false;
+        if (!q) return true;
+        return exact || stock.stockId.toLowerCase().indexOf(q) !== -1;
+      }
+      if (!matchesQuery(stock, q)) return false;
+      return visibleParts(stock).length > 0;
+    }
+
+    function currentVisible() {
+      var q = state.q.trim().toLowerCase();
+      var list = [];
+      if (!BOARD) return list;
+      BOARD.stocks.forEach(function (stock) {
+        if (stockVisible(stock, q)) list.push(stock);
+      });
+      return list;
+    }
+
+    function mixLine(parts) {
+      var map = {};
+      parts.forEach(function (p) {
+        var key = p.status || 'Ohne Status';
+        map[key] = (map[key] || 0) + 1;
+      });
+      return orderedKeys(map, STATUS_ORDER).map(function (key) {
+        return map[key] + ' ' + key;
+      }).join(' · ');
+    }
+
+    function hintLine(stock, parts) {
+      if (!parts.length) return 'Braucht nichts';
+      var name = parts[0].ersatzteil || parts[0].category || 'Teil';
+      if (parts.length === 1) return name;
+      return name + '  +' + (parts.length - 1);
+    }
+
+    function findStock(id) {
+      if (!BOARD) return null;
+      for (var i = 0; i < BOARD.stocks.length; i++) {
+        if (BOARD.stocks[i].stockId === id) return BOARD.stocks[i];
+      }
+      return null;
+    }
+
+    function chip(kind, value, label, count, on) {
+      return '<button type="button" class="chip' + (on ? ' is-on' : '') + '" data-kind="' + esc(kind) + '" data-value="' + esc(value) + '">' +
+        esc(label) + (count == null ? '' : '<em>' + num(count) + '</em>') + '</button>';
+    }
+
+    function renderStats() {
+      var t = totals();
+      var clearOn = state.status === 'all' && state.category === 'all' && !state.showEmpty;
+      var html = '';
+      html += statBtn('cars', t.cars, 'Fahrzeuge', clearOn);
+      html += statBtn('parts', t.parts, 'Teile', false);
+      html += statBtn('ordered', t.ordered, 'Ordered', low(state.status) === 'ordered');
+      html += statBtn('handed', t.handed, 'Handed out', low(state.status) === 'handed out');
+      html += statBtn('empty', t.empty, 'Braucht nichts', state.showEmpty);
+      document.getElementById('stats').innerHTML = html;
+    }
+
+    function statBtn(kind, count, label, on) {
+      return '<button type="button" class="stat' + (on ? ' is-on' : '') + '" data-stat="' + kind + '"><b>' + num(count) + '</b><span>' + esc(label) + '</span></button>';
+    }
+
+    function renderFilters() {
+      var t = totals();
+      var allOn = state.status === 'all' && state.category === 'all' && !state.showEmpty;
+      var html = chip('reset', 'all', 'Alle', t.parts, allOn);
+      orderedKeys(t.status, STATUS_ORDER).forEach(function (key) {
+        html += chip('status', key, key, t.status[key], low(state.status) === low(key));
+      });
+      orderedKeys(t.category, CAT_ORDER).forEach(function (key) {
+        html += chip('category', key, key, t.category[key], state.category === key);
+      });
+      html += chip('empty', 'empty', 'Braucht nichts', t.empty, state.showEmpty);
+      document.getElementById('filters').innerHTML = html;
+    }
+
+    function renderList(visible) {
+      document.getElementById('listCount').textContent = num(visible.length);
+      if (!visible.length) {
+        document.getElementById('list').innerHTML = '<div class="empty">Keine Stock-ID für diese Ansicht.</div>';
+        return;
+      }
+      var html = '';
+      visible.forEach(function (stock) {
+        var parts = stock.needsNothing ? [] : visibleParts(stock);
+        var mix = stock.needsNothing ? 'Kein Ersatzteil' : mixLine(parts);
+        html += '<button type="button" class="item' + (stock.stockId === state.selected ? ' is-on' : '') + '" data-id="' + esc(stock.stockId) + '">' +
+          '<div class="sid">' + esc(stock.stockId) + '</div>' +
+          '<div class="hint">' + esc(hintLine(stock, parts)) + '</div>' +
+          '<div class="mix">' + esc(mix) + '</div></button>';
+      });
+      document.getElementById('list').innerHTML = html;
+    }
+
+    function renderDetail() {
+      var stock = findStock(state.selected);
+      var host = document.getElementById('detail');
+      if (!stock) {
+        host.innerHTML = '<div class="empty-detail"><h2>Stock-ID wählen</h2><p>Suche links nach der Stock-ID. Pro Fahrzeug siehst du Ersatzteil, Status und Kommentar. Menge aus dem Sheet wird nicht verwendet.</p></div>';
+        return;
+      }
+      var parts = stock.needsNothing ? [] : visibleParts(stock);
+      var html = '<div class="detail-top"><div><h2 class="stock">' + esc(stock.stockId) + '</h2>';
+      if (stock.needsNothing || !stock.parts.length) {
+        html += '<p class="note">Kein Ersatzteil hinterlegt. Dieses Fahrzeug braucht nichts.</p>';
+      } else {
+        html += '<p class="lead">' + pieces(parts.length, 'Teil', 'Teile') + ' in dieser Ansicht</p>';
+      }
+      html += '</div><button type="button" class="ghost" data-act="copy-stock" data-label="Kopieren">Kopieren</button></div>';
+      if (!stock.needsNothing) html += renderGroups(parts);
+      host.innerHTML = html;
+    }
+
+    function renderGroups(parts) {
+      var groups = {};
+      parts.forEach(function (p, idx) {
+        var key = p.category || 'Sonstig';
+        if (!groups[key]) groups[key] = [];
+        groups[key].push({ part: p, idx: idx });
+      });
+      var keys = Object.keys(groups).sort(function (a, b) {
+        var ia = CAT_ORDER.indexOf(a);
+        var ib = CAT_ORDER.indexOf(b);
+        if (ia < 0) ia = 99;
+        if (ib < 0) ib = 99;
+        return ia - ib;
+      });
+      var html = '';
+      keys.forEach(function (key) {
+        html += '<section class="group"><h3 class="' + catClass(key) + '">' + esc(key) + '<em>' + groups[key].length + '</em></h3>';
+        groups[key].forEach(function (entry) {
+          html += renderPart(entry.part, entry.idx);
+        });
+        html += '</section>';
+      });
+      return html;
+    }
+
+    function renderPart(p, idx) {
+      var html = '<article class="part"><div class="part-top"><div class="part-name">' + esc(p.ersatzteil || 'Teil') + '</div>' +
+        '<span class="pill ' + statusClass(p.status) + '">' + esc(p.status || 'Ohne Status') + '</span></div>';
+      if (p.kommentar) html += '<p class="comment">' + esc(p.kommentar) + '</p>';
+      var extras = p.extras || [];
+      if (extras.length) {
+        html += '<div class="xtras">';
+        extras.forEach(function (ex) {
+          var href = safeUrl(ex.href);
+          if (href) {
+            html += '<a href="' + esc(href) + '" target="_blank" rel="noopener noreferrer">' + esc(ex.label || 'Öffnen') + '</a>';
+          } else if (ex.value) {
+            html += '<span><em>' + esc(ex.label) + '</em>' + esc(ex.value) + '</span>';
+          }
+        });
+        html += '</div>';
+      }
+      html += '<div class="actions"><button type="button" class="textbtn" data-act="copy-part" data-part="' + idx + '" data-label="Kommentar kopieren">Kommentar kopieren</button></div></article>';
+      return html;
+    }
+
+    function render() {
+      var visible = currentVisible();
+      var keep = false;
+      for (var i = 0; i < visible.length; i++) {
+        if (visible[i].stockId === state.selected) keep = true;
+      }
+      if (!keep) state.selected = visible.length ? visible[0].stockId : '';
+      renderStats();
+      renderFilters();
+      renderList(visible);
+      renderDetail();
+    }
+
+    function cacheClock(board) {
+      if (board && board.loadedClock) return String(board.loadedClock);
+      var match = String((board && board.loadedAt) || '').match(/(\d{2}:\d{2})\s*$/);
+      return match ? match[1] : '';
+    }
+
+    function showCacheStamp(board) {
+      if (!board) return;
+      var clock = cacheClock(board) || '--:--';
+      var when = document.getElementById('cacheWhen');
+      var dot = document.getElementById('cacheDot');
+      var meta = document.getElementById('meta');
+      when.textContent = clock + ' · ' + num(board.rowCount || 0) + ' Zeilen';
+      meta.title = 'Cache geladen ' + clock;
+      dot.hidden = false;
+      dot.classList.remove('bump');
+      void dot.offsetWidth;
+      dot.classList.add('bump');
+    }
+
+    function renderBoard(board) {
+      BOARD = board || { stocks: [] };
+      var sub = (BOARD.sourceTab || 'Carol Teilestatus') + ' · ' + (BOARD.version || '0.1.0');
+      document.getElementById('sub').textContent = sub;
+      document.getElementById('preview').hidden = !BOARD.preview;
+      if (!state.selected) {
+        for (var i = 0; i < (BOARD.stocks || []).length; i++) {
+          if (!BOARD.stocks[i].needsNothing && BOARD.stocks[i].parts.length) {
+            state.selected = BOARD.stocks[i].stockId;
+            break;
+          }
+        }
+      }
+      render();
+      showCacheStamp(BOARD);
+    }
+
+    function applyBoard(board, silent) {
+      var list = document.getElementById('list');
+      var detail = document.getElementById('detail');
+      var listTop = list.scrollTop;
+      var detailTop = detail.scrollTop;
+      var same = silent && BOARD && board && BOARD.loadedAtMs && board.loadedAtMs === BOARD.loadedAtMs;
+      if (same) showCacheStamp(board);
+      else renderBoard(board);
+      if (silent) {
+        list.scrollTop = listTop;
+        detail.scrollTop = detailTop;
+      }
+    }
+
+    function onQuery() {
+      var input = document.getElementById('q');
+      state.q = input.value;
+      var compact = state.q.replace(/\s+/g, '').toUpperCase();
+      if (BOARD && compact) {
+        for (var i = 0; i < BOARD.stocks.length; i++) {
+          if (BOARD.stocks[i].stockId === compact) {
+            state.selected = compact;
+            break;
+          }
+        }
+      }
+      render();
+    }
+
+    function onChip(ev) {
+      var btn = ev.target.closest('.chip');
+      if (!btn) return;
+      var kind = btn.getAttribute('data-kind');
+      var value = btn.getAttribute('data-value');
+      if (kind === 'reset') {
+        state.status = 'all';
+        state.category = 'all';
+        state.showEmpty = false;
+      } else if (kind === 'status') {
+        state.showEmpty = false;
+        state.status = low(state.status) === low(value) ? 'all' : value;
+      } else if (kind === 'category') {
+        state.showEmpty = false;
+        state.category = state.category === value ? 'all' : value;
+      } else if (kind === 'empty') {
+        state.showEmpty = !state.showEmpty;
+        if (state.showEmpty) {
+          state.status = 'all';
+          state.category = 'all';
+        }
+      }
+      render();
+    }
+
+    function onStat(ev) {
+      var btn = ev.target.closest('[data-stat]');
+      if (!btn) return;
+      var kind = btn.getAttribute('data-stat');
+      if (kind === 'ordered' || kind === 'handed') {
+        state.showEmpty = false;
+        var next = kind === 'ordered' ? 'Ordered' : 'Handed out';
+        state.status = low(state.status) === low(next) ? 'all' : next;
+      } else if (kind === 'empty') {
+        state.showEmpty = !state.showEmpty;
+        if (state.showEmpty) {
+          state.status = 'all';
+          state.category = 'all';
+        }
+      } else {
+        state.status = 'all';
+        state.category = 'all';
+        state.showEmpty = false;
+      }
+      render();
+    }
+
+    function onItem(ev) {
+      var btn = ev.target.closest('.item');
+      if (!btn) return;
+      state.selected = btn.getAttribute('data-id');
+      render();
+      if (window.matchMedia('(max-width: 860px)').matches) {
+        document.getElementById('detail').scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function onDetail(ev) {
+      var btn = ev.target.closest('[data-act]');
+      if (!btn) return;
+      var stock = findStock(state.selected);
+      if (!stock) return;
+      var act = btn.getAttribute('data-act');
+      if (act === 'copy-stock') copyText(stock.stockId, btn);
+      if (act === 'copy-part') {
+        var parts = visibleParts(stock);
+        var item = parts[Number(btn.getAttribute('data-part'))];
+        if (item) copyText(item.kommentar || '', btn);
+      }
+    }
+
+    function copyText(text, btn) {
+      var label = btn.getAttribute('data-label') || btn.textContent;
+      var done = function () {
+        btn.textContent = 'Kopiert';
+        setTimeout(function () { btn.textContent = label; }, 1100);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text, done); });
+      } else {
+        fallbackCopy(text, done);
+      }
+    }
+
+    function fallbackCopy(text, done) {
+      var area = document.createElement('textarea');
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      try { document.execCommand('copy'); done(); } catch (e) {}
+      area.remove();
+    }
+
+    function setBusy(on) {
+      var btn = document.getElementById('reload');
+      btn.disabled = on;
+      btn.textContent = on ? 'Lädt' : 'Aktualisieren';
+    }
+
+    function fail(err) {
+      setBusy(false);
+      var msg = err && err.message ? err.message : 'Die Liste konnte nicht geladen werden.';
+      document.getElementById('list').innerHTML = '<div class="empty">Keine Daten.</div>';
+      document.getElementById('detail').innerHTML = '<div class="empty-detail"><h2>Nicht geladen</h2><p>' + esc(msg) + '</p></div>';
+    }
+
+    var cacheTimer = null;
+
+    function startCacheTimer() {
+      if (cacheTimer) return;
+      cacheTimer = setInterval(function () { loadLive('silent'); }, 60000);
+    }
+
+    function loadLive(mode) {
+      var force = mode === 'force';
+      var silent = mode === 'silent';
+      var first = !BOARD || BOARD.preview;
+      if (!silent) setBusy(true);
+      if (first) {
+        document.getElementById('preview').hidden = true;
+        document.getElementById('list').innerHTML = '<div class="empty">Carol_Teilestatus wird gelesen…</div>';
+      }
+      google.script.run
+        .withSuccessHandler(function (board) {
+          setBusy(false);
+          applyBoard(board, silent || !first);
+          startCacheTimer();
+        })
+        .withFailureHandler(function (err) {
+          if (silent && BOARD) return;
+          fail(err);
+        })
+        .getKvaBoard(force);
+    }
+
+    function boot() {
+      document.getElementById('year').textContent = String(new Date().getFullYear());
+      document.getElementById('q').addEventListener('input', onQuery);
+      document.getElementById('q').addEventListener('keydown', function (ev) {
+        if (ev.key === 'Escape') {
+          ev.currentTarget.value = '';
+          onQuery();
+        }
+        if (ev.key === 'Enter') {
+          var visible = currentVisible();
+          if (visible[0]) state.selected = visible[0].stockId;
+          render();
+        }
+      });
+      document.getElementById('reload').addEventListener('click', function () {
+        if (window.google && google.script && google.script.run) loadLive('force');
+        else renderBoard(PREVIEW);
+      });
+      document.getElementById('filters').addEventListener('click', onChip);
+      document.getElementById('stats').addEventListener('click', onStat);
+      document.getElementById('list').addEventListener('click', onItem);
+      document.getElementById('detail').addEventListener('click', onDetail);
+      if (window.google && google.script && google.script.run) loadLive('open');
+      else renderBoard(PREVIEW);
+    }
+
+    boot();
+  </script>
+</body>
+</html>
