@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Lieferschein Sync
 // @namespace    http://tampermonkey.net/
-// @version      1.1.1
+// @version      1.1.3
 // @description  Synchronisiert AAG Lieferscheine ins WMS
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -146,15 +146,12 @@
 
   async function fetchHeaders(seen, backfillPending) {
     const dates = dateWindow();
-    let page = 1;
-    let pages = 1;
-    let knownPageStreak = 0;
     const all = [];
-    while (page <= pages && page <= 100) {
+    async function fetchPage(page) {
       const url = API_BASE + '/header?startDate=' + dates.from
         + '&endDate=' + dates.to
         + '&page=' + page
-        + '&size=10&type=DELIVERY&orderColumn=documentDate&order=DESC';
+        + '&size=10&type=DELIVERY';
       const payload = await apiJson(url);
       const data = payload && Array.isArray(payload.data) ? payload.data : [];
       let unknownOnPage = 0;
@@ -165,12 +162,26 @@
           if (!seen[ls]) unknownOnPage++;
         }
       }
-      pages = Math.max(1, Number(payload.totalPages) || 1);
-      if (!backfillPending) {
-        knownPageStreak = unknownOnPage === 0 ? knownPageStreak + 1 : 0;
+      return {
+        pages: Math.max(1, Number(payload.totalPages) || 1),
+        unknown: unknownOnPage
+      };
+    }
+    const first = await fetchPage(1);
+    const pages = first.pages;
+    if (backfillPending) {
+      for (let page = 2; page <= pages && page <= 100; page++) {
+        await fetchPage(page);
+      }
+    } else if (pages > 1) {
+      let knownPageStreak = 0;
+      let checkedPages = 0;
+      for (let page = pages; page >= 2 && checkedPages < 100; page--) {
+        const result = await fetchPage(page);
+        checkedPages++;
+        knownPageStreak = result.unknown === 0 ? knownPageStreak + 1 : 0;
         if (knownPageStreak >= 2) break;
       }
-      page++;
     }
     return all;
   }
@@ -270,6 +281,8 @@
         }
       }
       const fresh = allFresh.slice(0, MAX_RECEIPTS_PER_RUN);
+      const syncHasMore = allFresh.length > MAX_RECEIPTS_PER_RUN;
+      if (syncHasMore) GM_setValue(BACKFILL_KEY, false);
       if (!fresh.length) {
         GM_setValue(SEEN_KEY, seen);
         if (backfillPending) GM_setValue(BACKFILL_KEY, true);
@@ -290,10 +303,9 @@
           synced += batch.length;
           GM_setValue(SEEN_KEY, seen);
         }
-        const backfillHasMore = backfillPending && allFresh.length > MAX_RECEIPTS_PER_RUN;
-        if (backfillPending && !backfillHasMore) GM_setValue(BACKFILL_KEY, true);
-        if (backfillHasMore) nextSyncDelay = 5000;
-        setStatus('AAG Sync: ' + synced + ' neu' + (backfillHasMore ? ' · Rückstand folgt' : '') + ' · ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), '#176b45');
+        if (backfillPending && !syncHasMore) GM_setValue(BACKFILL_KEY, true);
+        if (syncHasMore) nextSyncDelay = 5000;
+        setStatus('AAG Sync: ' + synced + ' neu' + (syncHasMore ? ' · Rückstand folgt' : '') + ' · ' + new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }), '#176b45');
       }
     } catch (err) {
       const msg = String(err && err.message || err);
