@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         AAG Lieferschein Sync
 // @namespace    http://tampermonkey.net/
-// @version      1.1.3
+// @version      1.2.2
 // @description  Synchronisiert AAG Lieferscheine ins WMS
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
+// @match        https://sso.aag-cp.de/*
 // @run-at       document-start
 // @grant        unsafeWindow
 // @grant        GM_xmlhttpRequest
@@ -27,7 +28,9 @@
   const RELOAD_KEY = 'aag_lieferschein_reload_v1';
   const MAX_RECEIPTS_PER_RUN = 150;
   const UPLOAD_BATCH_SIZE = 25;
-  const AUTO_RELOAD_MS = 10 * 60 * 1000;
+  const AUTO_RELOAD_MS = 5 * 60 * 1000;
+  const RECOVER_KEY = 'aag_session_recover_v1';
+  const CLEAN_KEY = 'aag_sheet_clean_v1';
   let bearerToken = '';
   let syncRunning = false;
   let syncTimer = 0;
@@ -216,9 +219,9 @@
       url: SYNC_WEB_APP_URL,
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       data: JSON.stringify({
-        action: 'sync',
+        action: receipts ? 'sync' : 'cleanup',
         key: SYNC_KEY,
-        receipts: receipts
+        receipts: receipts || []
       }),
       timeout: 120000
     });
@@ -231,6 +234,15 @@
       throw new Error(detail);
     }
     return result;
+  }
+
+  async function cleanupOldReceipts() {
+    const last = Number(GM_getValue(CLEAN_KEY, 0)) || 0;
+    if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+    try {
+      const result = await sendToSheet(null);
+      if (result && result.success) GM_setValue(CLEAN_KEY, Date.now());
+    } catch (e) {}
   }
 
   function scheduleSync(delay) {
@@ -268,6 +280,7 @@
     let nextSyncDelay = POLL_MS;
     setStatus('AAG Sync läuft…', '#005f8f');
     try {
+      await cleanupOldReceipts();
       const seen = trimSeen(loadSeen());
       const backfillPending = !GM_getValue(BACKFILL_KEY, false);
       const headers = await fetchHeaders(seen, backfillPending);
@@ -311,6 +324,7 @@
       const msg = String(err && err.message || err);
       if (msg === 'LOGIN_REQUIRED') {
         setStatus('AAG Sync: Sitzung wird erneuert…', '#a45b00');
+        GM_setValue(RECOVER_KEY, Date.now());
         GM_setValue(RELOAD_KEY, Date.now());
         setTimeout(function() {
           unsafeWindow.location.reload();
@@ -324,6 +338,97 @@
     }
   }
 
+  function controlParts(el) {
+    if (!el) return [];
+    return [el.innerText, el.textContent, el.value, el.getAttribute('aria-label'), el.getAttribute('title')]
+      .map(function(value) { return String(value || '').replace(/\s+/g, ' ').trim(); })
+      .filter(Boolean);
+  }
+
+  function findControl(pattern) {
+    const nodes = document.querySelectorAll('a, button, input[type="submit"], [role="button"]');
+    for (let i = 0; i < nodes.length; i++) {
+      if (controlParts(nodes[i]).some(function(text) { return pattern.test(text); })) return nodes[i];
+    }
+    return null;
+  }
+
+  function deliveryTableVisible() {
+    const text = document.body ? document.body.innerText : '';
+    return /Belegnummer/i.test(text) && /Belegdatum/i.test(text) && /Kundenreferenz/i.test(text);
+  }
+
+  function findLieferscheineCard() {
+    const nodes = document.querySelectorAll('a, button, div');
+    let best = null;
+    let bestArea = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const text = String(nodes[i].innerText || '').replace(/\s+/g, ' ').trim();
+      if (!/lieferscheine/i.test(text) || text.length > 80) continue;
+      const rect = nodes[i].getBoundingClientRect();
+      const area = rect.width * rect.height;
+      if (rect.width < 80 || rect.height < 70 || area <= bestArea) continue;
+      best = nodes[i];
+      bestArea = area;
+    }
+    return best;
+  }
+
+  function enableStaySignedIn() {
+    const labels = document.querySelectorAll('label');
+    for (let i = 0; i < labels.length; i++) {
+      if (!controlParts(labels[i]).some(function(text) { return /angemeldet bleiben/i.test(text); })) continue;
+      const box = labels[i].querySelector('input[type="checkbox"]')
+        || document.getElementById(labels[i].getAttribute('for') || '');
+      if (box && box.type === 'checkbox' && !box.checked) box.click();
+      return;
+    }
+  }
+
+  let deliveryNavAt = 0;
+
+  function openDeliveries() {
+    if (deliveryTableVisible() || syncRunning || Date.now() - deliveryNavAt < 4000) return;
+    const card = findLieferscheineCard();
+    if (card) {
+      setStatus('AAG Sync: öffne Lieferscheine…', '#005f8f');
+      deliveryNavAt = Date.now();
+      card.click();
+      return;
+    }
+    const portalButton = findControl(/zum kundenportal/i);
+    if (portalButton && location.pathname.indexOf('/ordering') === 0) {
+      if (portalButton.tagName === 'A') portalButton.target = '_self';
+      setStatus('AAG Sync: öffne Kundenportal…', '#005f8f');
+      deliveryNavAt = Date.now();
+      portalButton.click();
+      return;
+    }
+    setStatus('AAG Sync: öffne Kundenportal…', '#005f8f');
+    deliveryNavAt = Date.now();
+    location.href = 'https://portal.allianceautomotive.de/dashboard';
+  }
+
+  function recoverPortalSession() {
+    const onLogin = location.hostname === 'sso.aag-cp.de' || /openid-connect\/auth/i.test(location.pathname);
+    if (onLogin) {
+      enableStaySignedIn();
+      setStatus('AAG Sync: einmal auf Anmelden klicken', '#a45b00');
+      return;
+    }
+    if (location.hostname !== 'portal.allianceautomotive.de') return;
+    const active = document.activeElement;
+    const userTyping = !document.hidden && active && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName);
+    if (deliveryTableVisible()) {
+      GM_setValue(RECOVER_KEY, 0);
+      return;
+    }
+    if (userTyping) return;
+    const recovering = Date.now() - (Number(GM_getValue(RECOVER_KEY, 0)) || 0) < 3 * 60 * 1000;
+    const onOrdering = location.pathname.indexOf('/ordering') === 0;
+    if (findLieferscheineCard() || onOrdering || recovering || document.hidden || !bearerToken) openDeliveries();
+  }
+
   patchPortalRequests();
   document.addEventListener('DOMContentLoaded', function() {
     ensureStatus();
@@ -333,8 +438,9 @@
   setInterval(function() {
     patchPortalRequests();
   }, 30000);
+  setInterval(recoverPortalSession, 2000);
   setInterval(function() {
-    if (!document.hidden || syncRunning) return;
+    if (location.hostname === 'sso.aag-cp.de' || syncRunning) return;
     const lastReload = Number(GM_getValue(RELOAD_KEY, 0)) || 0;
     if (Date.now() - lastReload < AUTO_RELOAD_MS) return;
     GM_setValue(RELOAD_KEY, Date.now());

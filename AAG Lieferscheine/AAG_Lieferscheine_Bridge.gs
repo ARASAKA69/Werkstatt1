@@ -137,16 +137,37 @@ function aagRowsFromReceipts_(receipts) {
   return rows;
 }
 
+function aagMillis_(value) {
+  if (Object.prototype.toString.call(value) === "[object Date]") return value.getTime();
+  var text = String(value || "").trim();
+  var match = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])).getTime();
+  var parsed = Date.parse(text);
+  return isFinite(parsed) ? parsed : 0;
+}
+
+function aagKeepRow_(row, cutoff) {
+  var when = aagMillis_(row[2]) || aagMillis_(row[0]);
+  return !when || when >= cutoff;
+}
+
 function aagUpsertRows_(rows) {
   var sheet = aagSheet_();
   var lastRow = sheet.getLastRow();
   var stored = lastRow >= 2
     ? sheet.getRange(2, 1, lastRow - 1, AAG_LIEFERSCHEINE_HEADERS.length).getValues()
     : [];
+  var cutoff = new Date();
+  cutoff = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate() - 10).getTime();
   var merged = [];
   var existing = {};
   var duplicatesRemoved = 0;
+  var removedOld = 0;
   for (var i = 0; i < stored.length; i++) {
+    if (!aagKeepRow_(stored[i], cutoff)) {
+      removedOld++;
+      continue;
+    }
     var storedKey = String(stored[i][13] || "");
     if (!storedKey) {
       merged.push(stored[i]);
@@ -182,7 +203,7 @@ function aagUpsertRows_(rows) {
     }
   }
   SpreadsheetApp.flush();
-  return { added: added, updated: updated, duplicatesRemoved: duplicatesRemoved };
+  return { added: added, updated: updated, duplicatesRemoved: duplicatesRemoved, removedOld: removedOld };
 }
 
 function doGet(e) {
@@ -191,7 +212,7 @@ function doGet(e) {
   return aagJsonOut_({
     success: true,
     service: "AAG Lieferschein Sync",
-    version: "1.1.0",
+    version: "1.2.1",
     sheet: AAG_LIEFERSCHEINE_TAB,
     time: new Date().toISOString()
   });
@@ -201,8 +222,9 @@ function doPost(e) {
   try {
     var body = JSON.parse(String(e && e.postData && e.postData.contents || "{}"));
     if (!aagSyncKeyOk_(body.key)) return aagJsonOut_({ success: false, error: "UNAUTHORIZED" });
-    if (String(body.action || "") !== "sync") return aagJsonOut_({ success: false, error: "BAD_ACTION" });
-    var receipts = body.receipts || [];
+    var action = String(body.action || "");
+    if (action !== "sync" && action !== "cleanup") return aagJsonOut_({ success: false, error: "BAD_ACTION" });
+    var receipts = action === "cleanup" ? [] : (body.receipts || []);
     if (Object.prototype.toString.call(receipts) !== "[object Array]") return aagJsonOut_({ success: false, error: "BAD_RECEIPTS" });
     if (receipts.length > 300) return aagJsonOut_({ success: false, error: "TOO_MANY_RECEIPTS" });
     var lock = LockService.getScriptLock();
@@ -216,7 +238,8 @@ function doPost(e) {
         rows: rows.length,
         added: result.added,
         updated: result.updated,
-        duplicatesRemoved: result.duplicatesRemoved
+        duplicatesRemoved: result.duplicatesRemoved,
+        removedOld: result.removedOld
       });
     } finally {
       lock.releaseLock();
