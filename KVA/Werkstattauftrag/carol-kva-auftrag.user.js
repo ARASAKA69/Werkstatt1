@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
-// @version      1.4.0
+// @version      1.5.0
 // @description  In-Carol KVA HUD: Vollautomatischer 1:1 Abgleich aller Carol-Schäden, Services, Lack/Delle (1-6) & HU-Status mit dem Sheet, erstellt PDF im Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var VER = '1.4.0';
+  var VER = '1.5.0';
   if (window.__kvaCarolHudVer) return;
   window.__kvaCarolHudVer = VER;
 
@@ -205,8 +205,8 @@
     oilRow: 0,
     liters: '',
     bodyWorks: [],
-    freeMech: ['', '', '', '', ''],
-    freeParts: ['', '', '', '', ''],
+    freeMech: ['', '', '', '', '', ''],
+    freeParts: ['', '', '', '', '', ''],
     autoUploadPdf: true,
     autoOrderParts: true,
     runUebertrag: false,
@@ -848,7 +848,8 @@
     state.autoWork = {};
     state.autoD = {};
     state.bodyWorks = [];
-    state.freeMech = ['', '', '', '', ''];
+    state.freeMech = ['', '', '', '', '', ''];
+    state.freeParts = ['', '', '', '', '', ''];
 
     var meta = state.meta || FALLBACK_META;
     var unmatched = [];
@@ -1012,8 +1013,11 @@
       state.autoWork[14] = true;
     }
 
-    for (var f = 0; f < Math.min(5, unmatched.length); f++) {
+    for (var f = 0; f < Math.min(6, unmatched.length); f++) {
       state.freeMech[f] = unmatched[f];
+    }
+    for (var fp = 6; fp < Math.min(12, unmatched.length); fp++) {
+      state.freeParts[fp - 6] = unmatched[fp];
     }
   }
 
@@ -1322,10 +1326,12 @@
     return Number(oilRow) === 41;
   }
 
+  function isSpecificOilSelected() {
+    return Number(state.oilRow) >= 29 && Number(state.oilRow) <= 40;
+  }
+
   function isOilLitersRequired() {
-    var oilSelected = Number(state.oilRow) >= 29 && Number(state.oilRow) <= 40;
-    var oilChangeChecked = !!(state.workSel[12] || state.workSel[14]);
-    return oilSelected || (oilChangeChecked && !isOilMitgeliefert(state.oilRow));
+    return isSpecificOilSelected();
   }
 
   function hasValidLiters() {
@@ -1536,9 +1542,11 @@
     state.oilRow = parseInt(getVal('kva-in-oil', state.oilRow), 10) || 0;
     state.liters = getVal('kva-in-lit', state.liters);
     state.nachDatum = getVal('kva-in-nachdatum', state.nachDatum);
-    for (var i = 0; i < 5; i++) {
+    for (var i = 0; i < 6; i++) {
       var fmEl = document.getElementById('kva-fm-' + i);
       if (fmEl) state.freeMech[i] = fmEl.value.trim();
+      var fpEl = document.getElementById('kva-fp-' + i);
+      if (fpEl) state.freeParts[i] = fpEl.value.trim();
     }
   }
 
@@ -1681,7 +1689,7 @@
       + (state.huDueDate ? ('<span class="kva-pill' + (state.huStatus === 'failed' ? ' err' : '') + '">HU Fällig: ' + esc(state.huDueDate) + '</span>') : '')
       + '</h4>'
       + '<div class="kva-grid2" style="margin-bottom:8px;">'
-      + '<div class="kva-fld"><label>Öl (für G9:G12)' + ((state.workSel[12] || state.workSel[14]) ? ' <b style="color:#f85149;">* Pflicht</b>' : '') + '</label><select id="kva-in-oil">' + oilOpts + '</select></div>'
+      + '<div class="kva-fld"><label>Öl (für G9:G12)' + ((state.workSel[12] || state.workSel[14]) ? ' <b style="color:#f2cc60;">* bei Ölwechsel</b>' : '') + '</label><select id="kva-in-oil">' + oilOpts + '</select></div>'
       + '<div class="kva-fld"><label id="kva-lbl-lit">Füllmenge (Liter)' + (isOilLitersRequired() ? ' <b style="color:#f85149;">* PFLICHT</b>' : '') + '</label>'
       + '<input id="kva-in-lit" value="' + esc(state.liters) + '" placeholder="' + (isOilLitersRequired() ? 'PFLICHT (z.B. 4,5)' : 'z.B. 4,5') + '"'
       + (isOilLitersRequired() && !hasValidLiters() ? ' style="border-color:#f85149;background:rgba(248,81,73,.08);"' : '') + '></div>'
@@ -1698,13 +1706,25 @@
       + '</div>'
       + '</div>'
       + '<div class="kva-sec">'
-      + '<h4><span>Sonstige Mechanik / Freitext (D24:D28)</span></h4>'
+      + '<h4><span>Sonstige Mechanik / Freitext (6 Zeilen · D24:D29)</span></h4>'
       + '<div class="kva-fld" style="display:flex;flex-direction:column;gap:5px;">'
-      + '<input id="kva-fm-0" placeholder="Freitext Zeile 1 (D24)" value="' + esc(state.freeMech[0] || '') + '">'
-      + '<input id="kva-fm-1" placeholder="Freitext Zeile 2 (D25)" value="' + esc(state.freeMech[1] || '') + '">'
-      + '<input id="kva-fm-2" placeholder="Freitext Zeile 3 (D26)" value="' + esc(state.freeMech[2] || '') + '">'
-      + '<input id="kva-fm-3" placeholder="Freitext Zeile 4 (D27)" value="' + esc(state.freeMech[3] || '') + '">'
-      + '<input id="kva-fm-4" placeholder="Freitext Zeile 5 (D28)" value="' + esc(state.freeMech[4] || '') + '">'
+      + '<input id="kva-fm-0" placeholder="Sonstige Mechanik 1 (D24)" value="' + esc(state.freeMech[0] || '') + '">'
+      + '<input id="kva-fm-1" placeholder="Sonstige Mechanik 2 (D25)" value="' + esc(state.freeMech[1] || '') + '">'
+      + '<input id="kva-fm-2" placeholder="Sonstige Mechanik 3 (D26)" value="' + esc(state.freeMech[2] || '') + '">'
+      + '<input id="kva-fm-3" placeholder="Sonstige Mechanik 4 (D27)" value="' + esc(state.freeMech[3] || '') + '">'
+      + '<input id="kva-fm-4" placeholder="Sonstige Mechanik 5 (D28)" value="' + esc(state.freeMech[4] || '') + '">'
+      + '<input id="kva-fm-5" placeholder="Sonstige Mechanik 6 (D29)" value="' + esc(state.freeMech[5] || '') + '">'
+      + '</div>'
+      + '</div>'
+      + '<div class="kva-sec">'
+      + '<h4><span>Sonstige- u. OE-Teile / Freitext (6 Zeilen · D31:D36)</span></h4>'
+      + '<div class="kva-fld" style="display:flex;flex-direction:column;gap:5px;">'
+      + '<input id="kva-fp-0" placeholder="Sonstige / OE-Teile 1 (D31)" value="' + esc(state.freeParts[0] || '') + '">'
+      + '<input id="kva-fp-1" placeholder="Sonstige / OE-Teile 2 (D32)" value="' + esc(state.freeParts[1] || '') + '">'
+      + '<input id="kva-fp-2" placeholder="Sonstige / OE-Teile 3 (D33)" value="' + esc(state.freeParts[2] || '') + '">'
+      + '<input id="kva-fp-3" placeholder="Sonstige / OE-Teile 4 (D34)" value="' + esc(state.freeParts[3] || '') + '">'
+      + '<input id="kva-fp-4" placeholder="Sonstige / OE-Teile 5 (D35)" value="' + esc(state.freeParts[4] || '') + '">'
+      + '<input id="kva-fp-5" placeholder="Sonstige / OE-Teile 6 (D36)" value="' + esc(state.freeParts[5] || '') + '">'
       + '</div>'
       + '</div>'
       + '<div class="kva-sec">'
