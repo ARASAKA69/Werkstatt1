@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
-// @version      1.1.0
-// @description  In-Carol KVA HUD: Liest Fahrzeug, Services, Lack/Delle & HU-Status exakt aus Carol, erstellt Reparaturauftrag-PDF im Sheet/Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
+// @version      1.2.0
+// @description  In-Carol KVA HUD: Liest Fahrzeug, Services, Lack/Delle & HU-Status inkl. Datum exakt aus Carol, prüft Pflicht-Füllmenge bei Öl, erstellt Reparaturauftrag-PDF im Sheet/Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var VER = '1.1.0';
+  var VER = '1.2.0';
   if (window.__kvaCarolHudVer) return;
   window.__kvaCarolHudVer = VER;
 
@@ -410,6 +410,38 @@
     }
   }
 
+  function normalizeGermanDate(raw) {
+    var s = String(raw || '').trim();
+    if (!s || s === '-' || s === '–') return '';
+    if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s;
+    var months = {
+      jan: '01', januar: '01', january: '01',
+      feb: '02', februar: '02', february: '02',
+      maer: '03', mar: '03', maerz: '03', mrz: '03', march: '03',
+      apr: '04', april: '04',
+      mai: '05', may: '05',
+      jun: '06', juni: '06', june: '06',
+      jul: '07', juli: '07', july: '07',
+      aug: '08', august: '08',
+      sep: '09', sept: '09', september: '09',
+      okt: '10', oktober: '10', oct: '10', october: '10',
+      nov: '11', november: '11',
+      dez: '12', dezember: '12', dec: '12', december: '12'
+    };
+    var m = s.match(/(\d{1,2})\.?\s*([A-Za-zÄÖÜäöü]+)\.?\s*(\d{4})/);
+    if (m) {
+      var day = ('0' + m[1]).slice(-2);
+      var monKey = m[2].toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+      var mon = months[monKey] || months[monKey.slice(0, 3)];
+      if (mon) return day + '.' + mon + '.' + m[3];
+    }
+    var mNum = s.match(/(\d{1,2})[./-](\d{1,2})[./-](\d{4})/);
+    if (mNum) {
+      return ('0' + mNum[1]).slice(-2) + '.' + ('0' + mNum[2]).slice(-2) + '.' + mNum[3];
+    }
+    return s;
+  }
+
   function scrapeCarolDom() {
     var dr = document.getElementById('kva-drawer');
     var bodyText = getPageTextWithoutDrawer();
@@ -421,6 +453,8 @@
       getriebe: '',
       km: '',
       huStatus: 'unknown',
+      huDueDate: '',
+      huDoneDate: '',
       items: []
     };
 
@@ -453,7 +487,16 @@
     if (mGetr) out.getriebe = mGetr[1].trim();
 
     var mEz = bodyText.match(/Datum\s+Erstzulassung[\s\n:]*([^\n\r]+)/i) || bodyText.match(/First\s+registration[\s\n:]*([^\n\r]+)/i);
-    if (mEz) out.erstzulassung = mEz[1].trim();
+    if (mEz) out.erstzulassung = normalizeGermanDate(mEz[1].trim());
+
+    var mHuDue = bodyText.match(/Hauptuntersuchung\s*\(HU\)\s*Fällig\s*Am[\s\n:]*([^\n\r]+)/i)
+      || bodyText.match(/HU\s+Fällig\s+Am[\s\n:]*([^\n\r]+)/i)
+      || bodyText.match(/Main\s+inspection\s*\(HU\)\s*due\s*on[\s\n:]*([^\n\r]+)/i);
+    if (mHuDue) out.huDueDate = normalizeGermanDate(mHuDue[1].trim());
+
+    var mHuDone = bodyText.match(/Hauptuntersuchung\s*\(HU\)\s*Durchgeführt\s*Am[\s\n:]*([^\n\r]+)/i)
+      || bodyText.match(/Main\s+inspection\s*\(HU\)\s*performed\s*on[\s\n:]*([^\n\r]+)/i);
+    if (mHuDone) out.huDoneDate = normalizeGermanDate(mHuDone[1].trim());
 
     if (state.graphqlCapture.vin && (!out.vin || out.vin === state.graphqlCapture.vin)) {
       if (!out.vin) out.vin = state.graphqlCapture.vin;
@@ -868,12 +911,17 @@
     state.getriebe = scraped.getriebe || state.getriebe;
     state.km = scraped.km || state.km;
     state.huStatus = scraped.huStatus || 'unknown';
+    state.huDueDate = scraped.huDueDate || state.huDueDate || '';
+    state.huDoneDate = scraped.huDoneDate || state.huDoneDate || '';
     state.carolItems = scraped.items || [];
 
     if (isNewCar) {
       state.lastScannedSid = state.stockId;
       state.nach = state.huStatus === 'failed' ? 'ja' : 'nein';
+      state.nachDatum = state.huDueDate || '';
       autoMatchItems(state.carolItems);
+    } else if (state.huDueDate && !state.nachDatum) {
+      state.nachDatum = state.huDueDate;
     }
     renderHud();
     return true;
@@ -1147,12 +1195,58 @@
     return changedCount;
   }
 
+  function isOilMitgeliefert(oilRow) {
+    return Number(oilRow) === 41;
+  }
+
+  function isOilLitersRequired() {
+    var oilSelected = Number(state.oilRow) >= 29 && Number(state.oilRow) <= 40;
+    var oilChangeChecked = !!(state.workSel[12] || state.workSel[14]);
+    return oilSelected || (oilChangeChecked && !isOilMitgeliefert(state.oilRow));
+  }
+
+  function hasValidLiters() {
+    var n = parseFloat(String(state.liters || '').replace(',', '.').trim());
+    return !isNaN(n) && n > 0;
+  }
+
   async function runFullAutomation() {
     if (state.busy) return;
     syncInputsFromDom();
 
     if (!state.stockId || !state.modell || !state.vin) {
       setHudStatus('err', 'Stock ID, Modell und VIN sind Pflichtfelder.');
+      return;
+    }
+
+    var oilChangeChecked = !!(state.workSel[12] || state.workSel[14]);
+    if (oilChangeChecked && !(Number(state.oilRow) >= 29 && Number(state.oilRow) <= 41)) {
+      var oilEl = document.getElementById('kva-in-oil');
+      if (oilEl) {
+        oilEl.style.borderColor = '#f85149';
+        oilEl.focus();
+      }
+      setHudStatus('err', '⚠️ Motorölwechsel ist ausgewählt – bitte zuerst ein Öl auswählen!');
+      return;
+    }
+
+    if (isOilLitersRequired() && !hasValidLiters()) {
+      var litEl = document.getElementById('kva-in-lit');
+      if (litEl) {
+        litEl.style.borderColor = '#f85149';
+        litEl.focus();
+      }
+      setHudStatus('err', '⚠️ Bitte Füllmenge (Liter) eintragen! Ohne Füllmenge erscheint #N/A auf dem Werkstattauftrag.');
+      return;
+    }
+
+    if (state.nach === 'ja' && !state.nachDatum) {
+      var ndEl = document.getElementById('kva-in-nachdatum');
+      if (ndEl) {
+        ndEl.style.borderColor = '#f85149';
+        ndEl.focus();
+      }
+      setHudStatus('err', '⚠️ Nachuntersuchung Ja ist aktiv – bitte das Nachuntersuchungs-Datum eintragen!');
       return;
     }
 
@@ -1453,16 +1547,23 @@
       + '<div class="kva-chks">' + workHtml + '</div>'
       + '</div>'
       + '<div class="kva-sec">'
-      + '<h4><span>Öl Nr. &amp; Nachuntersuchung</span></h4>'
+      + '<h4><span>Öl Nr. &amp; Nachuntersuchung</span>'
+      + (state.huDueDate ? ('<span class="kva-pill' + (state.huStatus === 'failed' ? ' err' : '') + '">HU Fällig: ' + esc(state.huDueDate) + '</span>') : '')
+      + '</h4>'
       + '<div class="kva-grid2" style="margin-bottom:8px;">'
-      + '<div class="kva-fld"><label>Öl (für G9:G12)</label><select id="kva-in-oil">' + oilOpts + '</select></div>'
-      + '<div class="kva-fld"><label>Füllmenge (Liter)</label><input id="kva-in-lit" value="' + esc(state.liters) + '" placeholder="optional"></div>'
+      + '<div class="kva-fld"><label>Öl (für G9:G12)' + ((state.workSel[12] || state.workSel[14]) ? ' <b style="color:#f85149;">* Pflicht</b>' : '') + '</label><select id="kva-in-oil">' + oilOpts + '</select></div>'
+      + '<div class="kva-fld"><label id="kva-lbl-lit">Füllmenge (Liter)' + (isOilLitersRequired() ? ' <b style="color:#f85149;">* PFLICHT</b>' : '') + '</label>'
+      + '<input id="kva-in-lit" value="' + esc(state.liters) + '" placeholder="' + (isOilLitersRequired() ? 'PFLICHT (z.B. 4,5)' : 'z.B. 4,5') + '"'
+      + (isOilLitersRequired() && !hasValidLiters() ? ' style="border-color:#f85149;background:rgba(248,81,73,.08);"' : '') + '></div>'
       + '</div>'
+      + (isOilLitersRequired() && !hasValidLiters()
+        ? '<div style="margin-bottom:8px;padding:6px 9px;border-radius:6px;background:rgba(248,81,73,.14);border:1px solid rgba(248,81,73,.45);color:#f85149;font-size:11.5px;font-weight:600;">⚠️ Öl ausgewählt: Bitte Füllmenge (Liter) eintragen, sonst erscheint #N/A auf dem Werkstattauftrag!</div>'
+        : '')
       + '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12px;">'
       + '<span>GTÜ Nachuntersuchung:</span>'
       + '<label class="kva-chk"><input type="radio" name="kva-nach" value="nein"' + (state.nach === 'nein' ? ' checked' : '') + '><span>Nein</span></label>'
       + '<label class="kva-chk"><input type="radio" name="kva-nach" value="ja"' + (state.nach === 'ja' ? ' checked' : '') + '><span>Ja, bis:</span></label>'
-      + '<input type="text" id="kva-in-nachdatum" value="' + esc(state.nachDatum) + '" placeholder="TT.MM.JJJJ" style="width:105px;background:#090c11;border:1px solid #283246;color:#eef2f7;border-radius:6px;padding:4px 7px;font-size:12px;">'
+      + '<input type="text" id="kva-in-nachdatum" value="' + esc(state.nachDatum) + '" placeholder="TT.MM.JJJJ" style="width:110px;background:#090c11;border:1px solid ' + (state.nach === 'ja' && !state.nachDatum ? '#f85149' : '#283246') + ';color:#eef2f7;border-radius:6px;padding:4px 7px;font-size:12px;">'
       + '<label class="kva-chk"><input type="radio" name="kva-nach" value=""' + (state.nach === '' ? ' checked' : '') + '><span>Aus</span></label>'
       + '</div>'
       + '</div>'
@@ -1568,18 +1669,55 @@
 
     dr.querySelectorAll('input[data-kind]').forEach(function (cb) {
       cb.addEventListener('change', function () {
+        syncInputsFromDom();
         var kind = cb.getAttribute('data-kind');
         var row = Number(cb.getAttribute('data-row'));
         var map = kind === 'work' ? state.workSel : state.dSel;
         if (cb.checked) map[row] = true;
         else delete map[row];
         cb.parentElement.classList.toggle('on', cb.checked);
+        if (kind === 'work' && (row === 12 || row === 14)) {
+          renderHud();
+        }
       });
     });
 
+    var oilSelectEl = document.getElementById('kva-in-oil');
+    if (oilSelectEl) {
+      oilSelectEl.addEventListener('change', function () {
+        syncInputsFromDom();
+        if (Number(state.oilRow) >= 29 && Number(state.oilRow) <= 41) {
+          state.workSel[14] = true;
+        }
+        renderHud();
+        if (isOilLitersRequired() && !hasValidLiters()) {
+          var litInput = document.getElementById('kva-in-lit');
+          if (litInput) litInput.focus();
+        }
+      });
+    }
+
+    var litInputEl = document.getElementById('kva-in-lit');
+    if (litInputEl) {
+      litInputEl.addEventListener('input', function () {
+        state.liters = litInputEl.value.trim();
+        if (hasValidLiters()) {
+          litInputEl.style.borderColor = '#283246';
+          litInputEl.style.background = '#090c11';
+        }
+      });
+    }
+
     dr.querySelectorAll('input[name="kva-nach"]').forEach(function (rb) {
       rb.addEventListener('change', function () {
-        if (rb.checked) state.nach = rb.value;
+        syncInputsFromDom();
+        if (rb.checked) {
+          state.nach = rb.value;
+          if (state.nach === 'ja' && !state.nachDatum && state.huDueDate) {
+            state.nachDatum = state.huDueDate;
+          }
+          renderHud();
+        }
       });
     });
 
