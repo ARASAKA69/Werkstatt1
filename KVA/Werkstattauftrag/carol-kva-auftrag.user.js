@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
-// @version      1.2.0
-// @description  In-Carol KVA HUD: Liest Fahrzeug, Services, Lack/Delle & HU-Status inkl. Datum exakt aus Carol, prüft Pflicht-Füllmenge bei Öl, erstellt Reparaturauftrag-PDF im Sheet/Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
+// @version      1.3.0
+// @description  In-Carol KVA HUD: Vollautomatischer 1:1 Abgleich aller Carol-Schäden, Services, Lack/Delle (1-6) & HU-Status mit dem Sheet, erstellt PDF im Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var VER = '1.2.0';
+  var VER = '1.3.0';
   if (window.__kvaCarolHudVer) return;
   window.__kvaCarolHudVer = VER;
 
@@ -511,6 +511,15 @@
     }
 
     var seenItems = {};
+    function isDocumentOrFilename(str) {
+      var s = String(str || '').trim();
+      if (!s) return true;
+      if (/\.(pdf|jpg|jpeg|png|webp|gif|bmp|heic|doc|docx|xls|xlsx)\b/i.test(s)) return true;
+      if (/^(image|obd-bericht|hu\s*bericht|service\s*nachweis|service\s*buch|zulassungsbescheinigung|n4parts|marketing-bilder|dokument)$/i.test(s)) return true;
+      if (/^(v|vr|vl|h|hr|hl|cock|cockpit|headrest|navigation|rear\s*brake|oil\s*cap|break\s*fluid|brake\s*fluid|u)$/i.test(s)) return true;
+      return false;
+    }
+
     function addStructuredItem(entry) {
       var comp = String(entry.component || '').replace(/\s+/g, ' ').trim();
       var srv = String(entry.service || '').replace(/\s+/g, ' ').trim();
@@ -519,19 +528,26 @@
       if (comm === '-' || comm === '–') comm = '';
       if (dmg === '-' || dmg === '–') dmg = '';
 
+      if (isDocumentOrFilename(comp) && isDocumentOrFilename(srv)) return;
+      if (/\.(pdf|jpg|jpeg|png)\b/i.test(comp) || /\.(pdf|jpg|jpeg|png)\b/i.test(srv)) return;
+
       if (!comp && !srv && !comm) return;
       var fullCheck = [comp, srv, dmg, comm].join(' ');
       if (/remove\s+license\s+plate\s+holder|kennzeichenhalter\s+entfernen/i.test(fullCheck)) return;
-      if (/^(leistung|service|dienstleistung|fahrzeugkomponente|kommentar|status|kosten)$/i.test(comp || srv)) return;
+      if (/^(leistung|service|dienstleistung|fahrzeugkomponente|kommentar|status|kosten|ersatzteilkosten|letztes\s+update\s+am)$/i.test(comp || srv)) return;
 
       var displayTitle = '';
       if (comp && srv && !/^(andere|other)$/i.test(srv)) {
         displayTitle = srv + ' > ' + comp;
       } else if (comp) {
         displayTitle = comp + (dmg && !/^(keine\s+leistung)$/i.test(dmg) ? (' (' + dmg + ')') : '');
+      } else if (srv && !/^(andere|other)$/i.test(srv)) {
+        displayTitle = srv;
       } else {
-        displayTitle = srv || comm;
+        displayTitle = comm;
       }
+
+      if (!displayTitle || isDocumentOrFilename(displayTitle)) return;
 
       var key = collapseDoubleConsonants([comp, srv, comm].join('|'));
       if (!key || seenItems[key]) return;
@@ -550,94 +566,104 @@
     var tables = document.querySelectorAll('table');
     for (var tb = 0; tb < tables.length; tb++) {
       if (dr && dr.contains(tables[tb])) continue;
-      var rows = tables[tb].querySelectorAll('tbody tr, tr');
+      var tblText = String(tables[tb].innerText || '');
+      if (/image\.jpg|obd-bericht|hu\s+bericht|dokument\s+hochladen/i.test(tblText) && !/ersatzteilkosten/i.test(tblText)) {
+        continue;
+      }
+      var headers = Array.from(tables[tb].querySelectorAll('th')).map(function (th) {
+        return String(th.innerText || '').trim().toLowerCase();
+      });
+      var isPartsTable = headers.some(function (h) {
+        return h.indexOf('leistung') !== -1 || h.indexOf('ersatzteil') !== -1 || h.indexOf('service') !== -1;
+      });
+      if (!isPartsTable) continue;
+
+      var rows = tables[tb].querySelectorAll('tbody tr');
       for (var r = 0; r < rows.length; r++) {
         var cells = rows[r].querySelectorAll('td');
         if (cells.length >= 2) {
           var c0 = String(cells[0].innerText || '').trim();
           var c1 = String(cells[1].innerText || '').trim();
           var c2 = cells[2] ? String(cells[2].innerText || '').trim() : '';
-          if (c0 && !/\.(jpg|jpeg|png|pdf)$/i.test(c0) && !/^(obd-bericht|hu\s+bericht|andere|service\s+nachweis)$/i.test(c0)) {
-            if (/^\s*$/.test(c0) && c1) {
-              addStructuredItem({ service: c1, comment: c2, source: 'Ersatzteile' });
-            } else {
-              addStructuredItem({ service: c0, comment: c1, source: 'Ersatzteile' });
-            }
+          var srvCell = (!c0 && c1) ? c1 : c0;
+          var commCell = (!c0 && c1) ? c2 : c1;
+          if (srvCell && !isDocumentOrFilename(srvCell)) {
+            addStructuredItem({ service: srvCell, comment: commCell, source: 'Ersatzteile' });
           }
         }
       }
     }
 
-    var lines = bodyText.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
-    var labelRegex = /^(Schadenstyp|Fahrzeugkomponente|Dienstleistung|Service|Kosten|Reparaturstandort\s+Und\s+-Partner|Kommentar|Damage\s+type|Vehicle\s+component|Cost|Comment)$/i;
+    var tokenLines = bodyText
+      .split(/\r?\n|\t+/)
+      .map(function (l) { return l.replace(/\s+/g, ' ').trim(); })
+      .filter(Boolean);
 
-    for (var idx = 0; idx < lines.length; idx++) {
-      var line = lines[idx];
+    var labelMap = {
+      'schadenstyp': 'damage',
+      'damage type': 'damage',
+      'fahrzeugkomponente': 'component',
+      'vehicle component': 'component',
+      'dienstleistung': 'service',
+      'service': 'service',
+      'kosten': 'cost',
+      'cost': 'cost',
+      'reparaturstandort und -partner': 'partner',
+      'repair location and partner': 'partner',
+      'kommentar': 'comment',
+      'comment': 'comment'
+    };
 
-      if (/^(Schadenstyp|Damage\s+type)$/i.test(line)) {
-        var dmgVal = '';
-        var compVal = '';
-        var srvVal = '';
-        var commVal = '';
-        var partnerVal = '';
+    function getLabelType(str) {
+      var low = String(str || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      return labelMap[low] || '';
+    }
 
-        var j = idx + 1;
-        if (j < lines.length && !labelRegex.test(lines[j])) {
-          dmgVal = lines[j];
-          j++;
+    var currentCard = null;
+    for (var idx = 0; idx < tokenLines.length; idx++) {
+      var tok = tokenLines[idx];
+      var lType = getLabelType(tok);
+
+      if (/^beauftragt$/i.test(tok)) {
+        if (currentCard && (currentCard.component || currentCard.service || currentCard.comment)) {
+          addStructuredItem(currentCard);
         }
-        while (j < Math.min(lines.length, idx + 18)) {
-          var lbl = lines[j];
-          var nextVal = (j + 1 < lines.length && !labelRegex.test(lines[j + 1])) ? lines[j + 1] : '';
-          if (/^(Fahrzeugkomponente|Vehicle\s+component)$/i.test(lbl)) {
-            compVal = nextVal;
-            j += 2;
-          } else if (/^(Dienstleistung|Service)$/i.test(lbl)) {
-            srvVal = nextVal;
-            j += 2;
-          } else if (/^(Reparaturstandort\s+Und\s+-Partner)$/i.test(lbl)) {
-            partnerVal = nextVal;
-            j += 2;
-          } else if (/^(Kommentar|Comment)$/i.test(lbl)) {
-            commVal = nextVal;
-            j += 2;
-            break;
-          } else if (/^(Kosten|Cost)$/i.test(lbl)) {
-            j += 2;
-          } else if (/^(Schadenstyp|Damage\s+type)$/i.test(lbl)) {
-            break;
-          } else {
-            j++;
+        currentCard = { damage: '', component: '', service: '', comment: '', partner: '', source: 'Carol' };
+        continue;
+      }
+
+      if (lType) {
+        if (!currentCard) {
+          currentCard = { damage: '', component: '', service: '', comment: '', partner: '', source: 'Carol' };
+        }
+        if (lType === 'damage' && (currentCard.component || currentCard.service)) {
+          addStructuredItem(currentCard);
+          currentCard = { damage: '', component: '', service: '', comment: '', partner: '', source: 'Carol' };
+        }
+        if (lType === 'service' && !currentCard.damage && !currentCard.component && currentCard.service) {
+          addStructuredItem(currentCard);
+          currentCard = { damage: '', component: '', service: '', comment: '', partner: '', source: 'Carol' };
+        }
+        var val = (idx + 1 < tokenLines.length) ? tokenLines[idx + 1] : '';
+        if (val && !getLabelType(val) && !/^beauftragt$/i.test(val) && !/^\d+\s+service\s*\|/i.test(val)) {
+          if (lType === 'damage') currentCard.damage = val;
+          else if (lType === 'component') currentCard.component = val;
+          else if (lType === 'service') currentCard.service = val;
+          else if (lType === 'partner') {
+            currentCard.partner = val;
+            if (/lack/i.test(val)) currentCard.source = 'Lack';
+            else if (/mechanik/i.test(val)) currentCard.source = 'Mechanik';
+          } else if (lType === 'comment') {
+            currentCard.comment = val;
+            addStructuredItem(currentCard);
+            currentCard = null;
           }
-        }
-        if (compVal || srvVal || commVal) {
-          addStructuredItem({
-            damage: dmgVal,
-            component: compVal,
-            service: srvVal,
-            comment: commVal,
-            source: /lack/i.test(partnerVal) ? 'Lack' : 'Schaden'
-          });
-          idx = Math.max(idx, j - 1);
-        }
-      } else if (/^(Service)$/i.test(line)) {
-        var sVal2 = (idx + 1 < lines.length && !labelRegex.test(lines[idx + 1])) ? lines[idx + 1] : '';
-        var cVal2 = '';
-        for (var k = idx + 1; k < Math.min(lines.length, idx + 12); k++) {
-          if (/^(Kommentar|Comment)$/i.test(lines[k])) {
-            cVal2 = (k + 1 < lines.length && !labelRegex.test(lines[k + 1])) ? lines[k + 1] : '';
-            break;
-          }
-          if (/^(Service|Schadenstyp)$/i.test(lines[k]) && k > idx + 1) break;
-        }
-        if (sVal2 && !/^\d+\s+Service/i.test(sVal2)) {
-          addStructuredItem({
-            service: /^(andere|other)$/i.test(sVal2) ? '' : sVal2,
-            comment: cVal2,
-            source: 'Fahrzeug Service'
-          });
+          idx++;
         }
       }
+    }
+    if (currentCard && (currentCard.component || currentCard.service || currentCard.comment)) {
+      addStructuredItem(currentCard);
     }
 
     return out;
@@ -827,69 +853,107 @@
     ];
 
     items.forEach(function (entry) {
-      var rawText = [entry.component, entry.service, entry.damage, entry.comment, entry.title].filter(Boolean).join(' ');
-      var exp = expandText(rawText);
+      var coreText = [entry.component, entry.service, entry.title].filter(Boolean).join(' ');
+      var commText = String(entry.comment || '');
+      var expCore = expandText(coreText);
+      var expComm = expandText(commText);
+      var expAll = expandText(coreText + ' ' + commText);
       var hit = false;
 
-      var bodyActs = detectBodyActionNrs(entry.service || entry.title, entry.damage, entry.comment);
+      var bodyActs = detectBodyActionNrs(entry.service || entry.title, entry.damage, '');
       if (bodyActs.length) {
-        var matchedPart = findExactSheetPart(entry.component, rawText);
+        var matchedPart = findExactSheetPart(entry.component, coreText);
         if (matchedPart) {
           addOrMergeAutoBodyWork(matchedPart, bodyActs);
           hit = true;
         }
       }
 
-      meta.workItems.forEach(function (wIt) {
-        if (hasPhrase(exp, wIt.label)) {
-          state.workSel[wIt.row] = true;
-          state.autoWork[wIt.row] = true;
+      if (!hit && entry.component && /^(ersetzen|reparieren|instandsetzen)$/i.test(String(entry.service || '').trim())) {
+        var matchedRepPart = findExactSheetPart(entry.component, '');
+        if (matchedRepPart) {
+          addOrMergeAutoBodyWork(matchedRepPart, [5]);
           hit = true;
         }
-      });
+      }
 
-      meta.dItems.forEach(function (dIt) {
-        if (hasPhrase(exp, dIt.label)) {
-          if (dIt.row === 3 && hasWord(exp, 'laden')) return;
-          state.dSel[dIt.row] = true;
-          state.autoD[dIt.row] = true;
+      if (!hit && collapseDoubleConsonants(entry.component) === 'batterie') {
+        if (hasWord(expAll, 'laden')) {
+          state.dSel[2] = true;
+          state.autoD[2] = true;
+          hit = true;
+        } else if (hasWord(expAll, 'ersetzen') || hasWord(expAll, 'erneuern')) {
+          state.dSel[3] = true;
+          state.autoD[3] = true;
           hit = true;
         }
-      });
+      }
 
-      rules.forEach(function (rule) {
-        if (rule.blockIf) {
-          for (var b = 0; b < rule.blockIf.length; b++) {
-            if (hasWord(exp, rule.blockIf[b])) return;
+      if (!hit) {
+        meta.workItems.forEach(function (wIt) {
+          if (hasPhrase(expCore, wIt.label) || (!entry.component && hasPhrase(expComm, wIt.label))) {
+            state.workSel[wIt.row] = true;
+            state.autoWork[wIt.row] = true;
+            hit = true;
           }
-        }
-        var rHit = false;
-        if (rule.all && hasAllWords(exp, rule.all)) rHit = true;
-        if (!rHit && rule.words) {
-          for (var w = 0; w < rule.words.length; w++) {
-            if (hasPhrase(exp, rule.words[w]) || hasWord(exp, rule.words[w])) { rHit = true; break; }
-          }
-        }
-        if (!rHit) return;
-        var list = rule.kind === 'work' ? meta.workItems : meta.dItems;
-        var found = findItemByTokens(list, rule.tokens);
-        if (found) {
-          if (rule.kind === 'work') {
-            state.workSel[found.row] = true;
-            state.autoWork[found.row] = true;
-          } else {
-            state.dSel[found.row] = true;
-            state.autoD[found.row] = true;
-          }
-          hit = true;
-        }
-      });
+        });
 
-      if (!hit && entry.title) {
-        var freeLine = [entry.service, entry.damage, entry.component].filter(Boolean).join(' ');
-        if (!freeLine) freeLine = entry.title;
-        if (entry.comment) freeLine += ' (' + entry.comment + ')';
-        if (unmatched.indexOf(freeLine) === -1) unmatched.push(freeLine);
+        meta.dItems.forEach(function (dIt) {
+          if (hasPhrase(expCore, dIt.label) || (!entry.component && hasPhrase(expComm, dIt.label))) {
+            if (dIt.row === 3 && hasWord(expAll, 'laden')) return;
+            state.dSel[dIt.row] = true;
+            state.autoD[dIt.row] = true;
+            hit = true;
+          }
+        });
+      }
+
+      if (!hit) {
+        var checkTarget = entry.component ? expCore : expAll;
+        rules.forEach(function (rule) {
+          if (rule.blockIf) {
+            for (var b = 0; b < rule.blockIf.length; b++) {
+              if (hasWord(expAll, rule.blockIf[b])) return;
+            }
+          }
+          var rHit = false;
+          if (rule.all && hasAllWords(checkTarget, rule.all)) rHit = true;
+          if (!rHit && rule.words) {
+            for (var w = 0; w < rule.words.length; w++) {
+              if (hasPhrase(checkTarget, rule.words[w]) || hasWord(checkTarget, rule.words[w])) { rHit = true; break; }
+            }
+          }
+          if (!rHit) return;
+          var list = rule.kind === 'work' ? meta.workItems : meta.dItems;
+          var found = findItemByTokens(list, rule.tokens);
+          if (found) {
+            if (rule.kind === 'work') {
+              state.workSel[found.row] = true;
+              state.autoWork[found.row] = true;
+            } else {
+              state.dSel[found.row] = true;
+              state.autoD[found.row] = true;
+            }
+            hit = true;
+          }
+        });
+      }
+
+      if (!hit) {
+        var freeLine = '';
+        if (entry.component && entry.service && !/^(andere|other)$/i.test(entry.service)) {
+          freeLine = entry.component + ' ' + entry.service.toLowerCase();
+        } else if (!entry.component && (!entry.service || /^(andere|other)$/i.test(entry.service)) && entry.comment) {
+          freeLine = entry.comment;
+        } else if (entry.component) {
+          freeLine = entry.component + (entry.damage ? (' (' + entry.damage + ')') : '');
+        } else if (entry.service && !/^(andere|other)$/i.test(entry.service)) {
+          freeLine = entry.service;
+        }
+        freeLine = String(freeLine || '').replace(/\s*\/\/\s*EQA:.*$/i, '').trim();
+        if (freeLine && unmatched.indexOf(freeLine) === -1) {
+          unmatched.push(freeLine);
+        }
       }
     });
 
@@ -1476,12 +1540,14 @@
     if (state.bodyWorks.length) {
       bwListHtml = '<ul class="kva-bw-list">' + state.bodyWorks.map(function (bw, idx) {
         return '<li class="' + (bw.auto ? 'auto' : '') + '">'
-          + '<span><b>' + esc(bw.label) + '</b> <span style="color:#93a1b5;">→ ' + esc((bw.actionLabels || []).join(', ')) + '</span></span>'
+          + '<span><b>' + esc((bw.actionLabels || []).join(', ')) + '</b> <span style="color:#f2cc60;">→ ' + esc(bw.label) + '</span></span>'
           + '<span style="display:flex;align-items:center;gap:6px;">'
           + (bw.auto ? '<span class="kva-pill">AUTO</span>' : '')
           + '<button type="button" class="kva-bw-del" data-bw-del="' + idx + '" title="Entfernen">×</button>'
           + '</span></li>';
       }).join('') + '</ul>';
+    } else {
+      bwListHtml = '<div style="color:#93a1b5;font-size:12px;">Keine Karosserie-/Lack-/Dellen-Arbeiten in Carol beauftragt.</div>';
     }
 
     var oilOpts = '<option value="0">— Kein Öl ausgewählt —</option>' + (meta.oils || []).map(function (o) {
@@ -1530,13 +1596,18 @@
       + carolListHtml
       + '</div>'
       + '<div class="kva-sec">'
-      + '<h4><span>Karosserie, Lack &amp; Delle (1–6) · (' + state.bodyWorks.length + ')</span></h4>'
+      + '<h4><span>Karosserie, Lack &amp; Delle (Automatisch aus Carol · ' + state.bodyWorks.length + ')</span></h4>'
+      + bwListHtml
+      + '<details style="margin-top:8px;">'
+      + '<summary style="cursor:pointer;color:#93a1b5;font-size:11.5px;user-select:none;">+ Optional manuell Bauteil hinzufügen</summary>'
+      + '<div style="margin-top:8px;">'
       + '<div class="kva-grid2" style="margin-bottom:6px;">'
       + '<div class="kva-fld"><select id="kva-bw-part">' + partOpts + '</select></div>'
-      + '<button type="button" class="kva-ibtn" id="kva-bw-add">+ Bauteil hinzufügen</button>'
+      + '<button type="button" class="kva-ibtn" id="kva-bw-add">+ Hinzufügen</button>'
       + '</div>'
       + '<div class="kva-chks" style="max-height:95px;">' + actChecks + '</div>'
-      + bwListHtml
+      + '</div>'
+      + '</details>'
       + '</div>'
       + '<div class="kva-sec">'
       + '<h4><span>Mechanik &amp; Zusatzarbeiten</span></h4>'
