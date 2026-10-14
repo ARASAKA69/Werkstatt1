@@ -31,8 +31,15 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.20",
-    date: "12.10.2026",
+    version: "2.2.22",
+    date: "14.10.2026",
+    notes:
+      "• Kennzeichen wie LS89069 werden wieder normal über Bestellnummer und E-Mail-Belege gesucht. Nur echte AAG-Lieferscheine LS130… gehen in den AAG Sync\n\n" +
+      "• Teile aus Packzettel bleiben die bestellten Positionen aus den E-Mail-Belegen"
+  },
+  {
+    version: "2.2.21",
+    date: "14.10.2026",
     notes:
       "• AAG Lieferschein Barcode (LS...) kann jetzt direkt in der WMS Suche gescannt werden. WMS holt Kundenreferenz + gelieferte Teile aus dem neuen AAG Lieferscheine Sheet, findet damit die Stock-ID und öffnet den Auftrag\n\n" +
       "• Genau die Positionen vom gescannten Lieferschein landen mit Menge und AAG Badge in Teile aus Packzettel\n\n" +
@@ -44,6 +51,12 @@ const WMS_CHANGELOG_HISTORY = [
       "• Der AAG-Portal-Tab aktualisiert sich im Hintergrund alle 10 Minuten automatisch\n\n" +
       "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden\n\n" +
       "• Abgelaufene AAG API-Tokens werden jetzt automatisch durch einmaliges Neuladen des weiterhin angemeldeten Portals erneuert"
+  },
+  {
+    version: "2.2.20",
+    date: "14.10.2026",
+    notes:
+      "• EXIT anlieferungen Landen jetzt in EXIT Chat nicht mehr in INFO Lager"
   },
   {
     version: "2.2.19",
@@ -314,9 +327,9 @@ const KOMMENTAR_VERLAUF_TAB = "Kommentar Verlauf";
 const AAG_LIEFERSCHEINE_SHEET_ID = "1CnV8VDxHAk-xzuOzfS2qjHgVR9zVtQYa90g0L7FHUXA";
 const AAG_LIEFERSCHEINE_TAB = "History 2026";
 const AAG_LIEFERSCHEINE_TAB_ID = 1753611365;
-const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQA5uO7fLU/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=I-lsD4vjmGQdTIecI9l7hyg7XO3let1u9VRS4ofAIT8";
+const INFO_LAGER_EXIT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAdKbE3vo/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=ZH4dELMG9ATRM5Il92TrSsPAx0IKSwtSdR63q6OZo0s";
 const EXIT_HUD_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxAz9jQS2cpMcyaDr86zBx7pVaY0hxzdp7rupT_wcfxqU4jgwmvhvv-WtX0D7JcE1JsXA/exec";
-const INFO_LAGER_EXIT_HUD_BUTTON = 1;
+const INFO_LAGER_EXIT_HUD_BUTTON = 0;
 
 function isProtectedRefurbRegal_(val) {
   var s = String(val == null ? "" : val).trim().toLowerCase();

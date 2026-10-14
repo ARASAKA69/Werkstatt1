@@ -8626,7 +8626,7 @@
   }
 
   function isAagLieferscheinQuery(value) {
-    return /^LS[A-Z0-9-]{5,}$/i.test(String(value || '').replace(/\s+/g, ''));
+    return /^LS130\d{8,}$/i.test(String(value || '').replace(/\s+/g, ''));
   }
 
   function resolveAagLieferscheinReceipt(receipt) {
