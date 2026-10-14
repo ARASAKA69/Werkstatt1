@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.23",
+    date: "14.10.2026",
+    notes:
+      "• AAG-Lieferschein LS130… wird jetzt direkt in der Lieferschein-Spalte gelesen. Die alte Zellsuche hat vorhandene Nummern wie LS13009283970 übersehen"
+  },
+  {
     version: "2.2.22",
     date: "14.10.2026",
     notes:
@@ -4672,11 +4678,30 @@ function getPackzettelPartsCache() {
   }
 }
 
-function aagLieferscheinSheet_() {
+function aagLieferscheinCandidates_() {
   var ss = SpreadsheetApp.openById(AAG_LIEFERSCHEINE_SHEET_ID);
-  return ss.getSheetById(AAG_LIEFERSCHEINE_TAB_ID)
-    || ss.getSheetByName(AAG_LIEFERSCHEINE_TAB)
-    || ss.getSheetByName("Hisory 2026");
+  var out = [];
+  var seen = {};
+  function add(sheet) {
+    if (!sheet) return;
+    var id = String(sheet.getSheetId());
+    if (seen[id]) return;
+    seen[id] = true;
+    out.push(sheet);
+  }
+  add(ss.getSheetById(AAG_LIEFERSCHEINE_TAB_ID));
+  add(ss.getSheetByName(AAG_LIEFERSCHEINE_TAB));
+  add(ss.getSheetByName("Hisory 2026"));
+  var all = ss.getSheets();
+  for (var i = 0; i < all.length; i++) {
+    if (String(all[i].getRange(1, 2).getDisplayValue() || "").toLowerCase().indexOf("lieferschein") !== -1) add(all[i]);
+  }
+  return out;
+}
+
+function aagLieferscheinSheet_() {
+  var sheets = aagLieferscheinCandidates_();
+  return sheets.length ? sheets[0] : null;
 }
 
 function aagLieferscheinNorm_(value) {
@@ -4736,32 +4761,34 @@ function getAagLieferscheinCache() {
 function getAagLieferscheinByLs(receiptNumber) {
   try {
     var want = aagLieferscheinNorm_(receiptNumber);
-    if (!/^LS[A-Z0-9-]{5,}$/.test(want)) return { success: false, message: "Ungültige Lieferscheinnummer", receipt: null };
-    var sheet = aagLieferscheinSheet_();
-    if (!sheet || sheet.getLastRow() < 2) return { success: true, found: false, receipt: null };
-    var matches = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1)
-      .createTextFinder(want)
-      .matchEntireCell(true)
-      .matchCase(false)
-      .findAll();
-    if (!matches.length) return { success: true, found: false, receipt: null };
-    var rows = [];
-    for (var i = 0; i < matches.length; i++) rows.push(matches[i].getRow());
-    rows.sort(function(a, b) { return a - b; });
-    var minRow = rows[0];
-    var maxRow = rows[rows.length - 1];
-    var block = sheet.getRange(minRow, 1, maxRow - minRow + 1, 14).getValues();
-    var receipt = null;
-    var parts = [];
-    for (var b = 0; b < block.length; b++) {
-      if (aagLieferscheinNorm_(block[b][1]) !== want) continue;
-      if (!receipt) receipt = aagLieferscheinHeaderFromRow_(block[b]);
-      var part = aagLieferscheinPartFromRow_(block[b]);
-      if (part) parts.push(part);
+    if (!/^LS130\d{8,}$/.test(want)) return { success: false, message: "Ungültige Lieferscheinnummer", receipt: null };
+    var sheets = aagLieferscheinCandidates_();
+    var checked = [];
+    for (var s = 0; s < sheets.length; s++) {
+      var sheet = sheets[s];
+      var last = sheet.getLastRow();
+      checked.push(sheet.getName() + " (" + Math.max(0, last - 1) + ")");
+      if (last < 2) continue;
+      var values = sheet.getRange(2, 1, last - 1, 14).getValues();
+      var receipt = null;
+      var parts = [];
+      for (var i = 0; i < values.length; i++) {
+        if (aagLieferscheinNorm_(values[i][1]) !== want) continue;
+        if (!receipt) receipt = aagLieferscheinHeaderFromRow_(values[i]);
+        var part = aagLieferscheinPartFromRow_(values[i]);
+        if (part) parts.push(part);
+      }
+      if (receipt) {
+        receipt.parts = parts;
+        return { success: true, found: true, receipt: receipt };
+      }
     }
-    if (!receipt) return { success: true, found: false, receipt: null };
-    receipt.parts = parts;
-    return { success: true, found: true, receipt: receipt };
+    return {
+      success: true,
+      found: false,
+      receipt: null,
+      message: want + " nicht gefunden. Geprüft: " + (checked.join(", ") || "kein AAG-Blatt")
+    };
   } catch (err) {
     return { success: false, message: String(err.message || err), receipt: null };
   }

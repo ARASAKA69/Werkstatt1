@@ -8673,7 +8673,7 @@
         if (!res.found || !res.receipt) {
           setHudBusy(false);
           toggleUI(true);
-          setStatus('❌ ' + ls + ' noch nicht im AAG Sync. Portal prüfen oder bis zum nächsten Sync warten.', '#f85149');
+          setStatus('❌ ' + (res.message || (ls + ' noch nicht im AAG Sync. Portal prüfen oder bis zum nächsten Sync warten.')), '#f85149');
           return;
         }
         if (!aagLieferscheinCacheMap) aagLieferscheinCacheMap = {};
