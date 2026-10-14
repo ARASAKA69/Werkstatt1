@@ -234,7 +234,7 @@
   <main class="wms-main">
   <div class="dashboard-grid overlay-block" id="mainGrid">
   
-  <div class="card">
+  <div class="card card--info">
     <div class="card-header">
       <h3 class="card-title">🔍 Auftrags Infos</h3>
       <div class="card-header-badges">
@@ -243,11 +243,15 @@
       </div>
     </div>
     
-    <div class="sub-title" id="infoSchaedenLabel">Schäden (Manueller Input)</div>
-    <div class="info-box schaeden-list" id="infoSchaeden">-</div>
+    <div class="info-section-panel">
+      <div class="sub-title" id="infoSchaedenLabel">Schäden (Manueller Input)</div>
+      <div class="info-box schaeden-list" id="infoSchaeden">-</div>
+    </div>
     
-    <div class="sub-title" id="infoBestellungLabel">Ersatzteile Bestellung</div>
-    <div class="info-box schaeden-list" id="infoBestellung">-</div>
+    <div class="info-section-panel">
+      <div class="sub-title" id="infoBestellungLabel">Ersatzteile Bestellung</div>
+      <div class="info-box schaeden-list" id="infoBestellung">-</div>
+    </div>
     <div class="pz-card-action" id="pzCardAction" style="display:none;">
       <button type="button" class="btn-pz-open btn-glow" id="btnPzOpen" onclick="openPzForCurrent()">📄 Packzettel öffnen</button>
       <button type="button" class="btn-pz-parts btn-glow" id="btnPzParts" style="display:none;" onclick="openPzPartsPickerManual()">Teile aus Packzettel</button>
@@ -257,26 +261,25 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card card--workspace">
     <div class="card-header">
       <h3 class="card-title">✏️ Workspace</h3>
     </div>
 
     <div class="workspace-split">
-      <div class="workspace-panel">
-        <div class="sub-title">Kommentar Anlieferung</div>
+      <div class="workspace-panel workspace-panel--comment">
+        <div class="workspace-panel-head">
+          <div class="sub-title">Kommentar Anlieferung</div>
+          <div class="workspace-verlauf-action">
+            <button type="button" class="btn btn-verlauf btn-glow" id="btnVerlauf" onclick="openKommentarVerlauf()" disabled>📜 Verlauf</button>
+          </div>
+        </div>
         <div id="editAnlieferung" class="comment-editor notranslate" translate="no" contenteditable="true" spellcheck="false" data-placeholder="Notizen..." title="Strg+S: Nur Kommentar speichern (ohne Status oder Regal)"></div>
       </div>
 
-      <div class="workspace-verlauf-action">
-        <button type="button" class="btn btn-verlauf btn-glow" id="btnVerlauf" onclick="openKommentarVerlauf()" disabled>📜 Verlauf</button>
-      </div>
-
-      <div class="workspace-panel">
-        <div class="card-header" style="border-top: 1px solid var(--border); padding-top: 15px;">
+      <div class="workspace-panel workspace-panel--storage">
+        <div class="workspace-storage-head">
           <h3 class="card-title">📦 Einlagern</h3>
-        </div>
-        <div style="display:flex;justify-content:center;gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap;">
           <span class="shelf-pill" id="currentShelfLabel">Aktuell: -</span>
         </div>
         <div class="shelf-dd-wrap" id="shelfDdWrap">
@@ -298,7 +301,7 @@
     </div>
 
     <div class="workspace-merge-action">
-      <div style="color:var(--foreground-muted);font-size:11px;font-weight:700;text-align:center;margin-bottom:6px;letter-spacing:0.5px;">Nur Verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
+      <div class="workspace-merge-hint">Nur verwenden wenn Auftrag nicht fertig und eingelagert werden muss !</div>
       <button class="btn btn-yellow btn-glow" onclick="saveKommentarUndRegalFlow()">💾 Kommentar + Regal speichern</button>
     </div>
   </div>
@@ -310,7 +313,9 @@
 
     <div class="tools-layout">
       <div class="tools-panel primary tools-panel--dymo">
-        <div class="tools-panel-title">DYMO Etikettendruck</div>
+        <div class="tools-panel-head">
+          <div class="tools-panel-title">🏷️ DYMO Etikettendruck</div>
+        </div>
         <div class="dymo-row">
           <div class="dymo-field dymo-field--initials">
             <div class="field-label">Kürzel auf Label</div>
@@ -350,20 +355,22 @@
         </div>
       </div>
 
-      <div class="tools-panel primary" id="printerPanel">
-        <div class="tools-panel-title">🖨️ Brother Drucker</div>
+      <div class="tools-panel primary tools-panel--brother" id="printerPanel">
+        <div class="tools-panel-head">
+          <div class="tools-panel-title">🖨️ Brother Drucker</div>
+          <div class="bridge-status-pill">
+            <span id="bridgeStatusDot" style="width:8px;height:8px;border-radius:50%;background:#f85149;display:inline-block;"></span>
+            <span id="bridgeStatusText">Offline</span>
+          </div>
+        </div>
         <div class="dymo-fields">
           <div class="dymo-field">
             <div class="field-label">Drucker für Werkstattauftrag</div>
             <div class="select-glow">
-              <select id="brotherPrinterSelect" style="width:100%;background:#0d1117;color:#fff;border:2.5px solid rgba(234,88,12,0.34);padding:13px 14px;font-size:15px;border-radius:14px;outline:none;text-align:center;">
+              <select id="brotherPrinterSelect" class="brother-printer-select">
                 <option value="">Bridge nicht verbunden</option>
               </select>
             </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span id="bridgeStatusDot" style="width:10px;height:10px;border-radius:50%;background:#f85149;display:inline-block;"></span>
-            <span id="bridgeStatusText" style="color:var(--foreground-muted);font-size:11px;font-weight:700;letter-spacing:0.5px;">Offline</span>
           </div>
           <div id="bridgeHelpBox" class="bridge-help-box" hidden>
             <div class="bridge-help-title">ARASAKA Print Bridge</div>

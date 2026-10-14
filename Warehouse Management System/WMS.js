@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.22",
+    date: "14.10.2026",
+    notes:
+      "• Komplettes Redesign der WMS-Hauptansicht: Neues Scan-Terminal oben sowie neu strukturierte 3-Spalten-Karten (Auftrags Infos, Workspace & Einlagern, DYMO & Brother Druckmodul)\n\n" +
+      "• Neues einheitliches Cache-Status-Badge oben rechts mit Live-Indikator, Trennlinie, Zeitstempel und Direktklick zum Neuaufbau"
+  },
+  {
     version: "2.2.21",
     date: "14.10.2026",
     notes:
