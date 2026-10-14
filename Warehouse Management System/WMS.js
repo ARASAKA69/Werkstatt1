@@ -31,19 +31,6 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.23",
-    date: "14.10.2026",
-    notes:
-      "• AAG-Lieferschein LS130… wird jetzt direkt in der Lieferschein-Spalte gelesen. Die alte Zellsuche hat vorhandene Nummern wie LS13009283970 übersehen"
-  },
-  {
-    version: "2.2.22",
-    date: "14.10.2026",
-    notes:
-      "• Kennzeichen wie LS89069 werden wieder normal über Bestellnummer und E-Mail-Belege gesucht. Nur echte AAG-Lieferscheine LS130… gehen in den AAG Sync\n\n" +
-      "• Teile aus Packzettel bleiben die bestellten Positionen aus den E-Mail-Belegen"
-  },
-  {
     version: "2.2.21",
     date: "14.10.2026",
     notes:

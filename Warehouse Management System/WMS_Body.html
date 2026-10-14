@@ -206,11 +206,14 @@
           <span class="cast-hud-dot" aria-hidden="true"></span>
           Handy verbunden
         </button>
-        <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
-        <div class="topbar-cache-sub">
-          <span class="cache-load-spinner" id="cacheLoadSpinner" hidden></span>
-          <span class="cache-pulse-dot cache-pulse-dot--inactive" id="cachePulseDot" aria-hidden="true"></span>
-          <span class="topbar-cache-live-label" id="cacheStatusText">Cache not active</span>
+        <div class="topbar-cache-card" role="button" tabindex="0" title="Klicken, um Cache neu aufzubauen" onclick="if(window.wmsRebuildCache)window.wmsRebuildCache()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();if(window.wmsRebuildCache)window.wmsRebuildCache();}">
+          <div class="topbar-cache-sub">
+            <span class="cache-load-spinner" id="cacheLoadSpinner" hidden></span>
+            <span class="cache-pulse-dot cache-pulse-dot--inactive" id="cachePulseDot" aria-hidden="true"></span>
+            <span class="topbar-cache-live-label" id="cacheStatusText">Cache Offline</span>
+          </div>
+          <span class="topbar-cache-divider" aria-hidden="true"></span>
+          <span class="topbar-cache-updated" id="cacheLastUpdatedBadge">Last updated: —</span>
         </div>
       </div>
     </div>
