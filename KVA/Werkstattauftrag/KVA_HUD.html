@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<base target="_top">
+<title>KVA Werkstattauftrag HUD</title>
+<style>
+:root {
+  --bg: #0b0e14;
+  --bg2: #121722;
+  --bg3: #1a2130;
+  --border: #283246;
+  --text: #eef2f7;
+  --muted: #93a1b5;
+  --gold: #f2cc60;
+  --gold2: #e3b341;
+  --green: #3fb950;
+  --red: #f85149;
+  --blue: #58a6ff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: radial-gradient(900px 380px at 0% -10%, rgba(242, 204, 96, 0.08), transparent 60%), var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  min-height: 100vh;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 24px;
+  background: rgba(18, 23, 34, 0.94);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 12px; }
+.mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #0d1117;
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold2) 100%);
+}
+.brand h1 { font-size: 19px; font-weight: 700; }
+.brand h1 span { color: var(--gold); }
+.ver {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  margin-left: 6px;
+}
+.spacer { flex: 1; }
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 15px;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { border-color: var(--gold); color: var(--gold); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-gold {
+  background: linear-gradient(180deg, var(--gold) 0%, var(--gold2) 100%);
+  border-color: var(--gold2);
+  color: #0d1117;
+  font-weight: 700;
+}
+.btn-gold:hover { filter: brightness(1.06); color: #0d1117; }
+.btn-danger { border-color: rgba(248, 81, 73, 0.4); color: var(--red); }
+.btn-danger:hover { background: rgba(248, 81, 73, 0.12); border-color: var(--red); color: var(--red); }
+.wrap { max-width: 1620px; margin: 0 auto; padding: 22px 24px 60px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 1120px) { .cols { grid-template-columns: 1fr; } }
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.card h3 {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--gold);
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+label.fld { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+input[type=text], input[type=number], input[type=date], select, textarea {
+  width: 100%;
+  background: #090c11;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--gold); }
+.chk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(265px, 1fr)); gap: 5px 12px; }
+.chk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  font-size: 13.5px;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+}
+.chk:hover { background: var(--bg3); }
+.chk input { accent-color: var(--gold); width: 16px; height: 16px; cursor: pointer; }
+.chk.on { background: rgba(242, 204, 96, 0.12); border-color: rgba(242, 204, 96, 0.35); }
+.bw-list { list-style: none; margin-top: 10px; }
+.bw-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 13.5px;
+}
+.bw-del { background: transparent; border: 0; color: var(--red); font-size: 18px; cursor: pointer; }
+.free-lines input { margin-bottom: 6px; }
+.status-bar {
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+  display: none;
+}
+.status-bar.show { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.status-bar.ok { background: rgba(63, 185, 80, 0.12); border: 1px solid rgba(63, 185, 80, 0.4); color: var(--green); }
+.status-bar.err { background: rgba(248, 81, 73, 0.12); border: 1px solid rgba(248, 81, 73, 0.4); color: var(--red); }
+.status-bar.wait { background: rgba(88, 166, 255, 0.12); border: 1px solid rgba(88, 166, 255, 0.4); color: var(--blue); }
+.nach-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.nach-row input[type=date] { width: auto; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="mark">KVA</div>
+    <div>
+      <h1>KVA <span>Werkstattauftrag</span> HUD <span class="ver">v1.0.0</span></h1>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn" id="btnUebertrag" type="button">Übertrag (Nachtrag exportieren)</button>
+  <button class="btn btn-danger" id="btnReset" type="button">Sheet Reset</button>
+  <button class="btn btn-gold" id="btnCreate" type="button">Auftrag erstellen &amp; PDF in Drive speichern</button>
+</header>
+
+<main class="wrap">
+  <div id="statusBar" class="status-bar"></div>
+
+  <div class="cols">
+    <div>
+      <section class="card">
+        <div class="card-head">
+          <h3>Fahrzeugdaten</h3>
+          <label class="chk" style="padding:2px 8px;">
+            <input type="checkbox" id="chkRunUebertrag">
+            <span>Übertrag automatisch mit ausführen</span>
+          </label>
+        </div>
+        <div class="grid3">
+          <div>
+            <label class="fld">Stock ID *</label>
+            <input type="text" id="inStockId" placeholder="z.B. PR45234" autocomplete="off">
+          </div>
+          <div>
+            <label class="fld">Modell *</label>
+            <input type="text" id="inModell" placeholder="z.B. Volkswagen Golf VII 1.6 TDI" autocomplete="off">
+          </div>
+          <div>
+            <label class="fld">VIN / Fahrgestellnummer *</label>
+            <input type="text" id="inVin" placeholder="z.B. WVWZZZAUZLP015411" autocomplete="off">
+          </div>
+          <div>
+            <label class="fld">Erstzulassung</label>
+            <input type="text" id="inEz" placeholder="z.B. 27.11.2019" autocomplete="off">
+          </div>
+          <div>
+            <label class="fld">Getriebe</label>
+            <input type="text" id="inGetriebe" placeholder="z.B. Schaltgetriebe" autocomplete="off">
+          </div>
+          <div>
+            <label class="fld">KM-Stand</label>
+            <input type="text" id="inKm" placeholder="z.B. 77960" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>Wartung &amp; Service</h3>
+          <button class="btn" id="btnServicePkg" type="button" style="padding:5px 10px;font-size:12px;">+ Service Paket</button>
+        </div>
+        <div class="chk-grid" id="workGrid"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>Motoröl &amp; Füllmenge (G9:G12 auf Reparaturauftrag)</h3>
+        </div>
+        <div class="grid2">
+          <div>
+            <label class="fld">Öl auswählen (optional / bei Ölwechsel)</label>
+            <select id="selOil"><option value="">— Kein Öl ausgewählt —</option></select>
+          </div>
+          <div>
+            <label class="fld">Füllmenge in Liter (B13)</label>
+            <input type="text" id="inLiters" placeholder="z.B. 4,5" autocomplete="off">
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>GTÜ / Nachuntersuchung</h3>
+        </div>
+        <div class="nach-row">
+          <label class="chk"><input type="radio" name="nachRadio" id="nachNein" value="nein" checked><span>Nachuntersuchung nein</span></label>
+          <label class="chk"><input type="radio" name="nachRadio" id="nachJa" value="ja"><span>Nachuntersuchung ja, bis:</span></label>
+          <input type="date" id="nachDatum" disabled>
+          <label class="chk"><input type="radio" name="nachRadio" id="nachNone" value=""><span>Keine Angabe</span></label>
+        </div>
+      </section>
+    </div>
+
+    <div>
+      <section class="card">
+        <div class="card-head">
+          <h3>Mechanik &amp; Zusatzarbeiten</h3>
+        </div>
+        <div class="chk-grid" id="dGrid"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h3>Karosserie &amp; Lack (1–6)</h3>
+        </div>
+        <div class="grid2" style="margin-bottom:10px;">
+          <div>
+            <label class="fld">Bauteil</label>
+            <select id="bwPart"><option value="">— Bauteil wählen —</option></select>
+          </div>
+          <div style="display:flex;align-items:flex-end;">
+            <button class="btn" id="btnBwAdd" type="button" style="width:100%;">+ Bauteil hinzufügen</button>
+          </div>
+        </div>
+        <div class="chk-grid" id="bwActions"></div>
+        <ul class="bw-list" id="bwList"></ul>
+      </section>
+
+      <div class="grid2">
+        <section class="card">
+          <div class="card-head"><h3>Sonstige Mechanik (6 Zeilen · D24:D29)</h3></div>
+          <div class="free-lines" id="freeMechWrap"></div>
+        </section>
+        <section class="card">
+          <div class="card-head"><h3>Sonstige- u. OE-Teile (6 Zeilen · D31:D36)</h3></div>
+          <div class="free-lines" id="freePartsWrap"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+var state = {
+  meta: null,
+  workSel: {},
+  dSel: {},
+  bodyWorks: []
+};
+
+function $(id) { return document.getElementById(id); }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function setStatus(mode, html) {
+  var bar = $("statusBar");
+  if (!mode) {
+    bar.className = "status-bar";
+    bar.innerHTML = "";
+    return;
+  }
+  bar.className = "status-bar show " + mode;
+  bar.innerHTML = html;
+}
+
+function renderFreeInputs(wrapId, prefix) {
+  var wrap = $(wrapId);
+  wrap.innerHTML = "";
+  for (var i = 0; i < 6; i++) {
+    var inp = document.createElement("input");
+    inp.type = "text";
+    inp.id = prefix + i;
+    inp.placeholder = "Zeile " + (i + 1);
+    inp.autocomplete = "off";
+    wrap.appendChild(inp);
+  }
+}
+
+function renderMeta() {
+  if (!state.meta) return;
+  var wg = $("workGrid");
+  wg.innerHTML = "";
+  (state.meta.workItems || []).forEach(function(it) {
+    var lab = document.createElement("label");
+    lab.className = "chk" + (state.workSel[it.row] ? " on" : "");
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!state.workSel[it.row];
+    cb.addEventListener("change", function() {
+      if (cb.checked) state.workSel[it.row] = true;
+      else delete state.workSel[it.row];
+      lab.classList.toggle("on", cb.checked);
+    });
+    var sp = document.createElement("span");
+    sp.textContent = it.label;
+    lab.appendChild(cb);
+    lab.appendChild(sp);
+    wg.appendChild(lab);
+  });
+
+  var dg = $("dGrid");
+  dg.innerHTML = "";
+  (state.meta.dItems || []).forEach(function(it) {
+    var lab = document.createElement("label");
+    lab.className = "chk" + (state.dSel[it.row] ? " on" : "");
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = !!state.dSel[it.row];
+    cb.addEventListener("change", function() {
+      if (cb.checked) state.dSel[it.row] = true;
+      else delete state.dSel[it.row];
+      lab.classList.toggle("on", cb.checked);
+    });
+    var sp = document.createElement("span");
+    sp.textContent = it.label;
+    lab.appendChild(cb);
+    lab.appendChild(sp);
+    dg.appendChild(lab);
+  });
+
+  var oilSel = $("selOil");
+  oilSel.innerHTML = '<option value="">— Kein Öl ausgewählt —</option>';
+  (state.meta.oils || []).forEach(function(o) {
+    var opt = document.createElement("option");
+    opt.value = o.row;
+    opt.textContent = (o.nr ? o.nr + " · " : "") + o.label;
+    oilSel.appendChild(opt);
+  });
+
+  var partSel = $("bwPart");
+  partSel.innerHTML = '<option value="">— Bauteil wählen —</option>';
+  (state.meta.parts || []).forEach(function(p) {
+    var opt = document.createElement("option");
+    opt.value = p.side + ":" + p.row;
+    opt.textContent = p.label;
+    partSel.appendChild(opt);
+  });
+
+  var actGrid = $("bwActions");
+  actGrid.innerHTML = "";
+  (state.meta.actions || []).forEach(function(a) {
+    var lab = document.createElement("label");
+    lab.className = "chk";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = a.nr;
+    cb.addEventListener("change", function() { lab.classList.toggle("on", cb.checked); });
+    var sp = document.createElement("span");
+    sp.textContent = a.nr + " · " + a.label;
+    lab.appendChild(cb);
+    lab.appendChild(sp);
+    actGrid.appendChild(lab);
+  });
+}
+
+function renderBwList() {
+  var ul = $("bwList");
+  ul.innerHTML = "";
+  state.bodyWorks.forEach(function(bw, idx) {
+    var li = document.createElement("li");
+    li.innerHTML = "<span><b>" + esc(bw.label) + "</b> · " + esc(bw.actionLabels.join(", ")) + "</span>";
+    var del = document.createElement("button");
+    del.className = "bw-del";
+    del.innerHTML = "&times;";
+    del.addEventListener("click", function() {
+      state.bodyWorks.splice(idx, 1);
+      renderBwList();
+    });
+    li.appendChild(del);
+    ul.appendChild(li);
+  });
+}
+
+function collectFree(prefix) {
+  var out = [];
+  for (var i = 0; i < 6; i++) {
+    var el = $(prefix + i);
+    if (el && el.value.trim()) out.push(el.value.trim());
+  }
+  return out;
+}
+
+function deDate(iso) {
+  if (!iso) return "";
+  var p = iso.split("-");
+  return p.length === 3 ? p[2] + "." + p[1] + "." + p[0] : iso;
+}
+
+function submitAuftrag() {
+  var stockId = $("inStockId").value.trim().toUpperCase();
+  var modell = $("inModell").value.trim();
+  var vin = $("inVin").value.trim().toUpperCase();
+  if (!stockId || !modell || !vin) {
+    setStatus("err", "<span>Bitte Stock ID, Modell und VIN ausfüllen.</span>");
+    return;
+  }
+  var oilRow = parseInt($("selOil").value, 10) || 0;
+  var litersRaw = $("inLiters").value.trim();
+  var litersNum = parseFloat(litersRaw.replace(",", "."));
+  if (oilRow >= 29 && oilRow <= 40 && (isNaN(litersNum) || litersNum <= 0)) {
+    $("inLiters").style.borderColor = "var(--red)";
+    $("inLiters").focus();
+    setStatus("err", "<span>⚠️ Bitte Füllmenge (Liter) eintragen! Wenn Öl ausgewählt ist, ist die Füllmenge Pflicht (sonst #N/A auf dem Werkstattauftrag).</span>");
+    return;
+  }
+  $("inLiters").style.borderColor = "";
+  var nach = $("nachJa").checked ? "ja" : ($("nachNein").checked ? "nein" : "");
+  var nachDatum = deDate($("nachDatum").value);
+  if (nach === "ja" && !nachDatum) {
+    $("nachDatum").style.borderColor = "var(--red)";
+    $("nachDatum").focus();
+    setStatus("err", "<span>⚠️ Bitte das Nachuntersuchungs-Datum auswählen!</span>");
+    return;
+  }
+  $("nachDatum").style.borderColor = "";
+  var payload = {
+    stockId: stockId,
+    modell: modell,
+    vin: vin,
+    erstzulassung: $("inEz").value.trim(),
+    getriebe: $("inGetriebe").value.trim(),
+    km: $("inKm").value.trim(),
+    workRows: Object.keys(state.workSel).map(Number),
+    dRows: Object.keys(state.dSel).map(Number),
+    oilRow: parseInt($("selOil").value, 10) || 0,
+    liters: $("inLiters").value.trim(),
+    freeMech: collectFree("fm"),
+    freeParts: collectFree("fp"),
+    bodyWorks: state.bodyWorks,
+    nach: nach,
+    nachDatum: deDate($("nachDatum").value),
+    runUebertrag: $("chkRunUebertrag").checked
+  };
+  $("btnCreate").disabled = true;
+  setStatus("wait", "<span>Erstelle Reparaturauftrag &amp; exportiere PDF für <b>" + esc(stockId) + "</b>…</span>");
+  google.script.run.withSuccessHandler(function(res) {
+    $("btnCreate").disabled = false;
+    if (!res || !res.success) {
+      setStatus("err", "<span>Fehler: " + esc(res && res.message || "Unbekannt") + "</span>");
+      return;
+    }
+    var links = "";
+    if (res.pdfUrl) {
+      links += '<a class="btn" href="' + esc(res.pdfUrl) + '" target="_blank" rel="noopener">Drive PDF öffnen (' + esc(res.fileName) + ')</a>';
+    }
+    if (res.pdfB64) {
+      links += ' <a class="btn btn-gold" download="' + esc(res.fileName) + '" href="data:application/pdf;base64,' + res.pdfB64 + '">PDF herunterladen</a>';
+    }
+    setStatus("ok", "<span><b>" + esc(res.fileName) + "</b> erfolgreich erstellt"
+      + (res.driveSaved ? " &amp; in 'AG - Werkstatt Aufträge' gespeichert!" : " (Drive-Hinweis: " + esc(res.driveError) + ")")
+      + "</span><div>" + links + "</div>");
+  }).withFailureHandler(function(err) {
+    $("btnCreate").disabled = false;
+    setStatus("err", "<span>Fehler: " + esc(err && err.message || err) + "</span>");
+  }).createKvaAuftrag(payload);
+}
+
+$("btnCreate").addEventListener("click", submitAuftrag);
+$("btnReset").addEventListener("click", function() {
+  setStatus("wait", "<span>Setze Sheet zurück…</span>");
+  google.script.run.withSuccessHandler(function() {
+    state.workSel = {};
+    state.dSel = {};
+    state.bodyWorks = [];
+    renderMeta();
+    renderBwList();
+    setStatus("ok", "<span>Sheet 'Input' &amp; 'Reparaturauftrag' wurden zurückgesetzt.</span>");
+  }).resetInput();
+});
+$("btnUebertrag").addEventListener("click", function() {
+  setStatus("wait", "<span>Exportiere Nachtrag…</span>");
+  google.script.run.withSuccessHandler(function(res) {
+    if (res && res.success) {
+      setStatus("ok", "<span>" + esc(res.message) + "</span>");
+    } else {
+      setStatus("err", "<span>" + esc(res && res.message || "Fehler beim Übertrag") + "</span>");
+    }
+  }).exportNachtrag(null, true);
+});
+$("btnServicePkg").addEventListener("click", function() {
+  if (!state.meta) return;
+  (state.meta.workItems || []).forEach(function(it) {
+    var l = it.label.toLowerCase();
+    if (l.indexOf("motorölwechsel") !== -1 || l.indexOf("innenraum") !== -1 || l.indexOf("luftfilter (motor)") !== -1) {
+      state.workSel[it.row] = true;
+    }
+  });
+  renderMeta();
+});
+$("btnBwAdd").addEventListener("click", function() {
+  var val = $("bwPart").value;
+  if (!val || !state.meta) return;
+  var sp = val.split(":");
+  var side = parseInt(sp[0], 10);
+  var row = parseInt(sp[1], 10);
+  var label = "";
+  (state.meta.parts || []).forEach(function(p) {
+    if (p.side === side && p.row === row) label = p.label;
+  });
+  var actions = [];
+  var actionLabels = [];
+  $("bwActions").querySelectorAll("input:checked").forEach(function(cb) {
+    var nr = parseInt(cb.value, 10);
+    actions.push(nr);
+    (state.meta.actions || []).forEach(function(a) {
+      if (a.nr === nr) actionLabels.push(a.label);
+    });
+  });
+  if (!actions.length) return;
+  state.bodyWorks.push({ side: side, row: row, label: label, actions: actions, actionLabels: actionLabels });
+  $("bwPart").value = "";
+  $("bwActions").querySelectorAll("input").forEach(function(cb) {
+    cb.checked = false;
+    cb.parentNode.classList.remove("on");
+  });
+  renderBwList();
+});
+$("nachJa").addEventListener("change", function() { $("nachDatum").disabled = false; });
+$("nachNein").addEventListener("change", function() { $("nachDatum").disabled = true; });
+$("nachNone").addEventListener("change", function() { $("nachDatum").disabled = true; });
+
+renderFreeInputs("freeMechWrap", "fm");
+renderFreeInputs("freePartsWrap", "fp");
+
+google.script.run.withSuccessHandler(function(res) {
+  if (res && res.success) {
+    state.meta = res;
+    renderMeta();
+  }
+}).getInputMeta(false);
+</script>
+</body>
+</html>
