@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
-// @version      1.3.0
+// @version      1.4.0
 // @description  In-Carol KVA HUD: Vollautomatischer 1:1 Abgleich aller Carol-Schäden, Services, Lack/Delle (1-6) & HU-Status mit dem Sheet, erstellt PDF im Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var VER = '1.3.0';
+  var VER = '1.4.0';
   if (window.__kvaCarolHudVer) return;
   window.__kvaCarolHudVer = VER;
 
@@ -24,12 +24,11 @@
   var BRIDGE_SECRET = 'ARASAKA69';
   var MSG_MARKER = '__kvaBridgeGraphql';
   var STORE_URL_KEY = 'kva_wa_webapp_url_v1';
-  var STORE_META_KEY = 'kva_wa_meta_cache_v2';
+  var STORE_META_KEY = 'kva_wa_meta_cache_v3';
   var STORE_AUTO_PARTS_KEY = 'kva_wa_auto_parts_sid';
 
   var FALLBACK_META = {
     workItems: [
-      { row: 10, label: 'Wartung' },
       { row: 11, label: 'Inspektion' },
       { row: 12, label: 'Motorölwechsel inkl. Filterersatz' },
       { row: 14, label: 'passendenes Motorenöl' },
@@ -455,6 +454,7 @@
       huStatus: 'unknown',
       huDueDate: '',
       huDoneDate: '',
+      detectedLiters: '',
       items: []
     };
 
@@ -506,7 +506,7 @@
 
     if (/HU\s+nicht\s+bestanden|HU\s+failed|Nachuntersuchung\s+erforderlich/i.test(bodyText)) {
       out.huStatus = 'failed';
-    } else if (/HU\s+bestanden|HU\s+passed/i.test(bodyText)) {
+    } else if (/HU\s+bestanden|HU\s+passed|HU\s+Bericht\s+Verfügbar[\s\n:]*Ja/i.test(bodyText)) {
       out.huStatus = 'passed';
     }
 
@@ -520,20 +520,45 @@
       return false;
     }
 
+    function extractOilLitersFromText(txt) {
+      var s = String(txt || '');
+      if (!/motoröl|motoroel|ölwechsel|oelwechsel|viskosität|sae\s+\d+w/i.test(s)) return '';
+      var m = s.match(/\b(\d{1,2}[.,]\d{1,2}|\d{1,2})\s*(?:liter|l\b)/i);
+      if (!m) return '';
+      var val = m[1].replace('.', ',').replace(/,(\d)0$/, ',$1').replace(/,00$/, '');
+      return val;
+    }
+
     function addStructuredItem(entry) {
       var comp = String(entry.component || '').replace(/\s+/g, ' ').trim();
       var srv = String(entry.service || '').replace(/\s+/g, ' ').trim();
       var dmg = String(entry.damage || '').replace(/\s+/g, ' ').trim();
       var comm = String(entry.comment || '').replace(/\s+/g, ' ').trim();
-      if (comm === '-' || comm === '–') comm = '';
+      if (comm === '-' || comm === '–' || /^keine\s+kommentare\s+verfügbar\.?$/i.test(comm) || /^no\s+comments\s+available\.?$/i.test(comm)) {
+        comm = '';
+      }
       if (dmg === '-' || dmg === '–') dmg = '';
+
+      var litVal = extractOilLitersFromText(comm);
+      if (litVal && !out.detectedLiters) {
+        out.detectedLiters = litVal;
+      }
 
       if (isDocumentOrFilename(comp) && isDocumentOrFilename(srv)) return;
       if (/\.(pdf|jpg|jpeg|png)\b/i.test(comp) || /\.(pdf|jpg|jpeg|png)\b/i.test(srv)) return;
 
+      if (/^(außenreinigung|aussenreinigung|innenreinigung|fotos|foto|fahrzeugreinigung|aufbereitung|marketing\s*bilder)/i.test(srv)) {
+        return;
+      }
+
+      var includedInOther = false;
+      if (/^in\s+anderer\s+dienstleistung\s+enthalten|^included\s+in\s+another\s+service/i.test(srv)) {
+        srv = '';
+        includedInOther = true;
+        if (!dmg && !comm) return;
+      }
+
       if (!comp && !srv && !comm) return;
-      var fullCheck = [comp, srv, dmg, comm].join(' ');
-      if (/remove\s+license\s+plate\s+holder|kennzeichenhalter\s+entfernen/i.test(fullCheck)) return;
       if (/^(leistung|service|dienstleistung|fahrzeugkomponente|kommentar|status|kosten|ersatzteilkosten|letztes\s+update\s+am)$/i.test(comp || srv)) return;
 
       var displayTitle = '';
@@ -549,7 +574,7 @@
 
       if (!displayTitle || isDocumentOrFilename(displayTitle)) return;
 
-      var key = collapseDoubleConsonants([comp, srv, comm].join('|'));
+      var key = collapseDoubleConsonants([comp, srv, dmg, comm].join('|'));
       if (!key || seenItems[key]) return;
       seenItems[key] = 1;
 
@@ -559,6 +584,7 @@
         damage: dmg,
         comment: comm,
         title: displayTitle,
+        includedInOther: includedInOther,
         source: entry.source || 'Carol'
       });
     }
@@ -606,6 +632,10 @@
       'vehicle component': 'component',
       'dienstleistung': 'service',
       'service': 'service',
+      'teildienstleistung': 'subservice',
+      'teildienstleistungen': 'subservice',
+      'sub-service': 'subservice',
+      'sub-services': 'subservice',
       'kosten': 'cost',
       'cost': 'cost',
       'reparaturstandort und -partner': 'partner',
@@ -643,6 +673,18 @@
         if (lType === 'service' && !currentCard.damage && !currentCard.component && currentCard.service) {
           addStructuredItem(currentCard);
           currentCard = { damage: '', component: '', service: '', comment: '', partner: '', source: 'Carol' };
+        }
+        if (lType === 'subservice') {
+          while (idx + 1 < tokenLines.length) {
+            var subTok = tokenLines[idx + 1];
+            if (getLabelType(subTok) || /^(beauftragt|vom\s+system\s+erstellt|total\s+supporting|räder|dokumente)$/i.test(subTok) || /^\d+\s+service\s*\|/i.test(subTok)) {
+              break;
+            }
+            addStructuredItem({ service: subTok, source: 'Wartung' });
+            currentCard.hasSubServices = true;
+            idx++;
+          }
+          continue;
         }
         var val = (idx + 1 < tokenLines.length) ? tokenLines[idx + 1] : '';
         if (val && !getLabelType(val) && !/^beauftragt$/i.test(val) && !/^\d+\s+service\s*\|/i.test(val)) {
@@ -828,12 +870,11 @@
       { kind: 'd', tokens: ['windschutzscheibe', 'ersetzen'], all: ['windschutzscheibe', 'ersetzen'], blockIf: ['smart'] },
       { kind: 'd', tokens: ['antenne', 'ersetzen'], all: ['antenne', 'ersetzen'] },
       { kind: 'd', tokens: ['ozon'], words: ['ozon', 'ozonbehandlung'] },
-      { kind: 'd', tokens: ['diagnose'], words: ['diagnose'] },
+      { kind: 'd', tokens: ['diagnose'], all: ['diagnose', 'vasold'] },
       { kind: 'd', tokens: ['fehlerspeicher'], words: ['fehlerspeicher'] },
       { kind: 'd', tokens: ['oelverlust'], words: ['oelverlust'] },
       { kind: 'd', tokens: ['marderschutz'], words: ['marderschutz'] },
       { kind: 'd', tokens: ['motorhaubendaempfer'], words: ['motorhaubendaempfer', 'moterhaubendaempfer'] },
-      { kind: 'work', tokens: ['wartung'], words: ['wartung'] },
       { kind: 'work', tokens: ['inspektion'], words: ['inspektion'] },
       { kind: 'work', tokens: ['motoroelwechsel'], words: ['motoroelwechsel', 'oelwechsel', 'motorolwechsel'] },
       { kind: 'work', tokens: ['bremsfluessigkeit'], words: ['bremsfluessigkeit'] },
@@ -853,11 +894,18 @@
     ];
 
     items.forEach(function (entry) {
-      var coreText = [entry.component, entry.service, entry.title].filter(Boolean).join(' ');
+      var isGenericWrapper = /^(andere|other|diagnose)$/i.test(String(entry.service || '').trim());
+      if (/^wartung$/i.test(String(entry.service || '').trim()) && /motoröl|motoroel|viskosität/i.test(String(entry.comment || ''))) {
+        return;
+      }
+
+      var coreText = isGenericWrapper
+        ? [entry.component, entry.damage].filter(Boolean).join(' ')
+        : [entry.component, entry.service, entry.damage, entry.title].filter(Boolean).join(' ');
       var commText = String(entry.comment || '');
       var expCore = expandText(coreText);
       var expComm = expandText(commText);
-      var expAll = expandText(coreText + ' ' + commText);
+      var expAll = expandText((coreText + ' ' + commText).trim());
       var hit = false;
 
       var bodyActs = detectBodyActionNrs(entry.service || entry.title, entry.damage, '');
@@ -891,6 +939,7 @@
 
       if (!hit) {
         meta.workItems.forEach(function (wIt) {
+          if (wIt.row === 10) return;
           if (hasPhrase(expCore, wIt.label) || (!entry.component && hasPhrase(expComm, wIt.label))) {
             state.workSel[wIt.row] = true;
             state.autoWork[wIt.row] = true;
@@ -899,6 +948,7 @@
         });
 
         meta.dItems.forEach(function (dIt) {
+          if (dIt.row === 13 && !hasWord(expAll, 'vasold')) return;
           if (hasPhrase(expCore, dIt.label) || (!entry.component && hasPhrase(expComm, dIt.label))) {
             if (dIt.row === 3 && hasWord(expAll, 'laden')) return;
             state.dSel[dIt.row] = true;
@@ -939,15 +989,15 @@
         });
       }
 
-      if (!hit) {
+      if (!hit && !entry.includedInOther) {
         var freeLine = '';
-        if (entry.component && entry.service && !/^(andere|other)$/i.test(entry.service)) {
+        if (entry.component && entry.service && !isGenericWrapper) {
           freeLine = entry.component + ' ' + entry.service.toLowerCase();
-        } else if (!entry.component && (!entry.service || /^(andere|other)$/i.test(entry.service)) && entry.comment) {
+        } else if (!entry.component && isGenericWrapper && entry.comment) {
           freeLine = entry.comment;
         } else if (entry.component) {
           freeLine = entry.component + (entry.damage ? (' (' + entry.damage + ')') : '');
-        } else if (entry.service && !/^(andere|other)$/i.test(entry.service)) {
+        } else if (entry.service && !isGenericWrapper) {
           freeLine = entry.service;
         }
         freeLine = String(freeLine || '').replace(/\s*\/\/\s*EQA:.*$/i, '').trim();
@@ -956,6 +1006,11 @@
         }
       }
     });
+
+    if (state.workSel[12]) {
+      state.workSel[14] = true;
+      state.autoWork[14] = true;
+    }
 
     for (var f = 0; f < Math.min(5, unmatched.length); f++) {
       state.freeMech[f] = unmatched[f];
@@ -978,6 +1033,10 @@
     state.huDueDate = scraped.huDueDate || state.huDueDate || '';
     state.huDoneDate = scraped.huDoneDate || state.huDoneDate || '';
     state.carolItems = scraped.items || [];
+
+    if (scraped.detectedLiters && (isNewCar || !state.liters)) {
+      state.liters = scraped.detectedLiters;
+    }
 
     if (isNewCar) {
       state.lastScannedSid = state.stockId;
@@ -1477,7 +1536,7 @@
     state.oilRow = parseInt(getVal('kva-in-oil', state.oilRow), 10) || 0;
     state.liters = getVal('kva-in-lit', state.liters);
     state.nachDatum = getVal('kva-in-nachdatum', state.nachDatum);
-    for (var i = 0; i < 3; i++) {
+    for (var i = 0; i < 5; i++) {
       var fmEl = document.getElementById('kva-fm-' + i);
       if (fmEl) state.freeMech[i] = fmEl.value.trim();
     }
@@ -1508,7 +1567,7 @@
       carolListHtml = '<div style="color:#93a1b5;font-size:12px;">Noch keine Positionen erkannt — klicke oben auf "Neu einlesen".</div>';
     }
 
-    var workHtml = (meta.workItems || []).map(function (it) {
+    var workHtml = (meta.workItems || []).filter(function (it) { return it.row !== 10; }).map(function (it) {
       var on = !!state.workSel[it.row];
       var isAuto = !!state.autoWork[it.row];
       return '<label class="kva-chk' + (on ? ' on' : '') + (isAuto ? ' auto' : '') + '">'
@@ -1639,11 +1698,13 @@
       + '</div>'
       + '</div>'
       + '<div class="kva-sec">'
-      + '<h4><span>Sonstige Mechanik / Freitext (D24:D26)</span></h4>'
+      + '<h4><span>Sonstige Mechanik / Freitext (D24:D28)</span></h4>'
       + '<div class="kva-fld" style="display:flex;flex-direction:column;gap:5px;">'
-      + '<input id="kva-fm-0" placeholder="Freitext Zeile 1" value="' + esc(state.freeMech[0] || '') + '">'
-      + '<input id="kva-fm-1" placeholder="Freitext Zeile 2" value="' + esc(state.freeMech[1] || '') + '">'
-      + '<input id="kva-fm-2" placeholder="Freitext Zeile 3" value="' + esc(state.freeMech[2] || '') + '">'
+      + '<input id="kva-fm-0" placeholder="Freitext Zeile 1 (D24)" value="' + esc(state.freeMech[0] || '') + '">'
+      + '<input id="kva-fm-1" placeholder="Freitext Zeile 2 (D25)" value="' + esc(state.freeMech[1] || '') + '">'
+      + '<input id="kva-fm-2" placeholder="Freitext Zeile 3 (D26)" value="' + esc(state.freeMech[2] || '') + '">'
+      + '<input id="kva-fm-3" placeholder="Freitext Zeile 4 (D27)" value="' + esc(state.freeMech[3] || '') + '">'
+      + '<input id="kva-fm-4" placeholder="Freitext Zeile 5 (D28)" value="' + esc(state.freeMech[4] || '') + '">'
       + '</div>'
       + '</div>'
       + '<div class="kva-sec">'
