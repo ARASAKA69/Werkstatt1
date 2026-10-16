@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Empfängt Stock-IDs vom Tagesliste-HUD, stellt alle Spare Parts in Carol auf Handed out (Herausgegeben) und meldet Erfolg für grüne Spalte F zurück
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -310,7 +310,7 @@
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">Warte auf Stock-IDs vom HUD…</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Bridge v1.2 · [ESC] Stop</span>
+                    <span>Bridge v1.3 · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
@@ -369,82 +369,70 @@
 
     function getDeepestElementsByText(text) {
         const results = [];
-        const needle = String(text || '').toLowerCase();
         for (const el of document.querySelectorAll('*')) {
             if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) continue;
-            if ((el.textContent || '').toLowerCase().includes(needle)) {
-                const childHas = Array.from(el.children).some(c => (c.textContent || '').toLowerCase().includes(needle));
-                if (!childHas) results.push(el);
+            if (el.textContent?.includes(text)) {
+                const childHasText = Array.from(el.children).some(c => c.textContent?.includes(text));
+                if (!childHasText) results.push(el);
             }
         }
         return results;
     }
 
-    async function waitForAnyElement(texts, timeout = 12000, pickLast = false) {
-        const list = Array.isArray(texts) ? texts : [texts];
+    async function waitForElement(text, timeout = 10000, pickLast = false) {
         let passed = 0;
         while (passed < timeout) {
             if (abortFlag) throw new Error('Abort');
-            for (let i = 0; i < list.length; i++) {
-                const els = getDeepestElementsByText(list[i]);
-                if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
-            }
-            await sleep(400);
-            passed += 400;
+            const els = getDeepestElementsByText(text);
+            if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
+            await sleep(500);
+            passed += 500;
         }
         return null;
     }
 
     function forceClick(el) {
         if (!el) return;
-        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
         try {
-            el.style.outline = '2px solid #00ffcc';
-            setTimeout(() => { try { el.style.outline = ''; } catch (e2) {} }, 350);
+            const orig = { outline: el.style.outline, shadow: el.style.boxShadow, trans: el.style.transition };
+            el.style.transition = 'all 0.1s';
+            el.style.outline = '2px solid #ff0000';
+            el.style.boxShadow = '0 0 15px #ff0000';
+            setTimeout(() => {
+                if (el) { el.style.outline = orig.outline; el.style.boxShadow = orig.shadow; el.style.transition = orig.trans; }
+            }, 400);
         } catch (e) {}
-        try { el.click(); } catch (e) {}
-        if (el.parentElement) {
-            setTimeout(() => { try { el.parentElement.click(); } catch (e) {} }, 40);
-        }
-    }
-
-    function isHandedOutOption(text) {
-        const t = String(text || '').trim().toLowerCase();
-        return t.includes('handed out') || t.includes('herausgegeben');
+        el.click();
+        if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
     }
 
     function checkAllHandedOut() {
         const selects = document.querySelectorAll('select');
         let relevant = 0;
         for (const sel of selects) {
-            const hasOpt = Array.from(sel.options).some(o => isHandedOutOption(o.text));
+            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
             if (!hasOpt) continue;
             relevant++;
-            if (!isHandedOutOption(sel.options[sel.selectedIndex]?.text)) return false;
+            if (!sel.options[sel.selectedIndex]?.text.includes('Handed out')) return false;
         }
         return relevant > 0;
     }
 
     function forceAllHandedOut() {
-        let count = 0;
         for (const sel of document.querySelectorAll('select')) {
-            const opt = Array.from(sel.options).find(o => isHandedOutOption(o.text));
-            if (opt) {
-                count++;
-                if (!isHandedOutOption(sel.options[sel.selectedIndex]?.text)) {
-                    sel.value = opt.value;
-                    sel.dispatchEvent(new Event('change', { bubbles: true }));
-                }
+            const opt = Array.from(sel.options).find(o => o.text.includes('Handed out'));
+            if (opt && !sel.options[sel.selectedIndex]?.text.includes('Handed out')) {
+                sel.value = opt.value;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
-        return count;
     }
 
     function findExactCloseButton() {
         const candidates = [];
         for (const el of document.querySelectorAll('button, [role="button"], a')) {
-            const txt = (el.textContent || '').trim().toLowerCase();
-            if (txt === 'close' || txt === 'schließen' || txt === 'schliessen') candidates.push(el);
+            const txt = (el.textContent || '').trim();
+            if (txt === 'Close') candidates.push(el);
         }
         return candidates.length ? candidates[candidates.length - 1] : null;
     }
@@ -455,6 +443,10 @@
             if (abortFlag) throw new Error('Abort');
             const btn = findExactCloseButton();
             if (btn) {
+                try {
+                    btn.style.outline = '2px solid #00ff00';
+                    btn.style.boxShadow = '0 0 15px #00ff00';
+                } catch (e) {}
                 btn.click();
                 return true;
             }
@@ -562,67 +554,67 @@
             }
         }
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Edit damages and services…', '#00ffcc');
-        const btnEdit = await waitForAnyElement(['Edit damages and services', 'Schäden und Services bearbeiten'], 15000);
+        setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Edit damages...', '#00ffcc');
+        const btnEdit = await waitForElement('Edit damages and services', 15000);
         if (!btnEdit) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Edit-Button in Carol nicht gefunden', job);
+            pushResultEvent(sid, 'error', 'Edit-Button nicht gefunden', job);
             playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Edit-Button fehlt', '#f85149');
+            setHudStatus(`${indexLabel} · ${sid}`, '✗ Edit-Button nicht gefunden!', '#f85149');
             await sleep(1000);
             return 'done_item';
         }
         forceClick(btnEdit);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Navigiere zu Spare Parts…', '#00ffcc');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Navigiere zu Spare Parts...', '#00ffcc');
         await sleep(2000);
-        const btnSpareParts = await waitForAnyElement(['Spare parts', 'Ersatzteile'], 10000);
+        const btnSpareParts = await waitForElement('Spare parts', 10000);
         if (!btnSpareParts) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Tab Spare Parts nicht gefunden', job);
+            pushResultEvent(sid, 'error', 'Spare Parts nicht gefunden', job);
             playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Spare Parts fehlt', '#f85149');
+            setHudStatus(`${indexLabel} · ${sid}`, '✗ Spare Parts nicht gefunden!', '#f85149');
             await sleep(1000);
             return 'done_item';
         }
         forceClick(btnSpareParts);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Wähle alle Positionen aus (Select all)…', '#00ffcc');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Wähle alle Positionen aus...', '#00ffcc');
         await sleep(1000);
-        const btnSelectAll = await waitForAnyElement(['Select all', 'Alle auswählen'], 8000);
+        const btnSelectAll = await waitForElement('Select all', 10000);
         if (!btnSelectAll) {
             removeJobFromQueue(sid);
             pushResultEvent(sid, 'error', 'Select All nicht gefunden', job);
             playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Select All fehlt', '#f85149');
+            setHudStatus(`${indexLabel} · ${sid}`, '✗ Select All nicht gefunden!', '#f85149');
             await sleep(1000);
             return 'done_item';
         }
         forceClick(btnSelectAll);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Setze alle Spare Parts auf Handed out…', '#ffff00');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Setze Dropdowns auf Handed out...', '#ffff00');
         await sleep(1000);
         forceAllHandedOut();
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Übernehme Änderungen (Apply)…', '#00ffcc');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Übernehme Änderungen...', '#00ffcc');
         await sleep(1000);
-        const btnApply = await waitForAnyElement(['Apply', 'Übernehmen', 'Anwenden'], 6000);
+        const btnApply = await waitForElement('Apply', 10000);
         if (btnApply) forceClick(btnApply);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Verifiziere Handed out Status…', '#ffff00');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Verifiziere Handed-Out Status...', '#ffff00');
         let verified = false;
         for (let i = 0; i < 6; i++) {
-            await sleep(900);
+            await sleep(1000);
             if (checkAllHandedOut()) { verified = true; break; }
         }
 
         if (!verified) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Rettungsversuch: Setze Handed out erneut…', '#ffaa00');
+            setHudStatus(`${indexLabel} · ${sid}`, 'Rettungsprotokoll aktiv...', '#ffaa00');
             forceAllHandedOut();
-            await sleep(800);
-            const btnApply2 = await waitForAnyElement(['Apply', 'Übernehmen', 'Anwenden'], 3000);
-            if (btnApply2) forceClick(btnApply2);
-            await sleep(2000);
+            await sleep(1000);
+            const btnApplyRetry = await waitForElement('Apply', 3000);
+            if (btnApplyRetry) forceClick(btnApplyRetry);
+            await sleep(2500);
             verified = checkAllHandedOut();
         }
 
@@ -636,8 +628,8 @@
         }
 
         updateJobInQueue(sid, { phase: 'confirming' });
-        setHudStatus(`${indexLabel} · ${sid}`, 'Übermittle Daten (Submit)…', '#00ffcc');
-        const btnSubmit = await waitForAnyElement(['Submit', 'Absenden', 'Speichern'], 10000);
+        setHudStatus(`${indexLabel} · ${sid}`, 'Übermittle Daten...', '#00ffcc');
+        const btnSubmit = await waitForElement('Submit', 10000);
         if (!btnSubmit) {
             removeJobFromQueue(sid);
             pushResultEvent(sid, 'error', 'Submit-Button nicht gefunden', job);
@@ -646,19 +638,19 @@
         }
         forceClick(btnSubmit);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe (Confirm)…', '#00ffcc');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe...', '#00ffcc');
         await sleep(1000);
-        const btnConfirm = await waitForAnyElement(['Confirm', 'Bestätigen'], 10000);
+        const btnConfirm = await waitForElement('Confirm', 10000);
         if (btnConfirm) forceClick(btnConfirm);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog (Close)…', '#00ffcc');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog...', '#00ffcc');
         await sleep(2000);
-        const closed = await clickSavedDialogClose(10000);
-        if (!closed) {
-            const btnClose = await waitForAnyElement(['Close', 'Schließen'], 4000, true);
+        const dialogClosed = await clickSavedDialogClose(10000);
+        if (!dialogClosed) {
+            const btnClose = await waitForElement('Close', 5000, true);
             if (btnClose) btnClose.click();
         }
-        await sleep(700);
+        await sleep(800);
 
         removeJobFromQueue(sid);
         pushResultEvent(sid, 'ok', 'Herausgegeben', job);
