@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.2
 // @description  Empfängt Stock-IDs vom Tagesliste-HUD, stellt alle Spare Parts in Carol auf Handed out (Herausgegeben) und meldet Erfolg für grüne Spalte F zurück
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -17,28 +17,45 @@
 (function () {
     'use strict';
 
-    const KEY_QUEUE = 'dpl_tl_carol_queue_v1';
-    const KEY_STATE = 'dpl_tl_carol_state_v1';
-    const KEY_EVENTS = 'dpl_tl_carol_events_v1';
-    const KEY_ABORT = 'dpl_tl_carol_abort_v1';
+    try {
+        if (typeof GM_setValue === 'function') {
+            GM_setValue('dpl_tl_carol_queue_v1', '[]');
+        }
+        localStorage.removeItem('dpl_tl_carol_queue_v1');
+    } catch (e0) {}
+
+    const KEY_QUEUE = 'dpl_tl_carol_queue_v2';
+    const KEY_STATE = 'dpl_tl_carol_state_v2';
+    const KEY_EVENTS = 'dpl_tl_carol_events_v2';
+    const KEY_ABORT = 'dpl_tl_carol_abort_v2';
 
     const isCarolHost = location.hostname.includes('carol.autohero.com');
     const isWmsSingleAuto = isCarolHost && location.href.includes('arasaka_auto=1');
 
     function readJson(key, fallback) {
         try {
-            const raw = GM_getValue(key, '');
-            if (!raw) return fallback;
-            return JSON.parse(raw);
-        } catch (e) {
-            return fallback;
-        }
+            if (typeof GM_getValue === 'function') {
+                const rawGm = GM_getValue(key, '');
+                if (rawGm) return JSON.parse(rawGm);
+            }
+        } catch (e1) {}
+        try {
+            const rawLs = localStorage.getItem(key);
+            if (rawLs) return JSON.parse(rawLs);
+        } catch (e2) {}
+        return fallback;
     }
 
     function writeJson(key, val) {
+        const str = JSON.stringify(val);
         try {
-            GM_setValue(key, JSON.stringify(val));
-        } catch (e) {}
+            if (typeof GM_setValue === 'function') {
+                GM_setValue(key, str);
+            }
+        } catch (e1) {}
+        try {
+            localStorage.setItem(key, str);
+        } catch (e2) {}
     }
 
     if (!isCarolHost) {
@@ -46,7 +63,7 @@
 
         function forwardStateToHud() {
             const st = readJson(KEY_STATE, null);
-            if (st && (Date.now() - Number(st.ts || 0)) < 6000) {
+            if (st && (Date.now() - Number(st.ts || 0)) < 20000) {
                 window.postMessage({
                     source: 'dpl-tagesliste-bridge',
                     type: 'state',
@@ -67,6 +84,8 @@
                         type: 'item_result',
                         eventId: ev.eventId,
                         stockId: ev.stockId,
+                        dateStr: ev.dateStr || '',
+                        rows: ev.rows || [],
                         status: ev.status || 'ok',
                         message: ev.message || '',
                         ts: ev.ts
@@ -111,17 +130,20 @@
                     const sid = String(inc.stockId).trim().toUpperCase();
                     if (bySid[sid]) {
                         bySid[sid].carolUrl = inc.carolUrl || bySid[sid].carolUrl;
+                        bySid[sid].dateStr = inc.dateStr || bySid[sid].dateStr || '';
                         bySid[sid].rows = inc.rows || bySid[sid].rows;
                         bySid[sid].row = inc.row || bySid[sid].row;
                     } else {
                         const job = {
                             stockId: sid,
+                            dateStr: inc.dateStr || '',
                             carolUrl: inc.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid)),
                             model: inc.model || '',
                             rows: inc.rows || [],
                             row: inc.row || 0,
                             status: 'pending',
                             phase: 'init',
+                            navCount: 0,
                             addedAt: Date.now()
                         };
                         bySid[sid] = job;
@@ -144,6 +166,7 @@
     if (isWmsSingleAuto) return;
 
     let workerBusy = false;
+    let isNavigating = false;
     let abortFlag = false;
     let currentSid = '';
     let currentStepText = 'Warte auf Stock-IDs vom Tagesliste-HUD…';
@@ -171,10 +194,12 @@
         } catch (e) {}
     }
 
-    function pushResultEvent(stockId, status, message) {
+    function pushResultEvent(stockId, status, message, jobMeta) {
         const ev = {
             eventId: stockId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
             stockId: stockId,
+            dateStr: (jobMeta && jobMeta.dateStr) || '',
+            rows: (jobMeta && jobMeta.rows) || [],
             status: status,
             message: message || '',
             ts: Date.now()
@@ -190,6 +215,8 @@
                     type: 'item_result',
                     eventId: ev.eventId,
                     stockId: ev.stockId,
+                    dateStr: ev.dateStr,
+                    rows: ev.rows,
                     status: ev.status,
                     message: ev.message,
                     ts: ev.ts
@@ -233,7 +260,7 @@
                     color: #00ffcc;
                 }
                 .dpl-tl-body {
-                    padding: 10px 12px;
+                    padding: 10px 12px 6px;
                 }
                 .dpl-tl-sid {
                     font-size: 15px;
@@ -247,6 +274,15 @@
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                }
+                .dpl-tl-foot {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    padding: 4px 12px 8px;
+                    font-size: 10.5px;
+                    color: #6e7681;
+                    font-weight: 600;
                 }
                 .dpl-tl-stop {
                     background: rgba(248, 81, 73, 0.18);
@@ -273,6 +309,10 @@
                     <div class="dpl-tl-sid" id="dpl-tl-sid-txt">BEREIT</div>
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">Warte auf Stock-IDs vom HUD…</div>
                 </div>
+                <div class="dpl-tl-foot">
+                    <span>Bridge v1.2 · [ESC] Stop</span>
+                    <span>By Arasaka</span>
+                </div>
             `;
             document.body.appendChild(hudEl);
             const stopBtn = document.getElementById('dpl-tl-stop-btn');
@@ -280,6 +320,7 @@
                 stopBtn.addEventListener('click', () => {
                     abortFlag = true;
                     workerBusy = false;
+                    isNavigating = false;
                     writeJson(KEY_QUEUE, []);
                     setHudStatus('GESTOPPT', 'Warteschlange geleert', '#f85149');
                 });
@@ -339,7 +380,7 @@
         return results;
     }
 
-    async function waitForAnyElement(texts, timeout = 10000, pickLast = false) {
+    async function waitForAnyElement(texts, timeout = 12000, pickLast = false) {
         const list = Array.isArray(texts) ? texts : [texts];
         let passed = 0;
         while (passed < timeout) {
@@ -348,8 +389,8 @@
                 const els = getDeepestElementsByText(list[i]);
                 if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
             }
-            await sleep(350);
-            passed += 350;
+            await sleep(400);
+            passed += 400;
         }
         return null;
     }
@@ -427,13 +468,6 @@
         return /\/refurbishment\/[0-9a-f-]{8,}/i.test(String(url || ''));
     }
 
-    function pageContainsStockId(stockId) {
-        const sid = String(stockId || '').trim().toUpperCase();
-        if (!sid) return false;
-        const bodyTxt = String((document.body && document.body.innerText) || '').toUpperCase().replace(/\s+/g, ' ');
-        return bodyTxt.includes(sid);
-    }
-
     function findStockLinkOnSearchPage(stockId) {
         const sid = String(stockId || '').trim().toUpperCase();
         const links = Array.from(document.querySelectorAll('a[href*="/refurbishment/"]'))
@@ -444,7 +478,7 @@
             const txt = String((row && row.textContent) || links[i].textContent || '').toUpperCase().replace(/\s+/g, '');
             if (txt.includes(sid)) return links[i];
         }
-        return links.length === 1 ? links[0] : null;
+        return links[0];
     }
 
     function updateJobInQueue(stockId, patch) {
@@ -466,95 +500,77 @@
         return next;
     }
 
-    async function processJob(job, indexLabel) {
+    function safeNavigateTo(url) {
+        isNavigating = true;
+        setTimeout(() => { isNavigating = false; }, 6000);
+        location.assign(url);
+    }
+
+    async function processCurrentJob(job, indexLabel) {
         const sid = job.stockId;
         currentSid = sid;
 
         if (job.phase === 'confirming') {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog nach Reload…', '#00ffcc');
+            setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog…', '#00ffcc');
             await sleep(1000);
             await clickSavedDialogClose(3500);
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'ok', 'Herausgegeben');
+            pushResultEvent(sid, 'ok', 'Herausgegeben', job);
             playTone(true);
             setHudStatus(`${indexLabel} · ${sid}`, '✓ Herausgegeben (Spalte F grün)', '#00ff00');
-            await sleep(600);
-            return;
+            await sleep(700);
+            return 'done_item';
         }
 
-        if (!isRefurbDetailUrl(location.href) || !pageContainsStockId(sid)) {
-            if (job.carolUrl && isRefurbDetailUrl(job.carolUrl) && job.navigatedUrl !== job.carolUrl) {
-                updateJobInQueue(sid, { status: 'running', navigatedUrl: job.carolUrl });
-                setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Carol-Link aus Spalte F…', '#00ffcc');
-                location.assign(job.carolUrl);
-                return;
+        if (job.phase === 'init') {
+            const targetUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
+                ? job.carolUrl
+                : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
+            updateJobInQueue(sid, { status: 'running', phase: 'opened', navCount: (job.navCount || 0) + 1 });
+            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc');
+            safeNavigateTo(targetUrl);
+            return 'navigating';
+        }
+
+        if (!isRefurbDetailUrl(location.href)) {
+            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Suchergebnis in Carol…', '#00ffcc');
+            let foundLink = null;
+            for (let t = 0; t < 25; t++) {
+                await sleep(400);
+                if (isRefurbDetailUrl(location.href)) break;
+                foundLink = findStockLinkOnSearchPage(sid);
+                if (foundLink) break;
             }
 
             if (!isRefurbDetailUrl(location.href)) {
-                const wantSearchUrl = 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid);
-                if (!location.href.toUpperCase().includes(sid)) {
-                    updateJobInQueue(sid, { status: 'running', navigatedUrl: wantSearchUrl });
-                    setHudStatus(`${indexLabel} · ${sid}`, 'Suche Stock-ID in Carol…', '#00ffcc');
-                    location.assign(wantSearchUrl);
-                    return;
+                if (!foundLink) {
+                    removeJobFromQueue(sid);
+                    pushResultEvent(sid, 'error', 'Auftrag in Carol nicht gefunden', job);
+                    playTone(false);
+                    setHudStatus(`${indexLabel} · ${sid}`, '✗ Nicht in Carol gefunden', '#f85149');
+                    await sleep(1000);
+                    return 'done_item';
                 }
-
-                setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Suchergebnis in Carol…', '#00ffcc');
-                let foundLink = null;
-                for (let t = 0; t < 30; t++) {
-                    await sleep(400);
-                    if (isRefurbDetailUrl(location.href)) break;
-                    foundLink = findStockLinkOnSearchPage(sid);
-                    if (foundLink) break;
+                const href = foundLink.href || foundLink.getAttribute('href');
+                if (href && isRefurbDetailUrl(href)) {
+                    updateJobInQueue(sid, { phase: 'detail_loaded' });
+                    safeNavigateTo(href);
+                    return 'navigating';
                 }
-
-                if (!isRefurbDetailUrl(location.href)) {
-                    if (!foundLink) {
-                        removeJobFromQueue(sid);
-                        pushResultEvent(sid, 'error', 'Auftrag in Carol nicht gefunden');
-                        playTone(false);
-                        setHudStatus(`${indexLabel} · ${sid}`, '✗ Nicht in Carol gefunden', '#f85149');
-                        await sleep(1000);
-                        return;
-                    }
-                    const href = foundLink.href || foundLink.getAttribute('href');
-                    if (href && isRefurbDetailUrl(href)) {
-                        location.assign(href);
-                        return;
-                    }
-                    forceClick(foundLink);
-                    await sleep(2000);
-                }
+                forceClick(foundLink);
+                await sleep(2500);
             }
         }
 
-        let sidVerified = false;
-        for (let v = 0; v < 20; v++) {
-            if (pageContainsStockId(sid)) { sidVerified = true; break; }
-            await sleep(400);
-        }
-        if (!sidVerified) {
-            const fallbackSearch = 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid);
-            if (job.navigatedUrl !== fallbackSearch) {
-                updateJobInQueue(sid, { status: 'running', carolUrl: fallbackSearch, navigatedUrl: fallbackSearch });
-                location.assign(fallbackSearch);
-                return;
-            }
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Stock-ID stimmt nicht mit geladenem Auftrag überein');
-            playTone(false);
-            return;
-        }
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Edit damages and services…', '#00ffcc');
-        const btnEdit = await waitForAnyElement(['Edit damages and services', 'Schäden und Services bearbeiten'], 12000);
+        setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Edit damages and services…', '#00ffcc');
+        const btnEdit = await waitForAnyElement(['Edit damages and services', 'Schäden und Services bearbeiten'], 15000);
         if (!btnEdit) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Edit-Button nicht gefunden');
+            pushResultEvent(sid, 'error', 'Edit-Button in Carol nicht gefunden', job);
             playTone(false);
             setHudStatus(`${indexLabel} · ${sid}`, '✗ Edit-Button fehlt', '#f85149');
             await sleep(1000);
-            return;
+            return 'done_item';
         }
         forceClick(btnEdit);
 
@@ -563,11 +579,11 @@
         const btnSpareParts = await waitForAnyElement(['Spare parts', 'Ersatzteile'], 10000);
         if (!btnSpareParts) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Tab Spare Parts nicht gefunden');
+            pushResultEvent(sid, 'error', 'Tab Spare Parts nicht gefunden', job);
             playTone(false);
             setHudStatus(`${indexLabel} · ${sid}`, '✗ Spare Parts fehlt', '#f85149');
             await sleep(1000);
-            return;
+            return 'done_item';
         }
         forceClick(btnSpareParts);
 
@@ -576,11 +592,11 @@
         const btnSelectAll = await waitForAnyElement(['Select all', 'Alle auswählen'], 8000);
         if (!btnSelectAll) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Keine Spare Parts / Select All nicht gefunden');
+            pushResultEvent(sid, 'error', 'Select All nicht gefunden', job);
             playTone(false);
             setHudStatus(`${indexLabel} · ${sid}`, '✗ Select All fehlt', '#f85149');
             await sleep(1000);
-            return;
+            return 'done_item';
         }
         forceClick(btnSelectAll);
 
@@ -612,11 +628,11 @@
 
         if (!verified) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Nicht alle Positionen konnten auf Handed out gestellt werden');
+            pushResultEvent(sid, 'error', 'Nicht alle Positionen konnten auf Handed out gestellt werden', job);
             playTone(false);
             setHudStatus(`${indexLabel} · ${sid}`, '✗ Handed out nicht bestätigt', '#f85149');
             await sleep(1200);
-            return;
+            return 'done_item';
         }
 
         updateJobInQueue(sid, { phase: 'confirming' });
@@ -624,9 +640,9 @@
         const btnSubmit = await waitForAnyElement(['Submit', 'Absenden', 'Speichern'], 10000);
         if (!btnSubmit) {
             removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Submit-Button nicht gefunden');
+            pushResultEvent(sid, 'error', 'Submit-Button nicht gefunden', job);
             playTone(false);
-            return;
+            return 'done_item';
         }
         forceClick(btnSubmit);
 
@@ -645,43 +661,48 @@
         await sleep(700);
 
         removeJobFromQueue(sid);
-        pushResultEvent(sid, 'ok', 'Herausgegeben');
+        pushResultEvent(sid, 'ok', 'Herausgegeben', job);
         playTone(true);
         setHudStatus(`${indexLabel} · ${sid}`, '✓ Herausgegeben · Spalte F grün markiert!', '#00ff00');
         await sleep(600);
+        return 'done_item';
     }
 
-    async function runQueueLoop() {
-        if (workerBusy) return;
-        const q = readJson(KEY_QUEUE, []);
-        if (!Array.isArray(q) || !q.length) return;
+    async function checkAndRunQueue() {
+        if (workerBusy || isNavigating) return;
+        const abortObj = readJson(KEY_ABORT, null);
+        if (abortObj && Number(abortObj.ts || 0) > (Date.now() - 4000)) {
+            writeJson(KEY_QUEUE, []);
+            return;
+        }
+
+        const currentQ = readJson(KEY_QUEUE, []);
+        if (!Array.isArray(currentQ) || !currentQ.length) return;
 
         workerBusy = true;
         abortFlag = false;
 
         try {
-            while (!abortFlag) {
-                const abortObj = readJson(KEY_ABORT, null);
-                if (abortObj && Number(abortObj.ts || 0) > (Date.now() - 4000)) {
-                    abortFlag = true;
-                    break;
-                }
-                const currentQ = readJson(KEY_QUEUE, []);
-                if (!Array.isArray(currentQ) || !currentQ.length) break;
+            const nextJob = currentQ[0];
+            if (!nextJob || !nextJob.stockId) {
+                writeJson(KEY_QUEUE, currentQ.slice(1));
+                workerBusy = false;
+                return;
+            }
 
-                const nextJob = currentQ[0];
-                if (!nextJob || !nextJob.stockId) {
-                    writeJson(KEY_QUEUE, currentQ.slice(1));
-                    continue;
-                }
-
-                await processJob(nextJob, `offen: ${currentQ.length}`);
+            const result = await processCurrentJob(nextJob, `offen: ${currentQ.length}`);
+            if (result === 'navigating') {
+                return;
             }
 
             const rem = readJson(KEY_QUEUE, []);
             if (!rem.length && !abortFlag) {
                 currentSid = '';
                 setHudStatus('FERTIG', 'Alle Stock-IDs auf Herausgegeben gestellt · Warte auf HUD…', '#00ff00');
+            } else if (rem.length > 0 && !abortFlag) {
+                workerBusy = false;
+                setTimeout(checkAndRunQueue, 500);
+                return;
             }
         } catch (err) {
             if (err && err.message === 'Abort') {
@@ -691,7 +712,9 @@
                 setHudStatus('FEHLER', String((err && err.message) || err), '#f85149');
             }
         } finally {
-            workerBusy = false;
+            if (!isNavigating) {
+                workerBusy = false;
+            }
             publishState();
         }
     }
@@ -714,12 +737,14 @@
                 if (!bySid[sid]) {
                     const job = {
                         stockId: sid,
+                        dateStr: inc.dateStr || '',
                         carolUrl: inc.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid)),
                         model: inc.model || '',
                         rows: inc.rows || [],
                         row: inc.row || 0,
                         status: 'pending',
                         phase: 'init',
+                        navCount: 0,
                         addedAt: Date.now()
                     };
                     bySid[sid] = job;
@@ -728,20 +753,22 @@
             }
             writeJson(KEY_ABORT, { ts: 0 });
             writeJson(KEY_QUEUE, merged);
-            runQueueLoop();
+            checkAndRunQueue();
         }
         if (d.cmd === 'stop_all') {
             abortFlag = true;
             workerBusy = false;
+            isNavigating = false;
             writeJson(KEY_QUEUE, []);
             setHudStatus('GESTOPPT', 'Durchlauf durch HUD gestoppt', '#f85149');
         }
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && workerBusy) {
+        if (e.key === 'Escape') {
             abortFlag = true;
             workerBusy = false;
+            isNavigating = false;
             writeJson(KEY_QUEUE, []);
             setHudStatus('GESTOPPT', 'Durchlauf mit ESC abgebrochen', '#f85149');
         }
@@ -749,24 +776,24 @@
 
     if (typeof GM_addValueChangeListener === 'function') {
         GM_addValueChangeListener(KEY_QUEUE, () => {
-            if (!workerBusy) runQueueLoop();
+            if (!workerBusy && !isNavigating) checkAndRunQueue();
         });
     }
 
     setInterval(() => {
         ensureHud();
         publishState();
-        if (!workerBusy) {
+        if (!workerBusy && !isNavigating) {
             const q = readJson(KEY_QUEUE, []);
             if (Array.isArray(q) && q.length > 0) {
-                runQueueLoop();
+                checkAndRunQueue();
             }
         }
-    }, 1200);
+    }, 1500);
 
     setTimeout(() => {
         ensureHud();
         publishState();
-        runQueueLoop();
-    }, 800);
+        checkAndRunQueue();
+    }, 1200);
 })();
