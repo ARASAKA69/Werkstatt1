@@ -361,7 +361,7 @@
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">${currentStepText || 'Bereit für Stock-IDs vom HUD'}</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Bridge v1.5 Turbo · [ESC] Stop</span>
+                    <span>Carol Bridge v1.0 · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
