@@ -632,7 +632,7 @@ function prepareAndDispatchBatch(ids) {
         setBanner((res && res.message) || "Keine Stock-IDs vorbereitet.", "err");
         return;
       }
-      mergeNewBatchItems(res.items);
+      replaceBatchItems(res.items);
       renderQueueFull();
       dispatchJobsToBridge();
     })
@@ -650,7 +650,7 @@ function prepareAndDispatchBatch(ids) {
           status: "pending"
         };
       });
-      mergeNewBatchItems(fallbackItems);
+      replaceBatchItems(fallbackItems);
       renderQueueFull();
       dispatchJobsToBridge();
       setBanner("Hinweis beim Sheet-Abgleich (" + (err.message || err) + ") — starte Carol trotzdem.", "work");
@@ -658,39 +658,28 @@ function prepareAndDispatchBatch(ids) {
     .dplPrepareCarolBatch(ids);
 }
 
-function mergeNewBatchItems(newItems) {
+function replaceBatchItems(newItems) {
+  state.items = [];
+  state.bySid = {};
+  state.handledEvents = {};
   if (!Array.isArray(newItems)) return;
   for (var i = 0; i < newItems.length; i++) {
     var it = newItems[i];
     if (!it || !it.stockId) continue;
     var sid = it.stockId;
-    var existing = state.bySid[sid];
-    if (existing) {
-      existing.dateStr = it.dateStr || existing.dateStr || "";
-      existing.carolUrl = it.carolUrl || existing.carolUrl;
-      existing.model = it.model || existing.model;
-      existing.rows = (it.rows && it.rows.length) ? it.rows : existing.rows;
-      existing.row = it.row || existing.row;
-      existing.inSheet = it.inSheet || existing.inSheet;
-      if (existing.status !== "running") {
-        existing.status = "pending";
-        existing.stepText = "In Warteschlange";
-      }
-    } else {
-      var entry = {
-        stockId: sid,
-        dateStr: it.dateStr || "",
-        carolUrl: it.carolUrl || ("https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(sid)),
-        model: it.model || "",
-        rows: it.rows || [],
-        row: it.row || 0,
-        inSheet: !!it.inSheet,
-        status: "pending",
-        stepText: "In Warteschlange"
-      };
-      state.bySid[sid] = entry;
-      state.items.push(entry);
-    }
+    var entry = {
+      stockId: sid,
+      dateStr: it.dateStr || "",
+      carolUrl: it.carolUrl || ("https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(sid)),
+      model: it.model || "",
+      rows: it.rows || [],
+      row: it.row || 0,
+      inSheet: !!it.inSheet,
+      status: "pending",
+      stepText: "In Warteschlange"
+    };
+    state.bySid[sid] = entry;
+    state.items.push(entry);
   }
 }
 
@@ -1034,6 +1023,7 @@ $("btnRetryErrors").addEventListener("click", function() {
 
 $("btnStopBatch").addEventListener("click", function() {
   sendToBridge("stop_all", {});
+  google.script.run.withSuccessHandler(function() {}).withFailureHandler(function() {}).dplClearCarolQueue();
   for (var i = 0; i < state.items.length; i++) {
     if (state.items[i].status === "pending" || state.items[i].status === "running") {
       state.items[i].status = "error";
@@ -1041,7 +1031,7 @@ $("btnStopBatch").addEventListener("click", function() {
     }
   }
   renderQueueFull();
-  setBanner("⏹ Durchlauf gestoppt.", "err");
+  setBanner("⏹ Durchlauf gestoppt & Warteschlange geleert.", "err");
 });
 
 if (WEB_APP_URL && VIEW_MODE !== "webapp") {

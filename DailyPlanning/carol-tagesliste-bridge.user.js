@@ -121,26 +121,13 @@
             if (d.cmd === 'enqueue_jobs') {
                 const incoming = (d.payload && d.payload.jobs) || [];
                 if (!incoming.length) return;
-                const currentQ = readJson(KEY_QUEUE, []);
                 const bySid = {};
-                const merged = [];
-                for (let i = 0; i < currentQ.length; i++) {
-                    const item = currentQ[i];
-                    if (!item || !item.stockId) continue;
-                    if (item.status === 'done' || item.status === 'error') continue;
-                    bySid[item.stockId] = item;
-                    merged.push(item);
-                }
+                const freshQueue = [];
                 for (let j = 0; j < incoming.length; j++) {
                     const inc = incoming[j];
                     if (!inc || !inc.stockId) continue;
                     const sid = String(inc.stockId).trim().toUpperCase();
-                    if (bySid[sid]) {
-                        bySid[sid].carolUrl = inc.carolUrl || bySid[sid].carolUrl;
-                        bySid[sid].dateStr = inc.dateStr || bySid[sid].dateStr || '';
-                        bySid[sid].rows = inc.rows || bySid[sid].rows;
-                        bySid[sid].row = inc.row || bySid[sid].row;
-                    } else {
+                    if (!bySid[sid]) {
                         const job = {
                             stockId: sid,
                             dateStr: inc.dateStr || '',
@@ -153,11 +140,11 @@
                             addedAt: Date.now()
                         };
                         bySid[sid] = job;
-                        merged.push(job);
+                        freshQueue.push(job);
                     }
                 }
                 writeJson(KEY_ABORT, { ts: 0 });
-                writeJson(KEY_QUEUE, merged);
+                writeJson(KEY_QUEUE, freshQueue);
             }
         });
 
@@ -776,12 +763,8 @@
 
         if (d.cmd === 'enqueue_jobs' && d.payload && Array.isArray(d.payload.jobs)) {
             const incoming = d.payload.jobs;
-            const currentQ = readJson(KEY_QUEUE, []);
             const bySid = {};
-            const merged = currentQ.slice();
-            for (let i = 0; i < merged.length; i++) {
-                if (merged[i] && merged[i].stockId) bySid[merged[i].stockId] = merged[i];
-            }
+            const freshQueue = [];
             for (let j = 0; j < incoming.length; j++) {
                 const inc = incoming[j];
                 if (!inc || !inc.stockId) continue;
@@ -799,11 +782,11 @@
                         addedAt: Date.now()
                     };
                     bySid[sid] = job;
-                    merged.push(job);
+                    freshQueue.push(job);
                 }
             }
             writeJson(KEY_ABORT, { ts: 0 });
-            writeJson(KEY_QUEUE, merged);
+            writeJson(KEY_QUEUE, freshQueue);
             checkAndRunQueue();
         }
 

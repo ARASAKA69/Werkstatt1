@@ -1177,29 +1177,7 @@ function dplPrepareCarolBatch(rawInput) {
 
     }
 
-    var existingStore = dplReadQueueStore_();
-
-    var existingItems = (existingStore && Array.isArray(existingStore.items)) ? existingStore.items : [];
-
-    var bySidMerged = {};
-
-    var mergedList = [];
-
-    for (var e = 0; e < existingItems.length; e++) {
-
-      var ex = existingItems[e];
-
-      if (!ex || !ex.stockId) continue;
-
-      if (ex.status === 'pending' || ex.status === 'running') {
-
-        bySidMerged[ex.stockId] = ex;
-
-        mergedList.push(ex);
-
-      }
-
-    }
+    var items = [];
 
     var batchId = 'TL_' + Date.now();
 
@@ -1283,7 +1261,7 @@ function dplPrepareCarolBatch(rawInput) {
 
       var finalModel = sheetModel || mapModel || '';
 
-      var newItem = {
+      items.push({
         stockId: sid,
         dateStr: itemDate || '',
         carolUrl: finalUrl,
@@ -1293,30 +1271,8 @@ function dplPrepareCarolBatch(rawInput) {
         inSheet: rowNumbers.length > 0,
         alreadyGreen: allGreen,
         status: 'pending',
-        stepText: 'Wartet auf Carol…'
-      };
-
-      if (bySidMerged[sid]) {
-
-        bySidMerged[sid].dateStr = newItem.dateStr || bySidMerged[sid].dateStr;
-
-        bySidMerged[sid].carolUrl = newItem.carolUrl || bySidMerged[sid].carolUrl;
-
-        bySidMerged[sid].model = newItem.model || bySidMerged[sid].model;
-
-        bySidMerged[sid].rows = newItem.rows.length ? newItem.rows : bySidMerged[sid].rows;
-
-        bySidMerged[sid].row = newItem.row || bySidMerged[sid].row;
-
-        bySidMerged[sid].status = 'pending';
-
-      } else {
-
-        bySidMerged[sid] = newItem;
-
-        mergedList.push(newItem);
-
-      }
+        stepText: 'In Warteschlange'
+      });
 
     }
 
@@ -1327,7 +1283,7 @@ function dplPrepareCarolBatch(rawInput) {
       activeDates: scan.activeDates,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      items: mergedList
+      items: items
     };
 
     dplWriteQueueStore_(queuePayload);
@@ -1336,7 +1292,7 @@ function dplPrepareCarolBatch(rawInput) {
       success: true,
       batchId: batchId,
       activeDates: scan.activeDates,
-      items: mergedList
+      items: items
     };
 
   } catch (err) {
