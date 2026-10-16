@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<base target="_top">
+<style>
+:root {
+  --bg: #0b0f14;
+  --bg2: #141a23;
+  --bg3: #1c2430;
+  --border: #2b3545;
+  --text: #e6edf3;
+  --muted: #8b949e;
+  --accent: #00ffcc;
+  --orange: #f97316;
+  --green: #00ff00;
+  --green-soft: #2ea043;
+  --red: #f85149;
+  --blue: #3fa0db;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, #161d27 0%, #10151d 100%);
+  border-bottom: 1px solid var(--border);
+}
+.title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.title span { color: var(--accent); }
+.bridge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.bridge-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #6e7681;
+}
+.bridge-pill.online {
+  border-color: rgba(0, 255, 204, 0.45);
+  color: var(--accent);
+  background: rgba(0, 255, 204, 0.08);
+}
+.bridge-pill.online .bridge-dot {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+.bridge-pill.busy {
+  border-color: rgba(249, 115, 22, 0.55);
+  color: #ffa94d;
+  background: rgba(249, 115, 22, 0.1);
+}
+.bridge-pill.busy .bridge-dot {
+  background: var(--orange);
+  box-shadow: 0 0 8px var(--orange);
+}
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 7px 13px;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.btn-primary {
+  background: rgba(0, 255, 204, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.btn-primary:hover {
+  background: rgba(0, 255, 204, 0.24);
+}
+.btn-orange {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: var(--orange);
+  color: #ffa94d;
+}
+.btn-danger {
+  background: rgba(248, 81, 73, 0.14);
+  border-color: var(--red);
+  color: #ff7b72;
+}
+.container {
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1;
+}
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--muted);
+}
+.paste-area {
+  width: 100%;
+  min-height: 92px;
+  max-height: 180px;
+  resize: vertical;
+  background: #080b10;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.45;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.paste-area:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 12px rgba(0, 255, 204, 0.18);
+}
+.timer-wrap {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: rgba(0, 255, 204, 0.07);
+  border: 1px solid rgba(0, 255, 204, 0.35);
+  display: none;
+  flex-direction: column;
+  gap: 7px;
+}
+.timer-wrap.active {
+  display: flex;
+}
+.timer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.timer-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(0, 255, 204, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.timer-bar-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transition: width 0.08s linear;
+}
+.preview-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.chip {
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  font-family: "Consolas", monospace;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #8bcef7;
+}
+.paste-Controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.paste-btns {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.status-banner {
+  padding: 10px 13px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.status-banner.ok {
+  border-color: rgba(86, 211, 100, 0.5);
+  background: rgba(86, 211, 100, 0.1);
+  color: #56d364;
+}
+.status-banner.err {
+  border-color: rgba(248, 81, 73, 0.55);
+  background: rgba(248, 81, 73, 0.1);
+  color: #ff7b72;
+}
+.status-banner.work {
+  border-color: rgba(63, 160, 219, 0.55);
+  background: rgba(63, 160, 219, 0.1);
+  color: #8bcef7;
+}
+.progress-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.stat-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+}
+.stat-badge.done { color: #56d364; border-color: rgba(86, 211, 100, 0.4); }
+.stat-badge.err { color: #ff7b72; border-color: rgba(248, 81, 73, 0.4); }
+.stat-badge.wait { color: #8bcef7; border-color: rgba(63, 160, 219, 0.4); }
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.q-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: #0f141c;
+  border: 1px solid var(--border);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.q-row.running {
+  border-color: var(--accent);
+  background: rgba(0, 255, 204, 0.06);
+  box-shadow: 0 0 14px rgba(0, 255, 204, 0.12);
+}
+.q-row.done {
+  border-color: rgba(0, 255, 0, 0.5);
+  background: rgba(0, 255, 0, 0.08);
+}
+.q-row.error {
+  border-color: rgba(248, 81, 73, 0.65);
+  background: rgba(248, 81, 73, 0.09);
+}
+.q-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.q-idx {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 24px;
+}
+.q-sid {
+  font-family: "Consolas", monospace;
+  font-size: 15px;
+  font-weight: 800;
+  color: #f0f6fc;
+  letter-spacing: 0.5px;
+}
+.q-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.q-row-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  color: #c9d1d9;
+}
+.q-date-tag {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(0, 255, 204, 0.1);
+  border: 1px solid rgba(0, 255, 204, 0.35);
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.q-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.q-state {
+  font-size: 12.5px;
+  font-weight: 700;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.q-row.running .q-state {
+  color: var(--accent);
+  border-color: rgba(0, 255, 204, 0.5);
+  background: rgba(0, 255, 204, 0.1);
+}
+.q-row.done .q-state {
+  color: #00ff00;
+  border-color: rgba(0, 255, 0, 0.55);
+  background: rgba(0, 255, 0, 0.12);
+}
+.q-row.error .q-state {
+  color: #ff7b72;
+  border-color: rgba(248, 81, 73, 0.55);
+}
+.empty-queue {
+  text-align: center;
+  padding: 28px 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.hud-footer {
+  max-width: 1100px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 8px 18px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--muted);
+  border-top: 1px solid rgba(43, 53, 69, 0.55);
+}
+.hud-footer-brand {
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  color: #8b949e;
+}
+.hud-footer-brand span {
+  color: var(--accent);
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="title-wrap">
+    <div class="title">Tagesliste // <span>Carol Herausgegeben HUD</span></div>
+    <div class="bridge-pill" id="bridgePill">
+      <span class="bridge-dot"></span>
+      <span id="bridgeText">Prüfe Carol Bridge…</span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <button type="button" class="btn btn-primary" id="btnOpenCarol">🌐 Carol Bridge Fenster öffnen</button>
+    <button type="button" class="btn" id="btnLoadSheet">📋 Offene (Heute &amp; Nächster Tag) holen</button>
+    <a class="btn" id="btnOpenTab" target="_blank" rel="noopener" style="display:none;">↗ In eigenem Tab</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">1. Stock-IDs einfügen (Auto-Start nach 3 Sekunden · Heute &amp; Nächster Tag)</div>
+      <span id="detectedBadge" class="stat-badge">0 Stock-IDs erkannt</span>
+    </div>
+    <textarea id="pasteInput" class="paste-area" placeholder="Stock-IDs aus Spalte E kopieren und hier einfügen (Strg+V)…&#10;Nach 3 Sekunden werden alle Stock-IDs automatisch an das offene Carol-Fenster übergeben. Bearbeitet &amp; grün markiert wird nur der Eintrag vom aktuellen oder nächsten Tag (ältere Tage werden ignoriert)."></textarea>
+
+    <div class="timer-wrap" id="timerWrap">
+      <div class="timer-top">
+        <span id="timerLabel">Sende an Carol Bridge in 3.0s…</span>
+        <span id="timerCount">3.0s</span>
+      </div>
+      <div class="timer-bar-bg">
+        <div class="timer-bar-fill" id="timerBar"></div>
+      </div>
+    </div>
+
+    <div class="preview-chips" id="previewChips"></div>
+
+    <div class="paste-Controls">
+      <div class="paste-btns">
+        <button type="button" class="btn btn-primary" id="btnStartNow" disabled>🚀 Jetzt sofort starten</button>
+        <button type="button" class="btn btn-orange" id="btnCancelTimer" style="display:none;">⏸ Timer stoppen</button>
+        <button type="button" class="btn" id="btnClearInput">🗑 Eingabe leeren</button>
+      </div>
+      <div class="paste-btns">
+        <button type="button" class="btn btn-orange" id="btnRetryErrors" style="display:none;">↻ Fehlgeschlagene erneut starten</button>
+        <button type="button" class="btn btn-danger" id="btnStopBatch" style="display:none;">⏹ Durchlauf stoppen</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="status-banner" id="statusBanner">
+    <span id="statusText">Bereit — Stock-IDs oben einfügen. Sobald Carol eine Stock-ID auf Herausgegeben setzt, wird der Carol-Link in Spalte F grün markiert.</span>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">2. Abarbeitung &amp; Spalte F (Carol-Link Grün-Feedback)</div>
+      <div class="progress-summary">
+        <span class="stat-badge wait" id="statOpen">0 offen</span>
+        <span class="stat-badge done" id="statDone">0 grün (Herausgegeben)</span>
+        <span class="stat-badge err" id="statErr">0 Fehler</span>
+      </div>
+    </div>
+    <div id="queueWrap" class="queue-list">
+      <div class="empty-queue">Noch keine Stock-IDs in der Warteschlange.</div>
+    </div>
+  </div>
+</div>
+
+<footer class="hud-footer">
+  <span>Tagesliste · Carol Herausgegeben Automation (Heute &amp; Nächster Tag)</span>
+  <span class="hud-footer-brand">By <span>Arasaka</span></span>
+</footer>
+
+<script>
+var VIEW_MODE = <?!= JSON.stringify(viewMode || "dialog") ?>;
+var WEB_APP_URL = <?!= JSON.stringify(webAppUrl || "") ?>;
+var PASTE_TIMEOUT_MS = 3000;
+
+var state = {
+  pasteTimer: null,
+  pasteDeadline: 0,
+  pasteTick: null,
+  parsedInputIds: [],
+  items: [],
+  bySid: {},
+  bridgeAliveAt: 0,
+  bridgeBusy: false,
+  bridgeCurrentSid: "",
+  bridgeStepText: "",
+  carolWin: null,
+  handledEvents: {}
+};
+
+function $(id) { return document.getElementById(id); }
+
+function esc(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, function(c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function parseStockIds(text) {
+  var raw = String(text || "").toUpperCase();
+  var m = raw.match(/\b[A-Z]{2}\d{4,8}\b/g) || [];
+  var out = [];
+  var seen = {};
+  for (var i = 0; i < m.length; i++) {
+    var s = m[i].trim();
+    if (s && !seen[s]) {
+      seen[s] = true;
+      out.push(s);
+    }
+  }
+  return out;
+}
+
+function setBanner(msg, tone) {
+  var el = $("statusBanner");
+  var txt = $("statusText");
+  el.className = "status-banner" + (tone ? " " + tone : "");
+  txt.textContent = msg || "";
+}
+
+function updateInputPreview() {
+  var ids = parseStockIds($("pasteInput").value);
+  state.parsedInputIds = ids;
+  $("detectedBadge").textContent = ids.length + (ids.length === 1 ? " Stock-ID erkannt" : " Stock-IDs erkannt");
+  $("btnStartNow").disabled = ids.length === 0;
+  var wrap = $("previewChips");
+  if (!ids.length) {
+    wrap.innerHTML = "";
+    return;
+  }
+  wrap.innerHTML = ids.map(function(id) {
+    return '<span class="chip">' + esc(id) + '</span>';
+  }).join("");
+}
+
+function stopPasteCountdown() {
+  if (state.pasteTimer) { clearTimeout(state.pasteTimer); state.pasteTimer = null; }
+  if (state.pasteTick) { clearInterval(state.pasteTick); state.pasteTick = null; }
+  $("timerWrap").classList.remove("active");
+  $("btnCancelTimer").style.display = "none";
+}
+
+function startPasteCountdown() {
+  stopPasteCountdown();
+  var ids = state.parsedInputIds;
+  if (!ids.length) return;
+  state.pasteDeadline = Date.now() + PASTE_TIMEOUT_MS;
+  $("timerWrap").classList.add("active");
+  $("btnCancelTimer").style.display = "inline-flex";
+  $("timerBar").style.width = "100%";
+  $("timerLabel").textContent = "Übergebe " + ids.length + " Stock-ID(s) an Carol Bridge…";
+  $("timerCount").textContent = "3.0s";
+
+  state.pasteTick = setInterval(function() {
+    var rem = Math.max(0, state.pasteDeadline - Date.now());
+    var pct = Math.max(0, Math.min(100, (rem / PASTE_TIMEOUT_MS) * 100));
+    $("timerBar").style.width = pct + "%";
+    $("timerCount").textContent = (rem / 1000).toFixed(1) + "s";
+  }, 60);
+
+  state.pasteTimer = setTimeout(function() {
+    stopPasteCountdown();
+    triggerBatchFromInput();
+  }, PASTE_TIMEOUT_MS);
+}
+
+function isCarolWindowOpen() {
+  try {
+    return !!(state.carolWin && !state.carolWin.closed);
+  } catch (e) {
+    return false;
+  }
+}
+
+function sendToBridge(cmd, payload) {
+  var msg = {
+    source: "dpl-tagesliste-hud",
+    cmd: cmd,
+    payload: payload || {},
+    ts: Date.now()
+  };
+  try { window.postMessage(msg, "*"); } catch (e0) {}
+  try {
+    if (state.carolWin && !state.carolWin.closed) {
+      state.carolWin.postMessage(msg, "*");
+    }
+  } catch (e1) {}
+}
+
+function triggerBatchFromInput() {
+  stopPasteCountdown();
+  var ids = parseStockIds($("pasteInput").value);
+  if (!ids.length) return;
+  $("pasteInput").value = "";
+  updateInputPreview();
+  prepareAndDispatchBatch(ids);
+}
+
+function prepareAndDispatchBatch(ids) {
+  setBanner("Bereite " + ids.length + " Stock-ID(s) in der Tagesliste (Heute & Nächster Tag) vor…", "work");
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success || !res.items || !res.items.length) {
+        setBanner((res && res.message) || "Keine Stock-IDs vorbereitet.", "err");
+        return;
+      }
+      mergeNewBatchItems(res.items);
+      renderQueueFull();
+      dispatchJobsToBridge();
+    })
+    .withFailureHandler(function(err) {
+      var fallbackItems = ids.map(function(sid) {
+        return {
+          stockId: sid,
+          dateStr: "",
+          carolUrl: "https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(sid),
+          model: "",
+          rows: [],
+          row: 0,
+          inSheet: false,
+          alreadyGreen: false,
+          status: "pending"
+        };
+      });
+      mergeNewBatchItems(fallbackItems);
+      renderQueueFull();
+      dispatchJobsToBridge();
+      setBanner("Hinweis beim Sheet-Abgleich (" + (err.message || err) + ") — starte Carol trotzdem.", "work");
+    })
+    .dplPrepareCarolBatch(ids);
+}
+
+function mergeNewBatchItems(newItems) {
+  if (!Array.isArray(newItems)) return;
+  for (var i = 0; i < newItems.length; i++) {
+    var it = newItems[i];
+    if (!it || !it.stockId) continue;
+    var sid = it.stockId;
+    var existing = state.bySid[sid];
+    if (existing) {
+      existing.dateStr = it.dateStr || existing.dateStr || "";
+      existing.carolUrl = it.carolUrl || existing.carolUrl;
+      existing.model = it.model || existing.model;
+      existing.rows = (it.rows && it.rows.length) ? it.rows : existing.rows;
+      existing.row = it.row || existing.row;
+      existing.inSheet = it.inSheet || existing.inSheet;
+      if (existing.status !== "running") {
+        existing.status = "pending";
+        existing.stepText = "In Warteschlange";
+      }
+    } else {
+      var entry = {
+        stockId: sid,
+        dateStr: it.dateStr || "",
+        carolUrl: it.carolUrl || ("https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(sid)),
+        model: it.model || "",
+        rows: it.rows || [],
+        row: it.row || 0,
+        inSheet: !!it.inSheet,
+        status: "pending",
+        stepText: "In Warteschlange"
+      };
+      state.bySid[sid] = entry;
+      state.items.push(entry);
+    }
+  }
+}
+
+function getPendingJobsList() {
+  var pending = state.items.filter(function(it) {
+    return it.status === "pending" || it.status === "running";
+  });
+  return pending.map(function(it) {
+    return {
+      stockId: it.stockId,
+      dateStr: it.dateStr || "",
+      carolUrl: it.carolUrl,
+      model: it.model || "",
+      rows: it.rows || [],
+      row: it.row || 0
+    };
+  });
+}
+
+function dispatchJobsToBridge() {
+  var jobs = getPendingJobsList();
+  if (!jobs.length) return;
+
+  var firstSid = jobs[0].stockId;
+  if (state.bySid[firstSid] && state.bySid[firstSid].status === "pending") {
+    state.bySid[firstSid].status = "running";
+    state.bySid[firstSid].stepText = "Öffne Auftrag in Carol…";
+    updateQueueRowDom(firstSid);
+  }
+
+  sendToBridge("enqueue_jobs", { jobs: jobs });
+
+  var bridgeOnline = (Date.now() - state.bridgeAliveAt) < 15000 || isCarolWindowOpen();
+  if (!bridgeOnline) {
+    var firstUrl = jobs[0].carolUrl || ("https://carol.autohero.com/en-GB/refurbishment?rsv=" + encodeURIComponent(firstSid));
+    var sep = firstUrl.indexOf("?") >= 0 ? "&" : "?";
+    try {
+      state.carolWin = window.open(firstUrl + sep + "tl_standby=1", "dplCarolBridgeWindow");
+      if (state.carolWin) state.bridgeAliveAt = Date.now();
+    } catch (e) {}
+    setTimeout(function() {
+      sendToBridge("enqueue_jobs", { jobs: getPendingJobsList() });
+    }, 1200);
+  }
+
+  setBanner("🚀 " + jobs.length + " Stock-ID(s) aktiv — Carol stellt Spare Parts im Schnellmodus auf Herausgegeben…", "work");
+}
+
+function markSheetRowResult(stockId, status, detailMsg, eventDateStr, eventRows) {
+  var item = state.bySid[stockId];
+  var rows = (Array.isArray(eventRows) && eventRows.length) ? eventRows : (item && item.rows ? item.rows : []);
+  var targetDate = eventDateStr || (item && item.dateStr) || "";
+  if (item) {
+    item.status = status === "ok" ? "done" : "error";
+    var rowHint = rows.length ? ("Zeile " + rows.join(", ")) : (item.row ? ("Zeile " + item.row) : "Tagesliste");
+    item.stepText = status === "ok"
+      ? ("✓ Herausgegeben · Spalte F grün (" + rowHint + ")")
+      : ("✗ " + (detailMsg || "Fehler — Spalte F nicht grün"));
+    updateQueueRowDom(stockId);
+  }
+  updateQueueCounters();
+  checkAllFinishedBanner();
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (item && status === "ok" && res && res.success && res.updatedRows && res.updatedRows.length) {
+        item.stepText = "✓ Herausgegeben · Spalte F grün (Zeile " + res.updatedRows.join(", ") + ")";
+        updateQueueRowDom(stockId);
+      }
+    })
+    .withFailureHandler(function(err) {
+      if (item && status === "ok") {
+        item.stepText = "✓ In Carol fertig · Sheet-Fehler: " + (err.message || err);
+        updateQueueRowDom(stockId);
+      }
+    })
+    .dplMarkCarolResult(stockId, status, detailMsg || "", rows, targetDate);
+}
+
+function checkAllFinishedBanner() {
+  var open = 0, done = 0, err = 0;
+  for (var i = 0; i < state.items.length; i++) {
+    var st = state.items[i].status;
+    if (st === "done") done++;
+    else if (st === "error") err++;
+    else open++;
+  }
+  if (open === 0 && state.items.length > 0) {
+    if (err === 0) {
+      setBanner("✅ Alle " + done + " Stock-ID(s) in Carol auf Herausgegeben gestellt und in Spalte F grün markiert!", "ok");
+    } else {
+      setBanner("⚠️ Durchlauf beendet: " + done + " grün markiert, " + err + " nicht grün (bitte prüfen).", "err");
+    }
+  }
+}
+
+function formatItemStateLabel(it) {
+  if (it.status === "running") {
+    return "⚙️ " + (it.stepText || "Arbeitet in Carol…");
+  }
+  if (it.status === "done") {
+    return "✅ " + (it.stepText || "Herausgegeben · Spalte F grün");
+  }
+  if (it.status === "error") {
+    return "❌ " + (it.stepText || "Fehler · Spalte F nicht grün");
+  }
+  return "⏳ " + (it.stepText || "In Warteschlange");
+}
+
+function updateQueueCounters() {
+  var open = 0, done = 0, err = 0;
+  for (var i = 0; i < state.items.length; i++) {
+    var s = state.items[i].status;
+    if (s === "done") done++;
+    else if (s === "error") err++;
+    else open++;
+  }
+  $("statOpen").textContent = open + " offen";
+  $("statDone").textContent = done + " grün (Herausgegeben)";
+  $("statErr").textContent = err + " Fehler";
+  $("btnRetryErrors").style.display = err > 0 ? "inline-flex" : "none";
+  $("btnStopBatch").style.display = open > 0 ? "inline-flex" : "none";
+}
+
+function updateQueueRowDom(sid) {
+  var it = state.bySid[sid];
+  if (!it) return;
+  var rowEl = document.getElementById("q-row-" + sid);
+  if (!rowEl) {
+    renderQueueFull();
+    return;
+  }
+  var wantCls = "q-row";
+  if (it.status === "running") wantCls += " running";
+  else if (it.status === "done") wantCls += " done";
+  else if (it.status === "error") wantCls += " error";
+  if (rowEl.className !== wantCls) rowEl.className = wantCls;
+
+  var stEl = document.getElementById("q-state-" + sid);
+  var wantTxt = formatItemStateLabel(it);
+  if (stEl && stEl.textContent !== wantTxt) {
+    stEl.textContent = wantTxt;
+  }
+
+  var retryWrap = document.getElementById("q-retry-" + sid);
+  if (retryWrap) {
+    retryWrap.style.display = it.status === "error" ? "inline-flex" : "none";
+  }
+  updateQueueCounters();
+}
+
+function renderQueueFull() {
+  var wrap = $("queueWrap");
+  updateQueueCounters();
+
+  if (!state.items.length) {
+    wrap.innerHTML = '<div class="empty-queue">Noch keine Stock-IDs in der Warteschlange.</div>';
+    return;
+  }
+
+  wrap.innerHTML = state.items.map(function(it, idx) {
+    var rowCls = "q-row";
+    if (it.status === "running") rowCls += " running";
+    else if (it.status === "done") rowCls += " done";
+    else if (it.status === "error") rowCls += " error";
+
+    var rowLabel = (it.rows && it.rows.length)
+      ? ("Zeile " + it.rows.join(", "))
+      : (it.row ? ("Zeile " + it.row) : "Nicht in Tagesliste");
+
+    var stateLabel = formatItemStateLabel(it);
+    var retryDisp = it.status === "error" ? "inline-flex" : "none";
+
+    return '<div class="' + rowCls + '" id="q-row-' + esc(it.stockId) + '">'
+      + '<div class="q-left">'
+      + '<span class="q-idx">#' + (idx + 1) + '</span>'
+      + '<span class="q-sid">' + esc(it.stockId) + '</span>'
+      + (it.dateStr ? '<span class="q-date-tag">📅 ' + esc(it.dateStr) + '</span>' : '')
+      + '<span class="q-row-tag">' + esc(rowLabel) + '</span>'
+      + (it.model ? '<span class="q-meta">' + esc(it.model) + '</span>' : '')
+      + '</div>'
+      + '<div class="q-right">'
+      + '<span class="q-state" id="q-state-' + esc(it.stockId) + '">' + esc(stateLabel) + '</span>'
+      + '<button type="button" class="btn" id="q-retry-' + esc(it.stockId) + '" style="display:' + retryDisp + ';" onclick="retrySingleStock(\'' + esc(it.stockId) + '\')">↻ Erneut</button>'
+      + '</div>'
+      + '</div>';
+  }).join("");
+}
+
+window.retrySingleStock = function(sid) {
+  var it = state.bySid[sid];
+  if (!it) return;
+  it.status = "pending";
+  it.stepText = "In Warteschlange";
+  updateQueueRowDom(sid);
+  dispatchJobsToBridge();
+};
+
+function updateBridgePill() {
+  var pill = $("bridgePill");
+  var txt = $("bridgeText");
+  var alive = (Date.now() - state.bridgeAliveAt) < 25000 || isCarolWindowOpen();
+  if (!alive) {
+    pill.className = "bridge-pill";
+    txt.textContent = "Kein offenes Carol-Fenster erkannt";
+    return;
+  }
+  if (state.bridgeBusy && state.bridgeCurrentSid) {
+    pill.className = "bridge-pill busy";
+    txt.textContent = "Carol arbeitet: " + state.bridgeCurrentSid + (state.bridgeStepText ? (" · " + state.bridgeStepText) : "");
+  } else {
+    pill.className = "bridge-pill online";
+    txt.textContent = "Carol Bridge verbunden & bereit";
+  }
+}
+
+window.addEventListener("message", function(ev) {
+  var d = ev && ev.data;
+  if (!d || d.source !== "dpl-tagesliste-bridge") return;
+  state.bridgeAliveAt = Date.now();
+
+  if (d.type === "heartbeat") {
+    updateBridgePill();
+    return;
+  }
+
+  if (d.type === "state") {
+    state.bridgeBusy = !!d.busy;
+    if (d.currentSid) state.bridgeCurrentSid = d.currentSid;
+    if (d.stepText) state.bridgeStepText = d.stepText;
+
+    if (d.busy && d.currentSid && state.bySid[d.currentSid]) {
+      var cur = state.bySid[d.currentSid];
+      if (cur.status !== "done" && cur.status !== "error") {
+        cur.status = "running";
+        if (d.stepText && d.stepText.indexOf("Warte auf Stock-IDs") === -1) {
+          cur.stepText = d.stepText;
+        }
+        updateQueueRowDom(d.currentSid);
+      }
+    }
+    updateBridgePill();
+    return;
+  }
+
+  if (d.type === "item_result" && d.stockId) {
+    var evKey = String(d.eventId || (d.stockId + "_" + d.status));
+    if (state.handledEvents[evKey]) return;
+    state.handledEvents[evKey] = true;
+    markSheetRowResult(d.stockId, d.status || "ok", d.message || "", d.dateStr || "", d.rows || []);
+  }
+});
+
+$("pasteInput").addEventListener("input", function() {
+  updateInputPreview();
+  if (state.parsedInputIds.length > 0) {
+    startPasteCountdown();
+  } else {
+    stopPasteCountdown();
+  }
+});
+
+$("pasteInput").addEventListener("paste", function() {
+  setTimeout(function() {
+    updateInputPreview();
+    if (state.parsedInputIds.length > 0) {
+      startPasteCountdown();
+    }
+  }, 20);
+});
+
+$("btnStartNow").addEventListener("click", function() {
+  triggerBatchFromInput();
+});
+
+$("btnCancelTimer").addEventListener("click", function() {
+  stopPasteCountdown();
+  setBanner("Auto-Start gestoppt. Klicke auf „Jetzt sofort starten“, sobald du bereit bist.", "");
+});
+
+$("btnClearInput").addEventListener("click", function() {
+  stopPasteCountdown();
+  $("pasteInput").value = "";
+  updateInputPreview();
+  $("pasteInput").focus();
+});
+
+$("btnOpenCarol").addEventListener("click", function() {
+  try {
+    state.carolWin = window.open("https://carol.autohero.com/en-GB/refurbishment?tl_standby=1", "dplCarolBridgeWindow");
+    if (state.carolWin) {
+      state.bridgeAliveAt = Date.now();
+      updateBridgePill();
+      setBanner("Carol-Fenster geöffnet — Bridge wartet dort auf Stock-IDs.", "work");
+    } else {
+      setBanner("Popup blockiert — bitte Carol in einem separaten Fenster öffnen.", "err");
+    }
+  } catch (e) {
+    setBanner("Bitte Carol in einem separaten Fenster öffnen.", "err");
+  }
+});
+
+$("btnLoadSheet").addEventListener("click", function() {
+  setBanner("Lese offene Stock-IDs (Heute & Nächster Tag) ohne grüne Markierung aus der Tagesliste…", "work");
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) {
+        setBanner((res && res.message) || "Fehler beim Lesen der Tagesliste.", "err");
+        return;
+      }
+      var sids = res.stockIds || [];
+      var days = (res.activeDates && res.activeDates.length) ? res.activeDates.join(" & ") : "Heute/Morgen";
+      if (!sids.length) {
+        setBanner("Alle Stock-IDs für " + days + " sind in Spalte F bereits grün markiert!", "ok");
+        return;
+      }
+      $("pasteInput").value = sids.join("\n");
+      updateInputPreview();
+      startPasteCountdown();
+    })
+    .withFailureHandler(function(err) {
+      setBanner("Fehler: " + (err.message || err), "err");
+    })
+    .dplGetRecentUnmarkedFromSheet();
+});
+
+$("btnRetryErrors").addEventListener("click", function() {
+  var retried = 0;
+  for (var i = 0; i < state.items.length; i++) {
+    if (state.items[i].status === "error") {
+      state.items[i].status = "pending";
+      state.items[i].stepText = "In Warteschlange";
+      retried++;
+    }
+  }
+  if (retried > 0) {
+    renderQueueFull();
+    dispatchJobsToBridge();
+  }
+});
+
+$("btnStopBatch").addEventListener("click", function() {
+  sendToBridge("stop_all", {});
+  for (var i = 0; i < state.items.length; i++) {
+    if (state.items[i].status === "pending" || state.items[i].status === "running") {
+      state.items[i].status = "error";
+      state.items[i].stepText = "Manuell gestoppt (Spalte F nicht grün)";
+    }
+  }
+  renderQueueFull();
+  setBanner("⏹ Durchlauf gestoppt.", "err");
+});
+
+if (WEB_APP_URL && VIEW_MODE !== "webapp") {
+  var tabBtn = $("btnOpenTab");
+  tabBtn.href = WEB_APP_URL;
+  tabBtn.style.display = "inline-flex";
+}
+
+setInterval(function() {
+  sendToBridge("ping", {});
+  updateBridgePill();
+}, 1500);
+
+setTimeout(function() {
+  $("pasteInput").focus();
+  sendToBridge("ping", {});
+}, 200);
+</script>
+</body>
+</html>

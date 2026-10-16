@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  Empfängt Stock-IDs vom Tagesliste-HUD, stellt alle Spare Parts in Carol auf Handed out (Herausgegeben) und meldet Erfolg für grüne Spalte F zurück
+// @version      1.5
+// @description  Schnellmodus: Empfängt Stock-IDs vom Tagesliste-HUD, stellt Spare Parts in Carol auf Handed out und markiert Spalte F grün
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @match        *://script.google.com/*
@@ -17,15 +17,17 @@
 (function () {
     'use strict';
 
-    const KEY_QUEUE = 'dpl_tl_carol_queue_v3';
-    const KEY_STATE = 'dpl_tl_carol_state_v3';
-    const KEY_EVENTS = 'dpl_tl_carol_events_v3';
-    const KEY_ABORT = 'dpl_tl_carol_abort_v3';
+    const KEY_QUEUE = 'dpl_tl_carol_queue_v4';
+    const KEY_STATE = 'dpl_tl_carol_state_v4';
+    const KEY_EVENTS = 'dpl_tl_carol_events_v4';
+    const KEY_ABORT = 'dpl_tl_carol_abort_v4';
+    const KEY_HEARTBEAT = 'dpl_tl_carol_hb_v4';
 
     try {
         if (typeof GM_setValue === 'function') {
             GM_setValue('dpl_tl_carol_queue_v1', '[]');
             GM_setValue('dpl_tl_carol_queue_v2', '[]');
+            GM_setValue('dpl_tl_carol_queue_v3', '[]');
         }
     } catch (e0) {}
 
@@ -52,10 +54,21 @@
 
     if (!isCarolHost) {
         let lastEventCursor = 0;
+        let lastStateTs = 0;
 
-        function forwardStateToHud() {
+        function forwardToHud() {
+            const hb = readJson(KEY_HEARTBEAT, null);
+            if (hb && (Date.now() - Number(hb.ts || 0)) < 25000) {
+                window.postMessage({
+                    source: 'dpl-tagesliste-bridge',
+                    type: 'heartbeat',
+                    ts: hb.ts
+                }, '*');
+            }
+
             const st = readJson(KEY_STATE, null);
-            if (st && (Date.now() - Number(st.ts || 0)) < 25000) {
+            if (st && Number(st.ts || 0) > lastStateTs && (Date.now() - Number(st.ts || 0)) < 25000) {
+                lastStateTs = Number(st.ts || 0);
                 window.postMessage({
                     source: 'dpl-tagesliste-bridge',
                     type: 'state',
@@ -65,6 +78,7 @@
                     ts: st.ts
                 }, '*');
             }
+
             const evs = readJson(KEY_EVENTS, []);
             if (Array.isArray(evs) && evs.length) {
                 for (let i = 0; i < evs.length; i++) {
@@ -93,13 +107,14 @@
             if (!d || d.source !== 'dpl-tagesliste-hud') return;
 
             if (d.cmd === 'ping') {
-                forwardStateToHud();
+                forwardToHud();
                 return;
             }
 
             if (d.cmd === 'stop_all') {
                 writeJson(KEY_ABORT, { ts: Date.now() });
                 writeJson(KEY_QUEUE, []);
+                writeJson(KEY_STATE, { busy: false, currentSid: '', stepText: '', ts: Date.now() });
                 return;
             }
 
@@ -135,7 +150,6 @@
                             row: inc.row || 0,
                             status: 'pending',
                             phase: 'init',
-                            navCount: 0,
                             addedAt: Date.now()
                         };
                         bySid[sid] = job;
@@ -148,53 +162,41 @@
         });
 
         if (typeof GM_addValueChangeListener === 'function') {
-            GM_addValueChangeListener(KEY_STATE, () => forwardStateToHud());
-            GM_addValueChangeListener(KEY_EVENTS, () => forwardStateToHud());
+            GM_addValueChangeListener(KEY_STATE, () => forwardToHud());
+            GM_addValueChangeListener(KEY_EVENTS, () => forwardToHud());
+            GM_addValueChangeListener(KEY_HEARTBEAT, () => forwardToHud());
         }
-        setInterval(forwardStateToHud, 400);
+        setInterval(forwardToHud, 350);
         return;
     }
 
     if (isWmsSingleAuto) return;
 
-    function captureUrlJobIfPresent() {
-        try {
-            const u = new URL(location.href);
-            if (u.searchParams.get('tl_job') !== '1') return;
-            const sid = String(u.searchParams.get('tl_sid') || '').trim().toUpperCase();
-            if (!sid) return;
-            const dateStr = String(u.searchParams.get('tl_date') || '').trim();
-            const rowsParam = String(u.searchParams.get('tl_rows') || '').trim();
-            const rows = rowsParam ? rowsParam.split(',').map(x => parseInt(x, 10)).filter(Boolean) : [];
-            const cleanUrl = location.origin + location.pathname;
-            const currentQ = readJson(KEY_QUEUE, []);
-            const exists = currentQ.some(j => j && j.stockId === sid);
-            if (!exists) {
-                currentQ.unshift({
-                    stockId: sid,
-                    dateStr: dateStr,
-                    carolUrl: cleanUrl,
-                    rows: rows,
-                    row: rows.length ? rows[rows.length - 1] : 0,
-                    status: 'running',
-                    phase: 'opened',
-                    navCount: 1,
-                    addedAt: Date.now()
-                });
-                writeJson(KEY_ABORT, { ts: 0 });
-                writeJson(KEY_QUEUE, currentQ);
-            }
-        } catch (e) {}
+    if (location.href.includes('tl_standby=1') || location.href.includes('tl_job=1')) {
+        try { sessionStorage.setItem('dpl_tl_worker_tab', '1'); } catch (e) {}
     }
-
-    captureUrlJobIfPresent();
 
     let workerBusy = false;
     let isNavigating = false;
     let abortFlag = false;
     let currentSid = '';
-    let currentStepText = 'Warte auf Stock-IDs vom Tagesliste-HUD…';
+    let currentStepText = '';
     let hudEl = null;
+
+    const initialQ = readJson(KEY_QUEUE, []);
+    if (Array.isArray(initialQ) && initialQ.length > 0 && initialQ[0] && initialQ[0].stockId) {
+        currentSid = initialQ[0].stockId;
+        currentStepText = 'Lade Auftrag in Carol…';
+        try { sessionStorage.setItem('dpl_tl_worker_tab', '1'); } catch (e) {}
+    }
+
+    function isWorkerTab() {
+        try {
+            if (sessionStorage.getItem('dpl_tl_worker_tab') === '1') return true;
+        } catch (e) {}
+        const q = readJson(KEY_QUEUE, []);
+        return Array.isArray(q) && q.length > 0;
+    }
 
     function postToOpenerTree(win, payload, depth) {
         if (!win || depth > 4) return;
@@ -216,21 +218,32 @@
         } catch (e) {}
     }
 
-    function publishState() {
-        const statePayload = {
-            busy: workerBusy,
-            currentSid: currentSid,
-            stepText: currentStepText,
+    function sendHeartbeat() {
+        const ts = Date.now();
+        writeJson(KEY_HEARTBEAT, { ts: ts });
+        sendToOpenerAllFrames({
+            source: 'dpl-tagesliste-bridge',
+            type: 'heartbeat',
+            ts: ts
+        });
+    }
+
+    function publishActiveState(busy, sid, stepText) {
+        const payload = {
+            busy: !!busy,
+            currentSid: sid || '',
+            stepText: stepText || '',
             ts: Date.now()
         };
-        writeJson(KEY_STATE, statePayload);
+        writeJson(KEY_STATE, payload);
+        writeJson(KEY_HEARTBEAT, { ts: payload.ts });
         sendToOpenerAllFrames({
             source: 'dpl-tagesliste-bridge',
             type: 'state',
-            busy: workerBusy,
-            currentSid: currentSid,
-            stepText: currentStepText,
-            ts: statePayload.ts
+            busy: payload.busy,
+            currentSid: payload.currentSid,
+            stepText: payload.stepText,
+            ts: payload.ts
         });
     }
 
@@ -261,16 +274,10 @@
             ts: ev.ts
         };
         sendToOpenerAllFrames(msgPayload);
-        let retrySend = 0;
-        const t = setInterval(() => {
-            retrySend++;
-            sendToOpenerAllFrames(msgPayload);
-            if (retrySend >= 5) clearInterval(t);
-        }, 300);
     }
 
     function ensureHud() {
-        if (!document.body) return;
+        if (!document.body || !isWorkerTab()) return;
         if (!document.getElementById('dpl-tl-bridge-style')) {
             const st = document.createElement('style');
             st.id = 'dpl-tl-bridge-style';
@@ -350,11 +357,11 @@
                     <button type="button" class="dpl-tl-stop" id="dpl-tl-stop-btn">STOP</button>
                 </div>
                 <div class="dpl-tl-body">
-                    <div class="dpl-tl-sid" id="dpl-tl-sid-txt">BEREIT</div>
-                    <div class="dpl-tl-step" id="dpl-tl-step-txt">Warte auf Stock-IDs vom HUD…</div>
+                    <div class="dpl-tl-sid" id="dpl-tl-sid-txt">${currentSid || 'BEREIT'}</div>
+                    <div class="dpl-tl-step" id="dpl-tl-step-txt">${currentStepText || 'Bereit für Stock-IDs vom HUD'}</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Bridge v1.4 · [ESC] Stop</span>
+                    <span>Bridge v1.5 Turbo · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
@@ -366,13 +373,13 @@
                     workerBusy = false;
                     isNavigating = false;
                     writeJson(KEY_QUEUE, []);
-                    setHudStatus('GESTOPPT', 'Warteschlange geleert', '#f85149');
+                    setHudStatus('GESTOPPT', 'Warteschlange geleert', '#f85149', false);
                 });
             }
         }
     }
 
-    function setHudStatus(sidLabel, stepText, borderColor) {
+    function setHudStatus(sidLabel, stepText, borderColor, isBusyState = true) {
         currentStepText = stepText || '';
         ensureHud();
         if (hudEl) {
@@ -382,7 +389,11 @@
             if (sidEl) sidEl.textContent = sidLabel || 'BEREIT';
             if (stEl) stEl.textContent = stepText || '';
         }
-        publishState();
+        if (isBusyState && currentSid) {
+            publishActiveState(true, currentSid, stepText);
+        } else if (!isBusyState) {
+            publishActiveState(false, '', '');
+        }
     }
 
     function playTone(ok) {
@@ -396,18 +407,19 @@
             osc.frequency.setValueAtTime(ok ? 880 : 180, ctx.currentTime);
             if (ok) osc.frequency.exponentialRampToValueAtTime(1560, ctx.currentTime + 0.12);
             gain.gain.setValueAtTime(0.18, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
             osc.start();
-            osc.stop(ctx.currentTime + 0.4);
+            osc.stop(ctx.currentTime + 0.35);
         } catch (e) {}
     }
 
     async function sleep(ms) {
         let elapsed = 0;
+        const step = Math.min(50, ms);
         while (elapsed < ms) {
             if (abortFlag) throw new Error('Abort');
-            await new Promise(r => setTimeout(r, 100));
-            elapsed += 100;
+            await new Promise(r => setTimeout(r, step));
+            elapsed += step;
         }
     }
 
@@ -423,14 +435,13 @@
         return results;
     }
 
-    async function waitForElement(text, timeout = 10000, pickLast = false) {
-        let passed = 0;
-        while (passed < timeout) {
+    async function waitForElement(text, timeout = 8000, pickLast = false) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeout) {
             if (abortFlag) throw new Error('Abort');
             const els = getDeepestElementsByText(text);
             if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
-            await sleep(500);
-            passed += 500;
+            await sleep(80);
         }
         return null;
     }
@@ -444,26 +455,32 @@
             el.style.boxShadow = '0 0 15px #ff0000';
             setTimeout(() => {
                 if (el) { el.style.outline = orig.outline; el.style.boxShadow = orig.shadow; el.style.transition = orig.trans; }
-            }, 400);
+            }, 300);
         } catch (e) {}
         el.click();
-        if (el.parentElement) setTimeout(() => el.parentElement.click(), 50);
+        if (el.parentElement) setTimeout(() => el.parentElement.click(), 30);
+    }
+
+    function getSparePartSelects() {
+        const out = [];
+        for (const sel of document.querySelectorAll('select')) {
+            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
+            if (hasOpt) out.push(sel);
+        }
+        return out;
     }
 
     function checkAllHandedOut() {
-        const selects = document.querySelectorAll('select');
-        let relevant = 0;
+        const selects = getSparePartSelects();
+        if (!selects.length) return false;
         for (const sel of selects) {
-            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
-            if (!hasOpt) continue;
-            relevant++;
             if (!sel.options[sel.selectedIndex]?.text.includes('Handed out')) return false;
         }
-        return relevant > 0;
+        return true;
     }
 
     function forceAllHandedOut() {
-        for (const sel of document.querySelectorAll('select')) {
+        for (const sel of getSparePartSelects()) {
             const opt = Array.from(sel.options).find(o => o.text.includes('Handed out'));
             if (opt && !sel.options[sel.selectedIndex]?.text.includes('Handed out')) {
                 sel.value = opt.value;
@@ -481,9 +498,9 @@
         return candidates.length ? candidates[candidates.length - 1] : null;
     }
 
-    async function clickSavedDialogClose(timeout = 10000) {
-        let passed = 0;
-        while (passed < timeout) {
+    async function clickSavedDialogCloseFast(timeout = 2200) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeout) {
             if (abortFlag) throw new Error('Abort');
             const btn = findExactCloseButton();
             if (btn) {
@@ -494,8 +511,7 @@
                 btn.click();
                 return true;
             }
-            await sleep(250);
-            passed += 250;
+            await sleep(80);
         }
         return false;
     }
@@ -504,11 +520,18 @@
         return /\/refurbishment\/[0-9a-f-]{8,}/i.test(String(url || ''));
     }
 
-    function pageShowsStockId(stockId) {
-        const sid = String(stockId || '').trim().toUpperCase();
-        if (!sid) return false;
-        const txt = String((document.body && document.body.innerText) || '').toUpperCase();
-        return txt.includes(sid);
+    function isAlreadyOnPostAuthorizationPage() {
+        const txt = String((document.body && document.body.innerText) || '');
+        return txt.includes('Back to refurbishment detail') && txt.includes('Post Authorization');
+    }
+
+    function isMainPageAlreadyAllHandedOut() {
+        const txt = String((document.body && document.body.innerText) || '');
+        if (!txt.includes('Spare parts management') || !txt.includes('Edit damages and services')) return false;
+        const hasHandedOutBadge = getDeepestElementsByText('Handed Out').length > 0;
+        if (!hasHandedOutBadge) return false;
+        const hasOtherStatus = /\b(Ordered|Delivered|Not Added|In Transit)\b/.test(txt);
+        return !hasOtherStatus;
     }
 
     function findStockLinkOnSearchPage(stockId) {
@@ -545,48 +568,50 @@
 
     function safeNavigateTo(url) {
         isNavigating = true;
-        setTimeout(() => { isNavigating = false; }, 6000);
+        setTimeout(() => { isNavigating = false; }, 5000);
         location.assign(url);
     }
 
-    function isAlreadyOnPostAuthorizationPage() {
-        const txt = String((document.body && document.body.innerText) || '');
-        return txt.includes('Back to refurbishment detail') && txt.includes('Post Authorization');
+    async function finishJobAndAdvance(job, status, message, indexLabel) {
+        const sid = job.stockId;
+        const remaining = removeJobFromQueue(sid);
+        pushResultEvent(sid, status, message, job);
+        playTone(status === 'ok');
+
+        if (remaining.length > 0 && !abortFlag) {
+            const nextJob = remaining[0];
+            currentSid = nextJob.stockId;
+            const nextUrl = nextJob.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(nextJob.stockId));
+            updateJobInQueue(nextJob.stockId, { status: 'running', phase: 'opened' });
+            setHudStatus(`offen: ${remaining.length} · ${nextJob.stockId}`, 'Öffne nächsten Auftrag…', '#00ffcc', true);
+            safeNavigateTo(nextUrl);
+            return 'navigating';
+        }
+
+        currentSid = '';
+        setHudStatus('FERTIG', 'Alle Stock-IDs auf Herausgegeben gestellt!', '#00ff00', false);
+        return 'all_done';
     }
 
     async function processCurrentJob(job, indexLabel) {
         const sid = job.stockId;
         currentSid = sid;
 
-        if (job.phase === 'confirming') {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog…', '#00ffcc');
-            await sleep(1000);
-            await clickSavedDialogClose(3500);
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'ok', 'Herausgegeben', job);
-            playTone(true);
-            setHudStatus(`${indexLabel} · ${sid}`, '✓ Herausgegeben (Spalte F grün)', '#00ff00');
-            await sleep(700);
-            return 'done_item';
-        }
-
         if (job.phase === 'init') {
-            if (isRefurbDetailUrl(location.href) && pageShowsStockId(sid)) {
-                updateJobInQueue(sid, { status: 'running', phase: 'opened' });
-            } else {
-                const targetUrl = (job.rawCarolUrl || job.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid)));
-                updateJobInQueue(sid, { status: 'running', phase: 'opened', navCount: (job.navCount || 0) + 1 });
-                setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc');
-                safeNavigateTo(targetUrl);
-                return 'navigating';
-            }
+            const targetUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
+                ? job.carolUrl
+                : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
+            updateJobInQueue(sid, { status: 'running', phase: 'opened' });
+            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc', true);
+            safeNavigateTo(targetUrl);
+            return 'navigating';
         }
 
         if (!isRefurbDetailUrl(location.href)) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Suchergebnis in Carol…', '#00ffcc');
+            setHudStatus(`${indexLabel} · ${sid}`, 'Suche Auftrag in Carol…', '#00ffcc', true);
             let foundLink = null;
-            for (let t = 0; t < 25; t++) {
-                await sleep(400);
+            for (let t = 0; t < 40; t++) {
+                await sleep(150);
                 if (isRefurbDetailUrl(location.href)) break;
                 foundLink = findStockLinkOnSearchPage(sid);
                 if (foundLink) break;
@@ -594,12 +619,7 @@
 
             if (!isRefurbDetailUrl(location.href)) {
                 if (!foundLink) {
-                    removeJobFromQueue(sid);
-                    pushResultEvent(sid, 'error', 'Auftrag in Carol nicht gefunden', job);
-                    playTone(false);
-                    setHudStatus(`${indexLabel} · ${sid}`, '✗ Nicht in Carol gefunden', '#f85149');
-                    await sleep(1000);
-                    return 'done_item';
+                    return await finishJobAndAdvance(job, 'error', 'Auftrag in Carol nicht gefunden', indexLabel);
                 }
                 const href = foundLink.href || foundLink.getAttribute('href');
                 if (href && isRefurbDetailUrl(href)) {
@@ -608,122 +628,80 @@
                     return 'navigating';
                 }
                 forceClick(foundLink);
-                await sleep(2500);
+                await sleep(800);
             }
         }
-
-        await sleep(1200);
 
         if (!isAlreadyOnPostAuthorizationPage()) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Edit damages...', '#00ffcc');
-            const btnEdit = await waitForElement('Edit damages and services', 15000);
+            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Edit damages...', '#00ffcc', true);
+            const btnEdit = await waitForElement('Edit damages and services', 10000);
             if (!btnEdit) {
-                removeJobFromQueue(sid);
-                pushResultEvent(sid, 'error', 'Edit-Button nicht gefunden', job);
-                playTone(false);
-                setHudStatus(`${indexLabel} · ${sid}`, '✗ Edit-Button nicht gefunden!', '#f85149');
-                await sleep(1000);
-                return 'done_item';
+                return await finishJobAndAdvance(job, 'error', 'Edit-Button nicht gefunden', indexLabel);
+            }
+            if (isMainPageAlreadyAllHandedOut()) {
+                return await finishJobAndAdvance(job, 'ok', 'Bereits Herausgegeben', indexLabel);
             }
             forceClick(btnEdit);
-            await sleep(2000);
         }
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Navigiere zu Spare Parts...', '#00ffcc');
-        const btnSpareParts = await waitForElement('Spare parts', 10000);
+        setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Spare Parts...', '#00ffcc', true);
+        const btnSpareParts = await waitForElement('Spare parts', 8000);
         if (!btnSpareParts) {
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Spare Parts nicht gefunden', job);
-            playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Spare Parts nicht gefunden!', '#f85149');
-            await sleep(1000);
-            return 'done_item';
+            return await finishJobAndAdvance(job, 'error', 'Spare Parts nicht gefunden', indexLabel);
         }
         forceClick(btnSpareParts);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Wähle alle Positionen aus...', '#00ffcc');
-        await sleep(1000);
-        const btnSelectAll = await waitForElement('Select all', 10000);
+        const btnSelectAll = await waitForElement('Select all', 7000);
         if (!btnSelectAll) {
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Select All nicht gefunden', job);
-            playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Select All nicht gefunden!', '#f85149');
-            await sleep(1000);
-            return 'done_item';
+            return await finishJobAndAdvance(job, 'error', 'Keine Spare Parts / Select All fehlt', indexLabel);
         }
 
-        if (!checkAllHandedOut()) {
-            forceClick(btnSelectAll);
-            setHudStatus(`${indexLabel} · ${sid}`, 'Setze Dropdowns auf Handed out...', '#ffff00');
-            await sleep(1000);
-            forceAllHandedOut();
+        await sleep(150);
 
-            setHudStatus(`${indexLabel} · ${sid}`, 'Übernehme Änderungen...', '#00ffcc');
-            await sleep(1000);
-            const btnApply = await waitForElement('Apply', 10000);
-            if (btnApply) forceClick(btnApply);
-        } else {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Bereits alle auf Handed out — speichere…', '#00ffcc');
+        if (checkAllHandedOut()) {
+            return await finishJobAndAdvance(job, 'ok', 'Bereits Herausgegeben', indexLabel);
         }
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Verifiziere Handed-Out Status...', '#ffff00');
+        setHudStatus(`${indexLabel} · ${sid}`, 'Setze alle Teile auf Handed out...', '#ffff00', true);
+        forceClick(btnSelectAll);
+        await sleep(250);
+        forceAllHandedOut();
+        await sleep(150);
+
+        const btnApply = await waitForElement('Apply', 2500);
+        if (btnApply) forceClick(btnApply);
+
         let verified = false;
-        for (let i = 0; i < 6; i++) {
-            await sleep(1000);
+        for (let i = 0; i < 20; i++) {
+            await sleep(100);
             if (checkAllHandedOut()) { verified = true; break; }
+            if (i === 8) {
+                forceAllHandedOut();
+                const retryApply = getDeepestElementsByText('Apply')[0];
+                if (retryApply) forceClick(retryApply);
+            }
         }
 
         if (!verified) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Rettungsprotokoll aktiv...', '#ffaa00');
-            forceAllHandedOut();
-            await sleep(1000);
-            const btnApplyRetry = await waitForElement('Apply', 3000);
-            if (btnApplyRetry) forceClick(btnApplyRetry);
-            await sleep(2500);
-            verified = checkAllHandedOut();
+            return await finishJobAndAdvance(job, 'error', 'Handed out konnte nicht gesetzt werden', indexLabel);
         }
 
-        if (!verified) {
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Nicht alle Positionen konnten auf Handed out gestellt werden', job);
-            playTone(false);
-            setHudStatus(`${indexLabel} · ${sid}`, '✗ Handed out nicht bestätigt', '#f85149');
-            await sleep(1200);
-            return 'done_item';
-        }
-
-        updateJobInQueue(sid, { phase: 'confirming' });
-        setHudStatus(`${indexLabel} · ${sid}`, 'Übermittle Daten...', '#00ffcc');
-        const btnSubmit = await waitForElement('Submit', 10000);
+        setHudStatus(`${indexLabel} · ${sid}`, 'Speichere (Submit)...', '#00ffcc', true);
+        const btnSubmit = await waitForElement('Submit', 5000);
         if (!btnSubmit) {
-            removeJobFromQueue(sid);
-            pushResultEvent(sid, 'error', 'Submit-Button nicht gefunden', job);
-            playTone(false);
-            return 'done_item';
+            return await finishJobAndAdvance(job, 'error', 'Submit-Button nicht gefunden', indexLabel);
         }
         forceClick(btnSubmit);
 
-        setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe...', '#00ffcc');
-        await sleep(1000);
-        const btnConfirm = await waitForElement('Confirm', 10000);
-        if (btnConfirm) forceClick(btnConfirm);
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog...', '#00ffcc');
-        await sleep(2000);
-        const dialogClosed = await clickSavedDialogClose(10000);
-        if (!dialogClosed) {
-            const btnClose = await waitForElement('Close', 5000, true);
-            if (btnClose) btnClose.click();
+        setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe (Confirm)...', '#00ffcc', true);
+        const btnConfirm = await waitForElement('Confirm', 4000);
+        if (btnConfirm) {
+            forceClick(btnConfirm);
+            setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog...', '#00ffcc', true);
+            await clickSavedDialogCloseFast(2000);
         }
-        await sleep(800);
 
-        removeJobFromQueue(sid);
-        pushResultEvent(sid, 'ok', 'Herausgegeben', job);
-        playTone(true);
-        setHudStatus(`${indexLabel} · ${sid}`, '✓ Herausgegeben · Spalte F grün markiert!', '#00ff00');
-        await sleep(600);
-        return 'done_item';
+        return await finishJobAndAdvance(job, 'ok', 'Herausgegeben', indexLabel);
     }
 
     async function checkAndRunQueue() {
@@ -737,6 +715,7 @@
         const currentQ = readJson(KEY_QUEUE, []);
         if (!Array.isArray(currentQ) || !currentQ.length) return;
 
+        try { sessionStorage.setItem('dpl_tl_worker_tab', '1'); } catch (e) {}
         workerBusy = true;
         abortFlag = false;
 
@@ -752,34 +731,25 @@
             if (result === 'navigating') {
                 return;
             }
-
-            const rem = readJson(KEY_QUEUE, []);
-            if (!rem.length && !abortFlag) {
-                currentSid = '';
-                setHudStatus('FERTIG', 'Alle Stock-IDs auf Herausgegeben gestellt · Warte auf HUD…', '#00ff00');
-            } else if (rem.length > 0 && !abortFlag) {
-                workerBusy = false;
-                setTimeout(checkAndRunQueue, 500);
-                return;
-            }
         } catch (err) {
             if (err && err.message === 'Abort') {
                 currentSid = '';
-                setHudStatus('GESTOPPT', 'Durchlauf abgebrochen', '#f85149');
+                setHudStatus('GESTOPPT', 'Durchlauf abgebrochen', '#f85149', false);
             } else {
-                setHudStatus('FEHLER', String((err && err.message) || err), '#f85149');
+                setHudStatus('FEHLER', String((err && err.message) || err), '#f85149', false);
             }
         } finally {
             if (!isNavigating) {
                 workerBusy = false;
             }
-            publishState();
         }
     }
 
     window.addEventListener('message', (ev) => {
         const d = ev && ev.data;
         if (!d || d.source !== 'dpl-tagesliste-hud') return;
+        try { sessionStorage.setItem('dpl_tl_worker_tab', '1'); } catch (e) {}
+
         if (d.cmd === 'enqueue_jobs' && d.payload && Array.isArray(d.payload.jobs)) {
             const incoming = d.payload.jobs;
             const currentQ = readJson(KEY_QUEUE, []);
@@ -796,14 +766,12 @@
                     const job = {
                         stockId: sid,
                         dateStr: inc.dateStr || '',
-                        carolUrl: inc.rawCarolUrl || inc.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid)),
-                        rawCarolUrl: inc.rawCarolUrl || inc.carolUrl || '',
+                        carolUrl: inc.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid)),
                         model: inc.model || '',
                         rows: inc.rows || [],
                         row: inc.row || 0,
                         status: 'pending',
                         phase: 'init',
-                        navCount: 0,
                         addedAt: Date.now()
                     };
                     bySid[sid] = job;
@@ -814,22 +782,23 @@
             writeJson(KEY_QUEUE, merged);
             checkAndRunQueue();
         }
+
         if (d.cmd === 'stop_all') {
             abortFlag = true;
             workerBusy = false;
             isNavigating = false;
             writeJson(KEY_QUEUE, []);
-            setHudStatus('GESTOPPT', 'Durchlauf durch HUD gestoppt', '#f85149');
+            setHudStatus('GESTOPPT', 'Durchlauf durch HUD gestoppt', '#f85149', false);
         }
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' && isWorkerTab()) {
             abortFlag = true;
             workerBusy = false;
             isNavigating = false;
             writeJson(KEY_QUEUE, []);
-            setHudStatus('GESTOPPT', 'Durchlauf mit ESC abgebrochen', '#f85149');
+            setHudStatus('GESTOPPT', 'Durchlauf mit ESC abgebrochen', '#f85149', false);
         }
     });
 
@@ -840,21 +809,23 @@
     }
 
     setInterval(() => {
-        captureUrlJobIfPresent();
-        ensureHud();
-        publishState();
+        if (isWorkerTab()) {
+            ensureHud();
+            sendHeartbeat();
+        }
         if (!workerBusy && !isNavigating) {
             const q = readJson(KEY_QUEUE, []);
             if (Array.isArray(q) && q.length > 0) {
                 checkAndRunQueue();
             }
         }
-    }, 1500);
+    }, 1000);
 
     setTimeout(() => {
-        captureUrlJobIfPresent();
-        ensureHud();
-        publishState();
+        if (isWorkerTab()) {
+            ensureHud();
+            sendHeartbeat();
+        }
         checkAndRunQueue();
-    }, 1000);
+    }, 300);
 })();
