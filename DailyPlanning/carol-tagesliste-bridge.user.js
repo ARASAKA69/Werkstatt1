@@ -2,7 +2,7 @@
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
 // @version      1.1
-// @description  Schnellmodus: Empfängt Stock-IDs vom Tagesliste-HUD, stellt Spare Parts in Carol auf Handed out, überspringt Completed-Aufträge sofort und markiert Spalte F grün
+// @description  Carol Herausgegeben Automatisierung // Tagesliste
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @match        *://script.google.com/*
