@@ -509,16 +509,66 @@
 
     function isAlreadyOnPostAuthorizationPage() {
         const txt = String((document.body && document.body.innerText) || '');
-        return txt.includes('Back to refurbishment detail') && txt.includes('Post Authorization');
+        return txt.includes('Back to refurbishment detail') || txt.includes('Post Authorization');
     }
 
-    function isMainPageAlreadyAllHandedOut() {
-        const txt = String((document.body && document.body.innerText) || '');
-        if (!txt.includes('Spare parts management') || !txt.includes('Edit damages and services')) return false;
-        const hasHandedOutBadge = getDeepestElementsByText('Handed Out').length > 0;
-        if (!hasHandedOutBadge) return false;
-        const hasOtherStatus = /\b(Ordered|Delivered|Not Added|In Transit)\b/.test(txt);
-        return !hasOtherStatus;
+    async function waitForPostAuthorizationPage(timeout = 10000) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeout) {
+            if (abortFlag) throw new Error('Abort');
+            if (isAlreadyOnPostAuthorizationPage()) return true;
+            await sleep(80);
+        }
+        return isAlreadyOnPostAuthorizationPage();
+    }
+
+    function findSparePartsSidebarTab() {
+        const all = document.querySelectorAll('*');
+        const exactMatches = [];
+        const fallbackMatches = [];
+        for (const el of all) {
+            if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) continue;
+            const raw = (el.textContent || '').trim();
+            if (!raw.includes('Spare parts')) continue;
+            if (raw.includes('management') || raw.includes('Management')) continue;
+            const childHas = Array.from(el.children).some(c => (c.textContent || '').includes('Spare parts'));
+            if (childHas) continue;
+            if (/^Spare parts(\s*\d+)?$/.test(raw)) {
+                exactMatches.push(el);
+            } else {
+                fallbackMatches.push(el);
+            }
+        }
+        return exactMatches[0] || fallbackMatches[0] || null;
+    }
+
+    async function openSparePartsTabAndWaitSelectAll(timeout = 9000) {
+        const start = Date.now();
+        let lastClickAt = 0;
+        while ((Date.now() - start) < timeout) {
+            if (abortFlag) throw new Error('Abort');
+            const selectAllEls = getDeepestElementsByText('Select all');
+            if (selectAllEls.length > 0) {
+                return { ok: true, btnSelectAll: selectAllEls[0] };
+            }
+            if ((Date.now() - lastClickAt) >= 1100) {
+                const tabEl = findSparePartsSidebarTab();
+                if (tabEl) {
+                    forceClick(tabEl);
+                    const clickableParent = tabEl.closest('li, a, button, [role="tab"], [role="button"]') || tabEl.parentElement;
+                    if (clickableParent && clickableParent !== tabEl) {
+                        try { clickableParent.click(); } catch (e) {}
+                    }
+                    lastClickAt = Date.now();
+                }
+            }
+            await sleep(100);
+        }
+        const finalCheck = getDeepestElementsByText('Select all');
+        if (finalCheck.length > 0) {
+            return { ok: true, btnSelectAll: finalCheck[0] };
+        }
+        return { ok: false, btnSelectAll: null };
     }
 
     function isOrderAlreadyCompletedOnPage() {
@@ -596,7 +646,11 @@
         }
 
         currentSid = '';
-        setHudStatus('FERTIG', 'Alle Stock-IDs auf Herausgegeben gestellt!', '#00ff00', false);
+        if (status === 'ok') {
+            setHudStatus(`FERTIG · ${sid}`, `✓ ${message}`, '#00ff00', false);
+        } else {
+            setHudStatus(`FEHLER · ${sid}`, `✗ ${message}`, '#f85149', false);
+        }
         return 'all_done';
     }
 
@@ -649,23 +703,18 @@
             if (!mainCheck.el) {
                 return await finishJobAndAdvance(job, 'error', 'Edit-Button nicht gefunden', indexLabel);
             }
-            if (isMainPageAlreadyAllHandedOut()) {
-                return await finishJobAndAdvance(job, 'ok', 'Bereits Herausgegeben', indexLabel);
-            }
             forceClick(mainCheck.el);
+            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Post Authorization...', '#00ffcc', true);
+            await waitForPostAuthorizationPage(8000);
+            await sleep(300);
         }
 
         setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Spare Parts...', '#00ffcc', true);
-        const btnSpareParts = await waitForElement('Spare parts', 8000);
-        if (!btnSpareParts) {
-            return await finishJobAndAdvance(job, 'error', 'Spare Parts nicht gefunden', indexLabel);
+        const spOpen = await openSparePartsTabAndWaitSelectAll(9000);
+        if (!spOpen.ok || !spOpen.btnSelectAll) {
+            return await finishJobAndAdvance(job, 'error', 'Spare Parts / Select All nicht gefunden', indexLabel);
         }
-        forceClick(btnSpareParts);
-
-        const btnSelectAll = await waitForElement('Select all', 7000);
-        if (!btnSelectAll) {
-            return await finishJobAndAdvance(job, 'error', 'Keine Spare Parts / Select All fehlt', indexLabel);
-        }
+        const btnSelectAll = spOpen.btnSelectAll;
 
         await sleep(150);
 
