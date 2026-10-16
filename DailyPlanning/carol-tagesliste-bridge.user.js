@@ -485,6 +485,34 @@
         return candidates.length ? candidates[candidates.length - 1] : null;
     }
 
+    function findExactConfirmButton() {
+        const candidates = [];
+        for (const el of document.querySelectorAll('button, [role="button"]')) {
+            const txt = (el.textContent || '').trim();
+            if (txt === 'Confirm' || txt === 'Bestätigen') candidates.push(el);
+        }
+        return candidates.length ? candidates[candidates.length - 1] : null;
+    }
+
+    async function waitAndClickConfirmButton(timeout = 6000) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeout) {
+            if (abortFlag) throw new Error('Abort');
+            const btn = findExactConfirmButton();
+            if (btn) {
+                forceClick(btn);
+                await sleep(300);
+                const stillThere = findExactConfirmButton();
+                if (stillThere) {
+                    forceClick(stillThere);
+                }
+                return true;
+            }
+            await sleep(80);
+        }
+        return false;
+    }
+
     async function clickSavedDialogCloseFast(timeout = 2200) {
         const start = Date.now();
         while ((Date.now() - start) < timeout) {
@@ -752,13 +780,13 @@
             return await finishJobAndAdvance(job, 'error', 'Submit-Button nicht gefunden', indexLabel);
         }
         forceClick(btnSubmit);
+        await sleep(200);
 
         setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe (Confirm)...', '#00ffcc', true);
-        const btnConfirm = await waitForElement('Confirm', 4000);
-        if (btnConfirm) {
-            forceClick(btnConfirm);
+        const confirmed = await waitAndClickConfirmButton(6000);
+        if (confirmed) {
             setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog...', '#00ffcc', true);
-            await clickSavedDialogCloseFast(2000);
+            await clickSavedDialogCloseFast(3500);
         }
 
         return await finishJobAndAdvance(job, 'ok', 'Herausgegeben', indexLabel);
