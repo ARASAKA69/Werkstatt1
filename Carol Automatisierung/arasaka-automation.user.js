@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 4.9
-// @description ARASAKA v4.9 - Auto-run flag captured at load (SPA drops URL param)
+// @version 5.0
+// @description ARASAKA v5.0 - Setzt Spare Parts beim WMS-Abschluss auf Delivered statt Handed out
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -376,22 +376,27 @@
         return null;
     }
 
-    function checkAllHandedOut() {
+    function isDeliveredOption(text) {
+        const t = String(text || '').trim().toLowerCase();
+        return t.includes('delivered') || t.includes('angeliefert') || t.includes('geliefert');
+    }
+
+    function checkAllDelivered() {
         const selects = document.querySelectorAll('select');
         let relevant = 0;
         for (const sel of selects) {
-            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
+            const hasOpt = Array.from(sel.options).some(o => isDeliveredOption(o.text));
             if (!hasOpt) continue;
             relevant++;
-            if (!sel.options[sel.selectedIndex]?.text.includes('Handed out')) return false;
+            if (!isDeliveredOption(sel.options[sel.selectedIndex]?.text)) return false;
         }
         return relevant > 0;
     }
 
-    function forceAllHandedOut() {
+    function forceAllDelivered() {
         for (const sel of document.querySelectorAll('select')) {
-            const opt = Array.from(sel.options).find(o => o.text.includes('Handed out'));
-            if (opt && !sel.options[sel.selectedIndex]?.text.includes('Handed out')) {
+            const opt = Array.from(sel.options).find(o => isDeliveredOption(o.text));
+            if (opt && !isDeliveredOption(sel.options[sel.selectedIndex]?.text)) {
                 sel.value = opt.value;
                 sel.dispatchEvent(new Event('change', { bubbles: true }));
             }
@@ -688,33 +693,33 @@
             if (!btnSelectAll) { updateHUD('Select All nicht gefunden!', '#ff4444'); return; }
             forceClick(btnSelectAll);
 
-            updateHUD('Setze Dropdowns auf Handed out...', '#ffff00', true);
+            updateHUD('Setze Dropdowns auf Delivered...', '#ffff00', true);
             await sleep(1000);
-            forceAllHandedOut();
+            forceAllDelivered();
 
             updateHUD('Übernehme Änderungen...', '#00ffcc', true);
             await sleep(1000);
             const btnApply = await waitForElement('Apply');
             if (btnApply) forceClick(btnApply);
 
-            updateHUD('Verifiziere Handed-Out Status...', '#ffff00', true);
+            updateHUD('Verifiziere Delivered Status...', '#ffff00', true);
             let verified = false;
             for (let i = 0; i < 6; i++) {
                 await sleep(1000);
-                if (checkAllHandedOut()) { verified = true; break; }
+                if (checkAllDelivered()) { verified = true; break; }
             }
 
             if (!verified) {
                 playDing('error');
                 const retry = await arasakaConfirm(
-                    'Nicht alle Positionen konnten auf "Handed out"\numgestellt werden.\n\nSoll ARASAKA einen Rettungsversuch starten?'
+                    'Nicht alle Positionen konnten auf "Delivered"\numgestellt werden.\n\nSoll ARASAKA einen Rettungsversuch starten?'
                 );
 
                 if (retry) {
                     updateHUD('Rettungsprotokoll aktiv...', '#ffaa00', true);
-                    forceAllHandedOut();
+                    forceAllDelivered();
                     await sleep(3000);
-                    if (!checkAllHandedOut()) {
+                    if (!checkAllDelivered()) {
                         updateHUD('RETTUNG FEHLGESCHLAGEN', '#ff4444', true);
                         playDing('error');
                         setTimeout(removeHUD, 5000);
