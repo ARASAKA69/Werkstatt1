@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  Schnellmodus: Empfängt Stock-IDs vom Tagesliste-HUD, stellt Spare Parts in Carol auf Handed out und markiert Spalte F grün
+// @version      1.1
+// @description  Schnellmodus: Empfängt Stock-IDs vom Tagesliste-HUD, stellt Spare Parts in Carol auf Handed out, überspringt Completed-Aufträge sofort und markiert Spalte F grün
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
 // @match        *://script.google.com/*
@@ -361,7 +361,7 @@
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">${currentStepText || 'Bereit für Stock-IDs vom HUD'}</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Carol Bridge v1.0 · [ESC] Stop</span>
+                    <span>Carol Bridge v1.1 · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
@@ -534,6 +534,26 @@
         return !hasOtherStatus;
     }
 
+    function isOrderAlreadyCompletedOnPage() {
+        const txt = String((document.body && document.body.innerText) || '');
+        if (/\bCompleted on\s+\d/i.test(txt) || /\bFertiggestellt am\s+\d/i.test(txt)) return true;
+        if (txt.includes('Car position: Retail Ready') && txt.includes('Overview vehicle details') && !txt.includes('Edit damages and services')) return true;
+        return false;
+    }
+
+    async function waitForEditButtonOrCompleted(timeout = 10000) {
+        const start = Date.now();
+        while ((Date.now() - start) < timeout) {
+            if (abortFlag) throw new Error('Abort');
+            const els = getDeepestElementsByText('Edit damages and services');
+            if (els.length > 0) return { kind: 'edit', el: els[0] };
+            if (isOrderAlreadyCompletedOnPage()) return { kind: 'completed', el: null };
+            await sleep(80);
+        }
+        if (isOrderAlreadyCompletedOnPage()) return { kind: 'completed', el: null };
+        return { kind: 'missing', el: null };
+    }
+
     function findStockLinkOnSearchPage(stockId) {
         const sid = String(stockId || '').trim().toUpperCase();
         const links = Array.from(document.querySelectorAll('a[href*="/refurbishment/"]'))
@@ -633,15 +653,19 @@
         }
 
         if (!isAlreadyOnPostAuthorizationPage()) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Edit damages...', '#00ffcc', true);
-            const btnEdit = await waitForElement('Edit damages and services', 10000);
-            if (!btnEdit) {
+            setHudStatus(`${indexLabel} · ${sid}`, 'Prüfe Auftrag / Öffne Edit damages...', '#00ffcc', true);
+            const mainCheck = await waitForEditButtonOrCompleted(10000);
+            if (mainCheck.kind === 'completed') {
+                setHudStatus(`${indexLabel} · ${sid}`, '⏭ Bereits Completed — überspringe…', '#00ff00', true);
+                return await finishJobAndAdvance(job, 'ok', 'Bereits Completed (übersprungen)', indexLabel);
+            }
+            if (!mainCheck.el) {
                 return await finishJobAndAdvance(job, 'error', 'Edit-Button nicht gefunden', indexLabel);
             }
             if (isMainPageAlreadyAllHandedOut()) {
                 return await finishJobAndAdvance(job, 'ok', 'Bereits Herausgegeben', indexLabel);
             }
-            forceClick(btnEdit);
+            forceClick(mainCheck.el);
         }
 
         setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Spare Parts...', '#00ffcc', true);
