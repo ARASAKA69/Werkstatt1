@@ -31,26 +31,11 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.22",
-    date: "14.10.2026",
-    notes:
-      "• Komplettes Redesign der WMS-Hauptansicht: Neues Scan-Terminal oben sowie neu strukturierte 3-Spalten-Karten (Auftrags Infos, Workspace & Einlagern, DYMO & Brother Druckmodul)\n\n" +
-      "• Neues einheitliches Cache-Status-Badge oben rechts mit Live-Indikator, Trennlinie, Zeitstempel und Direktklick zum Neuaufbau"
-  },
-  {
     version: "2.2.21",
-    date: "14.10.2026",
+    date: "16.10.2026",
     notes:
-      "• AAG Lieferschein Barcode (LS...) kann jetzt direkt in der WMS Suche gescannt werden. WMS holt Kundenreferenz + gelieferte Teile aus dem neuen AAG Lieferscheine Sheet, findet damit die Stock-ID und öffnet den Auftrag\n\n" +
-      "• Genau die Positionen vom gescannten Lieferschein landen mit Menge und AAG Badge in Teile aus Packzettel\n\n" +
-      "• Tampermonkey synchronisiert neue AAG Lieferungen alle 2 Minuten im Hintergrund. Token bleibt nur im Browser, nach Ablauf nur im AAG Portal neu einloggen und Seite aktualisieren\n\n" +
-      "• AAG HTTP 400 beim Abruf behoben: Datumsende und Seitennummerierung entsprechen jetzt exakt der Portal-API\n\n" +
-      "• Gleichzeitige AAG-Synchronisierung aus mehreren Portal-Tabs abgesichert und große Übertragungen in stabile Teilpakete aufgeteilt\n\n" +
-      "• Blattname auf History 2026 korrigiert\n\n" +
-      "• AAG synchronisiert jetzt vier Kalendertage, prüft alle 2 Minuten auf neue Lieferscheine und entfernt doppelte Lieferschein-Positionen automatisch\n\n" +
-      "• Der AAG-Portal-Tab aktualisiert sich im Hintergrund alle 10 Minuten automatisch\n\n" +
-      "• WMS öffnet das AAG-Blatt jetzt über die feste Blatt-ID, damit LS-Barcodes auch nach Umbenennen des Tabs zuverlässig gefunden werden\n\n" +
-      "• Abgelaufene AAG API-Tokens werden jetzt automatisch durch einmaliges Neuladen des weiterhin angemeldeten Portals erneuert"
+      "• Werksstattmappe button in Chat nachricht entfernt\n\n" +
+      "• Einige andere verbesserungen vorgenommen um fehler zu minimieren die ich noch gefunden habe"
   },
   {
     version: "2.2.20",
