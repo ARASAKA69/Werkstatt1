@@ -5,6 +5,7 @@
 // @description  Carol Herausgegeben Automatisierung // Tagesliste
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
+// @match        *://docs.google.com/spreadsheets/*
 // @match        *://script.google.com/*
 // @match        *://*.googleusercontent.com/*
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/DailyPlanning/carol-tagesliste-bridge.user.js
@@ -56,27 +57,38 @@
         let lastEventCursor = 0;
         let lastStateTs = 0;
 
+        function postToFrameTree(win, payload, depth) {
+            if (!win || depth > 4) return;
+            try { win.postMessage(payload, '*'); } catch (e0) {}
+            try {
+                for (let i = 0; i < win.frames.length; i++) {
+                    postToFrameTree(win.frames[i], payload, depth + 1);
+                }
+            } catch (e1) {}
+        }
+
         function forwardToHud() {
             const hb = readJson(KEY_HEARTBEAT, null);
             if (hb && (Date.now() - Number(hb.ts || 0)) < 25000) {
-                window.postMessage({
+                postToFrameTree(window, {
                     source: 'dpl-tagesliste-bridge',
                     type: 'heartbeat',
+                    idle: !!hb.idle,
                     ts: hb.ts
-                }, '*');
+                }, 0);
             }
 
             const st = readJson(KEY_STATE, null);
             if (st && Number(st.ts || 0) > lastStateTs && (Date.now() - Number(st.ts || 0)) < 25000) {
                 lastStateTs = Number(st.ts || 0);
-                window.postMessage({
+                postToFrameTree(window, {
                     source: 'dpl-tagesliste-bridge',
                     type: 'state',
                     busy: !!st.busy,
                     currentSid: st.currentSid || '',
                     stepText: st.stepText || '',
                     ts: st.ts
-                }, '*');
+                }, 0);
             }
 
             const evs = readJson(KEY_EVENTS, []);
@@ -85,7 +97,7 @@
                     const ev = evs[i];
                     if (!ev || !ev.stockId) continue;
                     if (Number(ev.ts || 0) <= lastEventCursor) continue;
-                    window.postMessage({
+                    postToFrameTree(window, {
                         source: 'dpl-tagesliste-bridge',
                         type: 'item_result',
                         eventId: ev.eventId,
@@ -95,7 +107,7 @@
                         status: ev.status || 'ok',
                         message: ev.message || '',
                         ts: ev.ts
-                    }, '*');
+                    }, 0);
                 }
                 const maxTs = evs.reduce((m, x) => Math.max(m, Number((x && x.ts) || 0)), lastEventCursor);
                 lastEventCursor = maxTs;
@@ -207,10 +219,13 @@
 
     function sendHeartbeat() {
         const ts = Date.now();
-        writeJson(KEY_HEARTBEAT, { ts: ts });
+        const q = readJson(KEY_QUEUE, []);
+        const isIdle = !workerBusy && !isNavigating && (!Array.isArray(q) || q.length === 0);
+        writeJson(KEY_HEARTBEAT, { ts: ts, idle: isIdle });
         sendToOpenerAllFrames({
             source: 'dpl-tagesliste-bridge',
             type: 'heartbeat',
+            idle: isIdle,
             ts: ts
         });
     }
@@ -223,7 +238,7 @@
             ts: Date.now()
         };
         writeJson(KEY_STATE, payload);
-        writeJson(KEY_HEARTBEAT, { ts: payload.ts });
+        writeJson(KEY_HEARTBEAT, { ts: payload.ts, idle: !payload.busy });
         sendToOpenerAllFrames({
             source: 'dpl-tagesliste-bridge',
             type: 'state',
@@ -535,6 +550,11 @@
         return /\/refurbishment\/[0-9a-f-]{8,}/i.test(String(url || ''));
     }
 
+    function extractRefurbUuid(url) {
+        const m = String(url || '').match(/\/refurbishment\/([0-9a-f-]{8,})/i);
+        return m ? m[1].toLowerCase() : '';
+    }
+
     function isAlreadyOnPostAuthorizationPage() {
         const txt = String((document.body && document.body.innerText) || '');
         return txt.includes('Back to refurbishment detail') || txt.includes('Post Authorization');
@@ -629,7 +649,7 @@
             const txt = String((row && row.textContent) || links[i].textContent || '').toUpperCase().replace(/\s+/g, '');
             if (txt.includes(sid)) return links[i];
         }
-        return links[0];
+        return null;
     }
 
     function updateJobInQueue(stockId, patch) {
@@ -686,18 +706,29 @@
         const sid = job.stockId;
         currentSid = sid;
 
-        if (job.phase === 'init') {
-            const targetUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
-                ? job.carolUrl
-                : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
-            updateJobInQueue(sid, { status: 'running', phase: 'opened' });
-            setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc', true);
-            safeNavigateTo(targetUrl);
-            return 'navigating';
-        }
+        const targetUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
+            ? job.carolUrl
+            : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
+        const targetUuid = extractRefurbUuid(targetUrl);
+        const currentUuid = extractRefurbUuid(location.href);
 
-        if (!isRefurbDetailUrl(location.href)) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Suche Auftrag in Carol…', '#00ffcc', true);
+        if (targetUuid) {
+            if (currentUuid !== targetUuid) {
+                updateJobInQueue(sid, { status: 'running', phase: 'opened' });
+                setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc', true);
+                safeNavigateTo(targetUrl);
+                return 'navigating';
+            }
+        } else if (!isRefurbDetailUrl(location.href)) {
+            if (!location.href.toUpperCase().includes(sid)) {
+                const searchUrl = 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid);
+                updateJobInQueue(sid, { status: 'running', phase: 'opened' });
+                setHudStatus(`${indexLabel} · ${sid}`, 'Suche Auftrag in Carol…', '#00ffcc', true);
+                safeNavigateTo(searchUrl);
+                return 'navigating';
+            }
+
+            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Suchergebnis in Carol…', '#00ffcc', true);
             let foundLink = null;
             for (let t = 0; t < 40; t++) {
                 await sleep(150);

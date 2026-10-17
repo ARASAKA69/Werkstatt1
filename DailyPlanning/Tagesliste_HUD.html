@@ -609,10 +609,20 @@ function sendToBridge(cmd, payload) {
   };
   try { window.postMessage(msg, "*"); } catch (e0) {}
   try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage(msg, "*");
+    }
+  } catch (e1) {}
+  try {
+    if (window.top && window.top !== window && window.top !== window.parent) {
+      window.top.postMessage(msg, "*");
+    }
+  } catch (e2) {}
+  try {
     if (state.carolWin && !state.carolWin.closed) {
       state.carolWin.postMessage(msg, "*");
     }
-  } catch (e1) {}
+  } catch (e3) {}
 }
 
 function triggerBatchFromInput() {
@@ -703,6 +713,7 @@ function dispatchJobsToBridge() {
   var jobs = getPendingJobsList();
   if (!jobs.length) return;
 
+  state.lastDispatchAt = Date.now();
   var firstSid = jobs[0].stockId;
   if (state.bySid[firstSid] && state.bySid[firstSid].status === "pending") {
     state.bySid[firstSid].status = "running";
@@ -720,10 +731,16 @@ function dispatchJobsToBridge() {
       state.carolWin = window.open(firstUrl + sep + "tl_standby=1", "dplCarolBridgeWindow");
       if (state.carolWin) state.bridgeAliveAt = Date.now();
     } catch (e) {}
-    setTimeout(function() {
-      sendToBridge("enqueue_jobs", { jobs: getPendingJobsList() });
-    }, 1200);
   }
+
+  setTimeout(function() {
+    var j1 = getPendingJobsList();
+    if (j1.length) sendToBridge("enqueue_jobs", { jobs: j1 });
+  }, 800);
+  setTimeout(function() {
+    var j2 = getPendingJobsList();
+    if (j2.length) sendToBridge("enqueue_jobs", { jobs: j2 });
+  }, 2000);
 
   setBanner("🚀 " + jobs.length + " Stock-ID(s) aktiv — Carol stellt Spare Parts im Schnellmodus auf Herausgegeben…", "work");
 }
@@ -902,6 +919,14 @@ window.addEventListener("message", function(ev) {
   state.bridgeAliveAt = Date.now();
 
   if (d.type === "heartbeat") {
+    if (d.idle) {
+      state.bridgeBusy = false;
+      var waitingJobs = getPendingJobsList();
+      if (waitingJobs.length > 0 && (Date.now() - (state.lastDispatchAt || 0)) > 2500) {
+        state.lastDispatchAt = Date.now();
+        sendToBridge("enqueue_jobs", { jobs: waitingJobs });
+      }
+    }
     updateBridgePill();
     return;
   }
@@ -969,11 +994,21 @@ $("btnClearInput").addEventListener("click", function() {
 
 $("btnOpenCarol").addEventListener("click", function() {
   try {
-    state.carolWin = window.open("https://carol.autohero.com/en-GB/refurbishment?tl_standby=1", "dplCarolBridgeWindow");
+    var pendingJobs = getPendingJobsList();
+    var openUrl = "https://carol.autohero.com/en-GB/refurbishment?tl_standby=1";
+    if (pendingJobs.length > 0 && pendingJobs[0].carolUrl) {
+      var u0 = pendingJobs[0].carolUrl;
+      openUrl = u0 + (u0.indexOf("?") >= 0 ? "&" : "?") + "tl_standby=1";
+    }
+    state.carolWin = window.open(openUrl, "dplCarolBridgeWindow");
     if (state.carolWin) {
       state.bridgeAliveAt = Date.now();
       updateBridgePill();
-      setBanner("Carol-Fenster geöffnet — Bridge wartet dort auf Stock-IDs.", "work");
+      if (pendingJobs.length > 0) {
+        dispatchJobsToBridge();
+      } else {
+        setBanner("Carol-Fenster geöffnet — Bridge wartet dort auf Stock-IDs.", "work");
+      }
     } else {
       setBanner("Popup blockiert — bitte Carol in einem separaten Fenster öffnen.", "err");
     }
@@ -1042,6 +1077,11 @@ if (WEB_APP_URL && VIEW_MODE !== "webapp") {
 
 setInterval(function() {
   sendToBridge("ping", {});
+  var waitingJobs = getPendingJobsList();
+  if (waitingJobs.length > 0 && !state.bridgeBusy && (Date.now() - (state.lastDispatchAt || 0)) > 3500) {
+    state.lastDispatchAt = Date.now();
+    sendToBridge("enqueue_jobs", { jobs: waitingJobs });
+  }
   updateBridgePill();
 }, 1500);
 
