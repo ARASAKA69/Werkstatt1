@@ -67,6 +67,7 @@
 - [x] 24.09.2026 / 2.2.14 Teile aus Packzettel: angekreuzte Zeilen leuchten grün
 - [x] 25.09.2026 / 2.2.14 N4P: umgebrochene Großhändler-Nummern lassen keinen Ziffernrest mehr vor dem Artikelnamen
 - [x] 25.09.2026 / 2.2.14 Teile aus Packzettel gecacht: Fenster öffnet sofort beim Laden einer Stock-ID, Hintergrund-Refresh alle 75s
+- [x] 17.10.2026 / 2.2.22 WMS Cast: „Teile aus Packzettel“ Auswahl-Fenster + Button inkl. Lieferanten-Buttons (KNOLL, WM, STA, ALFAH, AAG usw.), Alle/Keine, Cache und Kommentar-Übernahme wie im Haupt-WMS
 
 # Offen
 

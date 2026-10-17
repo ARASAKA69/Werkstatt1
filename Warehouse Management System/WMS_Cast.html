@@ -391,6 +391,211 @@
       -webkit-user-select: text;
     }
     .ocr-text:focus { border-color: var(--color-ring); }
+    .btn-pz-parts {
+      width: 100%;
+      margin-top: 10px;
+      border-color: rgba(52, 211, 153, 0.48);
+      background: rgba(52, 211, 153, 0.14);
+      color: #6ee7b7;
+    }
+    .pz-parts-overlay {
+      position: fixed; inset: 0; z-index: 25;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(5, 5, 6, 0.78);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      padding: calc(10px + env(safe-area-inset-top)) 10px calc(10px + env(safe-area-inset-bottom));
+    }
+    .pz-parts-overlay.show { display: flex; }
+    .pz-parts-dialog {
+      width: min(920px, 100%);
+      max-height: min(90dvh, 820px);
+      display: flex; flex-direction: column; gap: 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-strong);
+      background: #0e1014;
+      padding: 14px;
+      overflow: hidden;
+    }
+    .pz-parts-top {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .pz-parts-top strong { font-size: 1.05rem; font-weight: 800; }
+    .pz-parts-sub {
+      font: 600 0.75rem/1.35 var(--font);
+      color: var(--foreground-muted);
+    }
+    .pz-parts-counts {
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+    }
+    .pz-parts-count-total {
+      color: #f4f7fb;
+      background: rgba(244, 247, 251, 0.08);
+      border: 1px solid rgba(244, 247, 251, 0.16);
+      font-size: 0.74rem; font-weight: 800;
+      padding: 5px 11px; border-radius: var(--radius-pill);
+    }
+    .pz-parts-count {
+      font-size: 0.74rem; font-weight: 800; letter-spacing: 0.02em;
+      padding: 5px 11px; border-radius: var(--radius-pill);
+      background: rgba(180, 140, 255, 0.16); color: #d2b4ff;
+    }
+    .pz-parts-count--knoll { background: rgba(61, 158, 220, 0.16); color: #6BB8E8; }
+    .pz-parts-count--wm { background: rgba(234, 88, 12, 0.16); color: #fdba74; }
+    .pz-parts-count--sta { background: rgba(86, 211, 100, 0.16); color: #56d364; }
+    .pz-parts-count--alfah { background: rgba(177, 75, 227, 0.16); color: #d7a4f5; }
+    .pz-parts-supplier-select {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+    }
+    .pz-parts-supplier-select:empty { display: none; }
+    .pz-parts-supplier-btn {
+      border: 1px solid rgba(180, 140, 255, 0.48);
+      background: rgba(180, 140, 255, 0.12);
+      color: #d2b4ff;
+      border-radius: var(--radius-sm);
+      padding: 7px 12px;
+      font: 800 0.74rem/1.1 var(--font);
+      cursor: pointer;
+    }
+    .pz-parts-supplier-btn--knoll {
+      border-color: rgba(61, 158, 220, 0.55);
+      background: rgba(61, 158, 220, 0.14);
+      color: #6BB8E8;
+    }
+    .pz-parts-supplier-btn--wm {
+      border-color: rgba(234, 88, 12, 0.55);
+      background: rgba(234, 88, 12, 0.14);
+      color: #fdba74;
+    }
+    .pz-parts-supplier-btn--sta {
+      border-color: rgba(86, 211, 100, 0.55);
+      background: rgba(86, 211, 100, 0.14);
+      color: #56d364;
+    }
+    .pz-parts-supplier-btn--alfah {
+      border-color: rgba(177, 75, 227, 0.55);
+      background: rgba(177, 75, 227, 0.14);
+      color: #d7a4f5;
+    }
+    .pz-parts-toolbar {
+      display: flex; justify-content: center; gap: 8px;
+    }
+    .pz-parts-mini {
+      flex: 1; max-width: 160px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      color: var(--foreground);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      font: 800 0.78rem/1 var(--font);
+      cursor: pointer;
+    }
+    .pz-parts-list {
+      display: flex; flex-direction: column; gap: 8px;
+      flex: 1; min-height: 0; overflow-y: auto;
+      padding-right: 2px;
+    }
+    .pz-parts-head {
+      display: grid;
+      grid-template-columns: 28px minmax(80px, 0.7fr) minmax(100px, 0.9fr) minmax(160px, 1.6fr) 60px 76px;
+      gap: 8px; align-items: center;
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 0 10px 4px; text-align: center;
+      position: sticky; top: 0; background: #0e1014; z-index: 1;
+    }
+    .pz-parts-head span:nth-child(2) { color: #F27420; }
+    .pz-parts-head span:nth-child(3) { color: #D4AF37; }
+    .pz-parts-head span:nth-child(4) { color: #6BB8E8; }
+    .pz-parts-head span:nth-child(5) { color: #56d364; }
+    .pz-parts-item {
+      display: grid;
+      grid-template-columns: 28px minmax(80px, 0.7fr) minmax(100px, 0.9fr) minmax(160px, 1.6fr) 60px 76px;
+      gap: 8px; align-items: center;
+      border: 1px solid #2a333f;
+      border-radius: 12px;
+      padding: 10px 12px;
+      background: rgba(20, 184, 166, 0.05);
+      cursor: pointer;
+    }
+    .pz-parts-item--full {
+      grid-template-columns: 28px minmax(0, 1fr) 76px;
+    }
+    .pz-parts-item.is-checked,
+    .pz-parts-item:has(input:checked) {
+      border-color: rgba(86, 211, 100, 0.7);
+      background: rgba(86, 211, 100, 0.12);
+      box-shadow: 0 0 0 1px rgba(86, 211, 100, 0.45), 0 0 14px rgba(86, 211, 100, 0.32);
+    }
+    .pz-parts-item input {
+      width: 22px; height: 22px;
+      accent-color: #56d364;
+      justify-self: center;
+      margin: 0;
+    }
+    .pz-parts-col, .pz-parts-qty {
+      text-align: center;
+      color: #d7dee7;
+      font-weight: 700;
+      font-size: 0.78rem;
+      word-break: break-word;
+    }
+    .pz-parts-name {
+      color: #e6edf3;
+      font-weight: 700;
+      font-size: 0.82rem;
+      line-height: 1.3;
+      word-break: break-word;
+    }
+    .pz-parts-badge {
+      justify-self: center;
+      text-align: center;
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+      padding: 5px 10px; border-radius: var(--radius-pill);
+      text-transform: uppercase;
+      background: rgba(180, 140, 255, 0.16); color: #d2b4ff;
+    }
+    .pz-parts-badge--knoll { background: rgba(61, 158, 220, 0.16); color: #6BB8E8; }
+    .pz-parts-badge--wm { background: rgba(234, 88, 12, 0.16); color: #fdba74; }
+    .pz-parts-badge--sta { background: rgba(86, 211, 100, 0.16); color: #56d364; }
+    .pz-parts-badge--alfah { background: rgba(177, 75, 227, 0.16); color: #d7a4f5; }
+    .pz-parts-actions {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    @media (max-width: 639px) {
+      .pz-parts-head { display: none; }
+      .pz-parts-item {
+        grid-template-columns: 28px auto 1fr auto;
+        grid-template-areas:
+          "chk name name badge"
+          "chk herst artnr qty";
+        row-gap: 4px;
+      }
+      .pz-parts-item--full {
+        grid-template-columns: 28px 1fr auto;
+        grid-template-areas: "chk name badge";
+      }
+      .pz-parts-item input { grid-area: chk; }
+      .pz-parts-item .pz-parts-name { grid-area: name; }
+      .pz-parts-item .pz-parts-badge { grid-area: badge; }
+      .pz-parts-item .pz-parts-col:nth-of-type(1) {
+        grid-area: herst;
+        text-align: left;
+        font-size: 0.72rem;
+        color: #F27420;
+      }
+      .pz-parts-item .pz-parts-col:nth-of-type(2) {
+        grid-area: artnr;
+        text-align: left;
+        font-size: 0.72rem;
+        color: #D4AF37;
+      }
+      .pz-parts-item .pz-parts-qty {
+        grid-area: qty;
+        text-align: right;
+        font-size: 0.76rem;
+        color: #56d364;
+      }
+    }
     .hidden { display: none !important; }
   </style>
 </head>
@@ -464,6 +669,7 @@
       <div class="info-box" id="infoSchaeden">—</div>
       <div class="kicker" id="infoBestellungLabel">Ersatzteile Bestellung</div>
       <div class="info-box" id="infoBestellung">—</div>
+      <button type="button" class="btn btn-pz-parts hidden" id="btnPzParts">Teile aus Packzettel</button>
     </section>
 
     <section class="card hidden stack" id="nbWorkCard">
@@ -535,6 +741,27 @@
     </div>
   </div>
 
+  <div class="pz-parts-overlay" id="pzPartsModal">
+    <div class="pz-parts-dialog">
+      <div class="pz-parts-top">
+        <strong>Teile aus Packzettel</strong>
+        <button type="button" class="btn" id="btnPzPartsClose">✕</button>
+      </div>
+      <div class="pz-parts-sub">Hersteller, Artikelnummer, Name und Menge. Ankreuzen übernimmt die Zeile in den Kommentar. Speichern danach über Kommentar + Regal.</div>
+      <div class="pz-parts-counts" id="pzPartsCounts"></div>
+      <div class="pz-parts-supplier-select" id="pzPartsSupplierSelect"></div>
+      <div class="pz-parts-toolbar">
+        <button type="button" class="pz-parts-mini" id="btnPzPartsAll">Alle</button>
+        <button type="button" class="pz-parts-mini" id="btnPzPartsNone">Keine</button>
+      </div>
+      <div class="pz-parts-list" id="pzPartsList"></div>
+      <div class="pz-parts-actions">
+        <button type="button" class="btn" id="btnPzPartsCancel">Abbrechen</button>
+        <button type="button" class="btn teal" id="btnPzPartsConfirm">Übernehmen</button>
+      </div>
+    </div>
+  </div>
+
   <script type="application/json" id="castBoot"><?!= JSON.stringify({ bind: String(bindCode || ""), appUrl: String(appUrl || "") }) ?></script>
   <?!= include('WMS_ScanParse') ?>
   <script>
@@ -602,6 +829,11 @@
     var ocrReady = false;
     var ocrLoading = false;
     var ocrWaiters = [];
+    var pzPartsCacheMap = null;
+    var pzPartsCacheLoading = false;
+    var pzPartsCache = [];
+    var pzPartsStock = '';
+    var pzNbDecided = false;
 
     var base = String(window.WMS_CLIENT_URL || '').split('?')[0].split('#')[0];
     if (wmsLink) wmsLink.href = base || '#';
@@ -952,8 +1184,11 @@
           lastNbStatusOptions = (nb && nb.statusOptions) ? nb.statusOptions : [];
           lastNbLagerortOptions = (nb && nb.lagerortOptions) ? nb.lagerortOptions : [];
           if (res && res.source === 'refurbishment') dualSource = lastNbEntries.length > 0;
+          pzNbDecided = true;
           renderSourcePick();
           renderNbWork();
+          updatePzPartsButton();
+          if (!dualSource && currentSource === 'refurbishment') revealPzParts(id);
         })
         .withFailureHandler(function() {
           if (normalizeStock(id) !== currentStock) return;
@@ -962,15 +1197,274 @@
             dualSource = false;
             hideSourcePick();
           }
+          pzNbDecided = true;
           renderNbWork();
+          updatePzPartsButton();
+          if (!dualSource && currentSource === 'refurbishment') revealPzParts(id);
         })
         .getNachbestellungenForStock(id);
     }
 
     function pickSource(src) {
       if (!currentStock) return;
-      if (src === currentSource) return;
+      if (src === currentSource) {
+        if (src === 'refurbishment' && pzPartsCache.length) openPzPartsPickerManual();
+        return;
+      }
       loadStock(currentStock, true, src);
+    }
+
+    function loadPzPartsCache(force, onDone) {
+      if (pzPartsCacheLoading && !force) {
+        if (typeof onDone === 'function') onDone();
+        return;
+      }
+      pzPartsCacheLoading = true;
+      google.script.run
+        .withSuccessHandler(function(res) {
+          pzPartsCacheLoading = false;
+          if (res && res.success && res.byStock) pzPartsCacheMap = res.byStock;
+          if (typeof onDone === 'function') onDone();
+        })
+        .withFailureHandler(function() {
+          pzPartsCacheLoading = false;
+          if (typeof onDone === 'function') onDone();
+        })
+        .getPackzettelPartsCache();
+    }
+
+    function pzPartsFromCache(stockId) {
+      if (!pzPartsCacheMap) return null;
+      var sid = normalizeStock(stockId);
+      if (!sid) return null;
+      if (pzPartsCacheMap[sid] && pzPartsCacheMap[sid].length) return pzPartsCacheMap[sid];
+      return null;
+    }
+
+    function updatePzPartsButton() {
+      var btn = $('btnPzParts');
+      if (!btn) return;
+      if (pzPartsCache.length > 0 && currentSource !== 'nachbestellung' && normalizeStock(pzPartsStock) === currentStock) {
+        btn.classList.remove('hidden');
+        btn.textContent = 'Teile aus Packzettel (' + pzPartsCache.length + ')';
+      } else {
+        btn.classList.add('hidden');
+      }
+    }
+
+    function revealPzParts(stockId) {
+      if (!stockId || currentSource === 'nachbestellung') return;
+      var sid = normalizeStock(stockId);
+      if (sid !== currentStock || normalizeStock(pzPartsStock) !== sid) return;
+      if (!pzPartsCache || !pzPartsCache.length) return;
+      var modal = $('pzPartsModal');
+      if (modal && modal.classList.contains('show')) return;
+      showPzPartsPicker(pzPartsCache);
+    }
+
+    function fetchPzPartsForStock(stockId, forceReveal) {
+      var stockKey = normalizeStock(stockId);
+      closePzPartsPicker();
+      if (!stockKey || currentSource === 'nachbestellung') {
+        pzPartsCache = [];
+        pzPartsStock = stockKey;
+        updatePzPartsButton();
+        return;
+      }
+      function onParts(parts) {
+        if (normalizeStock(stockId) !== currentStock) return;
+        pzPartsCache = (parts || []).slice();
+        pzPartsStock = stockKey;
+        updatePzPartsButton();
+        if (forceReveal || (pzNbDecided && !dualSource && currentSource === 'refurbishment')) {
+          revealPzParts(stockKey);
+        }
+      }
+      var cached = pzPartsFromCache(stockKey);
+      if (cached !== null) {
+        onParts(cached);
+        return;
+      }
+      google.script.run
+        .withSuccessHandler(function(res) {
+          var parts = (res && res.success && res.parts) ? res.parts : [];
+          onParts(parts);
+        })
+        .withFailureHandler(function() {
+          if (normalizeStock(stockId) !== currentStock) return;
+          onParts([]);
+        })
+        .getPackzettelPartsForStock(stockKey);
+    }
+
+    function openPzPartsPickerManual() {
+      if (!pzPartsCache.length) return;
+      showPzPartsPicker(pzPartsCache);
+    }
+
+    function pzCompactPartText(s) {
+      return String(s || '')
+        .toLowerCase()
+        .replace(/ä/g, 'a')
+        .replace(/ö/g, 'o')
+        .replace(/ü/g, 'u')
+        .replace(/ß/g, 'ss')
+        .replace(/[^a-z0-9]+/g, '');
+    }
+
+    function pzPartAlreadyInComment(name, tag, comment) {
+      var c = pzCompactPartText(comment);
+      var n = pzCompactPartText(name);
+      if (!c || n.length < 4) return false;
+      if (c.indexOf(n) !== -1) return true;
+      var tagged = pzCompactPartText(String(name || '') + ' ' + String(tag || ''));
+      return tagged.length >= 5 && c.indexOf(tagged) !== -1;
+    }
+
+    function pzPartCommentLine(hersteller, artnr, name, menge, tag) {
+      var bits = [];
+      if (hersteller) bits.push(hersteller);
+      if (artnr) bits.push(artnr);
+      if (name) bits.push(name);
+      if (menge) bits.push(String(menge));
+      if (tag) bits.push(tag);
+      return bits.join(' ') + ' da //';
+    }
+
+    function syncPzPartsRowHighlight() {
+      var items = document.querySelectorAll('#pzPartsList .pz-parts-item');
+      for (var i = 0; i < items.length; i++) {
+        var inp = items[i].querySelector('input[type="checkbox"]');
+        items[i].classList.toggle('is-checked', !!(inp && inp.checked));
+      }
+    }
+
+    function showPzPartsPicker(parts) {
+      var list = $('pzPartsList');
+      var modal = $('pzPartsModal');
+      var countsEl = $('pzPartsCounts');
+      var supplierSelectEl = $('pzPartsSupplierSelect');
+      if (!list || !modal) return;
+      var comment = String((commentEl && commentEl.value) || '');
+      var html = '<div class="pz-parts-head"><span></span><span>Hersteller</span><span>Hersteller Artnr.</span><span>Artikelname</span><span>Menge</span><span></span></div>';
+      var counts = {};
+      var total = 0;
+      var order = ['KNOLL', 'WM', 'STA', 'ALFAH'];
+      for (var i = 0; i < (parts || []).length; i++) {
+        var p = parts[i] || {};
+        var name = String(p.name || '');
+        var tag = String(p.tag || '').toUpperCase();
+        if (!name) continue;
+        var hersteller = String(p.hersteller || '');
+        var artnr = String(p.herstellerArtnr || '');
+        var menge = String(p.menge || '');
+        var id = 'pzPartChk' + i;
+        var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+        var isChk = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment);
+        var checked = isChk ? ' checked' : '';
+        var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
+        var fullLine = tag === 'ALFAH' || (!hersteller && !artnr && !menge);
+        html += '<label class="pz-parts-item' + (fullLine ? ' pz-parts-item--full' : '') + (isChk ? ' is-checked' : '') + '" for="' + id + '">';
+        html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
+        if (fullLine) {
+          html += '<span class="pz-parts-name pz-parts-name--full">' + escapeHtml(name) + '</span>';
+        } else {
+          html += '<span class="pz-parts-col">' + escapeHtml(hersteller || '—') + '</span>';
+          html += '<span class="pz-parts-col">' + escapeHtml(artnr || '—') + '</span>';
+          html += '<span class="pz-parts-name">' + escapeHtml(name) + '</span>';
+          html += '<span class="pz-parts-qty">' + escapeHtml(menge || '—') + '</span>';
+        }
+        if (tag) html += '<span class="' + badgeClass + '">' + escapeHtml(tag) + '</span>';
+        else html += '<span></span>';
+        html += '</label>';
+        if (tag) {
+          if (counts[tag] == null) counts[tag] = 0;
+          counts[tag]++;
+          total++;
+          if (order.indexOf(tag) === -1) order.push(tag);
+        }
+      }
+      list.innerHTML = total ? html : '<div class="pz-parts-sub">Keine Artikel gefunden.</div>';
+      var chks = list.querySelectorAll('input[type="checkbox"]');
+      for (var c = 0; c < chks.length; c++) {
+        chks[c].addEventListener('change', syncPzPartsRowHighlight);
+      }
+      if (countsEl) {
+        var bits = [];
+        if (total) bits.push('<span class="pz-parts-count-total">' + total + ' Positionen</span>');
+        for (var o = 0; o < order.length; o++) {
+          var t = order[o];
+          if (!counts[t]) continue;
+          bits.push('<span class="pz-parts-count pz-parts-count--' + t.toLowerCase() + '">' + counts[t] + ' Pos = ' + escapeHtml(t) + '</span>');
+        }
+        countsEl.innerHTML = bits.join('');
+      }
+      if (supplierSelectEl) {
+        var supplierButtons = [];
+        for (var b = 0; b < order.length; b++) {
+          var supplierTag = order[b];
+          if (!counts[supplierTag]) continue;
+          supplierButtons.push('<button type="button" class="pz-parts-supplier-btn pz-parts-supplier-btn--' + supplierTag.toLowerCase() + '" data-tag="' + escapeHtml(supplierTag) + '">' + escapeHtml(supplierTag) + ' auswählen (' + counts[supplierTag] + ')</button>');
+        }
+        supplierSelectEl.innerHTML = supplierButtons.join('');
+        var renderedSupplierButtons = supplierSelectEl.querySelectorAll('.pz-parts-supplier-btn');
+        for (var sb = 0; sb < renderedSupplierButtons.length; sb++) {
+          renderedSupplierButtons[sb].addEventListener('click', function() {
+            setPzPartsChecksForTag(this.getAttribute('data-tag'));
+          });
+        }
+      }
+      modal.classList.add('show');
+    }
+
+    function setPzPartsChecks(on) {
+      var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+      for (var i = 0; i < boxes.length; i++) boxes[i].checked = !!on;
+      syncPzPartsRowHighlight();
+    }
+
+    function setPzPartsChecksForTag(tag) {
+      var wanted = String(tag || '').toUpperCase();
+      var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+      for (var i = 0; i < boxes.length; i++) {
+        if (String(boxes[i].getAttribute('data-tag') || '').toUpperCase() === wanted) boxes[i].checked = true;
+      }
+      syncPzPartsRowHighlight();
+    }
+
+    function applyPzPartsToComment() {
+      var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+      var comment = String((commentEl && commentEl.value) || '');
+      var extras = [];
+      var probe = comment;
+      for (var i = 0; i < boxes.length; i++) {
+        if (!boxes[i].checked) continue;
+        var name = boxes[i].getAttribute('data-name') || '';
+        var tag = boxes[i].getAttribute('data-tag') || '';
+        var hersteller = boxes[i].getAttribute('data-hersteller') || '';
+        var artnr = boxes[i].getAttribute('data-artnr') || '';
+        var menge = boxes[i].getAttribute('data-menge') || '';
+        if (!name) continue;
+        var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
+        if (pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, probe)) continue;
+        extras.push(line);
+        probe = probe + ' ' + line;
+      }
+      if (!extras.length) return;
+      var next = String(comment || '').replace(/\s+$/, '');
+      var add = extras.join(' ');
+      if (commentEl) commentEl.value = next ? (next + ' ' + add) : add;
+      syncActionButtons();
+    }
+
+    function closePzPartsPicker() {
+      var m = $('pzPartsModal');
+      if (m) m.classList.remove('show');
+    }
+
+    function confirmPzPartsPicker() {
+      applyPzPartsToComment();
+      closePzPartsPicker();
     }
 
     function nbIsExitOrder(typ) {
@@ -1286,12 +1780,14 @@
         if (nbCard) nbCard.classList.add('hidden');
       }
       var want = String(source || '');
+      pzNbDecided = !!want;
       setBusy(true, want === 'nachbestellung' ? ('Lade Nachbestellung ' + id + '…') : ('Lade ' + id + '…'));
       google.script.run
         .withSuccessHandler(function(res) {
           if (res && res.success) {
             setBusy(false);
             renderOrder(res, id);
+            fetchPzPartsForStock(id, want === 'refurbishment');
             refreshSourcePick(id, res);
             setStatus('Daten für ' + id + ' geladen' + (res.source === 'nachbestellung' ? ' (Nachbestellung)' : ''), '#34D399');
             beep('ok');
@@ -1918,8 +2414,23 @@
       else startCam(camMode || 'barcode');
     });
     $('btnCamClose').addEventListener('click', closeCamNow);
+    if ($('btnPzParts')) $('btnPzParts').addEventListener('click', openPzPartsPickerManual);
+    if ($('btnPzPartsClose')) $('btnPzPartsClose').addEventListener('click', closePzPartsPicker);
+    if ($('btnPzPartsCancel')) $('btnPzPartsCancel').addEventListener('click', closePzPartsPicker);
+    if ($('btnPzPartsConfirm')) $('btnPzPartsConfirm').addEventListener('click', confirmPzPartsPicker);
+    if ($('btnPzPartsAll')) $('btnPzPartsAll').addEventListener('click', function() { setPzPartsChecks(true); });
+    if ($('btnPzPartsNone')) $('btnPzPartsNone').addEventListener('click', function() { setPzPartsChecks(false); });
+    if ($('pzPartsModal')) $('pzPartsModal').addEventListener('click', function(e) {
+      if (e.target === this) closePzPartsPicker();
+    });
     document.addEventListener('keydown', function(e) {
       if (e.key !== 'Escape' && e.keyCode !== 27) return;
+      var pzm = $('pzPartsModal');
+      if (pzm && pzm.classList.contains('show')) {
+        e.preventDefault();
+        closePzPartsPicker();
+        return;
+      }
       if (!camOpen) return;
       e.preventDefault();
       closeCamNow();
@@ -1967,6 +2478,9 @@
       }
     });
     document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) {
+        loadPzPartsCache(true);
+      }
       if (!document.hidden && wsId && !pollInflight) {
         pollInflight = true;
         google.script.run
@@ -1978,6 +2492,9 @@
           .castPhoneHeartbeat(wsId);
       }
     });
+
+    loadPzPartsCache(true);
+    setInterval(function() { loadPzPartsCache(true); }, 75000);
 
     var preset = String(window.CAST_BIND || '').trim();
     if (preset) bindInput.value = preset;
