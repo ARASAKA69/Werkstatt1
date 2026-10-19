@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Carol Herausgegeben Automatisierung // Tagesliste
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -497,7 +497,7 @@
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">${currentStepText || 'Bereit für Stock-IDs vom HUD'}</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Carol Bridge v1.2 · [ESC] Stop</span>
+                    <span>Carol Bridge v1.3 · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
@@ -854,6 +854,54 @@
       }
     }`;
 
+    function refurbishmentIdFromUrl(url) {
+        const m = String(url || '').match(/\/refurbishment\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        return m ? m[1] : '';
+    }
+
+    function isHandedSpareStatus(status) {
+        const s = String(status || '').toUpperCase();
+        return s === 'HANDED_OUT' || s === 'SPARE_PARTS_HANDED_OUT';
+    }
+
+    async function spareSectionsVerdict(refurbishmentId) {
+        const data = await gqlOne(
+            'refurbishmentDetails',
+            `query refurbishmentDetails($id: UUID!) {
+              refurbishmentDetails(id: $id) {
+                id
+                state
+                spareParts {
+                  serviceWorkSpareParts { status serviceName }
+                  vehicleServiceSpareParts { status serviceName }
+                }
+              }
+            }`,
+            { id: refurbishmentId }
+        );
+        const details = data && data.refurbishmentDetails;
+        const spare = details && details.spareParts;
+        const groups = [
+            { name: 'Maintenance parts', rows: (spare && spare.serviceWorkSpareParts) || [] },
+            { name: 'Vehicle services parts', rows: (spare && spare.vehicleServiceSpareParts) || [] }
+        ];
+        let seen = 0;
+        let open = 0;
+        for (let g = 0; g < groups.length; g++) {
+            const rows = groups[g].rows || [];
+            for (let i = 0; i < rows.length; i++) {
+                if (!rows[i]) continue;
+                seen++;
+                if (!isHandedSpareStatus(rows[i].status)) open++;
+            }
+        }
+        return {
+            state: String((details && details.state) || ''),
+            seen: seen,
+            handedOut: seen > 0 && open === 0
+        };
+    }
+
     async function handedOutViaApi(stockNumber, onStep, opts) {
         const sid = String(stockNumber || '').trim().toUpperCase();
         const workshops = await loadWorkshopIds();
@@ -869,16 +917,33 @@
             { page: 0, pageSize: 20, filter: { stockNumbers: [sid], mainWorkshopIds: workshops } }
         );
         const refItem = ov && ov.refurbishmentOverview && ov.refurbishmentOverview.items && ov.refurbishmentOverview.items[0];
-        if (!refItem) return { status: 'error', message: 'Auftrag in Carol nicht gefunden' };
-        const refState = String(refItem.state || '');
-        if (refState.indexOf('COMPLETED') !== -1) {
-            return { status: 'ok', message: 'Bereits Completed (übersprungen)' };
+        const urlId = opts && opts.refurbishmentId;
+        if (!refItem && !urlId) return { status: 'error', message: 'Auftrag in Carol nicht gefunden' };
+        const refId = (refItem && refItem.id) || urlId;
+        let refState = String((refItem && refItem.state) || '');
+        if (refState.indexOf('COMPLETED') !== -1 || !refItem) {
+            if (onStep) onStep('Prüfe Spare Parts auf der Übersicht…');
+            const verdict = await spareSectionsVerdict(refId);
+            if (!refState) refState = verdict.state;
+            if (refState.indexOf('COMPLETED') !== -1) {
+                if (verdict.handedOut) {
+                    return { status: 'ok', message: 'Completed, Maintenance parts und Vehicle services parts sind Herausgegeben' };
+                }
+                return { status: 'keep', message: 'Completed ohne Edit — Spare Parts nicht vollständig Herausgegeben, Farbe bleibt' };
+            }
         }
         if (abortFlag) throw new Error('Abort');
         if (onStep) onStep('Lade Spare Parts…');
-        const pa = await gqlOne('entryCheckPostAuthorization', ENTRY_CHECK_QUERY, { refurbishmentId: refItem.id });
+        const pa = await gqlOne('entryCheckPostAuthorization', ENTRY_CHECK_QUERY, { refurbishmentId: refId });
         const ec = pa && pa.entryCheckPostAuthorization;
-        if (!ec || !ec.id) return { status: 'error', message: 'Post Authorization nicht verfügbar' };
+        if (!ec || !ec.id) {
+            if (onStep) onStep('Prüfe Spare Parts auf der Übersicht…');
+            const verdict = await spareSectionsVerdict(refId);
+            if (verdict.handedOut) {
+                return { status: 'ok', message: 'Kein Edit-Button, Maintenance parts und Vehicle services parts sind Herausgegeben' };
+            }
+            return { status: 'keep', message: 'Kein Edit-Button — Farbe in Spalte F bleibt unverändert' };
+        }
 
         const byEntity = new Map();
         const items = ec.items || [];
@@ -1014,6 +1079,8 @@
         currentSid = '';
         if (status === 'ok') {
             setHudStatus(`FERTIG · ${sid}`, `✓ ${message}`, '#00ff00', false);
+        } else if (status === 'keep') {
+            setHudStatus(`FERTIG · ${sid}`, message, '#ffaa00', false);
         } else {
             setHudStatus(`FEHLER · ${sid}`, `✗ ${message}`, '#f85149', false);
         }
@@ -1036,6 +1103,7 @@
                 setHudStatus(`${indexLabel} · ${sid}`, step, color, true);
             }, {
                 forceSubmit: keepSubmit,
+                refurbishmentId: refurbishmentIdFromUrl(job.carolUrl),
                 onBeforeSubmit: () => updateJobInQueue(sid, { phase: 'needs_submit' })
             });
             return await finishJobAndAdvance(job, result.status, result.message, indexLabel);

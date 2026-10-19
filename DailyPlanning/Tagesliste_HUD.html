@@ -964,15 +964,18 @@ function markSheetRowResult(stockId, status, detailMsg, eventDateStr, eventRows)
   var rows = (Array.isArray(eventRows) && eventRows.length) ? eventRows : (item && item.rows ? item.rows : []);
   var targetDate = eventDateStr || (item && item.dateStr) || "";
   var isAlreadyHandedOut = String(detailMsg || "").toLowerCase().indexOf("bereits") !== -1;
+  var isKeep = status === "keep" || status === "skip";
   if (item) {
-    item.status = status === "ok" ? "done" : "error";
+    item.status = status === "ok" ? "done" : (isKeep ? "kept" : "error");
     var rowHint = rows.length ? ("Zeile " + rows.join(", ")) : (item.row ? ("Zeile " + item.row) : "Tagesliste");
     if (status === "ok") {
       item.stepText = isAlreadyHandedOut
         ? ("✓ War bereits auf Herausgegeben, setze Spalte trotzdem auf grün (" + rowHint + ")")
         : ("✓ Herausgegeben · Spalte F grün (" + rowHint + ")");
+    } else if (isKeep) {
+      item.stepText = detailMsg || "Farbe in Spalte F bleibt unverändert";
     } else {
-      item.stepText = "✗ " + (detailMsg || "Fehler — Spalte F nicht grün");
+      item.stepText = "✗ " + (detailMsg || "Fehler — bestehende grüne Markierung bleibt");
     }
     updateQueueRowDom(stockId);
   }
@@ -999,18 +1002,21 @@ function markSheetRowResult(stockId, status, detailMsg, eventDateStr, eventRows)
 }
 
 function checkAllFinishedBanner() {
-  var open = 0, done = 0, err = 0;
+  var open = 0, done = 0, err = 0, kept = 0;
   for (var i = 0; i < state.items.length; i++) {
     var st = state.items[i].status;
     if (st === "done") done++;
+    else if (st === "kept") kept++;
     else if (st === "error") err++;
     else open++;
   }
   if (open === 0 && state.items.length > 0) {
-    if (err === 0) {
+    if (err === 0 && kept === 0) {
       setBanner("✅ Alle " + done + " Stock-ID(s) in Carol auf Herausgegeben gestellt und in Spalte F grün markiert!", "ok");
+    } else if (err === 0) {
+      setBanner("✅ " + done + " grün markiert, " + kept + " unverändert gelassen (grüne Zellen bleiben grün).", "ok");
     } else {
-      setBanner("⚠️ Durchlauf beendet: " + done + " grün markiert, " + err + " nicht grün (bitte prüfen).", "err");
+      setBanner("⚠️ Durchlauf beendet: " + done + " grün markiert, " + err + " nicht grün (bestehende grüne Markierung bleibt).", "err");
     }
   }
 }
@@ -1021,6 +1027,9 @@ function formatItemStateLabel(it) {
   }
   if (it.status === "done") {
     return "✅ " + (it.stepText || "Herausgegeben · Spalte F grün");
+  }
+  if (it.status === "kept") {
+    return "• " + (it.stepText || "Farbe unverändert");
   }
   if (it.status === "error") {
     return "❌ " + (it.stepText || "Fehler · Spalte F nicht grün");
@@ -1034,7 +1043,7 @@ function updateQueueCounters() {
     var s = state.items[i].status;
     if (s === "done") done++;
     else if (s === "error") err++;
-    else open++;
+    else if (s !== "kept") open++;
   }
   $("statOpen").textContent = open + " offen";
   $("statDone").textContent = done + " grün (Herausgegeben)";
@@ -1053,7 +1062,7 @@ function updateQueueRowDom(sid) {
   }
   var wantCls = "q-row";
   if (it.status === "running") wantCls += " running";
-  else if (it.status === "done") wantCls += " done";
+  else if (it.status === "done" || it.status === "kept") wantCls += " done";
   else if (it.status === "error") wantCls += " error";
   if (rowEl.className !== wantCls) rowEl.className = wantCls;
 
@@ -1082,7 +1091,7 @@ function renderQueueFull() {
   wrap.innerHTML = state.items.map(function(it, idx) {
     var rowCls = "q-row";
     if (it.status === "running") rowCls += " running";
-    else if (it.status === "done") rowCls += " done";
+    else if (it.status === "done" || it.status === "kept") rowCls += " done";
     else if (it.status === "error") rowCls += " error";
 
     var rowLabel = (it.rows && it.rows.length)

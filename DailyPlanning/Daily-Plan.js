@@ -360,7 +360,7 @@ function dplProcessSingleRowCore(ss, sheetName, row) {
 
   console.log('Tagesliste row ' + row + ' stockId "' + norm + '" -> ' + (vals && vals.length ? 'FOUND, filled' : 'NOT FOUND, marked orange'));
 
-  dplFillRow(sh, row, vals);
+  dplFillRow(sh, row, vals, true);
 
 }
 
@@ -1347,7 +1347,23 @@ function dplMarkCarolResult(stockId, status, detailMsg, targetRows, targetDateIn
 
     if (!sid) return { success: false, message: 'Keine Stock-ID' };
 
-    var isOk = String(status || 'ok').toLowerCase() === 'ok' || String(status || '').toLowerCase() === 'done';
+    var mode = String(status || 'ok').toLowerCase();
+
+    var isKeep = mode === 'keep' || mode === 'skip';
+
+    var isOk = mode === 'ok' || mode === 'done';
+
+    if (isKeep) {
+
+      return {
+        success: true,
+        stockId: sid,
+        status: 'keep',
+        updatedRows: [],
+        message: String(detailMsg || '')
+      };
+
+    }
 
     var wantDate = dplFormatDateCell_(targetDateInput);
 
@@ -1448,6 +1464,10 @@ function dplMarkCarolResult(stockId, status, detailMsg, targetRows, targetDateIn
         sh.getRange(rowNumTarget, 6).setBackground(DPL_CAROL_GREEN_COLOR);
 
       } else {
+
+        var curBg = String(sh.getRange(rowNumTarget, 6).getBackground() || '');
+
+        if (dplIsGreenHex_(curBg)) continue;
 
         var hasX = String(sh.getRange(rowNumTarget, 2).getValue() || '').trim().toLowerCase() === 'x';
 

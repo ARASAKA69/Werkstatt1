@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 5.0
-// @description ARASAKA v5.0 - Setzt Spare Parts beim WMS-Abschluss auf Delivered statt Handed out
+// @version 5.1
+// @description ARASAKA v5.1 - Spare Parts per API auf Delivered, Werkstattauftrag wird weiter von der offenen Seite gedruckt
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -24,7 +24,7 @@
     let hudElement = null;
     let isLocked = false;
     const speedMultiplier = GM_getValue('arasaka_speed', 1);
-    const TOTAL_STEPS = 14;
+    const TOTAL_STEPS = 4;
     let hudLog = [];
     let currentStep = 0;
     let startTime = null;
@@ -376,31 +376,347 @@
         return null;
     }
 
-    function isDeliveredOption(text) {
-        const t = String(text || '').trim().toLowerCase();
-        return t.includes('delivered') || t.includes('angeliefert') || t.includes('geliefert');
-    }
+    const AUTH_STORAGE_KEY = 'authData';
+    const TOKEN_URL = '/api/v1/auth/oauth/token';
+    const DELIVERED_STATUS = 'SPARE_PARTS_DELIVERED';
+    let workshopIdsCache = null;
+    let refreshInFlight = null;
 
-    function checkAllDelivered() {
-        const selects = document.querySelectorAll('select');
-        let relevant = 0;
-        for (const sel of selects) {
-            const hasOpt = Array.from(sel.options).some(o => isDeliveredOption(o.text));
-            if (!hasOpt) continue;
-            relevant++;
-            if (!isDeliveredOption(sel.options[sel.selectedIndex]?.text)) return false;
+    function readAuth() {
+        try {
+            const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            return parsed;
+        } catch (e) {
+            return null;
         }
-        return relevant > 0;
     }
 
-    function forceAllDelivered() {
-        for (const sel of document.querySelectorAll('select')) {
-            const opt = Array.from(sel.options).find(o => isDeliveredOption(o.text));
-            if (opt && !isDeliveredOption(sel.options[sel.selectedIndex]?.text)) {
-                sel.value = opt.value;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
+    function writeAuth(auth) {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
+    }
+
+    function decodeJwt(token) {
+        const part = String(token || '').split('.')[1];
+        if (!part) return null;
+        try {
+            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const pad = b64 + '==='.slice((b64.length + 3) % 4);
+            const json = atob(pad);
+            try {
+                return JSON.parse(decodeURIComponent(escape(json)));
+            } catch (e2) {
+                return JSON.parse(json);
+            }
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function tokenStillValid(token, skewMs) {
+        const payload = decodeJwt(token);
+        if (!payload || !payload.exp) return !!token;
+        return (Number(payload.exp) * 1000) > (Date.now() + (skewMs || 0));
+    }
+
+    async function refreshAuth() {
+        if (refreshInFlight) return refreshInFlight;
+        refreshInFlight = (async () => {
+            const cur = readAuth();
+            if (!cur || !cur.refresh_token) throw new Error('Carol Login abgelaufen, bitte neu anmelden');
+            const body = new URLSearchParams();
+            body.set('client_id', 'refurbishment');
+            body.set('grant_type', 'refresh_token');
+            body.set('refresh_token', cur.refresh_token);
+            const headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' };
+            if (cur.access_token) headers.authorization = 'Bearer ' + cur.access_token;
+            const res = await fetch(TOKEN_URL, { method: 'POST', headers: headers, body: body.toString() });
+            let data = null;
+            try { data = await res.json(); } catch (e) { data = null; }
+            const tokenObj = (data && data.access_token) ? data : (data && data.result && data.result.access_token ? data.result : null);
+            if (!res.ok || !tokenObj) throw new Error('Carol Token konnte nicht erneuert werden, bitte neu anmelden');
+            const next = Object.assign({}, cur, tokenObj);
+            if (!next.refresh_token) next.refresh_token = cur.refresh_token;
+            writeAuth(next);
+            return next;
+        })();
+        try {
+            return await refreshInFlight;
+        } finally {
+            refreshInFlight = null;
+        }
+    }
+
+    async function ensureFreshLogin() {
+        const auth = readAuth();
+        if (!auth || !auth.access_token) throw new Error('Nicht in Carol eingeloggt');
+        if (tokenStillValid(auth.access_token, 90000)) return auth.access_token;
+        const next = await refreshAuth();
+        return next.access_token;
+    }
+
+    function assertGql(arr) {
+        if (!Array.isArray(arr)) throw new Error('Carol API Antwort ungültig');
+        const msgs = [];
+        for (let i = 0; i < arr.length; i++) {
+            const row = arr[i];
+            if (row && Array.isArray(row.errors) && row.errors.length) {
+                for (let j = 0; j < row.errors.length; j++) msgs.push((row.errors[j] && row.errors[j].message) || 'GraphQL Fehler');
             }
         }
+        if (msgs.length) throw new Error(msgs.join('; '));
+        return arr;
+    }
+
+    async function gqlBatch(ops, retried) {
+        const token = await ensureFreshLogin();
+        const version = (window.REACT_CFG && window.REACT_CFG.VITE_INFO_VERSION) || 'v4.32.1';
+        const res = await fetch('/api/v1/refurbishment-aggregation/graphql', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'accept-language': 'en-GB',
+                'x-carol-frontend-version': version,
+                'authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(ops)
+        });
+        if (res.status === 401 && !retried) {
+            await refreshAuth();
+            return gqlBatch(ops, true);
+        }
+        if (!res.ok) throw new Error('Carol API HTTP ' + res.status);
+        return assertGql(await res.json());
+    }
+
+    async function gqlOne(operationName, query, variables) {
+        const arr = await gqlBatch([{ operationName: operationName, variables: variables, query: query }], false);
+        return arr[0] && arr[0].data;
+    }
+
+    function currentRefurbishmentId() {
+        const m = location.pathname.match(/\/refurbishment\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+        return m ? m[1] : '';
+    }
+
+    async function loadWorkshopIds() {
+        if (workshopIdsCache && workshopIdsCache.length) return workshopIdsCache;
+        const auth = readAuth();
+        const payload = decodeJwt(auth && auth.access_token);
+        const userId = payload && (payload.user_uuid || payload.userUuid || payload.sub);
+        if (!userId) throw new Error('Carol Benutzer konnte nicht gelesen werden');
+        const data = await gqlOne(
+            'user',
+            'query user($id: UUID!) { user(id: $id) { userPartnerWorkshopConnections { mainWorkshop { branchId } } } }',
+            { id: userId }
+        );
+        const conns = (data && data.user && data.user.userPartnerWorkshopConnections) || [];
+        const ids = [];
+        for (let i = 0; i < conns.length; i++) {
+            const branchNum = Number(conns[i] && conns[i].mainWorkshop && conns[i].mainWorkshop.branchId);
+            if (Number.isFinite(branchNum) && branchNum > 0 && ids.indexOf(branchNum) === -1) ids.push(branchNum);
+        }
+        if (!ids.length) throw new Error('Keine Carol Werkstatt am Login gefunden');
+        workshopIdsCache = ids;
+        return ids;
+    }
+
+    function getEffectiveVal(item) {
+        const vals = item.values || [];
+        const pa = vals.find(v => v.sourceType === 'POST_AUTHORIZATION' && v.proposedValue);
+        if (pa) return { payload: pa.proposedValue, state: pa.state };
+        const auth = vals.find(v => v.sourceType === 'AUTHORIZATION' && v.proposedValue);
+        if (auth) return { payload: auth.proposedValue, state: auth.state };
+        const ecVal = vals.find(v => v.sourceType === 'ENTRY_CHECK');
+        if (ecVal) {
+            if (item.verified && ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+            if (ecVal.originalValue) return { payload: ecVal.originalValue, state: ecVal.state };
+            if (ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+        }
+        return null;
+    }
+
+    function buildCleanProposed(payload, spareStatus) {
+        if (!payload) return null;
+        const pt = payload.payloadType;
+        if (pt === 'VEHICLE_SERVICE_NAME' || pt === 'DAMAGE_SERVICE_NAME') return { payloadType: pt, name: payload.name, type: payload.type };
+        if (pt === 'SERVICE_BUDGET') {
+            const budget = { payloadType: pt, budgetMinorUnits: payload.budgetMinorUnits };
+            if (payload.consumableCostMinorUnits !== undefined && payload.consumableCostMinorUnits !== null) {
+                budget.consumableCostMinorUnits = payload.consumableCostMinorUnits;
+                budget.sparePartCostMinorUnits = payload.sparePartCostMinorUnits;
+                budget.laborTimeHours = payload.laborTimeHours;
+                budget.laborRateMinorUnits = payload.laborRateMinorUnits;
+            }
+            return budget;
+        }
+        if (pt === 'SERVICE_COMMENT') return { payloadType: pt, comment: payload.comment ?? null };
+        if (pt === 'SERVICE_STATE') return { payloadType: pt, serviceState: payload.serviceState };
+        if (pt === 'PARTNER_WORKSHOP_CONNECTION') return { payloadType: pt, id: payload.id };
+        if (pt === 'DAMAGE_TYPE') {
+            const base = { payloadType: pt, area: payload.area, subArea: payload.subArea, partName: payload.partName, typeName: payload.typeName, isSecondaryWheel: payload.isSecondaryWheel };
+            if (payload.isPA3Damage) {
+                base.isPA3Damage = true;
+                base.quantity = payload.quantity;
+                if (payload.attribute1Name) { base.attribute1Name = payload.attribute1Name; base.attribute1Value = payload.attribute1Value; }
+                if (payload.attribute2Name) { base.attribute2Name = payload.attribute2Name; base.attribute2Value = payload.attribute2Value; }
+            }
+            return base;
+        }
+        if (pt === 'DAMAGE_IMAGE') return { payloadType: pt, imageUrl: payload.imageUrl ?? null };
+        if (pt === 'DAMAGE_CANCELLATION') return { payloadType: pt, cancelComment: payload.cancelComment ?? null, cancelReason: payload.cancelReason ?? null };
+        if (pt === 'EC_COMMON_PAYLOAD') {
+            return { payloadType: pt, sparePart: payload.sparePart ? { status: spareStatus || payload.sparePart.status, comment: payload.sparePart.comment ?? null, lastStatusUpdateOn: null } : null };
+        }
+        return null;
+    }
+
+    const ENTRY_CHECK_QUERY = `query entryCheckPostAuthorization($refurbishmentId: UUID!) {
+      entryCheckPostAuthorization(refurbishmentId: $refurbishmentId) {
+        id state
+        items {
+          id entityId entityType verified
+          values {
+            id sourceType state
+            originalValue {
+              payloadType
+              ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }
+              ... on DamageImagePayload { imageUrl }
+              ... on DamageServiceNamePayload { name type }
+              ... on VehicleServiceNamePayload { name type }
+              ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }
+              ... on ServiceCommentPayload { comment }
+              ... on DamageCancellationPayload { cancelReason cancelComment }
+              ... on ServiceStatePayload { serviceState }
+              ... on PartnerWorkshopConnectionPayload { id }
+              ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }
+            }
+            proposedValue {
+              payloadType
+              ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }
+              ... on DamageImagePayload { imageUrl }
+              ... on DamageServiceNamePayload { name type }
+              ... on VehicleServiceNamePayload { name type }
+              ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }
+              ... on ServiceCommentPayload { comment }
+              ... on DamageCancellationPayload { cancelReason cancelComment }
+              ... on ServiceStatePayload { serviceState }
+              ... on PartnerWorkshopConnectionPayload { id }
+              ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }
+            }
+          }
+        }
+      }
+    }`;
+
+    async function resolveRefurbishmentId() {
+        const direct = currentRefurbishmentId();
+        if (direct) return direct;
+        const sid = (new URLSearchParams(location.search).get('rsv') || '').trim().toUpperCase();
+        if (!sid) throw new Error('Carol Auftrag auf dieser Seite nicht erkannt');
+        const workshops = await loadWorkshopIds();
+        const ov = await gqlOne(
+            'refurbishmentOverview',
+            `query refurbishmentOverview($page: Int!, $pageSize: Int!, $filter: RefurbishmentOverviewFilter!) {
+              refurbishmentOverview(page: $page, pageSize: $pageSize, filter: $filter) { items { id } }
+            }`,
+            { page: 0, pageSize: 5, filter: { stockNumbers: [sid], mainWorkshopIds: workshops } }
+        );
+        const item = ov && ov.refurbishmentOverview && ov.refurbishmentOverview.items && ov.refurbishmentOverview.items[0];
+        if (!item || !item.id) throw new Error('Auftrag in Carol nicht gefunden');
+        return item.id;
+    }
+
+    async function deliveredViaApi(onStep) {
+        if (abortMission) throw new Error('Abort');
+        if (onStep) onStep('Lade Spare Parts…');
+        const refId = await resolveRefurbishmentId();
+        const pa = await gqlOne('entryCheckPostAuthorization', ENTRY_CHECK_QUERY, { refurbishmentId: refId });
+        const ec = pa && pa.entryCheckPostAuthorization;
+        if (!ec || !ec.id) return { status: 'error', message: 'Post Authorization nicht verfügbar' };
+        const byEntity = new Map();
+        const items = ec.items || [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item || !item.entityId) continue;
+            if (item.entityType !== 'SERVICE' && item.entityType !== 'DAMAGE') continue;
+            if (!byEntity.has(item.entityId)) byEntity.set(item.entityId, []);
+            byEntity.get(item.entityId).push(item);
+        }
+        const updateBatches = [];
+        const createBatches = [];
+        let spareCount = 0;
+        byEntity.forEach((entityItems) => {
+            const effMap = new Map();
+            for (let i = 0; i < entityItems.length; i++) {
+                const eff = getEffectiveVal(entityItems[i]);
+                if (eff && eff.payload && eff.payload.payloadType) effMap.set(eff.payload.payloadType, { item: entityItems[i], payload: eff.payload, state: eff.state });
+            }
+            const ecCommon = effMap.get('EC_COMMON_PAYLOAD');
+            if (!ecCommon || !ecCommon.payload.sparePart) return;
+            let declined = false;
+            effMap.forEach((info) => {
+                if (info.state === 'DECLINED' && info.payload.payloadType !== 'DAMAGE_CANCELLATION') declined = true;
+            });
+            if (declined) return;
+            spareCount++;
+            if (ecCommon.payload.sparePart.status === DELIVERED_STATUS) return;
+            let hasPostAuth = false;
+            for (let i = 0; i < entityItems.length; i++) {
+                const vals = entityItems[i].values || [];
+                for (let v = 0; v < vals.length; v++) {
+                    const pv = vals[v].proposedValue;
+                    if (vals[v].sourceType === 'POST_AUTHORIZATION' && pv && pv.payloadType !== 'DAMAGE_CUSTOMER_DISPLAY') hasPostAuth = true;
+                }
+            }
+            if (hasPostAuth) {
+                const inputs = [];
+                effMap.forEach((info, pt) => {
+                    if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+                    const paVal = (info.item.values || []).find(v => v.sourceType === 'POST_AUTHORIZATION');
+                    const proposedValue = buildCleanProposed(info.payload, DELIVERED_STATUS);
+                    if (paVal && proposedValue) inputs.push({ id: paVal.id, value: { state: 'CONFIRMED', proposedValue: proposedValue } });
+                });
+                if (inputs.length) updateBatches.push(inputs);
+            } else {
+                const inputs = [];
+                effMap.forEach((info, pt) => {
+                    if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+                    const proposedValue = buildCleanProposed(info.payload, DELIVERED_STATUS);
+                    if (proposedValue) inputs.push({ entryCheckItemId: info.item.id, sourceType: 'POST_AUTHORIZATION', state: 'CONFIRMED', proposedValue: proposedValue });
+                });
+                if (inputs.length) createBatches.push(inputs);
+            }
+        });
+        if (!spareCount) return { status: 'error', message: 'Keine Spare Parts auf diesem Auftrag' };
+        if (abortMission) throw new Error('Abort');
+        if (updateBatches.length || createBatches.length) {
+            if (onStep) onStep('Setze Teile auf Delivered…');
+            if (updateBatches.length) {
+                await gqlBatch(updateBatches.map(inputs => ({
+                    operationName: 'updateEntryCheckItemValues',
+                    variables: { inputs: inputs },
+                    query: 'mutation updateEntryCheckItemValues($inputs: [EntryCheckItemValueUpdateEntryInput!]!) { updateEntryCheckItemValues(inputs: $inputs) { id state } }'
+                })), false);
+            }
+            if (createBatches.length) {
+                await gqlBatch(createBatches.map(inputs => ({
+                    operationName: 'createEntryCheckItemValues',
+                    variables: { inputs: inputs },
+                    query: 'mutation createEntryCheckItemValues($inputs: [EntryCheckItemValueCreateInput!]!) { createEntryCheckItemValues(inputs: $inputs) { id state } }'
+                })), false);
+            }
+        }
+        if (abortMission) throw new Error('Abort');
+        if (onStep) onStep('Speichere (Submit)…');
+        await gqlOne(
+            'postAuthorizeEntryCheck',
+            'mutation postAuthorizeEntryCheck($id: UUID!) { postAuthorizeEntryCheck(id: $id) { id state refurbishment { id state } } }',
+            { id: ec.id }
+        );
+        return { status: 'ok', message: 'Delivered' };
     }
 
     function forceClick(el) {
@@ -676,90 +992,12 @@
                 if (abortMission) return;
             }
 
-            updateHUD('Öffne Edit damages...', '#00ffcc', true);
-            const btnEdit = await waitForElement('Edit damages and services');
-            if (!btnEdit) { updateHUD('Edit-Button nicht gefunden!', '#ff4444'); return; }
-            forceClick(btnEdit);
-
-            updateHUD('Navigiere zu Spare Parts...', '#00ffcc', true);
-            await sleep(2000);
-            const btnSpareParts = await waitForElement('Spare parts');
-            if (!btnSpareParts) { updateHUD('Spare Parts nicht gefunden!', '#ff4444'); return; }
-            forceClick(btnSpareParts);
-
-            updateHUD('Wähle alle Positionen aus...', '#00ffcc', true);
-            await sleep(1000);
-            const btnSelectAll = await waitForElement('Select all');
-            if (!btnSelectAll) { updateHUD('Select All nicht gefunden!', '#ff4444'); return; }
-            forceClick(btnSelectAll);
-
-            updateHUD('Setze Dropdowns auf Delivered...', '#ffff00', true);
-            await sleep(1000);
-            forceAllDelivered();
-
-            updateHUD('Übernehme Änderungen...', '#00ffcc', true);
-            await sleep(1000);
-            const btnApply = await waitForElement('Apply');
-            if (btnApply) forceClick(btnApply);
-
-            updateHUD('Verifiziere Delivered Status...', '#ffff00', true);
-            let verified = false;
-            for (let i = 0; i < 6; i++) {
-                await sleep(1000);
-                if (checkAllDelivered()) { verified = true; break; }
-            }
-
-            if (!verified) {
+            const result = await deliveredViaApi((step) => updateHUD(step, '#00ffcc', true));
+            if (!result || result.status !== 'ok') {
+                updateHUD((result && result.message) || 'Delivered fehlgeschlagen', '#ff4444', true);
                 playDing('error');
-                const retry = await arasakaConfirm(
-                    'Nicht alle Positionen konnten auf "Delivered"\numgestellt werden.\n\nSoll ARASAKA einen Rettungsversuch starten?'
-                );
-
-                if (retry) {
-                    updateHUD('Rettungsprotokoll aktiv...', '#ffaa00', true);
-                    forceAllDelivered();
-                    await sleep(3000);
-                    if (!checkAllDelivered()) {
-                        updateHUD('RETTUNG FEHLGESCHLAGEN', '#ff4444', true);
-                        playDing('error');
-                        setTimeout(removeHUD, 5000);
-                        return;
-                    }
-                    updateHUD('Rettung erfolgreich!', '#00ff00', true);
-                    await sleep(1000);
-                } else {
-                    updateHUD('MANUELLE ÜBERNAHME', '#ff4444');
-                    setTimeout(removeHUD, 5000);
-                    return;
-                }
-            }
-
-            const isAutoRun = launchedAsAuto;
-
-            updateHUD('Übermittle Daten...', '#00ffcc', true);
-            if (isAutoRun) sessionStorage.setItem('arasaka_close_after_done', '1');
-            const btnSubmit = await waitForElement('Submit');
-            if (btnSubmit) forceClick(btnSubmit);
-
-            updateHUD('Bestätige Freigabe...', '#00ffcc', true);
-            await sleep(1000);
-            const btnConfirm = await waitForElement('Confirm');
-            if (btnConfirm) forceClick(btnConfirm);
-
-            updateHUD('Schließe Dialog...', '#00ffcc', true);
-            await sleep(2000);
-            const dialogClosed = await clickSavedDialogClose(10000);
-            if (!dialogClosed) {
-                const btnClose = await waitForElement('Close', 5000, true);
-                if (btnClose) btnClose.click();
-            }
-            await sleep(800);
-
-            if (!isAutoRun) {
-                updateHUD('Rückkehr zum Auftrag...', '#00ffcc', true);
-                await sleep(1500);
-                const btnBack = await waitForElement('Back to refurbishment detail', 15000);
-                if (btnBack) forceClick(btnBack);
+                setTimeout(removeHUD, 5000);
+                return;
             }
 
             if (skipPrint) {
@@ -768,7 +1006,7 @@
                 updateHUD('AUFTRAG ABGESCHLOSSEN', '#00ff00', true);
             }
             playDing('success');
-            if (isAutoRun) {
+            if (launchedAsAuto) {
                 finishAndCloseTab();
             } else {
                 setTimeout(removeHUD, 5000);
