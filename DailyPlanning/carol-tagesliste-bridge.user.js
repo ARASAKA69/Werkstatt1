@@ -56,6 +56,115 @@
     if (!isCarolHost) {
         let lastEventCursor = 0;
         let lastStateTs = 0;
+        const SIDEBAR_WIDTH_KEY = 'dpl_tl_sidebar_width_px';
+
+        function applySidebarWidthOnSheets(widthPx) {
+            if (!location.hostname.includes('docs.google.com')) return;
+            const sidebar = document.querySelector('.script-application-sidebar');
+            if (!sidebar) return;
+            const clamped = Math.max(260, Math.min(Math.floor(window.innerWidth * 0.75), Number(widthPx) || 360));
+            sidebar.style.setProperty('width', clamped + 'px', 'important');
+            sidebar.style.setProperty('min-width', clamped + 'px', 'important');
+            sidebar.style.setProperty('max-width', clamped + 'px', 'important');
+            const inner = sidebar.querySelectorAll('.script-application-sidebar-content, iframe');
+            for (let i = 0; i < inner.length; i++) {
+                inner[i].style.setProperty('width', '100%', 'important');
+            }
+            try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)); } catch (e) {}
+        }
+
+        function ensureSheetsSidebarResizer() {
+            if (!location.hostname.includes('docs.google.com')) return;
+            const sidebar = document.querySelector('.script-application-sidebar');
+            if (!sidebar) return;
+
+            if (!document.getElementById('dpl-sheets-sidebar-resizer-style')) {
+                const st = document.createElement('style');
+                st.id = 'dpl-sheets-sidebar-resizer-style';
+                st.textContent = `
+                    .script-application-sidebar {
+                        overflow: visible !important;
+                    }
+                    #dpl-sheets-sidebar-resizer {
+                        position: absolute;
+                        left: -5px;
+                        top: 0;
+                        bottom: 0;
+                        width: 10px;
+                        cursor: ew-resize;
+                        z-index: 2147483647;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        background: transparent;
+                        transition: background 0.15s ease;
+                    }
+                    #dpl-sheets-sidebar-resizer::after {
+                        content: "";
+                        width: 4px;
+                        height: 44px;
+                        border-radius: 999px;
+                        background: rgba(0, 255, 204, 0.35);
+                        box-shadow: 0 0 6px rgba(0, 255, 204, 0.25);
+                        transition: background 0.15s ease, height 0.15s ease, transform 0.15s ease;
+                    }
+                    #dpl-sheets-sidebar-resizer:hover,
+                    #dpl-sheets-sidebar-resizer.dragging {
+                        background: rgba(0, 255, 204, 0.12);
+                    }
+                    #dpl-sheets-sidebar-resizer:hover::after,
+                    #dpl-sheets-sidebar-resizer.dragging::after {
+                        background: #00ffcc;
+                        height: 64px;
+                        transform: scaleX(1.2);
+                    }
+                `;
+                document.head.appendChild(st);
+            }
+
+            if (!sidebar.dataset.dplWidthInitialized) {
+                sidebar.dataset.dplWidthInitialized = '1';
+                let savedW = 360;
+                try {
+                    const rawW = parseInt(localStorage.getItem(SIDEBAR_WIDTH_KEY) || '360', 10);
+                    if (rawW >= 260 && rawW <= 1200) savedW = rawW;
+                } catch (e) {}
+                applySidebarWidthOnSheets(savedW);
+            }
+
+            if (sidebar.querySelector('#dpl-sheets-sidebar-resizer')) return;
+
+            const handle = document.createElement('div');
+            handle.id = 'dpl-sheets-sidebar-resizer';
+            handle.title = 'Ziehen, um die Seitenleiste größer oder kleiner zu machen';
+            sidebar.appendChild(handle);
+
+            handle.addEventListener('mousedown', (e) => {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                handle.classList.add('dragging');
+
+                const shield = document.createElement('div');
+                shield.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:ew-resize;background:transparent;';
+                document.body.appendChild(shield);
+
+                function onMove(ev) {
+                    const newWidth = window.innerWidth - ev.clientX;
+                    applySidebarWidthOnSheets(newWidth);
+                }
+
+                function onUp() {
+                    handle.classList.remove('dragging');
+                    shield.remove();
+                    window.removeEventListener('mousemove', onMove, true);
+                    window.removeEventListener('mouseup', onUp, true);
+                }
+
+                window.addEventListener('mousemove', onMove, true);
+                window.addEventListener('mouseup', onUp, true);
+            });
+        }
 
         function postToFrameTree(win, payload, depth) {
             if (!win || depth > 4) return;
@@ -119,7 +228,22 @@
             if (!d || d.source !== 'dpl-tagesliste-hud') return;
 
             if (d.cmd === 'ping') {
+                ensureSheetsSidebarResizer();
                 forwardToHud();
+                return;
+            }
+
+            if (d.cmd === 'resize_sidebar' && d.payload) {
+                ensureSheetsSidebarResizer();
+                const curSidebar = document.querySelector('.script-application-sidebar');
+                if (curSidebar) {
+                    const curW = curSidebar.getBoundingClientRect().width || 360;
+                    if (typeof d.payload.delta === 'number') {
+                        applySidebarWidthOnSheets(curW + d.payload.delta);
+                    } else if (typeof d.payload.width === 'number') {
+                        applySidebarWidthOnSheets(d.payload.width);
+                    }
+                }
                 return;
             }
 
@@ -165,7 +289,11 @@
             GM_addValueChangeListener(KEY_EVENTS, () => forwardToHud());
             GM_addValueChangeListener(KEY_HEARTBEAT, () => forwardToHud());
         }
-        setInterval(forwardToHud, 350);
+        setInterval(() => {
+            ensureSheetsSidebarResizer();
+            forwardToHud();
+        }, 350);
+        ensureSheetsSidebarResizer();
         return;
     }
 
@@ -822,7 +950,7 @@
         await sleep(150);
 
         if (checkAllHandedOut()) {
-            return await finishJobAndAdvance(job, 'ok', 'Bereits Herausgegeben', indexLabel);
+            return await finishJobAndAdvance(job, 'ok', 'War bereits auf Herausgegeben, setze Spalte trotzdem auf grün', indexLabel);
         }
 
         setHudStatus(`${indexLabel} · ${sid}`, 'Setze alle Teile auf Handed out...', '#ffff00', true);

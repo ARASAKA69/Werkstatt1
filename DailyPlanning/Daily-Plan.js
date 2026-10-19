@@ -746,15 +746,27 @@ function dplIsGreenHex_(hex) {
 
 }
 
+var DPL_CF_UNBLOCKED_KEY = 'DPL_CF_COL_F_UNBLOCKED_V2';
+
 function dplEnsureColFUnblockedFromConditionalFormat_(sh) {
 
   if (!sh) return false;
 
   try {
 
+    var cache = CacheService.getScriptCache();
+
+    if (cache.get(DPL_CF_UNBLOCKED_KEY) === '1') return false;
+
     var rules = sh.getConditionalFormatRules();
 
-    if (!rules || !rules.length) return false;
+    if (!rules || !rules.length) {
+
+      cache.put(DPL_CF_UNBLOCKED_KEY, '1', 21600);
+
+      return false;
+
+    }
 
     var changed = false;
 
@@ -829,6 +841,8 @@ function dplEnsureColFUnblockedFromConditionalFormat_(sh) {
       sh.setConditionalFormatRules(newRules);
 
     }
+
+    cache.put(DPL_CF_UNBLOCKED_KEY, '1', 21600);
 
     return changed;
 
@@ -922,7 +936,27 @@ function dplFindLastStockRow_(sh) {
 
   if (sheetLast < 2) return 0;
 
-  var colE = sh.getRange(2, 5, sheetLast - 1, 1).getValues();
+  var tailSize = Math.min(sheetLast - 1, 450);
+
+  var tailStart = sheetLast - tailSize + 1;
+
+  var tailColE = sh.getRange(tailStart, 5, tailSize, 1).getValues();
+
+  for (var t = tailColE.length - 1; t >= 0; t--) {
+
+    var tv = tailColE[t][0];
+
+    if (tv !== '' && tv !== null && dplLooksLikeStockId(tv)) {
+
+      return tailStart + t;
+
+    }
+
+  }
+
+  if (tailStart <= 2) return 0;
+
+  var colE = sh.getRange(2, 5, tailStart - 2, 1).getValues();
 
   for (var i = colE.length - 1; i >= 0; i--) {
 
@@ -942,8 +976,6 @@ function dplFindLastStockRow_(sh) {
 
 function dplScanRecentTageslisteRows_(sh, windowRows) {
 
-  dplEnsureColFUnblockedFromConditionalFormat_(sh);
-
   var lastStockRow = dplFindLastStockRow_(sh);
 
   if (lastStockRow < 2) {
@@ -952,7 +984,7 @@ function dplScanRecentTageslisteRows_(sh, windowRows) {
 
   }
 
-  var count = Math.min(lastStockRow - 1, windowRows || 800);
+  var count = Math.min(lastStockRow - 1, windowRows || 220);
 
   var startRow = Math.max(2, lastStockRow - count + 1);
 
@@ -972,8 +1004,6 @@ function dplScanRecentTageslisteRows_(sh, windowRows) {
 
   var dateSeen = {};
 
-  var blueRestoreRows = [];
-
   for (var i = 0; i < values.length; i++) {
 
     var rowNum = startRow + i;
@@ -991,14 +1021,6 @@ function dplScanRecentTageslisteRows_(sh, windowRows) {
     var bgCell = bgsF[i] ? String(bgsF[i][0] || '') : '';
 
     var isGreen = dplIsGreenHex_(bgCell);
-
-    if (isNbRow && !isGreen && String(bgCell).toLowerCase() !== DPL_NACHBESTELL_BLUE_COLOR) {
-
-      blueRestoreRows.push(rowNum);
-
-      bgCell = DPL_NACHBESTELL_BLUE_COLOR;
-
-    }
 
     var sid = dplNormalizeStockId(values[i][4]);
 
@@ -1031,16 +1053,6 @@ function dplScanRecentTageslisteRows_(sh, windowRows) {
       model: modelCell,
       isGreen: isGreen
     });
-
-  }
-
-  if (blueRestoreRows.length > 0 && blueRestoreRows.length <= 120) {
-
-    for (var br = 0; br < blueRestoreRows.length; br++) {
-
-      sh.getRange(blueRestoreRows[br], 6).setBackground(DPL_NACHBESTELL_BLUE_COLOR);
-
-    }
 
   }
 
@@ -1149,10 +1161,6 @@ function dplClearCarolQueue() {
 
 function dplPrepareCarolBatch(rawInput) {
 
-  var lock = LockService.getScriptLock();
-
-  var gotLock = lock.tryLock(25000);
-
   try {
 
     var stockIds = dplParseStockIdList_(rawInput);
@@ -1173,9 +1181,7 @@ function dplPrepareCarolBatch(rawInput) {
 
     }
 
-    var map = dplGetMap();
-
-    var scan = dplScanRecentTageslisteRows_(sh, 800);
+    var scan = dplScanRecentTageslisteRows_(sh, 220);
 
     var parsedRows = scan.rows;
 
@@ -1204,6 +1210,8 @@ function dplPrepareCarolBatch(rawInput) {
       bySidActive[sidCell].push(rObj);
 
     }
+
+    var map = null;
 
     var items = [];
 
@@ -1237,12 +1245,6 @@ function dplPrepareCarolBatch(rawInput) {
 
       }
 
-      var mapVals = map[sid] || null;
-
-      var mapUrl = (mapVals && mapVals[0] && /^https?:\/\//i.test(String(mapVals[0]).trim())) ? String(mapVals[0]).trim() : '';
-
-      var mapModel = (mapVals && mapVals[1]) ? String(mapVals[1]).trim() : '';
-
       var rowNumbers = [];
 
       var sheetCarolUrl = '';
@@ -1269,17 +1271,33 @@ function dplPrepareCarolBatch(rawInput) {
 
       }
 
-      if (rowNumbers.length > 0 && !sheetCarolUrl && mapVals && mapVals.length) {
+      var mapUrl = '';
 
-        for (var rIdx = 0; rIdx < rowNumbers.length; rIdx++) {
+      var mapModel = '';
 
-          dplFillRow(sh, rowNumbers[rIdx], mapVals, true);
+      if (!sheetCarolUrl) {
+
+        if (!map) map = dplReadMap() || {};
+
+        var mapVals = map[sid] || null;
+
+        mapUrl = (mapVals && mapVals[0] && /^https?:\/\//i.test(String(mapVals[0]).trim())) ? String(mapVals[0]).trim() : '';
+
+        mapModel = (mapVals && mapVals[1]) ? String(mapVals[1]).trim() : '';
+
+        if (rowNumbers.length > 0 && mapVals && mapVals.length) {
+
+          for (var rIdx = 0; rIdx < rowNumbers.length; rIdx++) {
+
+            dplFillRow(sh, rowNumbers[rIdx], mapVals, true);
+
+          }
+
+          sheetCarolUrl = mapUrl;
+
+          sheetModel = sheetModel || mapModel;
 
         }
-
-        sheetCarolUrl = mapUrl;
-
-        sheetModel = sheetModel || mapModel;
 
       }
 
@@ -1302,18 +1320,6 @@ function dplPrepareCarolBatch(rawInput) {
 
     }
 
-    SpreadsheetApp.flush();
-
-    var queuePayload = {
-      batchId: batchId,
-      activeDates: scan.activeDates,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      items: items
-    };
-
-    dplWriteQueueStore_(queuePayload);
-
     return {
       success: true,
       batchId: batchId,
@@ -1328,14 +1334,6 @@ function dplPrepareCarolBatch(rawInput) {
       message: String(err.message || err),
       items: []
     };
-
-  } finally {
-
-    if (gotLock) {
-
-      try { lock.releaseLock(); } catch (eRel) {}
-
-    }
 
   }
 

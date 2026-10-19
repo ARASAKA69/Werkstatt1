@@ -422,6 +422,64 @@ body {
 .hud-footer-brand span {
   color: var(--accent);
 }
+.sidebar-left-resizer {
+  display: none;
+}
+body.is-sidebar .sidebar-left-resizer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 9999;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+body.is-sidebar .sidebar-left-resizer::after {
+  content: "";
+  width: 3px;
+  height: 42px;
+  border-radius: 999px;
+  background: rgba(0, 255, 204, 0.35);
+  transition: background 0.15s ease, height 0.15s ease;
+}
+body.is-sidebar .sidebar-left-resizer:hover,
+body.is-sidebar .sidebar-left-resizer.dragging {
+  background: rgba(0, 255, 204, 0.14);
+}
+body.is-sidebar .sidebar-left-resizer:hover::after,
+body.is-sidebar .sidebar-left-resizer.dragging::after {
+  background: var(--accent);
+  height: 64px;
+}
+.sidebar-size-controls {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+body.is-sidebar .sidebar-size-controls {
+  display: inline-flex;
+}
+.btn-size-step {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.btn-size-step:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
 @media (max-width: 480px) {
   .topbar {
     padding: 10px 10px;
@@ -573,9 +631,16 @@ body {
 </style>
 </head>
 <body>
+<div class="sidebar-left-resizer" id="sidebarLeftResizer" title="Ziehen, um die Seitenleiste breiter oder schmaler zu machen"></div>
 <div class="topbar">
   <div class="title-wrap">
-    <div class="title">Tagesliste // <span>Carol Herausgegeben HUD</span></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:8px;">
+      <div class="title">Tagesliste // <span>Carol Herausgegeben HUD</span></div>
+      <div class="sidebar-size-controls" title="Breite der Seitenleiste anpassen">
+        <button type="button" class="btn-size-step" id="btnSidebarNarrower" title="Schmaler">◀</button>
+        <button type="button" class="btn-size-step" id="btnSidebarWider" title="Breiter">▶</button>
+      </div>
+    </div>
     <div class="bridge-pill" id="bridgePill">
       <span class="bridge-dot"></span>
       <span id="bridgeText">Prüfe Carol Bridge…</span>
@@ -898,12 +963,17 @@ function markSheetRowResult(stockId, status, detailMsg, eventDateStr, eventRows)
   var item = state.bySid[stockId];
   var rows = (Array.isArray(eventRows) && eventRows.length) ? eventRows : (item && item.rows ? item.rows : []);
   var targetDate = eventDateStr || (item && item.dateStr) || "";
+  var isAlreadyHandedOut = String(detailMsg || "").toLowerCase().indexOf("bereits") !== -1;
   if (item) {
     item.status = status === "ok" ? "done" : "error";
     var rowHint = rows.length ? ("Zeile " + rows.join(", ")) : (item.row ? ("Zeile " + item.row) : "Tagesliste");
-    item.stepText = status === "ok"
-      ? ("✓ Herausgegeben · Spalte F grün (" + rowHint + ")")
-      : ("✗ " + (detailMsg || "Fehler — Spalte F nicht grün"));
+    if (status === "ok") {
+      item.stepText = isAlreadyHandedOut
+        ? ("✓ War bereits auf Herausgegeben, setze Spalte trotzdem auf grün (" + rowHint + ")")
+        : ("✓ Herausgegeben · Spalte F grün (" + rowHint + ")");
+    } else {
+      item.stepText = "✗ " + (detailMsg || "Fehler — Spalte F nicht grün");
+    }
     updateQueueRowDom(stockId);
   }
   updateQueueCounters();
@@ -912,7 +982,10 @@ function markSheetRowResult(stockId, status, detailMsg, eventDateStr, eventRows)
   google.script.run
     .withSuccessHandler(function(res) {
       if (item && status === "ok" && res && res.success && res.updatedRows && res.updatedRows.length) {
-        item.stepText = "✓ Herausgegeben · Spalte F grün (Zeile " + res.updatedRows.join(", ") + ")";
+        var rInfo = "Zeile " + res.updatedRows.join(", ");
+        item.stepText = isAlreadyHandedOut
+          ? ("✓ War bereits auf Herausgegeben, setze Spalte trotzdem auf grün (" + rInfo + ")")
+          : ("✓ Herausgegeben · Spalte F grün (" + rInfo + ")");
         updateQueueRowDom(stockId);
       }
     })
@@ -1221,6 +1294,52 @@ $("btnStopBatch").addEventListener("click", function() {
 if (VIEW_MODE === "sidebar") {
   document.body.classList.add("is-sidebar");
 }
+
+(function initSidebarResizeControls() {
+  var btnWider = $("btnSidebarWider");
+  var btnNarrower = $("btnSidebarNarrower");
+  if (btnWider) {
+    btnWider.addEventListener("click", function() {
+      sendToBridge("resize_sidebar", { delta: 70 });
+    });
+  }
+  if (btnNarrower) {
+    btnNarrower.addEventListener("click", function() {
+      sendToBridge("resize_sidebar", { delta: -70 });
+    });
+  }
+  var resizer = $("sidebarLeftResizer");
+  if (resizer) {
+    var dragging = false;
+    var lastScreenX = 0;
+    resizer.addEventListener("mousedown", function(e) {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      dragging = true;
+      lastScreenX = e.screenX;
+      resizer.classList.add("dragging");
+
+      function onMove(ev) {
+        if (!dragging) return;
+        var dx = lastScreenX - ev.screenX;
+        if (Math.abs(dx) >= 4) {
+          lastScreenX = ev.screenX;
+          sendToBridge("resize_sidebar", { delta: dx });
+        }
+      }
+
+      function onUp() {
+        dragging = false;
+        resizer.classList.remove("dragging");
+        window.removeEventListener("mousemove", onMove, true);
+        window.removeEventListener("mouseup", onUp, true);
+      }
+
+      window.addEventListener("mousemove", onMove, true);
+      window.addEventListener("mouseup", onUp, true);
+    });
+  }
+})();
 
 if (WEB_APP_URL && VIEW_MODE !== "webapp") {
   var tabBtn = $("btnOpenTab");
