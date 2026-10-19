@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol Tagesliste Herausgegeben Bridge
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  Carol Herausgegeben Automatisierung // Tagesliste
 // @author       ARASAKA
 // @match        *://carol.autohero.com/*
@@ -497,7 +497,7 @@
                     <div class="dpl-tl-step" id="dpl-tl-step-txt">${currentStepText || 'Bereit für Stock-IDs vom HUD'}</div>
                 </div>
                 <div class="dpl-tl-foot">
-                    <span>Carol Bridge v1.1 · [ESC] Stop</span>
+                    <span>Carol Bridge v1.2 · [ESC] Stop</span>
                     <span>By Arasaka</span>
                 </div>
             `;
@@ -559,257 +559,424 @@
         }
     }
 
-    function getDeepestElementsByText(text) {
-        const results = [];
-        for (const el of document.querySelectorAll('*')) {
-            if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) continue;
-            if (el.textContent?.includes(text)) {
-                const childHasText = Array.from(el.children).some(c => c.textContent?.includes(text));
-                if (!childHasText) results.push(el);
-            }
-        }
-        return results;
-    }
+    const AUTH_STORAGE_KEY = 'authData';
+    const TOKEN_URL = '/api/v1/auth/oauth/token';
+    let workshopIdsCache = null;
+    let refreshInFlight = null;
 
-    async function waitForElement(text, timeout = 8000, pickLast = false) {
-        const start = Date.now();
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            const els = getDeepestElementsByText(text);
-            if (els.length > 0) return pickLast ? els[els.length - 1] : els[0];
-            await sleep(80);
-        }
-        return null;
-    }
-
-    function forceClick(el) {
-        if (!el) return;
+    function readAuth() {
         try {
-            const orig = { outline: el.style.outline, shadow: el.style.boxShadow, trans: el.style.transition };
-            el.style.transition = 'all 0.1s';
-            el.style.outline = '2px solid #ff0000';
-            el.style.boxShadow = '0 0 15px #ff0000';
-            setTimeout(() => {
-                if (el) { el.style.outline = orig.outline; el.style.boxShadow = orig.shadow; el.style.transition = orig.trans; }
-            }, 300);
-        } catch (e) {}
-        el.click();
-        if (el.parentElement) setTimeout(() => el.parentElement.click(), 30);
-    }
-
-    function getSparePartSelects() {
-        const out = [];
-        for (const sel of document.querySelectorAll('select')) {
-            const hasOpt = Array.from(sel.options).some(o => o.text.includes('Handed out'));
-            if (hasOpt) out.push(sel);
+            const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== 'object') return null;
+            return parsed;
+        } catch (e) {
+            return null;
         }
-        return out;
     }
 
-    function checkAllHandedOut() {
-        const selects = getSparePartSelects();
-        if (!selects.length) return false;
-        for (const sel of selects) {
-            if (!sel.options[sel.selectedIndex]?.text.includes('Handed out')) return false;
-        }
-        return true;
+    function writeAuth(auth) {
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(auth));
     }
 
-    function forceAllHandedOut() {
-        for (const sel of getSparePartSelects()) {
-            const opt = Array.from(sel.options).find(o => o.text.includes('Handed out'));
-            if (opt && !sel.options[sel.selectedIndex]?.text.includes('Handed out')) {
-                sel.value = opt.value;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
+    function authPauseReason() {
+        try { return sessionStorage.getItem('dpl_tl_auth_pause') || ''; } catch (e) { return ''; }
+    }
+
+    function setAuthPause(msg) {
+        try { sessionStorage.setItem('dpl_tl_auth_pause', msg || '1'); } catch (e) {}
+    }
+
+    function clearAuthPause() {
+        try { sessionStorage.removeItem('dpl_tl_auth_pause'); } catch (e) {}
+    }
+
+    function decodeJwt(token) {
+        const part = String(token || '').split('.')[1];
+        if (!part) return null;
+        try {
+            const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+            const pad = b64 + '==='.slice((b64.length + 3) % 4);
+            const json = atob(pad);
+            try {
+                return JSON.parse(decodeURIComponent(escape(json)));
+            } catch (e2) {
+                return JSON.parse(json);
             }
+        } catch (e) {
+            return null;
         }
     }
 
-    function findExactCloseButton() {
-        const candidates = [];
-        for (const el of document.querySelectorAll('button, [role="button"], a')) {
-            const txt = (el.textContent || '').trim();
-            if (txt === 'Close') candidates.push(el);
-        }
-        return candidates.length ? candidates[candidates.length - 1] : null;
+    function tokenStillValid(token, skewMs) {
+        const payload = decodeJwt(token);
+        if (!payload || !payload.exp) return !!token;
+        return (Number(payload.exp) * 1000) > (Date.now() + (skewMs || 0));
     }
 
-    function findExactConfirmButton() {
-        const candidates = [];
-        for (const el of document.querySelectorAll('button, [role="button"]')) {
-            const txt = (el.textContent || '').trim();
-            if (txt === 'Confirm' || txt === 'Bestätigen') candidates.push(el);
+    async function refreshAuth() {
+        if (refreshInFlight) return refreshInFlight;
+        refreshInFlight = (async () => {
+            const cur = readAuth();
+            if (!cur || !cur.refresh_token) {
+                throw new Error('Carol Login abgelaufen, bitte neu anmelden');
+            }
+            const body = new URLSearchParams();
+            body.set('client_id', 'refurbishment');
+            body.set('grant_type', 'refresh_token');
+            body.set('refresh_token', cur.refresh_token);
+            const headers = {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Accept': 'application/json'
+            };
+            if (cur.access_token) headers.authorization = 'Bearer ' + cur.access_token;
+            const res = await fetch(TOKEN_URL, { method: 'POST', headers: headers, body: body.toString() });
+            let data = null;
+            try { data = await res.json(); } catch (e) { data = null; }
+            const tokenObj = (data && data.access_token) ? data : (data && data.result && data.result.access_token ? data.result : null);
+            if (!res.ok || !tokenObj) {
+                throw new Error('Carol Token konnte nicht erneuert werden, bitte neu anmelden');
+            }
+            const next = Object.assign({}, cur, tokenObj);
+            if (!next.refresh_token) next.refresh_token = cur.refresh_token;
+            writeAuth(next);
+            try { sessionStorage.setItem('dpl_tl_auth_refresh_ts', String(Date.now())); } catch (e2) {}
+            return next;
+        })();
+        try {
+            return await refreshInFlight;
+        } finally {
+            refreshInFlight = null;
         }
-        return candidates.length ? candidates[candidates.length - 1] : null;
     }
 
-    async function waitAndClickConfirmButton(timeout = 6000) {
-        const start = Date.now();
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            const btn = findExactConfirmButton();
-            if (btn) {
-                forceClick(btn);
-                await sleep(300);
-                const stillThere = findExactConfirmButton();
-                if (stillThere) {
-                    forceClick(stillThere);
+    async function ensureFreshLogin() {
+        const auth = readAuth();
+        if (!auth || !auth.access_token) {
+            throw new Error('Nicht in Carol eingeloggt');
+        }
+        if (tokenStillValid(auth.access_token, 90000)) return auth.access_token;
+        let recent = 0;
+        try { recent = Number(sessionStorage.getItem('dpl_tl_auth_refresh_ts') || 0); } catch (e) {}
+        if (recent && (Date.now() - recent) < 20000) {
+            if (tokenStillValid(auth.access_token, 0)) return auth.access_token;
+            throw new Error('Carol Login abgelaufen, bitte neu anmelden');
+        }
+        setHudStatus(currentSid || 'LOGIN', 'Token erneuert, Carol lädt neu…', '#ffaa00', true);
+        await refreshAuth();
+        isNavigating = true;
+        location.reload();
+        throw new Error('Reload');
+    }
+
+    function assertGql(arr) {
+        if (!Array.isArray(arr)) throw new Error('Carol API Antwort ungültig');
+        const msgs = [];
+        for (let i = 0; i < arr.length; i++) {
+            const row = arr[i];
+            if (row && Array.isArray(row.errors) && row.errors.length) {
+                for (let j = 0; j < row.errors.length; j++) {
+                    msgs.push((row.errors[j] && row.errors[j].message) || 'GraphQL Fehler');
                 }
-                return true;
-            }
-            await sleep(80);
-        }
-        return false;
-    }
-
-    async function clickSavedDialogCloseFast(timeout = 2200) {
-        const start = Date.now();
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            const btn = findExactCloseButton();
-            if (btn) {
-                try {
-                    btn.style.outline = '2px solid #00ff00';
-                    btn.style.boxShadow = '0 0 15px #00ff00';
-                } catch (e) {}
-                btn.click();
-                return true;
-            }
-            await sleep(80);
-        }
-        return false;
-    }
-
-    function isRefurbDetailUrl(url) {
-        return /\/refurbishment\/[0-9a-f-]{8,}/i.test(String(url || ''));
-    }
-
-    function extractRefurbUuid(url) {
-        const m = String(url || '').match(/\/refurbishment\/([0-9a-f-]{8,})/i);
-        return m ? m[1].toLowerCase() : '';
-    }
-
-    function isAlreadyOnPostAuthorizationPage() {
-        const txt = String((document.body && document.body.innerText) || '');
-        return txt.includes('Back to refurbishment detail') || txt.includes('Post Authorization');
-    }
-
-    async function waitForPostAuthorizationPage(timeout = 10000) {
-        const start = Date.now();
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            if (isAlreadyOnPostAuthorizationPage()) return true;
-            await sleep(80);
-        }
-        return isAlreadyOnPostAuthorizationPage();
-    }
-
-    function findSparePartsSidebarTab() {
-        const all = document.querySelectorAll('*');
-        const exactMatches = [];
-        const fallbackMatches = [];
-        for (const el of all) {
-            if (['SCRIPT', 'STYLE', 'HTML', 'HEAD', 'BODY'].includes(el.tagName)) continue;
-            const raw = (el.textContent || '').trim();
-            if (!raw.includes('Spare parts')) continue;
-            if (raw.includes('management') || raw.includes('Management')) continue;
-            const childHas = Array.from(el.children).some(c => (c.textContent || '').includes('Spare parts'));
-            if (childHas) continue;
-            if (/^Spare parts(\s*\d+)?$/.test(raw)) {
-                exactMatches.push(el);
-            } else {
-                fallbackMatches.push(el);
             }
         }
-        return exactMatches[0] || fallbackMatches[0] || null;
+        if (msgs.length) throw new Error(msgs.join('; '));
+        return arr;
     }
 
-    async function openSparePartsTabAndWaitSelectAll(timeout = 9000) {
-        const start = Date.now();
-        let lastClickAt = 0;
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            const selectAllEls = getDeepestElementsByText('Select all');
-            if (selectAllEls.length > 0) {
-                return { ok: true, btnSelectAll: selectAllEls[0] };
+    async function gqlBatch(ops) {
+        const token = await ensureFreshLogin();
+        const version = (window.REACT_CFG && window.REACT_CFG.VITE_INFO_VERSION) || 'v4.32.1';
+        const res = await fetch('/api/v1/refurbishment-aggregation/graphql', {
+            method: 'POST',
+            headers: {
+                'content-type': 'application/json',
+                'accept-language': 'en-GB',
+                'x-carol-frontend-version': version,
+                'authorization': 'Bearer ' + token
+            },
+            body: JSON.stringify(ops)
+        });
+        if (res.status === 401) {
+            let recent = 0;
+            try { recent = Number(sessionStorage.getItem('dpl_tl_auth_refresh_ts') || 0); } catch (e) {}
+            if (recent && (Date.now() - recent) < 20000) {
+                throw new Error('Carol Login abgelaufen, bitte neu anmelden');
             }
-            if ((Date.now() - lastClickAt) >= 1100) {
-                const tabEl = findSparePartsSidebarTab();
-                if (tabEl) {
-                    forceClick(tabEl);
-                    const clickableParent = tabEl.closest('li, a, button, [role="tab"], [role="button"]') || tabEl.parentElement;
-                    if (clickableParent && clickableParent !== tabEl) {
-                        try { clickableParent.click(); } catch (e) {}
+            setHudStatus(currentSid || 'LOGIN', 'Token erneuert, Carol lädt neu…', '#ffaa00', true);
+            await refreshAuth();
+            isNavigating = true;
+            location.reload();
+            throw new Error('Reload');
+        }
+        if (!res.ok) throw new Error('Carol API HTTP ' + res.status);
+        return assertGql(await res.json());
+    }
+
+    async function gqlOne(operationName, query, variables) {
+        const arr = await gqlBatch([{ operationName: operationName, variables: variables, query: query }]);
+        return arr[0] && arr[0].data;
+    }
+
+    async function loadWorkshopIds() {
+        if (workshopIdsCache && workshopIdsCache.length) return workshopIdsCache;
+        const auth = readAuth();
+        const payload = decodeJwt(auth && auth.access_token);
+        const userId = payload && (payload.user_uuid || payload.userUuid || payload.sub);
+        if (!userId) throw new Error('Carol Benutzer konnte nicht gelesen werden');
+        const data = await gqlOne(
+            'user',
+            'query user($id: UUID!) { user(id: $id) { userPartnerWorkshopConnections { mainWorkshop { branchId } } } }',
+            { id: userId }
+        );
+        const conns = (data && data.user && data.user.userPartnerWorkshopConnections) || [];
+        const ids = [];
+        for (let i = 0; i < conns.length; i++) {
+            const branchId = conns[i] && conns[i].mainWorkshop && conns[i].mainWorkshop.branchId;
+            const branchNum = Number(branchId);
+            if (Number.isFinite(branchNum) && branchNum > 0 && ids.indexOf(branchNum) === -1) ids.push(branchNum);
+        }
+        if (!ids.length) throw new Error('Keine Carol Werkstatt am Login gefunden');
+        workshopIdsCache = ids;
+        return ids;
+    }
+
+    function getEffectiveVal(item) {
+        const vals = item.values || [];
+        const pa = vals.find(v => v.sourceType === 'POST_AUTHORIZATION' && v.proposedValue);
+        if (pa) return { payload: pa.proposedValue, state: pa.state };
+        const auth = vals.find(v => v.sourceType === 'AUTHORIZATION' && v.proposedValue);
+        if (auth) return { payload: auth.proposedValue, state: auth.state };
+        const ecVal = vals.find(v => v.sourceType === 'ENTRY_CHECK');
+        if (ecVal) {
+            if (item.verified && ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+            if (ecVal.originalValue) return { payload: ecVal.originalValue, state: ecVal.state };
+            if (ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+        }
+        return null;
+    }
+
+    function buildCleanProposed(payload, spareStatus) {
+        if (!payload) return null;
+        const pt = payload.payloadType;
+        if (pt === 'VEHICLE_SERVICE_NAME' || pt === 'DAMAGE_SERVICE_NAME') {
+            return { payloadType: pt, name: payload.name, type: payload.type };
+        }
+        if (pt === 'SERVICE_BUDGET') {
+            const budget = { payloadType: pt, budgetMinorUnits: payload.budgetMinorUnits };
+            if (payload.consumableCostMinorUnits !== undefined && payload.consumableCostMinorUnits !== null) {
+                budget.consumableCostMinorUnits = payload.consumableCostMinorUnits;
+                budget.sparePartCostMinorUnits = payload.sparePartCostMinorUnits;
+                budget.laborTimeHours = payload.laborTimeHours;
+                budget.laborRateMinorUnits = payload.laborRateMinorUnits;
+            }
+            return budget;
+        }
+        if (pt === 'SERVICE_COMMENT') return { payloadType: pt, comment: payload.comment ?? null };
+        if (pt === 'SERVICE_STATE') return { payloadType: pt, serviceState: payload.serviceState };
+        if (pt === 'PARTNER_WORKSHOP_CONNECTION') return { payloadType: pt, id: payload.id };
+        if (pt === 'DAMAGE_TYPE') {
+            const base = {
+                payloadType: pt,
+                area: payload.area,
+                subArea: payload.subArea,
+                partName: payload.partName,
+                typeName: payload.typeName,
+                isSecondaryWheel: payload.isSecondaryWheel
+            };
+            if (payload.isPA3Damage) {
+                base.isPA3Damage = true;
+                base.quantity = payload.quantity;
+                if (payload.attribute1Name) {
+                    base.attribute1Name = payload.attribute1Name;
+                    base.attribute1Value = payload.attribute1Value;
+                }
+                if (payload.attribute2Name) {
+                    base.attribute2Name = payload.attribute2Name;
+                    base.attribute2Value = payload.attribute2Value;
+                }
+            }
+            return base;
+        }
+        if (pt === 'DAMAGE_IMAGE') return { payloadType: pt, imageUrl: payload.imageUrl ?? null };
+        if (pt === 'DAMAGE_CANCELLATION') {
+            return { payloadType: pt, cancelComment: payload.cancelComment ?? null, cancelReason: payload.cancelReason ?? null };
+        }
+        if (pt === 'EC_COMMON_PAYLOAD') {
+            return {
+                payloadType: pt,
+                sparePart: payload.sparePart ? {
+                    status: spareStatus || payload.sparePart.status,
+                    comment: payload.sparePart.comment ?? null,
+                    lastStatusUpdateOn: null
+                } : null
+            };
+        }
+        return null;
+    }
+
+    const ENTRY_CHECK_QUERY = `query entryCheckPostAuthorization($refurbishmentId: UUID!) {
+      entryCheckPostAuthorization(refurbishmentId: $refurbishmentId) {
+        id state
+        items {
+          id entityId entityType verified
+          values {
+            id sourceType state
+            originalValue {
+              payloadType
+              ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }
+              ... on DamageImagePayload { imageUrl }
+              ... on DamageServiceNamePayload { name type }
+              ... on VehicleServiceNamePayload { name type }
+              ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }
+              ... on ServiceCommentPayload { comment }
+              ... on DamageCancellationPayload { cancelReason cancelComment }
+              ... on ServiceStatePayload { serviceState }
+              ... on PartnerWorkshopConnectionPayload { id }
+              ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }
+            }
+            proposedValue {
+              payloadType
+              ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }
+              ... on DamageImagePayload { imageUrl }
+              ... on DamageServiceNamePayload { name type }
+              ... on VehicleServiceNamePayload { name type }
+              ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }
+              ... on ServiceCommentPayload { comment }
+              ... on DamageCancellationPayload { cancelReason cancelComment }
+              ... on ServiceStatePayload { serviceState }
+              ... on PartnerWorkshopConnectionPayload { id }
+              ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }
+            }
+          }
+        }
+      }
+    }`;
+
+    async function handedOutViaApi(stockNumber, onStep, opts) {
+        const sid = String(stockNumber || '').trim().toUpperCase();
+        const workshops = await loadWorkshopIds();
+        if (abortFlag) throw new Error('Abort');
+        if (onStep) onStep('Suche Auftrag…');
+        const ov = await gqlOne(
+            'refurbishmentOverview',
+            `query refurbishmentOverview($page: Int!, $pageSize: Int!, $filter: RefurbishmentOverviewFilter!) {
+              refurbishmentOverview(page: $page, pageSize: $pageSize, filter: $filter) {
+                items { id state refurbishmentSparePartStatus vehicle { stockNumber } }
+              }
+            }`,
+            { page: 0, pageSize: 20, filter: { stockNumbers: [sid], mainWorkshopIds: workshops } }
+        );
+        const refItem = ov && ov.refurbishmentOverview && ov.refurbishmentOverview.items && ov.refurbishmentOverview.items[0];
+        if (!refItem) return { status: 'error', message: 'Auftrag in Carol nicht gefunden' };
+        const refState = String(refItem.state || '');
+        if (refState.indexOf('COMPLETED') !== -1) {
+            return { status: 'ok', message: 'Bereits Completed (übersprungen)' };
+        }
+        if (abortFlag) throw new Error('Abort');
+        if (onStep) onStep('Lade Spare Parts…');
+        const pa = await gqlOne('entryCheckPostAuthorization', ENTRY_CHECK_QUERY, { refurbishmentId: refItem.id });
+        const ec = pa && pa.entryCheckPostAuthorization;
+        if (!ec || !ec.id) return { status: 'error', message: 'Post Authorization nicht verfügbar' };
+
+        const byEntity = new Map();
+        const items = ec.items || [];
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            if (!item || !item.entityId) continue;
+            if (item.entityType !== 'SERVICE' && item.entityType !== 'DAMAGE') continue;
+            if (!byEntity.has(item.entityId)) byEntity.set(item.entityId, []);
+            byEntity.get(item.entityId).push(item);
+        }
+
+        const updateBatches = [];
+        const createBatches = [];
+        byEntity.forEach((entityItems) => {
+            const effMap = new Map();
+            for (let i = 0; i < entityItems.length; i++) {
+                const eff = getEffectiveVal(entityItems[i]);
+                if (eff && eff.payload && eff.payload.payloadType) {
+                    effMap.set(eff.payload.payloadType, { item: entityItems[i], payload: eff.payload, state: eff.state });
+                }
+            }
+            const ecCommon = effMap.get('EC_COMMON_PAYLOAD');
+            if (!ecCommon || !ecCommon.payload.sparePart) return;
+            let declined = false;
+            effMap.forEach((info) => {
+                if (info.state === 'DECLINED' && info.payload.payloadType !== 'DAMAGE_CANCELLATION') declined = true;
+            });
+            if (declined) return;
+            if (ecCommon.payload.sparePart.status === 'SPARE_PARTS_HANDED_OUT') return;
+
+            let hasPostAuth = false;
+            for (let i = 0; i < entityItems.length; i++) {
+                const vals = entityItems[i].values || [];
+                for (let v = 0; v < vals.length; v++) {
+                    const pv = vals[v].proposedValue;
+                    if (vals[v].sourceType === 'POST_AUTHORIZATION' && pv && pv.payloadType !== 'DAMAGE_CUSTOMER_DISPLAY') {
+                        hasPostAuth = true;
                     }
-                    lastClickAt = Date.now();
                 }
             }
-            await sleep(100);
-        }
-        const finalCheck = getDeepestElementsByText('Select all');
-        if (finalCheck.length > 0) {
-            return { ok: true, btnSelectAll: finalCheck[0] };
-        }
-        return { ok: false, btnSelectAll: null };
-    }
 
-    function findEditDamagesButton() {
-        const direct = getDeepestElementsByText('Edit damages and services');
-        if (direct.length > 0) return direct[0];
-        const lowerNeedle = 'edit damages and services';
-        const deNeedle = 'schäden und services bearbeiten';
-        const candidates = document.querySelectorAll('button, a, [role="button"], span, div');
-        for (const el of candidates) {
-            const txt = String(el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-            if (txt === lowerNeedle || txt === deNeedle) {
-                return el.closest('button, a, [role="button"]') || el;
+            if (hasPostAuth) {
+                const inputs = [];
+                effMap.forEach((info, pt) => {
+                    if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+                    const paVal = (info.item.values || []).find(v => v.sourceType === 'POST_AUTHORIZATION');
+                    const proposedValue = buildCleanProposed(info.payload, 'SPARE_PARTS_HANDED_OUT');
+                    if (paVal && proposedValue) inputs.push({ id: paVal.id, value: { state: 'CONFIRMED', proposedValue: proposedValue } });
+                });
+                if (inputs.length) updateBatches.push(inputs);
+            } else {
+                const inputs = [];
+                effMap.forEach((info, pt) => {
+                    if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+                    const proposedValue = buildCleanProposed(info.payload, 'SPARE_PARTS_HANDED_OUT');
+                    if (proposedValue) {
+                        inputs.push({
+                            entryCheckItemId: info.item.id,
+                            sourceType: 'POST_AUTHORIZATION',
+                            state: 'CONFIRMED',
+                            proposedValue: proposedValue
+                        });
+                    }
+                });
+                if (inputs.length) createBatches.push(inputs);
             }
-        }
-        return null;
-    }
+        });
 
-    function isOrderAlreadyCompletedOnPage() {
-        const txt = String((document.body && document.body.innerText) || '');
-        if (findEditDamagesButton()) return false;
-        if (/\bCompleted on\s+\d/i.test(txt) || /\bFertiggestellt am\s+\d/i.test(txt)) return true;
-        if (txt.includes('Car position: Retail Ready') && txt.includes('Overview vehicle details')) return true;
-        return false;
-    }
-
-    async function waitForEditButtonOrCompleted(timeout = 14000) {
-        const start = Date.now();
-        let scrolledDown = false;
-        while ((Date.now() - start) < timeout) {
-            if (abortFlag) throw new Error('Abort');
-            if (isAlreadyOnPostAuthorizationPage()) return { kind: 'already_post_auth', el: null };
-            const editBtn = findEditDamagesButton();
-            if (editBtn) return { kind: 'edit', el: editBtn };
-            if ((Date.now() - start) > 1200 && isOrderAlreadyCompletedOnPage()) {
-                return { kind: 'completed', el: null };
-            }
-            if (!scrolledDown && (Date.now() - start) > 2500) {
-                scrolledDown = true;
-                try { window.scrollTo(0, document.body.scrollHeight); } catch (e) {}
-            }
-            await sleep(100);
+        const forceSubmit = !!(opts && opts.forceSubmit);
+        if (!updateBatches.length && !createBatches.length && !forceSubmit) {
+            return { status: 'ok', message: 'War bereits auf Herausgegeben, setze Spalte trotzdem auf grün' };
         }
-        const finalBtn = findEditDamagesButton();
-        if (finalBtn) return { kind: 'edit', el: finalBtn };
-        if (isOrderAlreadyCompletedOnPage()) return { kind: 'completed', el: null };
-        return { kind: 'missing', el: null };
-    }
+        if (abortFlag) throw new Error('Abort');
+        if ((updateBatches.length || createBatches.length) && onStep) onStep('Setze Teile auf Handed out…');
 
-    function findStockLinkOnSearchPage(stockId) {
-        const sid = String(stockId || '').trim().toUpperCase();
-        const links = Array.from(document.querySelectorAll('a[href*="/refurbishment/"]'))
-            .filter(a => isRefurbDetailUrl(a.href || a.getAttribute('href') || ''));
-        if (!links.length) return null;
-        for (let i = 0; i < links.length; i++) {
-            const row = links[i].closest('tr, [role="row"], article, li, [class*="row"], [class*="card"]') || links[i].parentElement;
-            const txt = String((row && row.textContent) || links[i].textContent || '').toUpperCase().replace(/\s+/g, '');
-            if (txt.includes(sid)) return links[i];
+        if (updateBatches.length) {
+            await gqlBatch(updateBatches.map(inputs => ({
+                operationName: 'updateEntryCheckItemValues',
+                variables: { inputs: inputs },
+                query: 'mutation updateEntryCheckItemValues($inputs: [EntryCheckItemValueUpdateEntryInput!]!) { updateEntryCheckItemValues(inputs: $inputs) { id state } }'
+            })));
         }
-        return null;
+        if (createBatches.length) {
+            await gqlBatch(createBatches.map(inputs => ({
+                operationName: 'createEntryCheckItemValues',
+                variables: { inputs: inputs },
+                query: 'mutation createEntryCheckItemValues($inputs: [EntryCheckItemValueCreateInput!]!) { createEntryCheckItemValues(inputs: $inputs) { id state } }'
+            })));
+        }
+        if (abortFlag) throw new Error('Abort');
+        if (opts && opts.onBeforeSubmit) opts.onBeforeSubmit();
+        if (onStep) onStep('Speichere (Submit)…');
+        await gqlOne(
+            'postAuthorizeEntryCheck',
+            'mutation postAuthorizeEntryCheck($id: UUID!) { postAuthorizeEntryCheck(id: $id) { id state refurbishment { id state } } }',
+            { id: ec.id }
+        );
+        return { status: 'ok', message: 'Herausgegeben' };
     }
 
     function updateJobInQueue(stockId, patch) {
@@ -831,13 +998,7 @@
         return next;
     }
 
-    function safeNavigateTo(url) {
-        isNavigating = true;
-        setTimeout(() => { isNavigating = false; }, 5000);
-        location.assign(url);
-    }
-
-    async function finishJobAndAdvance(job, status, message, indexLabel) {
+    async function finishJobAndAdvance(job, status, message) {
         const sid = job.stockId;
         const remaining = removeJobFromQueue(sid);
         pushResultEvent(sid, status, message, job);
@@ -846,11 +1007,8 @@
         if (remaining.length > 0 && !abortFlag) {
             const nextJob = remaining[0];
             currentSid = nextJob.stockId;
-            const nextUrl = nextJob.carolUrl || ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(nextJob.stockId));
-            updateJobInQueue(nextJob.stockId, { status: 'running', phase: 'opened' });
-            setHudStatus(`offen: ${remaining.length} · ${nextJob.stockId}`, 'Öffne nächsten Auftrag…', '#00ffcc', true);
-            safeNavigateTo(nextUrl);
-            return 'navigating';
+            setHudStatus(`offen: ${remaining.length} · ${nextJob.stockId}`, 'Nächster Auftrag…', '#00ffcc', true);
+            return 'done';
         }
 
         currentSid = '';
@@ -862,137 +1020,30 @@
         return 'all_done';
     }
 
+    function isLoginStopError(err) {
+        const msg = String((err && err.message) || err || '');
+        return msg.indexOf('neu anmelden') !== -1 || msg.indexOf('Nicht in Carol eingeloggt') !== -1;
+    }
+
     async function processCurrentJob(job, indexLabel) {
         const sid = job.stockId;
         currentSid = sid;
-
-        const targetUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
-            ? job.carolUrl
-            : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
-        const targetUuid = extractRefurbUuid(targetUrl);
-        const currentUuid = extractRefurbUuid(location.href);
-
-        if (targetUuid) {
-            if (currentUuid !== targetUuid) {
-                updateJobInQueue(sid, { status: 'running', phase: 'opened' });
-                setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Auftrag in Carol…', '#00ffcc', true);
-                safeNavigateTo(targetUrl);
-                return 'navigating';
-            }
-        } else if (!isRefurbDetailUrl(location.href)) {
-            if (!location.href.toUpperCase().includes(sid)) {
-                const searchUrl = 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid);
-                updateJobInQueue(sid, { status: 'running', phase: 'opened' });
-                setHudStatus(`${indexLabel} · ${sid}`, 'Suche Auftrag in Carol…', '#00ffcc', true);
-                safeNavigateTo(searchUrl);
-                return 'navigating';
-            }
-
-            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Suchergebnis in Carol…', '#00ffcc', true);
-            let foundLink = null;
-            for (let t = 0; t < 40; t++) {
-                await sleep(150);
-                if (isRefurbDetailUrl(location.href)) break;
-                foundLink = findStockLinkOnSearchPage(sid);
-                if (foundLink) break;
-            }
-
-            if (!isRefurbDetailUrl(location.href)) {
-                if (!foundLink) {
-                    return await finishJobAndAdvance(job, 'error', 'Auftrag in Carol nicht gefunden', indexLabel);
-                }
-                const href = foundLink.href || foundLink.getAttribute('href');
-                if (href && isRefurbDetailUrl(href)) {
-                    updateJobInQueue(sid, { phase: 'detail_loaded' });
-                    safeNavigateTo(href);
-                    return 'navigating';
-                }
-                forceClick(foundLink);
-                await sleep(800);
-            }
+        const keepSubmit = job.phase === 'needs_submit';
+        updateJobInQueue(sid, { status: 'running', phase: keepSubmit ? 'needs_submit' : 'api' });
+        try {
+            const result = await handedOutViaApi(sid, (step) => {
+                const color = step.indexOf('Handed out') !== -1 ? '#ffff00' : '#00ffcc';
+                setHudStatus(`${indexLabel} · ${sid}`, step, color, true);
+            }, {
+                forceSubmit: keepSubmit,
+                onBeforeSubmit: () => updateJobInQueue(sid, { phase: 'needs_submit' })
+            });
+            return await finishJobAndAdvance(job, result.status, result.message, indexLabel);
+        } catch (err) {
+            if (err && (err.message === 'Abort' || err.message === 'Reload')) throw err;
+            if (isLoginStopError(err)) throw err;
+            return await finishJobAndAdvance(job, 'error', String((err && err.message) || err), indexLabel);
         }
-
-        if (!isAlreadyOnPostAuthorizationPage()) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Prüfe Auftrag / Öffne Edit damages...', '#00ffcc', true);
-            const mainCheck = await waitForEditButtonOrCompleted(14000);
-            if (mainCheck.kind === 'completed') {
-                setHudStatus(`${indexLabel} · ${sid}`, '⏭ Bereits Completed — überspringe…', '#00ff00', true);
-                return await finishJobAndAdvance(job, 'ok', 'Bereits Completed (übersprungen)', indexLabel);
-            }
-            if (mainCheck.kind === 'edit' && mainCheck.el) {
-                forceClick(mainCheck.el);
-                setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Post Authorization...', '#00ffcc', true);
-                await waitForPostAuthorizationPage(8000);
-                await sleep(300);
-            } else if (mainCheck.kind !== 'already_post_auth') {
-                const retryCount = Number(job.editRetry || 0);
-                if (retryCount < 1) {
-                    const retryUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
-                        ? job.carolUrl
-                        : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
-                    updateJobInQueue(sid, { status: 'running', phase: 'init', editRetry: retryCount + 1 });
-                    setHudStatus(`${indexLabel} · ${sid}`, '↻ Edit-Button nicht gesehen — lade Auftrag 1x neu…', '#ffaa00', true);
-                    await sleep(500);
-                    safeNavigateTo(retryUrl);
-                    return 'navigating';
-                }
-                return await finishJobAndAdvance(job, 'error', 'Edit-Button auch nach Reload nicht gefunden', indexLabel);
-            }
-        }
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Spare Parts...', '#00ffcc', true);
-        const spOpen = await openSparePartsTabAndWaitSelectAll(9000);
-        if (!spOpen.ok || !spOpen.btnSelectAll) {
-            return await finishJobAndAdvance(job, 'error', 'Spare Parts / Select All nicht gefunden', indexLabel);
-        }
-        const btnSelectAll = spOpen.btnSelectAll;
-
-        await sleep(150);
-
-        if (checkAllHandedOut()) {
-            return await finishJobAndAdvance(job, 'ok', 'War bereits auf Herausgegeben, setze Spalte trotzdem auf grün', indexLabel);
-        }
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Setze alle Teile auf Handed out...', '#ffff00', true);
-        forceClick(btnSelectAll);
-        await sleep(250);
-        forceAllHandedOut();
-        await sleep(150);
-
-        const btnApply = await waitForElement('Apply', 2500);
-        if (btnApply) forceClick(btnApply);
-
-        let verified = false;
-        for (let i = 0; i < 20; i++) {
-            await sleep(100);
-            if (checkAllHandedOut()) { verified = true; break; }
-            if (i === 8) {
-                forceAllHandedOut();
-                const retryApply = getDeepestElementsByText('Apply')[0];
-                if (retryApply) forceClick(retryApply);
-            }
-        }
-
-        if (!verified) {
-            return await finishJobAndAdvance(job, 'error', 'Handed out konnte nicht gesetzt werden', indexLabel);
-        }
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Speichere (Submit)...', '#00ffcc', true);
-        const btnSubmit = await waitForElement('Submit', 5000);
-        if (!btnSubmit) {
-            return await finishJobAndAdvance(job, 'error', 'Submit-Button nicht gefunden', indexLabel);
-        }
-        forceClick(btnSubmit);
-        await sleep(200);
-
-        setHudStatus(`${indexLabel} · ${sid}`, 'Bestätige Freigabe (Confirm)...', '#00ffcc', true);
-        const confirmed = await waitAndClickConfirmButton(6000);
-        if (confirmed) {
-            setHudStatus(`${indexLabel} · ${sid}`, 'Schließe Dialog...', '#00ffcc', true);
-            await clickSavedDialogCloseFast(3500);
-        }
-
-        return await finishJobAndAdvance(job, 'ok', 'Herausgegeben', indexLabel);
     }
 
     async function checkAndRunQueue() {
@@ -1005,6 +1056,15 @@
 
         const currentQ = readJson(KEY_QUEUE, []);
         if (!Array.isArray(currentQ) || !currentQ.length) return;
+
+        if (authPauseReason()) {
+            const pausedAuth = readAuth();
+            if (pausedAuth && tokenStillValid(pausedAuth.access_token, 0)) {
+                clearAuthPause();
+            } else {
+                return;
+            }
+        }
 
         try { sessionStorage.setItem('dpl_tl_worker_tab', '1'); } catch (e) {}
         workerBusy = true;
@@ -1023,9 +1083,16 @@
                 return;
             }
         } catch (err) {
+            if (err && err.message === 'Reload') {
+                return;
+            }
             if (err && err.message === 'Abort') {
                 currentSid = '';
                 setHudStatus('GESTOPPT', 'Durchlauf abgebrochen', '#f85149', false);
+            } else if (isLoginStopError(err)) {
+                const loginMsg = String((err && err.message) || 'Carol Login abgelaufen, bitte neu anmelden');
+                setAuthPause(loginMsg);
+                setHudStatus('LOGIN', loginMsg, '#f85149', false);
             } else {
                 setHudStatus('FEHLER', String((err && err.message) || err), '#f85149', false);
             }
@@ -1066,6 +1133,7 @@
                 }
             }
             writeJson(KEY_ABORT, { ts: 0 });
+            clearAuthPause();
             writeJson(KEY_QUEUE, freshQueue);
             checkAndRunQueue();
         }
@@ -1091,6 +1159,9 @@
 
     if (typeof GM_addValueChangeListener === 'function') {
         GM_addValueChangeListener(KEY_QUEUE, () => {
+            const qNow = readJson(KEY_QUEUE, []);
+            const fresh = qNow[0] && qNow[0].addedAt && (Date.now() - Number(qNow[0].addedAt)) < 8000;
+            if (fresh) clearAuthPause();
             if (!workerBusy && !isNavigating) checkAndRunQueue();
         });
     }
