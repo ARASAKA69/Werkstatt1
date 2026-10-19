@@ -26,7 +26,10 @@
   var pendingReifenSizeSearch = "";
   var refurbCache = null;
   var refurbCacheLoading = false;
+  var refurbCacheReq = 0;
   var refurbCacheProgressTimer = null;
+  var reifenDaPin = null;
+  var lastEndedRegal = null;
   var refurbBackgroundTimer = null;
   var pzPartsCacheMap = null;
   var pzSearchIndex = null;
@@ -1266,7 +1269,7 @@
     var stockId = normalizeStockIdJs(retry.stockId);
     handleVerlaufSaveSuccess(res);
     if (retry.kind === 'tagesliste') {
-      if (res && res.oldRegal != null) showOldRegalModal(res.oldRegal, stockId);
+      if (res && res.oldRegal != null) rememberLastEndedRegal(res.oldRegal, stockId);
       loadRefurbishmentCache(true);
       loadKommentarVerlaufCache(true);
       if (normalizeStockIdJs(currentStock) === stockId || !currentStock) {
@@ -6575,7 +6578,6 @@
       if (res.reifenKontrolleAdded) finalMessage += ' → Reifen Kontrolle.';
       statusEl.innerText = finalMessage;
       showReifenInfo(res);
-      loadRefurbishmentCache(true);
       markEanBatchBooked(tire);
       dropPaketdienstRowFromCache(tire);
       refreshReifenAfterMutation();
@@ -6589,7 +6591,11 @@
         document.getElementById('reifenSizeResults').style.display = 'none';
         statusEl.innerText = finalMessage + ' (Keine weiteren Ergebnisse)';
       }
-      document.getElementById('reifenConfirmModal').classList.add('open');
+      if (reifenDaWasWritten(res)) {
+        openOrderAfterReifenDa(res, finalMessage);
+        return;
+      }
+      loadRefurbishmentCache(true);
     }).withFailureHandler(function(err) {
       statusEl.style.color = '#f85149';
       statusEl.innerText = 'Fehler: ' + (err.message || String(err));
@@ -7384,14 +7390,17 @@
               finalMessage += " DYMO Fehler: " + printResult.message;
             }
             if (res.reifenKontrolleAdded) finalMessage += " → Reifen Kontrolle.";
-            document.getElementById('reifenConfirmModal').classList.add('open');
           } else {
             reifenStockInput.value = "";
             reifenStockInput.focus();
           }
           setReifenStatus(finalMessage, "#56d364");
-          loadRefurbishmentCache(true);
           refreshReifenAfterMutation();
+          if (isDelivered && reifenDaWasWritten(res)) {
+            openOrderAfterReifenDa(res, finalMessage);
+            return;
+          }
+          loadRefurbishmentCache(true);
         } catch (ex) {
           setReifenStatus("❌ Fehler nach Buchung: " + (ex && ex.message ? ex.message : String(ex)), "#f85149");
           setReifenActionState(true);
@@ -7412,6 +7421,58 @@
     }).catch(function() {
       setReifenStatus("❌ Kopieren fehlgeschlagen.", "#f85149");
     });
+  }
+
+  function reifenDaWasWritten(res) {
+    if (!res || !res.success) return false;
+    if (res.reifenDaReady === true) return true;
+    if (res.reifenDaReady === false) return false;
+    return String(res.message || "").indexOf("als da gebucht") !== -1;
+  }
+
+  function applyReifenDaPinToCache() {
+    if (!reifenDaPin || !refurbCache || !refurbCache.rows) return;
+    if (Date.now() - reifenDaPin.ts > 180000) {
+      reifenDaPin = null;
+      return;
+    }
+    var sid = reifenDaPin.stockId;
+    for (var i = 0; i < refurbCache.rows.length; i++) {
+      if (!cellMatchesStockIdJs(refurbCache.rows[i][0], sid)) continue;
+      var cur = String(refurbCache.rows[i][4] || "");
+      if (cur.indexOf("Reifen da //") !== -1) {
+        reifenDaPin = null;
+        return;
+      }
+      refurbCache.rows[i][4] = reifenDaPin.comment;
+      refurbCache.rows[i][7] = "Werkstatt 1";
+      return;
+    }
+  }
+
+  function reifenDaCommentText(stockId, serverComment) {
+    var given = String(serverComment || "");
+    if (given.indexOf("Reifen da //") !== -1) return given;
+    var fromCache = computeWmsFromCache(stockId, refurbCache);
+    var prev = (fromCache && fromCache.success) ? String(fromCache.kommAnlieferung || "") : "";
+    if (prev.indexOf("Reifen da //") !== -1) return prev;
+    return prev ? ("Reifen da // " + prev) : "Reifen da // ";
+  }
+
+  function openOrderAfterReifenDa(res, statusMessage) {
+    var stockId = String((res && res.stockId) || "").trim();
+    if (!stockId) return;
+    var comment = reifenDaCommentText(stockId, res && res.kommAnlieferung);
+    reifenDaPin = { stockId: normalizeStockIdJs(stockId), comment: comment, ts: Date.now() };
+    applyReifenDaPinToCache();
+    if (statusMessage) pendingWarning = { msg: statusMessage, color: "#56d364" };
+    closeReifenModal();
+    var search = document.getElementById("searchInput");
+    if (search) search.value = stockId;
+    var dirtyOther = wmsMainHudDirty() && normalizeStockIdJs(currentStock) !== normalizeStockIdJs(stockId);
+    if (!dirtyOther) unsavedLoadBypass = true;
+    loadData();
+    loadRefurbishmentCache(true);
   }
 
   function confirmReifenFinished(openInWms) {
@@ -8168,14 +8229,19 @@
       if (typeof onDone === 'function') onDone();
       return;
     }
+    var req = ++refurbCacheReq;
     var showLoadUi = !refurbCache;
     refurbCacheLoading = true;
     if (showLoadUi) startRefurbCacheProgressUi();
     google.script.run
       .withSuccessHandler(function(res) {
+        if (req !== refurbCacheReq) return;
         refurbCacheLoading = false;
         var ok = !!(res && res.success);
-        if (ok) refurbCache = res;
+        if (ok) {
+          refurbCache = res;
+          applyReifenDaPinToCache();
+        }
         if (showLoadUi) {
           finishRefurbCacheProgressUi(ok, function() {
             updateRefurbCacheHud(ok);
@@ -8189,6 +8255,7 @@
         }
       })
       .withFailureHandler(function() {
+        if (req !== refurbCacheReq) return;
         refurbCacheLoading = false;
         if (showLoadUi) {
           finishRefurbCacheProgressUi(false, function() {
@@ -9404,7 +9471,46 @@
   function closeOldRegalModal() {
     var modal = document.getElementById('oldRegalModal');
     if (modal) modal.classList.remove('open');
-    focusSearchBar({ clear: true, delay: 40 });
+  }
+
+  function updateLastRegalButton() {
+    var btn = document.getElementById('lastRegalTopBtn');
+    var sub = document.getElementById('lastRegalMenuSub');
+    var ready = !!(lastEndedRegal && lastEndedRegal.stockId);
+    var tip = ready
+      ? (lastEndedRegal.stockId + ' stand in ' + formatOldRegalDisplay(lastEndedRegal.regal))
+      : 'Noch kein Auftrag beendet';
+    if (btn) {
+      btn.classList.toggle('is-ready', ready);
+      btn.title = tip;
+    }
+    if (sub) sub.textContent = ready ? tip : 'Nach Auftrag beenden, nur auf Klick';
+  }
+
+  function rememberLastEndedRegal(oldRegal, stockId) {
+    var sid = String(stockId || '').trim();
+    if (!sid) return;
+    lastEndedRegal = { stockId: sid, regal: oldRegal == null ? '' : String(oldRegal) };
+    try { sessionStorage.setItem('wms_last_ended_regal', JSON.stringify(lastEndedRegal)); } catch (e) {}
+    updateLastRegalButton();
+  }
+
+  function restoreLastEndedRegal() {
+    try {
+      var raw = sessionStorage.getItem('wms_last_ended_regal');
+      if (!raw) return;
+      var parsed = JSON.parse(raw);
+      if (parsed && parsed.stockId) lastEndedRegal = parsed;
+    } catch (e) {}
+    updateLastRegalButton();
+  }
+
+  function showLastEndedRegal() {
+    if (!lastEndedRegal || !lastEndedRegal.stockId) {
+      setStatus('Noch kein Auftrag beendet — kein Regalplatz gemerkt.', '#F27420');
+      return;
+    }
+    showOldRegalModal(lastEndedRegal.regal, lastEndedRegal.stockId);
   }
 
   var activeCarolWindow = null;
@@ -9571,7 +9677,7 @@
           .withSuccessHandler(function(res2) {
             if (!finishCarolMissionJob(stockId, token)) return;
             if(res2 && res2.success) {
-              showOldRegalModal(res2.oldRegal, stockId);
+              rememberLastEndedRegal(res2.oldRegal, stockId);
               var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
               if(dymoResult.skipped) finalStatus += " DYMO übersprungen.";
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
@@ -9735,6 +9841,7 @@
     });
   })();
 
+  restoreLastEndedRegal();
   loadRefurbishmentCache(true);
   loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();

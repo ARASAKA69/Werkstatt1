@@ -31,6 +31,13 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.22",
+    date: "19.10.2026",
+    notes:
+      "• Nach Auftrag beenden kommt kein Regal-Popup mehr. Oben gibt es „Letzte Stock Regal Platz anzeigen“ — der letzte Platz bleibt gespeichert und ist nur noch auf Klick sichtbar\n\n" +
+      "• Reifen als da buchen fragt nicht mehr „Auftrag checken ob er fertig ist?“. Sobald „Reifen da //“ im Sheet steht, öffnet der Auftrag sofort aus dem lokalen Cache, ohne auf den Cache-Reload zu warten"
+  },
+  {
     version: "2.2.21",
     date: "16.10.2026",
     notes:
@@ -1464,6 +1471,8 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
       var hemauMsg = "";
       var locationText = "Lagerplatz unbekannt";
       var regalLabel = "";
+      var writtenComment = "";
+      var reifenDaReady = false;
       if (hemauRow !== -1) {
         var oldLocation = String(sheetHemau.getRange(hemauRow, 28).getValue() || "").trim();
         regalLabel = formatReifenRegalLabel(oldLocation);
@@ -1472,10 +1481,12 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
 
         var currentComment = String(sheetHemau.getRange(hemauRow, 25).getValue() || "");
         if (isDelivered) {
+          writtenComment = currentComment;
           if (currentComment.indexOf("Reifen da //") === -1) {
-            var newComment = currentComment ? "Reifen da // " + currentComment : "Reifen da // ";
-            sheetHemau.getRange(hemauRow, 25).setValue(newComment);
+            writtenComment = currentComment ? "Reifen da // " + currentComment : "Reifen da // ";
+            sheetHemau.getRange(hemauRow, 25).setValue(writtenComment);
           }
+          reifenDaReady = true;
           sheetHemau.getRange(hemauRow, 30).setValue("Werkstatt 1");
           hemauMsg = "Reifen als da gebucht & Refurbishment aktualisiert!";
         } else {
@@ -1505,7 +1516,9 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
         remainingGw: remainingNext ? remainingNext.gwindex : "",
         remainingMenge: remainingNext ? (parseInt(remainingNext.menge, 10) || 2) : 0,
         reifenKontrolleAdded: !!(kontrolle && kontrolle.added),
-        reifenKontrolleSkipped: !!(kontrolle && kontrolle.skipped)
+        reifenKontrolleSkipped: !!(kontrolle && kontrolle.skipped),
+        reifenDaReady: reifenDaReady,
+        kommAnlieferung: writtenComment
       };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message };
