@@ -276,6 +276,12 @@
             ts: ev.ts
         };
         sendToOpenerAllFrames(msgPayload);
+        let retrySend = 0;
+        const t = setInterval(() => {
+            retrySend++;
+            sendToOpenerAllFrames(msgPayload);
+            if (retrySend >= 6) clearInterval(t);
+        }, 250);
     }
 
     function ensureHud() {
@@ -619,22 +625,48 @@
         return { ok: false, btnSelectAll: null };
     }
 
+    function findEditDamagesButton() {
+        const direct = getDeepestElementsByText('Edit damages and services');
+        if (direct.length > 0) return direct[0];
+        const lowerNeedle = 'edit damages and services';
+        const deNeedle = 'schäden und services bearbeiten';
+        const candidates = document.querySelectorAll('button, a, [role="button"], span, div');
+        for (const el of candidates) {
+            const txt = String(el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (txt === lowerNeedle || txt === deNeedle) {
+                return el.closest('button, a, [role="button"]') || el;
+            }
+        }
+        return null;
+    }
+
     function isOrderAlreadyCompletedOnPage() {
         const txt = String((document.body && document.body.innerText) || '');
+        if (findEditDamagesButton()) return false;
         if (/\bCompleted on\s+\d/i.test(txt) || /\bFertiggestellt am\s+\d/i.test(txt)) return true;
-        if (txt.includes('Car position: Retail Ready') && txt.includes('Overview vehicle details') && !txt.includes('Edit damages and services')) return true;
+        if (txt.includes('Car position: Retail Ready') && txt.includes('Overview vehicle details')) return true;
         return false;
     }
 
-    async function waitForEditButtonOrCompleted(timeout = 10000) {
+    async function waitForEditButtonOrCompleted(timeout = 14000) {
         const start = Date.now();
+        let scrolledDown = false;
         while ((Date.now() - start) < timeout) {
             if (abortFlag) throw new Error('Abort');
-            const els = getDeepestElementsByText('Edit damages and services');
-            if (els.length > 0) return { kind: 'edit', el: els[0] };
-            if (isOrderAlreadyCompletedOnPage()) return { kind: 'completed', el: null };
-            await sleep(80);
+            if (isAlreadyOnPostAuthorizationPage()) return { kind: 'already_post_auth', el: null };
+            const editBtn = findEditDamagesButton();
+            if (editBtn) return { kind: 'edit', el: editBtn };
+            if ((Date.now() - start) > 1200 && isOrderAlreadyCompletedOnPage()) {
+                return { kind: 'completed', el: null };
+            }
+            if (!scrolledDown && (Date.now() - start) > 2500) {
+                scrolledDown = true;
+                try { window.scrollTo(0, document.body.scrollHeight); } catch (e) {}
+            }
+            await sleep(100);
         }
+        const finalBtn = findEditDamagesButton();
+        if (finalBtn) return { kind: 'edit', el: finalBtn };
         if (isOrderAlreadyCompletedOnPage()) return { kind: 'completed', el: null };
         return { kind: 'missing', el: null };
     }
@@ -754,18 +786,30 @@
 
         if (!isAlreadyOnPostAuthorizationPage()) {
             setHudStatus(`${indexLabel} · ${sid}`, 'Prüfe Auftrag / Öffne Edit damages...', '#00ffcc', true);
-            const mainCheck = await waitForEditButtonOrCompleted(10000);
+            const mainCheck = await waitForEditButtonOrCompleted(14000);
             if (mainCheck.kind === 'completed') {
                 setHudStatus(`${indexLabel} · ${sid}`, '⏭ Bereits Completed — überspringe…', '#00ff00', true);
                 return await finishJobAndAdvance(job, 'ok', 'Bereits Completed (übersprungen)', indexLabel);
             }
-            if (!mainCheck.el) {
-                return await finishJobAndAdvance(job, 'error', 'Edit-Button nicht gefunden', indexLabel);
+            if (mainCheck.kind === 'edit' && mainCheck.el) {
+                forceClick(mainCheck.el);
+                setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Post Authorization...', '#00ffcc', true);
+                await waitForPostAuthorizationPage(8000);
+                await sleep(300);
+            } else if (mainCheck.kind !== 'already_post_auth') {
+                const retryCount = Number(job.editRetry || 0);
+                if (retryCount < 1) {
+                    const retryUrl = (job.carolUrl && /^https?:\/\//i.test(job.carolUrl))
+                        ? job.carolUrl
+                        : ('https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid));
+                    updateJobInQueue(sid, { status: 'running', phase: 'init', editRetry: retryCount + 1 });
+                    setHudStatus(`${indexLabel} · ${sid}`, '↻ Edit-Button nicht gesehen — lade Auftrag 1x neu…', '#ffaa00', true);
+                    await sleep(500);
+                    safeNavigateTo(retryUrl);
+                    return 'navigating';
+                }
+                return await finishJobAndAdvance(job, 'error', 'Edit-Button auch nach Reload nicht gefunden', indexLabel);
             }
-            forceClick(mainCheck.el);
-            setHudStatus(`${indexLabel} · ${sid}`, 'Warte auf Post Authorization...', '#00ffcc', true);
-            await waitForPostAuthorizationPage(8000);
-            await sleep(300);
         }
 
         setHudStatus(`${indexLabel} · ${sid}`, 'Öffne Spare Parts...', '#00ffcc', true);

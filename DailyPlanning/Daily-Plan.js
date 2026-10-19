@@ -274,11 +274,21 @@ function dplRefreshCache() {
 
 }
 
-function dplFillRow(sh, row, vals) {
+function dplFillRow(sh, row, vals, preserveExistingGreen) {
 
   var isNbX = String(sh.getRange(row, 2).getValue() || '').trim().toLowerCase() === 'x';
 
   var defaultColFBg = isNbX ? DPL_NACHBESTELL_BLUE_COLOR : null;
+
+  var keepGreen = false;
+
+  if (preserveExistingGreen) {
+
+    var curFBg = String(sh.getRange(row, 6).getBackground() || '');
+
+    if (dplIsGreenHex_(curFBg)) keepGreen = true;
+
+  }
 
   if (vals && vals.length) {
 
@@ -290,7 +300,7 @@ function dplFillRow(sh, row, vals) {
 
     sh.getRange(row, 5).setBackground(null);
 
-    sh.getRange(row, 6).setBackground(defaultColFBg);
+    if (!keepGreen) sh.getRange(row, 6).setBackground(defaultColFBg);
 
   } else {
 
@@ -298,7 +308,7 @@ function dplFillRow(sh, row, vals) {
 
     sh.getRange(row, 5).setBackground(DPL_NOINFO_COLOR);
 
-    sh.getRange(row, 6).setBackground(defaultColFBg);
+    if (!keepGreen) sh.getRange(row, 6).setBackground(defaultColFBg);
 
   }
 
@@ -430,6 +440,8 @@ function dplProcessDownwardCore(ss, sheetName, startRow) {
 
   sh.getRange(startRow, 3, cColumn.length, 1).setValues(cColumn);
 
+  var existingFBgs = sh.getRange(startRow, 6, rows.length, 1).getBackgrounds();
+
   var map = dplGetMap();
 
   var out = [];
@@ -444,7 +456,17 @@ function dplProcessDownwardCore(ss, sheetName, startRow) {
 
     var rowBVal = String(acVals[rows[i].row - blockTop][1] || '').trim().toLowerCase();
 
-    fBg.push([rowBVal === 'x' ? DPL_NACHBESTELL_BLUE_COLOR : null]);
+    var curFBg = existingFBgs[i] ? String(existingFBgs[i][0] || '') : '';
+
+    if (dplIsGreenHex_(curFBg)) {
+
+      fBg.push([curFBg]);
+
+    } else {
+
+      fBg.push([rowBVal === 'x' ? DPL_NACHBESTELL_BLUE_COLOR : null]);
+
+    }
 
     if (vals && vals.length) {
 
@@ -1159,13 +1181,19 @@ function dplPrepareCarolBatch(rawInput) {
 
     var bySidActive = {};
 
+    var bySidAny = {};
+
     for (var i = 0; i < parsedRows.length; i++) {
 
       var rObj = parsedRows[i];
 
-      if (!rObj.isCurrentOrNextDay) continue;
-
       var sidCell = rObj.stockId;
+
+      if (!bySidAny[sidCell]) bySidAny[sidCell] = [];
+
+      bySidAny[sidCell].push(rObj);
+
+      if (!rObj.isCurrentOrNextDay) continue;
 
       if (!bySidActive[sidCell]) {
 
@@ -1185,7 +1213,7 @@ function dplPrepareCarolBatch(rawInput) {
 
       var sid = stockIds[k];
 
-      var candidates = bySidActive[sid] || [];
+      var candidates = bySidActive[sid] || bySidAny[sid] || [];
 
       var chosenRows = [];
 
@@ -1245,15 +1273,13 @@ function dplPrepareCarolBatch(rawInput) {
 
         for (var rIdx = 0; rIdx < rowNumbers.length; rIdx++) {
 
-          dplFillRow(sh, rowNumbers[rIdx], mapVals);
+          dplFillRow(sh, rowNumbers[rIdx], mapVals, true);
 
         }
 
         sheetCarolUrl = mapUrl;
 
         sheetModel = sheetModel || mapModel;
-
-        allGreen = false;
 
       }
 
@@ -1357,7 +1383,7 @@ function dplMarkCarolResult(stockId, status, detailMsg, targetRows, targetDateIn
 
     if (rowList.length === 0) {
 
-      var scan = dplScanRecentTageslisteRows_(sh, 600);
+      var scan = dplScanRecentTageslisteRows_(sh, 800);
 
       var candidates = [];
 
@@ -1372,6 +1398,20 @@ function dplMarkCarolResult(stockId, status, detailMsg, targetRows, targetDateIn
         if (wantDate && rEntry.dateStr !== wantDate) continue;
 
         candidates.push(rEntry);
+
+      }
+
+      if (candidates.length === 0) {
+
+        for (var fb = 0; fb < scan.rows.length; fb++) {
+
+          if (scan.rows[fb].stockId === sid) {
+
+            candidates.push(scan.rows[fb]);
+
+          }
+
+        }
 
       }
 
