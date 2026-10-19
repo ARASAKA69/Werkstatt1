@@ -27,7 +27,7 @@ const NACHBESTELL_KOMMENTAR_COL = 16;
 const INPUT_EXIT_TAB = "Input Exit";
 const INPUT_EXIT_STATUS_COL = 11;
 const INPUT_EXIT_STATUS_DATE_COL = 12;
-const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbz3tBqPKeNI4JPd0ytWxb_6hXpHd8sjgfHAPaHBewIgcHMHiQkNg13Xa30K5FAaGjIG/exec";
+const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxbmvMrEGkyxD2yc1AyvbB1PdC6NA6nn4gZet5ZKlp1kbvMiPAi-ZbMlOzBUl1-jjI4/exec";
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
