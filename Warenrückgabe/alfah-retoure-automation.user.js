@@ -13,6 +13,8 @@
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
 // @connect      alfah.de
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Warenr%C3%BCckgabe/alfah-retoure-automation.user.js
@@ -26,6 +28,9 @@
     var BASE = 'https://alfah.de/';
     var QUEUE_KEY = 'alfah_retoure_queue';
     var ORDER_CACHE_KEY = 'alfah_retoure_orders';
+    var SHEET_URL_KEY = 'alfah_retoure_sheet_url';
+    var HISTORY_KEY = 'alfah_retoure_history';
+    var ADMIN_PASS = '1208';
     var REASON_WANTED = 'ITEM_IS_NOT_NEEDED';
     var PROBLEM_DEFAULT = 'Teil wird nicht benötigt';
 
@@ -612,6 +617,77 @@
         return null;
     }
 
+    function sheetBase() {
+        return String(GM_getValue(SHEET_URL_KEY, '') || '').trim();
+    }
+
+    function sheetLooksLikeAuth(status, text) {
+        var body = String(text || '');
+        if (status === 401 || status === 403) return true;
+        if (/accounts\.google\.com|ServiceLogin|signin|oauth|Zugriffsanfrage|Request access|Melden Sie sich/i.test(body)) return true;
+        if (/^\s*</.test(body) && body.indexOf('"ok"') === -1) return true;
+        return false;
+    }
+
+    function pushSheet(entry) {
+        var base = sheetBase();
+        if (!base) return Promise.resolve({ ok: false, missing: true, error: 'Sheet-Link fehlt' });
+        var params = ['action=add'];
+        ['r', 'order', 'stock', 'kommission', 'article', 'name', 'qty', 'supplier', 'brand', 'vin', 'reason', 'who'].forEach(function (key) {
+            var value = entry[key];
+            if (key === 'who' && !value) value = 'Berger';
+            params.push(key + '=' + encodeURIComponent(value == null ? '' : value));
+        });
+        var url = base + (base.indexOf('?') === -1 ? '?' : '&') + params.join('&');
+        return new Promise(function (resolve) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                timeout: 30000,
+                onload: function (res) {
+                    var raw = String(res.responseText || '').replace(/^\)\]\}'\n?/, '').trim();
+                    var parsed = null;
+                    if (raw && raw.charAt(0) !== '<') {
+                        try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+                    }
+                    if (sheetLooksLikeAuth(res.status, raw)) {
+                        resolve({ ok: false, auth: true, error: 'Zugriff' });
+                        return;
+                    }
+                    if (parsed && parsed.ok) resolve({ ok: true, duplicate: !!parsed.duplicate, row: parsed.row || '' });
+                    else resolve({ ok: false, error: (parsed && parsed.error) || ('Antwort ' + res.status) });
+                },
+                onerror: function () { resolve({ ok: false, error: 'Sheet nicht erreichbar' }); },
+                ontimeout: function () { resolve({ ok: false, error: 'Sheet Timeout' }); }
+            });
+        });
+    }
+
+    function rememberReturn(entry) {
+        var list = readHistory().filter(function (row) { return row && row.r !== entry.r; });
+        list.unshift(entry);
+        GM_setValue(HISTORY_KEY, JSON.stringify(list.slice(0, 200)));
+    }
+
+    function readHistory() {
+        try {
+            var list = JSON.parse(GM_getValue(HISTORY_KEY, '[]'));
+            return Array.isArray(list) ? list : [];
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function commissionFromCase(row) {
+        var notes = (row && (row.Notes || row.notes)) || [];
+        var text = '';
+        if (Array.isArray(notes)) {
+            notes.forEach(function (note) { text += ' ' + (note.Content || note.Text || note.Note || ''); });
+        }
+        var match = text.match(/Kommission:\s*([^\n]+)/i);
+        return match ? match[1].trim() : '';
+    }
+
     function dymoCall(method, path, data) {
         var hosts = ['https://127.0.0.1:41951', 'https://localhost:41951'];
         function once(index) {
@@ -676,11 +752,11 @@
         style.textContent = ''
             + '#alfah-retoure-bot{position:fixed;top:36px;right:16px;z-index:2147483646;width:720px;height:90vh;min-width:480px;min-height:520px;max-width:96vw;max-height:96vh;resize:both;overflow:hidden;'
             + 'display:flex;flex-direction:column;background:#0b0f14;color:#e6edf3;border:1px solid #2b3545;border-radius:16px;'
-            + 'box-shadow:0 18px 50px rgba(0,0,0,.45);font:13px/1.4 Segoe UI,Arial,sans-serif}'
+            + 'box-shadow:0 18px 50px rgba(0,0,0,.45);font:16px/1.45 Segoe UI,Arial,sans-serif}'
             + '#alfah-retoure-bot *{box-sizing:border-box}'
             + '#alfah-retoure-bot .head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;cursor:move;'
             + 'background:linear-gradient(180deg,#161d27 0%,#10151d 100%);border-bottom:1px solid #2b3545;border-radius:16px 16px 0 0}'
-            + '#alfah-retoure-bot .head b{font-size:14px;letter-spacing:.4px;text-transform:uppercase}'
+            + '#alfah-retoure-bot .head b{font-size:18px;letter-spacing:.4px;text-transform:uppercase}'
             + '#alfah-retoure-bot .head b span{color:#00ffcc}'
             + '#alfah-retoure-bot .head button{width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:18px;line-height:32px;padding:0}'
             + '#alfah-retoure-bot .head button:hover{background:#1c2430;color:#e6edf3}'
@@ -688,7 +764,7 @@
             + '#alfah-retoure-bot.min .body{display:none !important}'
             + '#alfah-retoure-bot.min .head{border-radius:16px}'
             + '#alfah-retoure-bot .body{padding:12px;display:flex;flex-direction:column;gap:8px;overflow-x:hidden;overflow-y:auto;flex:1;min-width:0}'
-            + '#alfah-retoure-bot label{font-size:11px;font-weight:700;color:#8b949e;letter-spacing:.3px}'
+            + '#alfah-retoure-bot label{font-size:14px;font-weight:700;color:#8b949e;letter-spacing:.3px}'
             + '#alfah-retoure-bot input[type=text],#alfah-retoure-bot input[type=number],#alfah-retoure-bot input[type=file],#alfah-retoure-bot select,#alfah-retoure-bot textarea{'
             + 'width:100%;max-width:100%;min-width:0;border:1px solid #2b3545;border-radius:10px;padding:8px 10px;font:inherit;background:#141a23;color:#e6edf3}'
             + '#alfah-retoure-bot select.missing{border-color:#f85149}'
@@ -703,19 +779,33 @@
             + '#alfah-retoure-bot .item.on{border-color:#00ffcc;box-shadow:inset 0 0 0 1px rgba(0,255,204,.45)}'
             + '#alfah-retoure-bot .item input[type=checkbox]{accent-color:#00ffcc;margin-top:3px}'
             + '#alfah-retoure-bot .item .top{display:flex;gap:8px;align-items:flex-start}'
-            + '#alfah-retoure-bot .item .meta{color:#8b949e;font-size:12px}'
-            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:8px;min-height:36px;font-size:12px}'
+            + '#alfah-retoure-bot .item .meta{color:#8b949e;font-size:15px}'
+            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:12px;min-height:48px;font-size:16px}'
             + '#alfah-retoure-bot .result{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid #2b3545}'
-            + '#alfah-retoure-bot .result-id{color:#00ffcc;font-weight:800;font-size:16px}'
+            + '#alfah-retoure-bot .result-id{color:#00ffcc;font-weight:800;font-size:22px}'
             + '#alfah-retoure-bot .ok{color:#2ea043;font-weight:700}'
             + '#alfah-retoure-bot .bad{color:#f85149;font-weight:700}'
-            + '#alfah-retoure-bot .hint{color:#8b949e;font-size:12px}'
-            + '#alfah-retoure-bot .badge{display:inline-flex;align-items:center;width:fit-content;max-width:100%;padding:6px 10px;border-radius:999px;background:rgba(46,160,67,.16);border:1px solid rgba(63,185,80,.7);color:#3fb950;font-size:12px;font-weight:800}'
+            + '#alfah-retoure-bot .hint{color:#8b949e;font-size:15px}'
+            + '#alfah-retoure-bot .badge{display:inline-flex;align-items:center;width:fit-content;max-width:100%;padding:8px 12px;border-radius:999px;background:rgba(46,160,67,.16);border:1px solid rgba(63,185,80,.7);color:#3fb950;font-size:15px;font-weight:800}'
             + '#alfah-retoure-bot .badge[hidden]{display:none}'
             + '#alfah-retoure-bot .qty{display:flex;gap:8px;align-items:center;min-width:0}'
             + '#alfah-retoure-bot .qty input{width:72px;max-width:72px;flex:0 0 72px;text-align:center;padding:8px 4px}'
             + '#alfah-retoure-bot .qty button.step{flex:0 0 40px;width:40px;border:1px solid #2b3545;border-radius:10px;background:#141a23;color:#e6edf3;font-weight:800;font-size:18px;cursor:pointer}'
-            + '#alfah-retoure-bot .qty button.act{flex:1;min-width:0}';
+            + '#alfah-retoure-bot .qty button.act{flex:1;min-width:0}'
+            + '#alfah-retoure-bot .status-row{position:sticky;bottom:0;display:flex;gap:8px;align-items:stretch;background:#0b0f14;padding-top:8px;z-index:2}'
+            + '#alfah-retoure-bot .status-row > button.ghost{flex:0 0 auto;padding:14px 18px;font-size:16px}'
+            + '#alfah-retoure-bot .search-badge{display:none;flex:1;padding:14px 16px;border-radius:14px;background:#14342c;border:2px solid #00ffcc;color:#00ffcc;font-size:20px;font-weight:800;line-height:1.25}'
+            + '#alfah-retoure-bot .search-badge.on{display:block}'
+            + '#alfah-retoure-bot button.stop{flex:0 0 auto;background:#3a2216;border:2px solid #ffb020;color:#ffb020;font-size:16px;font-weight:800;padding:14px 16px;border-radius:14px;cursor:pointer}'
+            + '#alfah-retoure-bot button.pick{width:100%;text-align:left;border:1px solid #2b3545;border-radius:12px;padding:14px;background:#141a23;color:#e6edf3;font-size:16px;font-weight:700;cursor:pointer}'
+            + '#alfah-retoure-bot button.pick:hover{border-color:#00ffcc}'
+            + '#alfah-retoure-bot .admin-pop{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;gap:10px;padding:16px;background:#0b0f14;overflow:auto}'
+            + '#alfah-retoure-bot .admin-pop[hidden]{display:none !important}'
+            + '#alfah-retoure-bot .admin-pop h3{margin:0;font-size:22px;color:#00ffcc}'
+            + '#alfah-retoure-bot .case-list{display:flex;flex-direction:column;gap:8px;min-height:0}'
+            + '#alfah-retoure-bot .case{display:flex;gap:10px;align-items:flex-start;border:1px solid #2b3545;border-radius:12px;padding:12px;background:#141a23;font-size:16px}'
+            + '#alfah-retoure-bot .foot{display:flex;gap:8px}'
+            + '#alfah-retoure-bot .foot>*{flex:1}';
         document.documentElement.appendChild(style);
     }
 
@@ -859,7 +949,11 @@
             cases: [],
             makerCache: {},
             supplierList: null,
-            busy: false
+            busy: false,
+            stopSearch: false,
+            pickFinish: null,
+            sheetAuthOpened: false,
+            adminOn: false
         };
 
         var panel = el('div');
@@ -898,7 +992,7 @@
         againLabel.appendChild(document.createTextNode(' Neu anlegen, auch wenn die Retoure schon existiert'));
         var sendBtn = el('button', 'act', 'Retouren anlegen');
         var copyBtn = el('button', 'ghost', 'R-Nummern kopieren');
-        var log = el('div', 'log', 'Bestellnummer laden. Pro angehaktem Teil entsteht eine eigene Vorgangsnummer.');
+        var log = el('div', 'log', 'Bestellnummer laden. Pro Retoure entsteht eine eigene Vorgangsnummer.');
         body.appendChild(login);
         body.appendChild(el('label', '', 'Bestellung oder Kommission'));
         var orderRow = el('div', 'row');
@@ -925,8 +1019,22 @@
         body.appendChild(sendBtn);
         body.appendChild(copyBtn);
         body.appendChild(log);
+        var statusRow = el('div', 'status-row');
+        var searchBadge = el('div', 'search-badge');
+        var stopBtn = el('button', 'stop', 'Suche stoppen');
+        stopBtn.type = 'button';
+        stopBtn.hidden = true;
+        var adminBtn = el('button', 'ghost', 'Admin');
+        adminBtn.type = 'button';
+        statusRow.appendChild(searchBadge);
+        statusRow.appendChild(stopBtn);
+        statusRow.appendChild(adminBtn);
+        body.appendChild(statusRow);
+        var adminPop = el('div', 'admin-pop');
+        adminPop.hidden = true;
         panel.appendChild(head);
         panel.appendChild(body);
+        panel.appendChild(adminPop);
         document.documentElement.appendChild(panel);
         drag(panel, head);
         min.addEventListener('click', function (event) {
@@ -938,6 +1046,18 @@
 
         function setLog(text) {
             log.textContent = text;
+        }
+
+        function showProgress(text) {
+            searchBadge.textContent = text;
+            searchBadge.classList.add('on');
+            stopBtn.hidden = false;
+        }
+
+        function hideProgress() {
+            searchBadge.textContent = '';
+            searchBadge.classList.remove('on');
+            stopBtn.hidden = true;
         }
 
         function labelCount(input) {
@@ -954,6 +1074,20 @@
                 var row = el('div', 'result');
                 row.appendChild(el('div', 'result-id', entry.caseId || 'ohne R-Nummer'));
                 row.appendChild(el('div', 'meta', entry.article + ' · ' + entry.supplier));
+                if (entry.sheet) row.appendChild(el('div', entry.sheetOk ? 'ok' : 'bad', entry.sheet));
+                if (entry.sheet && !entry.sheetOk && /Zugriff/.test(entry.sheet)) {
+                    var allow = el('button', 'act', 'Sheet-Zugriff erlauben');
+                    allow.type = 'button';
+                    allow.addEventListener('click', function () {
+                        var url = sheetBase();
+                        if (!url) {
+                            setLog('Sheet-Link fehlt. Admin öffnen und den Web-App-Link eintragen.');
+                            return;
+                        }
+                        window.open(url, '_blank');
+                    });
+                    row.appendChild(allow);
+                }
                 if (/^R-\d+$/.test(entry.caseId || '')) {
                     var qty = el('div', 'qty');
                     var minus = el('button', 'step', '−');
@@ -1233,7 +1367,7 @@
         }
 
         async function ordersBetween(from, thru) {
-            var path = 'api/ordering/orders?include-order-items=true&include-invoice-ids=true&include-shipment-info=true&include-order-attributes=true&include-order-item-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
+            var path = 'api/ordering/orders?include-order-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
             var data = await api('GET', path);
             var list = asList(data);
             if (!list.length && data && typeof data === 'object') list = data.Orders || data.orders || data.Data || data.Results || [];
@@ -1319,26 +1453,33 @@
             return true;
         }
 
-        function cachedHit(cache, query) {
+        function cachedHits(cache, query) {
             var up = String(query || '').toUpperCase();
             var tokenRe = new RegExp('(^|[^A-Za-z0-9])' + up.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z0-9]|$)', 'i');
-            var ids = Object.keys(cache.orders || {});
-            var i;
-            for (i = 0; i < ids.length; i++) {
-                var row = cache.orders[ids[i]];
-                if (!row) continue;
-                if (String(row.id).toUpperCase() === up || row.stock === up || tokenRe.test(row.text || '')) return row;
-            }
-            return null;
+            var exact = [];
+            var loose = [];
+            Object.keys(cache.orders || {}).forEach(function (id) {
+                var row = cache.orders[id];
+                if (!row) return;
+                if (String(row.id).toUpperCase() === up || String(row.stock || '').toUpperCase() === up) exact.push(row);
+                else if (tokenRe.test(row.text || '')) loose.push(row);
+            });
+            loose.sort(function (a, b) { return Date.parse(b.date || 0) - Date.parse(a.date || 0); });
+            return exact.length ? exact : loose.slice(0, 12);
         }
 
         async function orderById(orderId) {
             return api('GET', 'api/ordering/orders/' + encodeURIComponent(orderId) + '?include-order-items=true&include-invoice-ids=true&include-shipment-info=true&include-order-attributes=true&include-order-item-attributes=true');
         }
 
+        async function orderAttrs(orderId) {
+            return api('GET', 'api/ordering/orders/' + encodeURIComponent(orderId) + '?include-order-attributes=true');
+        }
+
         async function loadRange(cache, from, thru) {
             if (rangeCovered(cache, from, thru)) return [];
-            setLog('Suche in Bestellungen ' + dayStamp(from) + ' bis ' + dayStamp(thru) + ' …');
+            if (state.stopSearch) return [];
+            showProgress('Suche ' + dayStamp(from) + ' bis ' + dayStamp(thru));
             var list = await ordersBetween(from, thru);
             if (list.length >= 400) {
                 var mid = new Date(from.getTime() + (thru.getTime() - from.getTime()) / 2);
@@ -1385,17 +1526,24 @@
         }
 
         async function enrichForQuery(cache, query, rows) {
-            var pending = (rows || []).filter(function (row) { return row && row.id && !row.enriched; });
+            var up = String(query || '').toUpperCase();
+            var matches = [];
+            var pending = [];
+            (rows || []).forEach(function (row) {
+                if (!row || !row.id) return;
+                if (String(row.stock || '').toUpperCase() === up) matches.push(row.id);
+                else if (!row.enriched) pending.push(row);
+            });
             pending.sort(function (a, b) { return Date.parse(b.date || 0) - Date.parse(a.date || 0); });
-            var size = 8;
+            var size = 12;
             var done = 0;
             var index = 0;
-            while (index < pending.length) {
+            while (index < pending.length && !state.stopSearch) {
                 var chunk = pending.slice(index, index + size);
                 index += chunk.length;
-                setLog('Prüfe Kommissionen ' + (done + 1) + '–' + (done + chunk.length) + ' von ' + pending.length + ' …');
+                showProgress('Suche ' + query + ' · ' + (done + 1) + '–' + (done + chunk.length) + ' von ' + pending.length);
                 var details = await Promise.all(chunk.map(function (row) {
-                    return orderById(row.id).then(function (order) {
+                    return orderAttrs(row.id).then(function (order) {
                         return { row: row, order: order };
                     }).catch(function () {
                         return { row: row, order: null };
@@ -1406,34 +1554,31 @@
                     done += 1;
                     var order = details[i].order;
                     var id = order ? (orderIdOf(order) || details[i].row.id) : details[i].row.id;
-                    if (!order) {
-                        if (cache.orders[id]) cache.orders[id].enriched = true;
-                        continue;
-                    }
+                    var stock = order ? stockIdFromCommission(commissionOf(order)) : '';
                     cache.orders[id] = {
                         id: id,
-                        date: order.OrderDate || order.CreatedAt || order.Date || details[i].row.date || '',
-                        stock: stockIdFromCommission(commissionOf(order)),
-                        text: orderSearchText(order),
+                        date: (order && (order.OrderDate || order.CreatedAt || order.Date)) || details[i].row.date || '',
+                        stock: stock,
+                        text: order ? orderSearchText(order) : (details[i].row.text || ''),
                         enriched: true
                     };
-                    if (orderMatches(order, query)) {
-                        writeOrderCache(cache);
-                        return order;
-                    }
+                    if (String(stock || '').toUpperCase() === up || (order && orderMatches(order, query))) matches.push(id);
                 }
                 writeOrderCache(cache);
             }
-            return null;
+            return matches;
         }
 
         async function scanSpan(cache, query, from, thru) {
+            if (state.stopSearch) return [];
             var list = [];
             if (!rangeCovered(cache, from, thru)) {
                 list = await loadRange(cache, from, thru);
-                var direct = findOrder(list, query);
-                if (direct) return direct;
-                if (listCarriesCommission(list)) return null;
+                var directs = (list || []).filter(function (order) { return orderMatches(order, query); });
+                if (directs.length) {
+                    return directs.map(function (order) { return orderIdOf(order); }).filter(Boolean);
+                }
+                if (listCarriesCommission(list)) return [];
             }
             var rows = [];
             if (list.length) {
@@ -1447,33 +1592,54 @@
             return enrichForQuery(cache, query, rows);
         }
 
-        async function findStockOrder(query) {
+        async function openMatch(cache, id) {
+            showProgress('Lade Bestellung ' + id + ' …');
+            try {
+                return await orderById(id);
+            } catch (error) {
+                delete cache.orders[id];
+                writeOrderCache(cache);
+                return null;
+            }
+        }
+
+        async function findStockOrders(query) {
             var cache = readOrderCache();
             var known = Object.keys(cache.orders).length;
-            if (known) setLog('Prüfe ' + known + ' gespeicherte Bestellungen …');
-            var hit = cachedHit(cache, query);
-            if (hit) {
-                var opened = await openCached(cache, hit);
-                if (opened) return opened;
+            if (known) showProgress('Prüfe ' + known + ' gespeicherte Bestellungen · ' + query);
+            var ids = [];
+            cachedHits(cache, query).forEach(function (row) {
+                if (row.id && ids.indexOf(row.id) === -1) ids.push(row.id);
+            });
+            if (!ids.length) {
+                var today = new Date();
+                var monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
+                showProgress('Suche ' + query + ' im aktuellen Monat …');
+                ids = await scanSpan(cache, query, monthFrom, today);
+                var thru = shiftDays(monthFrom, -1);
+                var guard = new Date();
+                guard.setMonth(guard.getMonth() - 18);
+                var steps = 0;
+                while (!ids.length && !state.stopSearch && thru > guard && steps < 40) {
+                    var from = bucketStart(thru);
+                    if (from < guard) from = new Date(guard.getFullYear(), guard.getMonth(), guard.getDate());
+                    steps += 1;
+                    showProgress('Suche ' + query + ' · ' + dayStamp(from) + ' bis ' + dayStamp(thru));
+                    ids = await scanSpan(cache, query, from, thru);
+                    thru = shiftDays(from, -1);
+                }
             }
-            var today = new Date();
-            var monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-            setLog('Suche ' + query + ' zuerst im aktuellen Monat …');
-            var found = await scanSpan(cache, query, monthFrom, today);
-            if (found) return found;
-            var thru = shiftDays(monthFrom, -1);
-            var guard = new Date();
-            guard.setMonth(guard.getMonth() - 18);
-            var steps = 0;
-            while (thru > guard && steps < 40) {
-                var from = bucketStart(thru);
-                if (from < guard) from = new Date(guard.getFullYear(), guard.getMonth(), guard.getDate());
-                steps += 1;
-                found = await scanSpan(cache, query, from, thru);
-                if (found) return found;
-                thru = shiftDays(from, -1);
+            var unique = [];
+            ids.forEach(function (id) {
+                if (id && unique.indexOf(String(id)) === -1) unique.push(String(id));
+            });
+            var orders = [];
+            var i;
+            for (i = 0; i < unique.length && !state.stopSearch; i++) {
+                var opened = await openMatch(cache, unique[i]);
+                if (opened) orders.push(opened);
             }
-            return null;
+            return orders;
         }
 
         function mailSource(pasted, orderId, query) {
@@ -1500,8 +1666,10 @@
                 setLog('Nicht eingeloggt.');
                 return;
             }
+            state.stopSearch = false;
+            state.pickFinish = null;
             loadBtn.disabled = true;
-            setLog('Lade ' + query + ' …');
+            showProgress('Lade ' + query + ' …');
             try {
                 var pasted = parseMail(paste.value);
                 if (pasted.orderId || pasted.items.length) {
@@ -1524,15 +1692,34 @@
                     }
                 }
                 if (/^[A-Za-z]/.test(query)) {
-                    var byStock = await findStockOrder(query);
-                    if (byStock) order = byStock;
+                    var foundOrders = await findStockOrders(query);
+                    if (foundOrders.length > 1) {
+                        hideProgress();
+                        order = await pickOrder(foundOrders);
+                        if (!order) {
+                            setLog(state.stopSearch ? 'Suche gestoppt.' : 'Keine Bestellung ausgewählt.');
+                            meta.textContent = '';
+                            return;
+                        }
+                    } else if (foundOrders.length === 1) order = foundOrders[0];
+                    else if (state.stopSearch) {
+                        setLog('Suche gestoppt.');
+                        meta.textContent = '';
+                        return;
+                    }
                 } else if (!order || !orderItems(order).length) {
-                    setLog('Suche ' + query + ' in den letzten Bestellungen …');
+                    showProgress('Suche ' + query + ' in den letzten Bestellungen …');
                     var thru = new Date();
                     var from = new Date();
                     from.setDate(from.getDate() - 120);
                     var found = findOrder(await ordersBetween(from, thru), query);
-                    if (found) order = found;
+                    if (found) {
+                        try {
+                            order = await orderById(orderIdOf(found, query));
+                        } catch (e) {
+                            order = found;
+                        }
+                    }
                 }
                 if (!order) {
                     setLog('Kein Auftrag zu ' + query + '. Die Mailbox wird nicht gelesen. Bestellnummer aus der Auftragsbestätigung eintragen oder die Mail hier reinkopieren.');
@@ -1565,8 +1752,43 @@
             } catch (error) {
                 setLog(error.message || String(error));
             } finally {
+                hideProgress();
                 loadBtn.disabled = false;
             }
+        }
+
+        function orderChoiceLabel(order) {
+            var id = orderIdOf(order);
+            var date = String(order.OrderDate || order.CreatedAt || order.Date || '').replace('T', ' ').slice(0, 16);
+            var stock = stockIdFromCommission(commissionOf(order));
+            var rows = orderItems(order);
+            var supplier = rows.length ? supplierNameOf(rows[0]) : '';
+            return [id, date, stock, supplier, rows.length ? rows.length + ' Positionen' : ''].filter(Boolean).join(' · ');
+        }
+
+        function pickOrder(list) {
+            return new Promise(function (resolve) {
+                items.textContent = '';
+                meta.textContent = list.length + ' Bestellungen zu dieser Kommission. Welche soll geladen werden?';
+                var settled = false;
+                function finish(order) {
+                    if (settled) return;
+                    settled = true;
+                    state.pickFinish = null;
+                    resolve(order || null);
+                }
+                state.pickFinish = finish;
+                list.forEach(function (order) {
+                    var btn = el('button', 'pick', orderChoiceLabel(order));
+                    btn.type = 'button';
+                    btn.addEventListener('click', function () { finish(order); });
+                    items.appendChild(btn);
+                });
+                var cancel = el('button', 'ghost', 'Abbrechen');
+                cancel.type = 'button';
+                cancel.addEventListener('click', function () { finish(null); });
+                items.appendChild(cancel);
+            });
         }
 
         function chosenAddress() {
@@ -1654,6 +1876,55 @@
             return state.cases;
         }
 
+        async function deliverSheet(entry) {
+            if (entry && entry.r) rememberReturn(entry);
+            var result = await pushSheet(entry);
+            if (result.auth) {
+                if (!state.sheetAuthOpened) {
+                    state.sheetAuthOpened = true;
+                    window.open(sheetBase(), '_blank');
+                }
+                return { ok: false, text: 'Sheet-Zugriff fehlt. Der Tab ist offen — dort erlauben, danach nochmal senden.' };
+            }
+            if (result.missing) return { ok: false, text: 'Sheet-Link fehlt. Admin öffnen und den Web-App-Link eintragen.' };
+            if (result.ok && result.duplicate) return { ok: true, text: 'Steht schon im Sheet' + (result.row ? ', Zeile ' + result.row : '') };
+            if (result.ok) return { ok: true, text: 'Im Sheet' + (result.row ? ', Zeile ' + result.row : '') };
+            return { ok: false, text: 'Nicht im Sheet: ' + result.error };
+        }
+
+        function entryFromCaseFast(row) {
+            if (row && row.r && !row.CaseId) return {
+                r: row.r,
+                order: row.order || '',
+                stock: row.stock || '',
+                kommission: row.kommission || '',
+                article: row.article || '',
+                name: row.name || '',
+                qty: row.qty || 1,
+                supplier: row.supplier || '',
+                brand: row.brand || '',
+                vin: row.vin || '',
+                reason: row.reason || PROBLEM_DEFAULT
+            };
+            var history = readHistory().filter(function (item) { return item.r === String(row.CaseId || ''); })[0] || {};
+            var caseItems = row.Items || row.items || [];
+            var first = (Array.isArray(caseItems) && caseItems[0]) || {};
+            var kommission = commissionFromCase(row) || history.kommission || '';
+            return {
+                r: String(row.CaseId || ''),
+                order: String(row.OrderProcessId || history.order || ''),
+                stock: stockIdFromCommission(kommission) || history.stock || '',
+                kommission: kommission,
+                article: String(first.CatalogNumber || first.ArticleNumber || history.article || ''),
+                name: String(first.Name || first.Description || history.name || ''),
+                qty: first.Quantity || history.qty || 1,
+                supplier: String(row.SupplierName || history.supplier || ''),
+                brand: String(first.ManufacturerName || history.brand || ''),
+                vin: String(row.Vin || history.vin || ''),
+                reason: history.reason || PROBLEM_DEFAULT
+            };
+        }
+
         async function sendAll() {
             if (state.busy) return;
             var orderId = orderInput.value.trim();
@@ -1665,6 +1936,7 @@
             if (!address || !addressId(address)) return setLog('Keine Lieferadresse gefunden.');
             if (!reasonSelect.value) return setLog('Kein Retourengrund geladen.');
             state.busy = true;
+            state.sheetAuthOpened = false;
             sendBtn.disabled = true;
             var lines = [];
             var done = [];
@@ -1710,8 +1982,22 @@
                     if (!again.checked) {
                         var existing = openCase(state.cases, orderId, article);
                         if (existing && existing.CaseId) {
-                            done.push({ caseId: existing.CaseId, article: article, supplier: supplierName });
+                            var already = await deliverSheet({
+                                r: existing.CaseId,
+                                order: orderId,
+                                stock: stockIdFromCommission(commissionOf(state.order)) || (state.queue && state.queue.stockId) || '',
+                                kommission: (state.queue && state.queue.kommission) || commissionOf(state.order) || '',
+                                article: article,
+                                name: item.Description || item.Name || (fromMail && fromMail.name) || '',
+                                qty: card._qty.value,
+                                supplier: supplierName,
+                                brand: brandName,
+                                vin: card._vin.value.trim().toUpperCase(),
+                                reason: problem.value.trim() || PROBLEM_DEFAULT
+                            });
+                            done.push({ caseId: existing.CaseId, article: article, supplier: supplierName, sheet: already.text, sheetOk: already.ok });
                             lines.push(existing.CaseId + '  ' + article + '  ' + supplierName + '  schon vorhanden');
+                            lines.push(existing.CaseId + '  ' + already.text);
                             setLog(lines.join('\n'));
                             continue;
                         }
@@ -1780,6 +2066,24 @@
                         article: article,
                         supplier: supplierName
                     };
+                    if (caseId) {
+                        var sheetResult = await deliverSheet({
+                            r: caseId,
+                            order: orderId,
+                            stock: stockIdFromCommission(commissionOf(state.order)) || (state.queue && state.queue.stockId) || '',
+                            kommission: (state.queue && state.queue.kommission) || commissionOf(state.order) || '',
+                            article: article,
+                            name: item.Description || item.Name || (fromMail && fromMail.name) || '',
+                            qty: card._qty.value,
+                            supplier: supplierName,
+                            brand: brandName,
+                            vin: card._vin.value.trim().toUpperCase(),
+                            reason: problem.value.trim() || PROBLEM_DEFAULT
+                        });
+                        entry.sheet = sheetResult.text;
+                        entry.sheetOk = sheetResult.ok;
+                        lines.push(caseId + '  ' + sheetResult.text);
+                    }
                     done.push(entry);
                     lines.push((caseId || 'angelegt, R-Nummer nicht im Antworttext') + '  ' + article + '  ' + supplierName);
                     setLog(lines.join('\n'));
@@ -1799,6 +2103,178 @@
                 sendBtn.disabled = false;
             }
         }
+
+        var adminPass = document.createElement('input');
+        adminPass.type = 'password';
+        adminPass.placeholder = 'Passwort';
+        var adminUnlock = el('button', 'act', 'Öffnen');
+        adminUnlock.type = 'button';
+        var adminUrl = document.createElement('input');
+        adminUrl.type = 'text';
+        adminUrl.placeholder = 'https://script.google.com/.../exec';
+        var adminSaveUrl = el('button', 'ghost', 'Link speichern');
+        adminSaveUrl.type = 'button';
+        var adminAllow = el('button', 'act', 'Sheet-Zugriff erlauben');
+        adminAllow.type = 'button';
+        var adminFilter = document.createElement('input');
+        adminFilter.type = 'text';
+        adminFilter.placeholder = 'R-Nummer filtern';
+        var adminList = el('div', 'case-list');
+        var adminSend = el('button', 'act', 'Ausgewählte an Sheet senden');
+        adminSend.type = 'button';
+        var adminClose = el('button', 'ghost', 'Schließen');
+        adminClose.type = 'button';
+        var adminStatus = el('div', 'log');
+
+        function paintAdmin(unlocked) {
+            adminPop.textContent = '';
+            adminPop.appendChild(el('h3', '', 'Admin'));
+            if (!unlocked) {
+                adminPop.appendChild(adminPass);
+                adminPop.appendChild(adminUnlock);
+                adminPop.appendChild(adminClose);
+                return;
+            }
+            adminPop.appendChild(el('label', '', 'Sheet Web-App'));
+            adminPop.appendChild(adminUrl);
+            var urlRow = el('div', 'foot');
+            urlRow.appendChild(adminSaveUrl);
+            urlRow.appendChild(adminAllow);
+            adminPop.appendChild(urlRow);
+            adminPop.appendChild(adminFilter);
+            adminPop.appendChild(adminList);
+            var foot = el('div', 'foot');
+            foot.appendChild(adminSend);
+            foot.appendChild(adminClose);
+            adminPop.appendChild(foot);
+            adminPop.appendChild(adminStatus);
+        }
+
+        function renderAdminRows() {
+            var needle = adminFilter.value.trim().toUpperCase();
+            adminList.textContent = '';
+            (state.adminRows || []).forEach(function (row) {
+                var label = [row.r, row.order, row.article, row.name, row.supplier, row.stock].filter(Boolean).join(' · ');
+                if (needle && label.toUpperCase().indexOf(needle) === -1) return;
+                var line = el('label', 'case');
+                var box = document.createElement('input');
+                box.type = 'checkbox';
+                line.appendChild(box);
+                line.appendChild(document.createTextNode(label));
+                line._entry = row;
+                adminList.appendChild(line);
+            });
+        }
+
+        async function fillAdminList() {
+            adminStatus.textContent = 'Lade Retouren …';
+            adminList.textContent = '';
+            var rows = [];
+            try {
+                var fresh = await refreshCases();
+                var i;
+                for (i = 0; i < fresh.length; i++) {
+                    if (!/^R-\d+$/.test(String(fresh[i].CaseId || ''))) continue;
+                    rows.push(entryFromCaseFast(fresh[i]));
+                }
+            } catch (error) {
+                adminStatus.textContent = error.message || String(error);
+            }
+            readHistory().forEach(function (item) {
+                if (!item || !/^R-\d+$/.test(item.r || '')) return;
+                if (!rows.some(function (row) { return row.r === item.r; })) rows.push(entryFromCaseFast(item));
+            });
+            rows.sort(function (a, b) {
+                var left = Number((String(b.r).match(/(\d+)/) || [])[1] || 0);
+                var right = Number((String(a.r).match(/(\d+)/) || [])[1] || 0);
+                return left - right;
+            });
+            state.adminRows = rows;
+            renderAdminRows();
+            adminStatus.textContent = rows.length ? rows.length + ' Retouren. Haken setzen und an das Sheet senden.' : 'Keine R-Nummer gefunden.';
+        }
+
+        async function sendAdminSelection() {
+            var picked = [];
+            adminList.querySelectorAll('.case').forEach(function (line) {
+                var box = line.querySelector('input[type=checkbox]');
+                if (box && box.checked && line._entry) picked.push(line._entry);
+            });
+            if (!picked.length) {
+                adminStatus.textContent = 'Keine Retoure ausgewählt.';
+                return;
+            }
+            if (!sheetBase()) {
+                adminStatus.textContent = 'Zuerst den Web-App-Link speichern.';
+                return;
+            }
+            adminSend.disabled = true;
+            state.sheetAuthOpened = false;
+            var notes = [];
+            var i;
+            for (i = 0; i < picked.length; i++) {
+                var entry = picked[i];
+                if (!entry.stock && entry.order) {
+                    try {
+                        var order = await orderById(entry.order);
+                        entry.kommission = entry.kommission || commissionOf(order);
+                        entry.stock = stockIdFromCommission(entry.kommission) || '';
+                    } catch (e) {}
+                }
+                adminStatus.textContent = 'Sende ' + entry.r + ' …';
+                var result = await deliverSheet(entry);
+                notes.push(entry.r + '  ' + result.text);
+                adminStatus.textContent = notes.join('\n');
+            }
+            adminSend.disabled = false;
+        }
+
+        adminBtn.addEventListener('click', function () {
+            state.adminOn = false;
+            adminPass.value = '';
+            adminPass.placeholder = 'Passwort';
+            adminPop.hidden = false;
+            paintAdmin(false);
+            adminPass.focus();
+        });
+        adminUnlock.addEventListener('click', function () {
+            if (adminPass.value.trim() !== ADMIN_PASS) {
+                adminPass.value = '';
+                adminPass.placeholder = 'Falsch';
+                return;
+            }
+            state.adminOn = true;
+            adminUrl.value = sheetBase();
+            paintAdmin(true);
+            fillAdminList();
+        });
+        adminPass.addEventListener('keydown', function (event) {
+            if (event.key === 'Enter') adminUnlock.click();
+        });
+        adminClose.addEventListener('click', function () {
+            adminPop.hidden = true;
+        });
+        adminSaveUrl.addEventListener('click', function () {
+            GM_setValue(SHEET_URL_KEY, adminUrl.value.trim());
+            adminStatus.textContent = adminUrl.value.trim() ? 'Link gespeichert.' : 'Link gelöscht.';
+        });
+        adminAllow.addEventListener('click', function () {
+            GM_setValue(SHEET_URL_KEY, adminUrl.value.trim());
+            var url = sheetBase();
+            if (!url) {
+                adminStatus.textContent = 'Zuerst den Web-App-Link eintragen.';
+                return;
+            }
+            window.open(url, '_blank');
+            adminStatus.textContent = 'Tab ist offen. Zugriff erlauben, danach die Retoure nochmal senden.';
+        });
+        adminFilter.addEventListener('input', renderAdminRows);
+        adminSend.addEventListener('click', sendAdminSelection);
+        stopBtn.addEventListener('click', function () {
+            state.stopSearch = true;
+            showProgress('Suche wird gestoppt …');
+            if (state.pickFinish) state.pickFinish(null);
+        });
 
         loadBtn.addEventListener('click', loadOrder);
         file.addEventListener('change', refreshSlipBadge);
