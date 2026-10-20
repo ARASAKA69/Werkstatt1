@@ -2,7 +2,7 @@
 // @name         ALFAH Retoure Bot
 // @namespace    http://tampermonkey.net/
 // @version      1.0
-// @description  Legt ALFAH Retouren aus der Auftragsbestätigung an und zeigt die Vorgangsnummer
+// @description  Legt ALFAH Retouren an, zeigt die R-Nummer und schreibt sie ins Sheet
 // @author       ARASAKA
 // @match        https://alfah.de/*
 // @match        https://mail.google.com/*
@@ -28,7 +28,9 @@
     var BASE = 'https://alfah.de/';
     var QUEUE_KEY = 'alfah_retoure_queue';
     var ORDER_CACHE_KEY = 'alfah_retoure_orders';
+    var WORKER_KEY = 'alfah_retoure_worker';
     var SHEET_URL_KEY = 'alfah_retoure_sheet_url';
+    var SHEET_WEB_APP_URL = '';
     var HISTORY_KEY = 'alfah_retoure_history';
     var ADMIN_PASS = '1208';
     var REASON_WANTED = 'ITEM_IS_NOT_NEEDED';
@@ -186,6 +188,230 @@
         var token = String(value || '').trim().split(/[\s\/]+/)[0] || '';
         if (!/^[A-Za-z][A-Za-z0-9]{2,}$/.test(token)) return '';
         return token.toUpperCase();
+    }
+
+    function strictStockId(value) {
+        var match = String(value || '').toUpperCase().match(/[A-Z]{2}\d{5}/);
+        return match ? match[0] : '';
+    }
+
+    function workerName() {
+        try {
+            return String(GM_getValue(WORKER_KEY, '') || '').trim();
+        } catch (e) {
+            return '';
+        }
+    }
+
+    function sheetUrl() {
+        var saved = '';
+        try {
+            saved = String(GM_getValue(SHEET_URL_KEY, '') || '').trim();
+        } catch (e) {}
+        if (/^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(saved)) return saved;
+        var built = String(SHEET_WEB_APP_URL || '').trim();
+        if (/^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(built)) return built;
+        return '';
+    }
+
+    function formatBerlin(date) {
+        var fmt = new Intl.DateTimeFormat('de-DE', {
+            timeZone: 'Europe/Berlin',
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23'
+        });
+        var map = {};
+        fmt.formatToParts(date).forEach(function (part) { map[part.type] = part.value; });
+        var hour = map.hour === '24' ? '00' : map.hour;
+        return {
+            day: map.year + '-' + map.month + '-' + map.day,
+            date: map.day + '.' + map.month + '.' + map.year,
+            time: hour + ':' + map.minute
+        };
+    }
+
+    function berlinStamp(value) {
+        if (value instanceof Date) return formatBerlin(value);
+        if (typeof value === 'number') {
+            var fromNum = new Date(value);
+            if (!isNaN(fromNum.getTime())) return formatBerlin(fromNum);
+            return { day: '', date: '', time: '' };
+        }
+        if (value && typeof value === 'object') return berlinStamp(value.Date || value.date || value.Value || value.value || '');
+        var text = String(value || '').trim();
+        if (!text) return { day: '', date: '', time: '' };
+        var ms = text.match(/\/Date\((\d+)\)\//);
+        if (ms) return berlinStamp(Number(ms[1]));
+        var iso = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/);
+        if (iso) {
+            if (iso[4]) {
+                var parsed = new Date(text);
+                if (!isNaN(parsed.getTime())) return formatBerlin(parsed);
+            }
+            return { day: iso[1] + '-' + iso[2] + '-' + iso[3], date: iso[3] + '.' + iso[2] + '.' + iso[1], time: iso[4] ? (iso[4] + ':' + iso[5]) : '' };
+        }
+        var de = text.match(/^(\d{2})[.\-](\d{2})[.\-](\d{4})(?:[ T](\d{2}):(\d{2}))?/);
+        if (de) {
+            if (de[4]) {
+                var local = new Date(de[3] + '-' + de[2] + '-' + de[1] + 'T' + de[4] + ':' + de[5] + ':00');
+                if (!isNaN(local.getTime())) return formatBerlin(local);
+            }
+            return { day: de[3] + '-' + de[2] + '-' + de[1], date: de[1] + '.' + de[2] + '.' + de[3], time: de[4] ? (de[4] + ':' + de[5]) : '' };
+        }
+        var loose = Date.parse(text);
+        if (!isNaN(loose)) return formatBerlin(new Date(loose));
+        return { day: '', date: '', time: '' };
+    }
+
+    function berlinNow() {
+        return formatBerlin(new Date());
+    }
+
+    function stampFromCase(row) {
+        if (!row || typeof row !== 'object') return { day: '', date: '', time: '' };
+        var preferred = [];
+        var fallback = [];
+        Object.keys(row).forEach(function (key) {
+            if (!/date|datum|time|created|erstell|insert|anleg/i.test(key)) return;
+            if (/update|modif|änder|aender|action|letzt|change/i.test(key)) fallback.push(key);
+            else preferred.push(key);
+        });
+        var lists = [preferred, fallback];
+        var g;
+        for (g = 0; g < lists.length; g++) {
+            var i;
+            for (i = 0; i < lists[g].length; i++) {
+                var hit = berlinStamp(row[lists[g][i]]);
+                if (hit.day) return hit;
+            }
+        }
+        return { day: '', date: '', time: '' };
+    }
+
+    function casePerson(row) {
+        if (!row || typeof row !== 'object') return '';
+        var keys = Object.keys(row);
+        var i;
+        for (i = 0; i < keys.length; i++) {
+            if (!/createdby|author|anmelder|username|editor/i.test(keys[i])) continue;
+            var value = row[keys[i]];
+            var name = '';
+            if (typeof value === 'string') name = value.trim();
+            else if (value && typeof value === 'object') name = String(value.Name || value.DisplayName || value.UserName || '').trim();
+            if (!name || name.length > 40 || /^\d+$/.test(name) || /@|gmbh|\bag\b/i.test(name)) continue;
+            return name;
+        }
+        return '';
+    }
+
+    function caseStock(row) {
+        if (!row || typeof row !== 'object') return '';
+        var bits = [];
+        function push(value) {
+            if (value == null) return;
+            if (typeof value === 'string') bits.push(value);
+            else if (typeof value === 'object') bits.push(value.Content || value.Text || value.Note || value.Value || '');
+        }
+        push(row.Commission);
+        push(row.Kommission);
+        push(row.Comment);
+        var notes = row.Notes || row.notes || row.Comments || [];
+        if (!Array.isArray(notes)) notes = notes ? [notes] : [];
+        notes.forEach(push);
+        return strictStockId(bits.join(' '));
+    }
+
+    function caseSupplier(row) {
+        if (!row) return '';
+        if (typeof row.Supplier === 'string') return row.Supplier;
+        if (row.SupplierName) return String(row.SupplierName);
+        if (row.Supplier && typeof row.Supplier === 'object') return row.Supplier.Name || row.Supplier.CompanyName || '';
+        return '';
+    }
+
+    function sheetEcho(txt) {
+        var match = String(txt || '').replace(/&amp;/g, '&').match(/https:\/\/script\.googleusercontent\.com\/macros\/echo[^"'\\\s<>]*/);
+        return match ? match[0] : '';
+    }
+
+    function sheetParse(txt) {
+        var raw = String(txt || '').trim();
+        if (raw.charAt(0) === '{') {
+            try { return JSON.parse(raw); } catch (e) {}
+        }
+        var pre = raw.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
+        if (pre) {
+            try {
+                return JSON.parse(pre[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
+            } catch (e2) {}
+        }
+        return null;
+    }
+
+    function sheetReq(method, url, body, hop) {
+        return new Promise(function (resolve, reject) {
+            GM_xmlhttpRequest({
+                method: method,
+                url: url,
+                data: body || undefined,
+                headers: method === 'POST' ? { 'Content-Type': 'text/plain;charset=utf-8' } : {},
+                anonymous: false,
+                timeout: 30000,
+                onload: function (res) {
+                    var txt = res && res.responseText != null ? res.responseText : '';
+                    var data = sheetParse(txt);
+                    if (data && (data.ok === true || data.ok === false)) {
+                        if (data.ok === false) reject(new Error(data.error || 'Sheet hat abgelehnt'));
+                        else resolve(data);
+                        return;
+                    }
+                    var jump = hop < 2 ? sheetEcho(txt) : '';
+                    if (jump) {
+                        sheetReq('GET', jump, '', hop + 1).then(resolve, reject);
+                        return;
+                    }
+                    var low = String(txt || '').toLowerCase();
+                    if (/accounts\.google|servicelogin|anmelden/.test(low)) reject(new Error('Google-Login fehlt fürs Sheet'));
+                    else reject(new Error('Sheet Antwort ' + (res && res.status)));
+                },
+                onerror: function () { reject(new Error('Sheet nicht erreichbar')); },
+                ontimeout: function () { reject(new Error('Sheet Timeout')); }
+            });
+        });
+    }
+
+    function packSheet(rows) {
+        var groups = [];
+        var map = {};
+        (rows || []).forEach(function (row) {
+            if (!row || !/^R-\d+$/.test(row.caseId || '')) return;
+            var key = row.caseId;
+            if (!map[key]) {
+                map[key] = { lines: [] };
+                groups.push(map[key]);
+            }
+            map[key].lines.push(row);
+        });
+        return groups;
+    }
+
+    function postSheet(rows) {
+        var url = sheetUrl();
+        if (!url) return Promise.reject(new Error('Sheet-Web-App fehlt noch'));
+        var entries = Array.isArray(rows) && rows.length && rows[0].lines ? rows : packSheet(rows);
+        if (!entries.length) return Promise.resolve({ ok: true, added: 0, skipped: 0 });
+        return sheetReq('POST', url, JSON.stringify({ action: 'append', entries: entries }), 0);
+    }
+
+    function repairSheetWho() {
+        var name = workerName();
+        var url = sheetUrl();
+        if (!name || !url) return Promise.resolve({ ok: true, updated: 0 });
+        return sheetReq('POST', url, JSON.stringify({ action: 'fixWho', who: name }), 0);
     }
 
     function orderIdOf(order, fallback) {
@@ -760,7 +986,8 @@
             + '#alfah-retoure-bot .head b span{color:#00ffcc}'
             + '#alfah-retoure-bot .head button{width:32px;height:32px;border:0;border-radius:8px;background:transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:18px;line-height:32px;padding:0}'
             + '#alfah-retoure-bot .head button:hover{background:#1c2430;color:#e6edf3}'
-            + '#alfah-retoure-bot.min{height:auto !important;min-height:0 !important;resize:none}'
+            + '#alfah-retoure-bot .tools{display:flex;gap:4px;flex:0 0 auto}'
+            + '#alfah-retoure-bot.min{height:auto !important;width:260px !important;min-width:0 !important;min-height:0 !important;resize:none}'
             + '#alfah-retoure-bot.min .body{display:none !important}'
             + '#alfah-retoure-bot.min .head{border-radius:16px}'
             + '#alfah-retoure-bot .body{padding:12px;display:flex;flex-direction:column;gap:8px;overflow-x:hidden;overflow-y:auto;flex:1;min-width:0}'
@@ -772,6 +999,8 @@
             + '#alfah-retoure-bot button.act{border:0;border-radius:10px;padding:8px 10px;font-weight:800;cursor:pointer;background:#00ffcc;color:#06221c}'
             + '#alfah-retoure-bot button.act:disabled{opacity:.55;cursor:wait}'
             + '#alfah-retoure-bot button.ghost{border:1px solid #2b3545;border-radius:10px;padding:7px 10px;background:#141a23;color:#e6edf3;cursor:pointer;font-weight:700}'
+            + '#alfah-retoure-bot button.reset{border:0;border-radius:10px;padding:8px 10px;font-weight:800;cursor:pointer;background:#f0883e;color:#2a1404}'
+            + '#alfah-retoure-bot button.reset:hover{background:#ff9d4d}'
             + '#alfah-retoure-bot .row{display:flex;gap:8px;min-width:0}'
             + '#alfah-retoure-bot .row>*{flex:1;min-width:0}'
             + '#alfah-retoure-bot .items{display:flex;flex-direction:column;gap:10px}'
@@ -788,6 +1017,9 @@
             + '#alfah-retoure-bot .hint{color:#8b949e;font-size:15px}'
             + '#alfah-retoure-bot .badge{display:inline-flex;align-items:center;width:fit-content;max-width:100%;padding:8px 12px;border-radius:999px;background:rgba(46,160,67,.16);border:1px solid rgba(63,185,80,.7);color:#3fb950;font-size:15px;font-weight:800}'
             + '#alfah-retoure-bot .badge[hidden]{display:none}'
+            + '#alfah-retoure-bot .badge.bad{background:rgba(248,81,73,.16);border-color:rgba(248,81,73,.7);color:#f85149}'
+            + '#alfah-retoure-bot .foot{display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
+            + '#alfah-retoure-bot .credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px}'
             + '#alfah-retoure-bot .qty{display:flex;gap:8px;align-items:center;min-width:0}'
             + '#alfah-retoure-bot .qty input{width:72px;max-width:72px;flex:0 0 72px;text-align:center;padding:8px 4px}'
             + '#alfah-retoure-bot .qty button.step{flex:0 0 40px;width:40px;border:1px solid #2b3545;border-radius:10px;background:#141a23;color:#e6edf3;font-weight:800;font-size:18px;cursor:pointer}'
@@ -846,8 +1078,14 @@
         panel.style.display = 'none';
         var head = el('div', 'head');
         head.appendChild(el('b', '', 'ALFAH Retoure'));
+        var tools = el('div', 'tools');
+        var min = el('button', '', '–');
+        min.type = 'button';
         var close = el('button', '', '×');
-        head.appendChild(close);
+        close.type = 'button';
+        tools.appendChild(min);
+        tools.appendChild(close);
+        head.appendChild(tools);
         var body = el('div', 'body');
         var info = el('div', 'hint');
         var list = el('div', 'items');
@@ -857,10 +1095,20 @@
         body.appendChild(list);
         body.appendChild(save);
         body.appendChild(status);
+        var gmailFoot = el('div', 'foot');
+        gmailFoot.appendChild(el('span', '', 'Bot v' + BOT_VERSION));
+        body.appendChild(gmailFoot);
+        body.appendChild(el('div', 'credit', 'by Arasaka'));
         panel.appendChild(head);
         panel.appendChild(body);
         document.documentElement.appendChild(panel);
         drag(panel, head);
+        min.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var closed = panel.classList.toggle('min');
+            min.textContent = closed ? '+' : '–';
+        });
         close.addEventListener('click', function () {
             panel.style.display = 'none';
         });
@@ -961,7 +1209,7 @@
         var head = el('div', 'head');
         var title = el('b');
         title.appendChild(document.createTextNode('ALFAH '));
-        title.appendChild(el('span', '', 'Retoure ' + BOT_VERSION));
+        title.appendChild(el('span', '', 'Retoure v' + BOT_VERSION));
         head.appendChild(title);
         var min = el('button', '', '–');
         min.type = 'button';
@@ -991,9 +1239,29 @@
         againLabel.appendChild(again);
         againLabel.appendChild(document.createTextNode(' Neu anlegen, auch wenn die Retoure schon existiert'));
         var sendBtn = el('button', 'act', 'Retouren anlegen');
-        var copyBtn = el('button', 'ghost', 'R-Nummern kopieren');
-        var log = el('div', 'log', 'Bestellnummer laden. Pro Retoure entsteht eine eigene Vorgangsnummer.');
+        var startLog = 'Bestellnummer laden. Pro Retoure entsteht eine eigene Vorgangsnummer.';
+        var log = el('div', 'log', startLog);
+        var resetBtn = el('button', 'reset', 'Zurücksetzen');
+        resetBtn.type = 'button';
+        body.appendChild(resetBtn);
         body.appendChild(login);
+        body.appendChild(el('label', '', 'Dein Name'));
+        var workerInput = document.createElement('input');
+        workerInput.type = 'text';
+        workerInput.placeholder = 'z.B. Francesco';
+        workerInput.value = workerName();
+        body.appendChild(workerInput);
+        var sheetHint = el('div', 'hint', '');
+        body.appendChild(sheetHint);
+        var sheetUrlLabel = el('label', '', 'Sheet Web-App');
+        var sheetUrlInput = document.createElement('input');
+        sheetUrlInput.type = 'text';
+        sheetUrlInput.placeholder = 'https://script.google.com/.../exec';
+        sheetUrlInput.value = sheetUrl();
+        sheetUrlLabel.hidden = !!sheetUrl();
+        sheetUrlInput.hidden = !!sheetUrl();
+        body.appendChild(sheetUrlLabel);
+        body.appendChild(sheetUrlInput);
         body.appendChild(el('label', '', 'Bestellung oder Kommission'));
         var orderRow = el('div', 'row');
         orderRow.appendChild(orderInput);
@@ -1017,7 +1285,6 @@
         body.appendChild(file);
         body.appendChild(againLabel);
         body.appendChild(sendBtn);
-        body.appendChild(copyBtn);
         body.appendChild(log);
         var statusRow = el('div', 'status-row');
         var searchBadge = el('div', 'search-badge');
@@ -1032,6 +1299,10 @@
         body.appendChild(statusRow);
         var adminPop = el('div', 'admin-pop');
         adminPop.hidden = true;
+        var foot = el('div', 'foot');
+        foot.appendChild(el('span', '', 'Bot v' + BOT_VERSION));
+        body.appendChild(foot);
+        body.appendChild(el('div', 'credit', 'by Arasaka'));
         panel.appendChild(head);
         panel.appendChild(body);
         panel.appendChild(adminPop);
@@ -1068,7 +1339,7 @@
             return count;
         }
 
-        function showResults(entries, notes) {
+        function showResults(entries, notes, sheetIds) {
             log.textContent = '';
             entries.forEach(function (entry) {
                 var row = el('div', 'result');
@@ -1089,6 +1360,9 @@
                     row.appendChild(allow);
                 }
                 if (/^R-\d+$/.test(entry.caseId || '')) {
+                    var sheetState = sheetIds && sheetIds[entry.caseId];
+                    if (sheetState === 'ok') row.appendChild(el('div', 'badge', 'Erfolgreich ins Sheet übertragen'));
+                    else if (sheetState === 'bad') row.appendChild(el('div', 'badge bad', 'Nicht ins Sheet gekommen'));
                     var qty = el('div', 'qty');
                     var minus = el('button', 'step', '−');
                     minus.type = 'button';
@@ -1129,6 +1403,16 @@
                     qty.appendChild(plus);
                     qty.appendChild(btn);
                     row.appendChild(qty);
+                    var copy = el('button', 'ghost', 'R-Nummer kopieren');
+                    copy.type = 'button';
+                    copy.addEventListener('click', function () {
+                        var id = entry.caseId;
+                        if (!navigator.clipboard || !navigator.clipboard.writeText) return;
+                        navigator.clipboard.writeText(id).then(function () {
+                            copy.textContent = id + ' kopiert';
+                        });
+                    });
+                    row.appendChild(copy);
                 }
                 log.appendChild(row);
             });
@@ -1152,6 +1436,15 @@
             state.queue = null;
             saveQueue(null);
             refreshSlipBadge();
+        }
+
+        function resetHud() {
+            clearTop();
+            again.checked = false;
+            problem.value = PROBLEM_DEFAULT;
+            fillAddresses();
+            fillReasons();
+            setLog(startLog);
         }
 
         function selectedRows() {
@@ -1878,18 +2171,35 @@
 
         async function deliverSheet(entry) {
             if (entry && entry.r) rememberReturn(entry);
-            var result = await pushSheet(entry);
-            if (result.auth) {
-                if (!state.sheetAuthOpened) {
-                    state.sheetAuthOpened = true;
-                    window.open(sheetBase(), '_blank');
+            if (!sheetUrl()) return { ok: false, text: 'Sheet-Link fehlt. Admin öffnen und den Web-App-Link eintragen.' };
+            var stamp = berlinNow();
+            var row = {
+                date: stamp.date,
+                time: stamp.time,
+                who: workerName() || entry.who || 'Berger',
+                orderId: entry.order || '',
+                stockId: strictStockId(entry.stock || entry.kommission || ''),
+                caseId: entry.r,
+                article: entry.article || '',
+                name: entry.name || '',
+                supplier: entry.supplier || '',
+                brand: entry.brand || ''
+            };
+            try {
+                var saved = await postSheet([row]);
+                if (saved && (saved.skipped || 0) > 0 && !(saved.added || 0)) return { ok: true, text: 'Steht schon im Sheet' };
+                return { ok: true, text: 'Im Sheet' };
+            } catch (error) {
+                var message = error && error.message ? error.message : String(error);
+                if (/login|anmeld|zugriff|auth/i.test(message)) {
+                    if (!state.sheetAuthOpened) {
+                        state.sheetAuthOpened = true;
+                        window.open(sheetUrl(), '_blank');
+                    }
+                    return { ok: false, text: 'Sheet-Zugriff fehlt. Der Tab ist offen — dort erlauben, danach nochmal senden.' };
                 }
-                return { ok: false, text: 'Sheet-Zugriff fehlt. Der Tab ist offen — dort erlauben, danach nochmal senden.' };
+                return { ok: false, text: 'Nicht im Sheet: ' + message };
             }
-            if (result.missing) return { ok: false, text: 'Sheet-Link fehlt. Admin öffnen und den Web-App-Link eintragen.' };
-            if (result.ok && result.duplicate) return { ok: true, text: 'Steht schon im Sheet' + (result.row ? ', Zeile ' + result.row : '') };
-            if (result.ok) return { ok: true, text: 'Im Sheet' + (result.row ? ', Zeile ' + result.row : '') };
-            return { ok: false, text: 'Nicht im Sheet: ' + result.error };
         }
 
         function entryFromCaseFast(row) {
@@ -1925,12 +2235,39 @@
             };
         }
 
+        function sheetRowFromCard(card, caseId, orderId, who, stamp) {
+            var item = card._item || {};
+            var article = card.dataset.article || articleNo(item);
+            var fromMail = mailItemFor(state.queue, article);
+            var supplierPick = card._supplier && card._supplier.selectedOptions && card._supplier.selectedOptions[0];
+            var supplier = (supplierPick && supplierPick.value && supplierPick.textContent) || (fromMail && fromMail.supplier) || supplierNameOf(item);
+            var brand = (card._brand && card._brand.value.trim()) || (fromMail && fromMail.brand) || brandOf(item);
+            var stock = strictStockId([
+                commissionOf(state.order),
+                state.queue && state.queue.stockId,
+                state.queue && state.queue.kommission
+            ].filter(Boolean).join(' '));
+            return {
+                date: (stamp && stamp.date) || '',
+                time: (stamp && stamp.time) || '',
+                who: who || '',
+                orderId: orderId || '',
+                stockId: stock,
+                caseId: caseId,
+                article: article,
+                name: partName(item) || (fromMail && fromMail.name) || '',
+                brand: brand || '',
+                supplier: supplier || ''
+            };
+        }
+
         async function sendAll() {
             if (state.busy) return;
             var orderId = orderInput.value.trim();
             var selected = selectedRows();
             var address = chosenAddress();
             if (!token()) return setLog('Nicht eingeloggt.');
+            if (!workerName()) return setLog('Erst deinen Namen eintragen, sonst weiß später keiner wer die Retoure angemeldet hat.');
             if (!orderId) return setLog('Bestellung Nr fehlt.');
             if (!selected.length) return setLog('Kein Teil angehakt.');
             if (!address || !addressId(address)) return setLog('Keine Lieferadresse gefunden.');
@@ -1940,6 +2277,7 @@
             sendBtn.disabled = true;
             var lines = [];
             var done = [];
+            var sheetRows = [];
             try {
                 var blob = await pdfBlob(orderId);
                 var known = new Set(state.cases.map(function (row) { return row.CaseId; }));
@@ -1982,22 +2320,11 @@
                     if (!again.checked) {
                         var existing = openCase(state.cases, orderId, article);
                         if (existing && existing.CaseId) {
-                            var already = await deliverSheet({
-                                r: existing.CaseId,
-                                order: orderId,
-                                stock: stockIdFromCommission(commissionOf(state.order)) || (state.queue && state.queue.stockId) || '',
-                                kommission: (state.queue && state.queue.kommission) || commissionOf(state.order) || '',
-                                article: article,
-                                name: item.Description || item.Name || (fromMail && fromMail.name) || '',
-                                qty: card._qty.value,
-                                supplier: supplierName,
-                                brand: brandName,
-                                vin: card._vin.value.trim().toUpperCase(),
-                                reason: problem.value.trim() || PROBLEM_DEFAULT
-                            });
-                            done.push({ caseId: existing.CaseId, article: article, supplier: supplierName, sheet: already.text, sheetOk: already.ok });
+                            done.push({ caseId: existing.CaseId, article: article, supplier: supplierName });
+                            var oldStamp = stampFromCase(existing);
+                            if (!oldStamp.day) oldStamp = berlinNow();
+                            sheetRows.push(sheetRowFromCard(card, existing.CaseId, orderId, workerName() || casePerson(existing) || 'nachgetragen', oldStamp));
                             lines.push(existing.CaseId + '  ' + article + '  ' + supplierName + '  schon vorhanden');
-                            lines.push(existing.CaseId + '  ' + already.text);
                             setLog(lines.join('\n'));
                             continue;
                         }
@@ -2066,31 +2393,25 @@
                         article: article,
                         supplier: supplierName
                     };
-                    if (caseId) {
-                        var sheetResult = await deliverSheet({
-                            r: caseId,
-                            order: orderId,
-                            stock: stockIdFromCommission(commissionOf(state.order)) || (state.queue && state.queue.stockId) || '',
-                            kommission: (state.queue && state.queue.kommission) || commissionOf(state.order) || '',
-                            article: article,
-                            name: item.Description || item.Name || (fromMail && fromMail.name) || '',
-                            qty: card._qty.value,
-                            supplier: supplierName,
-                            brand: brandName,
-                            vin: card._vin.value.trim().toUpperCase(),
-                            reason: problem.value.trim() || PROBLEM_DEFAULT
-                        });
-                        entry.sheet = sheetResult.text;
-                        entry.sheetOk = sheetResult.ok;
-                        lines.push(caseId + '  ' + sheetResult.text);
-                    }
                     done.push(entry);
+                    if (/^R-\d+$/.test(caseId || '')) sheetRows.push(sheetRowFromCard(card, caseId, orderId, workerName(), berlinNow()));
                     lines.push((caseId || 'angelegt, R-Nummer nicht im Antworttext') + '  ' + article + '  ' + supplierName);
                     setLog(lines.join('\n'));
                 }
+                var sheetIds = {};
+                if (sheetRows.length) {
+                    var went = 'bad';
+                    try {
+                        var saved = await postSheet(sheetRows);
+                        if (saved && saved.ok !== false && ((saved.added || 0) + (saved.skipped || 0) > 0)) went = 'ok';
+                    } catch (sheetError) {
+                        went = 'bad';
+                    }
+                    sheetRows.forEach(function (row) { sheetIds[row.caseId] = went; });
+                }
                 await refreshCases();
                 var notes = lines.filter(function (line) { return !/^R-\d+/.test(line); });
-                if (done.length) showResults(done, notes);
+                if (done.length) showResults(done, notes, sheetIds);
                 else if (notes.length) setLog(notes.join('\n'));
                 else setLog('Nichts angelegt.');
                 var complete = selected.length && done.length === selected.length && done.every(function (entry) { return /^R-\d+/.test(entry.caseId); });
@@ -2275,7 +2596,23 @@
             showProgress('Suche wird gestoppt …');
             if (state.pickFinish) state.pickFinish(null);
         });
-
+        workerInput.addEventListener('input', function () {
+            GM_setValue(WORKER_KEY, workerInput.value.trim());
+        });
+        workerInput.addEventListener('change', function () {
+            GM_setValue(WORKER_KEY, workerInput.value.trim());
+        });
+        sheetUrlInput.addEventListener('change', function () {
+            var value = sheetUrlInput.value.trim();
+            if (value && !/^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(value)) {
+                sheetHint.textContent = 'Das ist keine exec-URL. Die endet auf /exec.';
+                return;
+            }
+            GM_setValue(SHEET_URL_KEY, value);
+            sheetUrlLabel.hidden = !!sheetUrl();
+            sheetUrlInput.hidden = !!sheetUrl();
+        });
+        resetBtn.addEventListener('click', resetHud);
         loadBtn.addEventListener('click', loadOrder);
         file.addEventListener('change', refreshSlipBadge);
         sendBtn.addEventListener('click', sendAll);
@@ -2295,10 +2632,6 @@
             saveQueue(state.queue);
             orderInput.value = parsed.orderId;
             loadOrder();
-        });
-        copyBtn.addEventListener('click', function () {
-            var text = log.textContent || '';
-            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
         });
         orderInput.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') loadOrder();
