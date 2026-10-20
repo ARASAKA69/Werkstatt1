@@ -1228,9 +1228,10 @@
             + '#alfah-retoure-bot .head button:hover{background:#1c2430;color:#e6edf3}'
             + '#alfah-retoure-bot .tools{display:flex;gap:4px;flex:0 0 auto}'
             + '#alfah-retoure-bot.min{height:auto !important;width:260px !important;min-width:0 !important;min-height:0 !important;resize:none}'
-            + '#alfah-retoure-bot.min .body{display:none !important}'
+            + '#alfah-retoure-bot.min .body,#alfah-retoure-bot.min .dock{display:none !important}'
             + '#alfah-retoure-bot.min .head{border-radius:16px}'
             + '#alfah-retoure-bot .body{padding:12px;display:flex;flex-direction:column;gap:8px;overflow-x:hidden;overflow-y:auto;flex:1 1 auto;min-height:0;min-width:0;overscroll-behavior:contain}'
+            + '#alfah-retoure-bot .body>*{flex:0 0 auto;min-width:0}'
             + '#alfah-retoure-bot label{font-size:14px;font-weight:700;color:#8b949e;letter-spacing:.3px}'
             + '#alfah-retoure-bot input[type=text],#alfah-retoure-bot input[type=number],#alfah-retoure-bot input[type=file],#alfah-retoure-bot select,#alfah-retoure-bot textarea{'
             + 'width:100%;max-width:100%;min-width:0;border:1px solid #2b3545;border-radius:10px;padding:8px 10px;font:inherit;background:#141a23;color:#e6edf3}'
@@ -1249,7 +1250,8 @@
             + '#alfah-retoure-bot .item input[type=checkbox]{accent-color:#00ffcc;margin-top:3px}'
             + '#alfah-retoure-bot .item .top{display:flex;gap:8px;align-items:flex-start}'
             + '#alfah-retoure-bot .item .meta{color:#8b949e;font-size:15px}'
-            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:12px;min-height:0;font-size:16px;min-width:0;overflow-wrap:anywhere}'
+            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:12px;min-height:48px;font-size:16px;min-width:0;overflow-wrap:anywhere}'
+            + '#alfah-retoure-bot .log>*{white-space:normal}'
             + '#alfah-retoure-bot .result{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid #2b3545;min-width:0}'
             + '#alfah-retoure-bot .result-id{color:#00ffcc;font-weight:800;font-size:22px}'
             + '#alfah-retoure-bot .result .meta{overflow-wrap:anywhere}'
@@ -1259,14 +1261,15 @@
             + '#alfah-retoure-bot .badge{display:inline-flex;align-items:center;width:fit-content;max-width:100%;padding:8px 12px;border-radius:999px;background:rgba(46,160,67,.16);border:1px solid rgba(63,185,80,.7);color:#3fb950;font-size:15px;font-weight:800}'
             + '#alfah-retoure-bot .badge[hidden]{display:none}'
             + '#alfah-retoure-bot .badge.bad{background:rgba(248,81,73,.16);border-color:rgba(248,81,73,.7);color:#f85149}'
-            + '#alfah-retoure-bot .foot{display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
-            + '#alfah-retoure-bot .credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px}'
+            + '#alfah-retoure-bot .foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:0;padding:0;border:0;color:#8b949e;font-size:12px;font-weight:800}'
+            + '#alfah-retoure-bot .credit{text-align:right;margin:0;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px}'
             + '#alfah-retoure-bot .qty{display:flex;gap:8px;align-items:center;min-width:0;flex-wrap:wrap}'
             + '#alfah-retoure-bot .qty input{width:72px;max-width:72px;flex:0 0 72px;text-align:center;padding:8px 4px}'
             + '#alfah-retoure-bot .qty button.step{flex:0 0 40px;width:40px;border:1px solid #2b3545;border-radius:10px;background:#141a23;color:#e6edf3;font-weight:800;font-size:18px;cursor:pointer}'
             + '#alfah-retoure-bot .qty button.act{flex:1 1 160px;min-width:0}'
             + '#alfah-retoure-bot .result > button{width:100%;max-width:100%}'
-            + '#alfah-retoure-bot .status-row{position:sticky;bottom:0;display:flex;gap:8px;align-items:stretch;background:#0b0f14;padding-top:8px;z-index:2}'
+            + '#alfah-retoure-bot .dock{flex:0 0 auto;display:flex;flex-direction:column;gap:6px;padding:8px 12px 10px;background:#0b0f14;border-top:1px solid #2b3545}'
+            + '#alfah-retoure-bot .status-row{position:static;display:flex;gap:8px;align-items:center;background:transparent;padding:0;z-index:1}'
             + '#alfah-retoure-bot .status-row > button.ghost{flex:0 0 auto;padding:14px 18px;font-size:16px}'
             + '#alfah-retoure-bot .search-badge{display:none;flex:1;padding:14px 16px;border-radius:14px;background:#14342c;border:2px solid #00ffcc;color:#00ffcc;font-size:20px;font-weight:800;line-height:1.25}'
             + '#alfah-retoure-bot .search-badge.on{display:block}'
@@ -1423,7 +1426,7 @@
                     items: picked,
                     savedAt: Date.now()
                 });
-                status.textContent = picked.length + ' Teil(e) gespeichert. Jetzt alfah.de öffnen, eingeloggt bleiben, und dort auf Retouren anlegen.';
+                status.textContent = 'Bestellung ' + parsed.orderId + ' ist übergeben. Auf alfah.de wird sie geladen.';
             };
         }
 
@@ -1468,7 +1471,7 @@
         var login = el('div', 'hint');
         var orderInput = document.createElement('input');
         orderInput.type = 'text';
-        orderInput.placeholder = '1333502 oder BG50729';
+        orderInput.placeholder = '1333502';
         var loadBtn = el('button', 'act', 'Auftrag laden');
         var paste = document.createElement('textarea');
         paste.placeholder = 'Oder die Auftragsmail hier reinpasten';
@@ -1512,7 +1515,7 @@
         sheetUrlInput.hidden = !!sheetUrl();
         body.appendChild(sheetUrlLabel);
         body.appendChild(sheetUrlInput);
-        body.appendChild(el('label', '', 'Bestellung oder Kommission'));
+        body.appendChild(el('label', '', 'Bestellnummer'));
         var orderRow = el('div', 'row');
         orderRow.appendChild(orderInput);
         orderRow.appendChild(loadBtn);
@@ -1536,6 +1539,7 @@
         body.appendChild(againLabel);
         body.appendChild(sendBtn);
         body.appendChild(log);
+        var dock = el('div', 'dock');
         var statusRow = el('div', 'status-row');
         var searchBadge = el('div', 'search-badge');
         var stopBtn = el('button', 'stop', 'Suche stoppen');
@@ -1546,15 +1550,16 @@
         statusRow.appendChild(searchBadge);
         statusRow.appendChild(stopBtn);
         statusRow.appendChild(adminBtn);
-        body.appendChild(statusRow);
+        dock.appendChild(statusRow);
         var adminPop = el('div', 'admin-pop');
         adminPop.hidden = true;
         var foot = el('div', 'foot');
         foot.appendChild(el('span', '', 'Bot v' + BOT_VERSION));
-        body.appendChild(foot);
-        body.appendChild(el('div', 'credit', 'by Arasaka'));
+        foot.appendChild(el('span', 'credit', 'by Arasaka'));
+        dock.appendChild(foot);
         panel.appendChild(head);
         panel.appendChild(body);
+        panel.appendChild(dock);
         panel.appendChild(adminPop);
         document.documentElement.appendChild(panel);
         drag(panel, head);
@@ -2337,10 +2342,35 @@
             return [];
         }
 
+        function handedOrderId(typed, pasted) {
+            function matches(row) {
+                if (!row || !row.orderId || !typed) return false;
+                var blob = (row.kommission || '') + ' ' + (row.stockId || '') + ' ' + row.orderId;
+                return textHasStock(blob, typed) || String(row.orderId) === String(typed);
+            }
+            if (matches(pasted)) return String(pasted.orderId);
+            if (matches(state.queue)) return String(state.queue.orderId);
+            if (!typed && pasted && pasted.orderId) return String(pasted.orderId);
+            return '';
+        }
+
         async function loadOrder() {
-            var query = orderQuery(orderInput.value);
+            var typed = orderQuery(orderInput.value);
+            var pasted = parseMail(paste.value);
+            if (pasted.orderId || (pasted.items && pasted.items.length)) {
+                state.queue = {
+                    orderId: pasted.orderId,
+                    kommission: pasted.kommission,
+                    stockId: pasted.stockId,
+                    items: pasted.items,
+                    savedAt: Date.now()
+                };
+            }
+            var query = /^\d{5,}$/.test(typed) ? typed : handedOrderId(typed, pasted);
             if (!query) {
-                setLog('Bestellung oder Kommission eingeben, zum Beispiel 1333502 oder BG50729.');
+                setLog(/[A-Za-z]/.test(typed)
+                    ? 'Kommission wird nicht durchsucht. Bestellnummer eingeben, die Mail hier einfügen, oder in Gmail auf An ALFAH übergeben.'
+                    : 'Bestellnummer eingeben, zum Beispiel 1333502.');
                 return;
             }
             if (!token()) {
@@ -2352,77 +2382,14 @@
             loadBtn.disabled = true;
             showProgress('Lade ' + query + ' …');
             try {
-                var pasted = parseMail(paste.value);
-                if (pasted.orderId || pasted.items.length) {
-                    state.queue = {
-                        orderId: pasted.orderId,
-                        kommission: pasted.kommission,
-                        stockId: pasted.stockId,
-                        items: pasted.items,
-                        savedAt: Date.now()
-                    };
-                    var typed = orderQuery(orderInput.value);
-                    if (!/^[A-Za-z]/.test(typed) && !/^\d{5,}$/.test(query) && pasted.orderId) query = pasted.orderId;
-                }
                 var order = null;
-                if (/^\d{5,}$/.test(query)) {
-                    try {
-                        order = await orderById(query);
-                    } catch (error) {
-                        order = null;
-                    }
-                }
-                if (/^[A-Za-z]/.test(query)) {
-                    var fromMail = gmailStockMails(query);
-                    if (pasted.orderId && textHasStock((pasted.kommission || '') + ' ' + pasted.stockId, query)) {
-                        if (!fromMail.some(function (row) { return row.orderId === pasted.orderId; })) fromMail.unshift(pasted);
-                    }
-                    state.mailHits = fromMail;
-                    debugSearch('Gmail', fromMail.map(function (row) { return row.orderId; }));
-                    if (fromMail.length) {
-                        var picker = startStockPick(query);
-                        var mi;
-                        for (mi = 0; mi < fromMail.length && !state.stopSearch; mi++) {
-                            showProgress('Lade Bestellung ' + fromMail[mi].orderId + ' aus der Mail …');
-                            try {
-                                var openedMail = await orderById(fromMail[mi].orderId);
-                                if (openedMail) picker.add(openedMail);
-                            } catch (e) {}
-                        }
-                        picker.end();
-                        order = await picker.promise;
-                    } else {
-                        var scanPick = startStockPick(query);
-                        await findStockOrders(query, scanPick.add);
-                        scanPick.end();
-                        order = await scanPick.promise;
-                    }
-                    if (!order) {
-                        setLog(state.stopSearch ? 'Suche gestoppt.' : 'Keine Bestellung mit Kommission ' + query + '.');
-                        meta.textContent = '';
-                        return;
-                    }
-                    if (!orderItems(order).length) {
-                        try {
-                            order = await orderById(orderIdOf(order));
-                        } catch (e) {}
-                    }
-                } else if (!order || !orderItems(order).length) {
-                    showProgress('Suche ' + query + ' in den letzten Bestellungen …');
-                    var thru = new Date();
-                    var from = new Date();
-                    from.setDate(from.getDate() - 120);
-                    var found = findOrder(await ordersBetween(from, thru), query);
-                    if (found) {
-                        try {
-                            order = await orderById(orderIdOf(found, query));
-                        } catch (e) {
-                            order = found;
-                        }
-                    }
+                try {
+                    order = await orderById(query);
+                } catch (error) {
+                    order = null;
                 }
                 if (!order) {
-                    setLog('Kein Auftrag zu ' + query + '. Auftragsbestätigung öffnen oder die Mail hier reinkopieren.');
+                    setLog('Kein Auftrag zu ' + query + '. Nummer prüfen, die Mail hier einfügen, oder in Gmail auf An ALFAH übergeben.');
                     meta.textContent = '';
                     return;
                 }
