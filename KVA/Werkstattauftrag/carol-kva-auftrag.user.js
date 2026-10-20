@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
-// @version      1.5.0
+// @version      1.5.1
 // @description  In-Carol KVA HUD: Vollautomatischer 1:1 Abgleich aller Carol-Schäden, Services, Lack/Delle (1-6) & HU-Status mit dem Sheet, erstellt PDF im Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
@@ -16,7 +16,7 @@
 (function () {
   'use strict';
 
-  var VER = '1.5.0';
+  var VER = '1.5.1';
   if (window.__kvaCarolHudVer) return;
   window.__kvaCarolHudVer = VER;
 
@@ -1248,76 +1248,354 @@
     return true;
   }
 
-  async function autoSetPartsOrderedInCarol(stockId) {
-    setHudStatus('wait', 'Setze Ersatzteile in Carol auf "Bestellt"…');
-    var editPartsBtn = findButtonByText(/ersatzteile\s+bearbeiten|bearbeite\s+schäden\s+und\s+dienstleistungen|edit\s+damages\s+and\s+services/i);
-    if (editPartsBtn && !/nachautorisierung/i.test(getPageTextWithoutDrawer())) {
-      try { sessionStorage.setItem(STORE_AUTO_PARTS_KEY, stockId || '1'); } catch (e) {}
-      editPartsBtn.click();
-      await sleep(1400);
-    }
+  var KVA_ORDERED_STATUS = 'SPARE_PARTS_ORDERED';
+  var kvaWorkshopIds = null;
+  var kvaRefreshInFlight = null;
+  var KVA_ENTRY_CHECK_QUERY = 'query entryCheckPostAuthorization($refurbishmentId: UUID!) {'
+    + ' entryCheckPostAuthorization(refurbishmentId: $refurbishmentId) {'
+    + ' id state'
+    + ' items { id entityId entityType verified'
+    + ' values { id sourceType state'
+    + ' originalValue { payloadType'
+    + ' ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }'
+    + ' ... on DamageImagePayload { imageUrl }'
+    + ' ... on DamageServiceNamePayload { name type }'
+    + ' ... on VehicleServiceNamePayload { name type }'
+    + ' ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }'
+    + ' ... on ServiceCommentPayload { comment }'
+    + ' ... on DamageCancellationPayload { cancelReason cancelComment }'
+    + ' ... on ServiceStatePayload { serviceState }'
+    + ' ... on PartnerWorkshopConnectionPayload { id }'
+    + ' ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }'
+    + ' }'
+    + ' proposedValue { payloadType'
+    + ' ... on DamageTypePayload { area subArea partName typeName isSecondaryWheel isImportedFromCat isPA3Damage attribute1Name attribute1Value attribute2Name attribute2Value quantity }'
+    + ' ... on DamageImagePayload { imageUrl }'
+    + ' ... on DamageServiceNamePayload { name type }'
+    + ' ... on VehicleServiceNamePayload { name type }'
+    + ' ... on ServiceBudgetPayload { budgetMinorUnits consumableCostMinorUnits sparePartCostMinorUnits laborRateMinorUnits laborTimeHours }'
+    + ' ... on ServiceCommentPayload { comment }'
+    + ' ... on DamageCancellationPayload { cancelReason cancelComment }'
+    + ' ... on ServiceStatePayload { serviceState }'
+    + ' ... on PartnerWorkshopConnectionPayload { id }'
+    + ' ... on EcCommonPayload { sparePart { status comment lastStatusUpdatedOn } }'
+    + ' } } } } }';
 
-    var sidebarParts = await waitForElement(function () {
-      var els = document.querySelectorAll('a, button, li, div, span');
-      for (var i = 0; i < els.length; i++) {
-        var t = String(els[i].textContent || '').trim();
-        if (/^Ersatzteile\s*\(\d+\)$/i.test(t) || /^Spare\s+parts\s*\(\d+\)$/i.test(t)) return els[i];
-      }
+  function kvaReadAuth() {
+    try {
+      var raw = localStorage.getItem('authData');
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      return parsed;
+    } catch (e) {
       return null;
-    }, 6000);
-
-    if (sidebarParts) {
-      sidebarParts.click();
-      await sleep(900);
     }
+  }
 
+  function kvaWriteAuth(auth) {
+    localStorage.setItem('authData', JSON.stringify(auth));
+  }
+
+  function kvaDecodeJwt(token) {
+    var part = String(token || '').split('.')[1];
+    if (!part) return null;
+    try {
+      var b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+      var pad = b64 + '==='.slice((b64.length + 3) % 4);
+      var json = atob(pad);
+      try { return JSON.parse(decodeURIComponent(escape(json))); } catch (e2) { return JSON.parse(json); }
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function kvaTokenStillValid(token, skewMs) {
+    var payload = kvaDecodeJwt(token);
+    if (!payload || !payload.exp) return !!token;
+    return (Number(payload.exp) * 1000) > (Date.now() + (skewMs || 0));
+  }
+
+  async function kvaRefreshAuth() {
+    if (kvaRefreshInFlight) return kvaRefreshInFlight;
+    kvaRefreshInFlight = (async function () {
+      var cur = kvaReadAuth();
+      if (!cur || !cur.refresh_token) throw new Error('Carol Login abgelaufen, bitte neu anmelden');
+      var body = new URLSearchParams();
+      body.set('client_id', 'refurbishment');
+      body.set('grant_type', 'refresh_token');
+      body.set('refresh_token', cur.refresh_token);
+      var headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' };
+      if (cur.access_token) headers.authorization = 'Bearer ' + cur.access_token;
+      var res = await fetch('/api/v1/auth/oauth/token', { method: 'POST', headers: headers, body: body.toString() });
+      var data = null;
+      try { data = await res.json(); } catch (e) { data = null; }
+      var tokenObj = (data && data.access_token) ? data : (data && data.result && data.result.access_token ? data.result : null);
+      if (!res.ok || !tokenObj) throw new Error('Carol Token konnte nicht erneuert werden, bitte neu anmelden');
+      var next = Object.assign({}, cur, tokenObj);
+      if (!next.refresh_token) next.refresh_token = cur.refresh_token;
+      kvaWriteAuth(next);
+      return next;
+    })();
+    try {
+      return await kvaRefreshInFlight;
+    } finally {
+      kvaRefreshInFlight = null;
+    }
+  }
+
+  async function kvaEnsureFreshLogin() {
+    var auth = kvaReadAuth();
+    if (!auth || !auth.access_token) throw new Error('Nicht in Carol eingeloggt');
+    if (kvaTokenStillValid(auth.access_token, 90000)) return auth.access_token;
+    var next = await kvaRefreshAuth();
+    return next.access_token;
+  }
+
+  function kvaAssertGql(arr) {
+    if (!Array.isArray(arr)) throw new Error('Carol API Antwort ungültig');
+    var msgs = [];
+    var i;
+    var j;
+    for (i = 0; i < arr.length; i++) {
+      var row = arr[i];
+      if (row && Array.isArray(row.errors) && row.errors.length) {
+        for (j = 0; j < row.errors.length; j++) msgs.push((row.errors[j] && row.errors[j].message) || 'GraphQL Fehler');
+      }
+    }
+    if (msgs.length) throw new Error(msgs.join('; '));
+    return arr;
+  }
+
+  async function kvaGqlBatch(ops, retried) {
+    var token = await kvaEnsureFreshLogin();
+    var pageWin = (typeof unsafeWindow !== 'undefined' && unsafeWindow) || window;
+    var version = (pageWin.REACT_CFG && pageWin.REACT_CFG.VITE_INFO_VERSION) || 'v4.32.1';
+    var res = await fetch('/api/v1/refurbishment-aggregation/graphql', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'accept-language': 'en-GB',
+        'x-carol-frontend-version': version,
+        'authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify(ops)
+    });
+    if (res.status === 401 && !retried) {
+      await kvaRefreshAuth();
+      return kvaGqlBatch(ops, true);
+    }
+    if (!res.ok) throw new Error('Carol API HTTP ' + res.status);
+    return kvaAssertGql(await res.json());
+  }
+
+  async function kvaGqlOne(operationName, query, variables) {
+    var arr = await kvaGqlBatch([{ operationName: operationName, variables: variables, query: query }], false);
+    return arr[0] && arr[0].data;
+  }
+
+  function kvaCurrentRefurbishmentId() {
+    var m = location.pathname.match(/\/refurbishment\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    return m ? m[1] : '';
+  }
+
+  async function kvaLoadWorkshopIds() {
+    if (kvaWorkshopIds && kvaWorkshopIds.length) return kvaWorkshopIds;
+    var auth = kvaReadAuth();
+    var payload = kvaDecodeJwt(auth && auth.access_token);
+    var userId = payload && (payload.user_uuid || payload.userUuid || payload.sub);
+    if (!userId) throw new Error('Carol Benutzer konnte nicht gelesen werden');
+    var data = await kvaGqlOne(
+      'user',
+      'query user($id: UUID!) { user(id: $id) { userPartnerWorkshopConnections { mainWorkshop { branchId } } } }',
+      { id: userId }
+    );
+    var conns = (data && data.user && data.user.userPartnerWorkshopConnections) || [];
+    var ids = [];
+    var i;
+    for (i = 0; i < conns.length; i++) {
+      var branchNum = Number(conns[i] && conns[i].mainWorkshop && conns[i].mainWorkshop.branchId);
+      if (isFinite(branchNum) && branchNum > 0 && ids.indexOf(branchNum) === -1) ids.push(branchNum);
+    }
+    if (!ids.length) throw new Error('Keine Carol Werkstatt am Login gefunden');
+    kvaWorkshopIds = ids;
+    return ids;
+  }
+
+  async function kvaResolveRefurbishmentId(stockId) {
+    var direct = kvaCurrentRefurbishmentId();
+    if (direct) return direct;
+    var sid = String(stockId || '').trim().toUpperCase();
+    if (!sid) throw new Error('Carol Auftrag auf dieser Seite nicht erkannt');
+    var workshops = await kvaLoadWorkshopIds();
+    var ov = await kvaGqlOne(
+      'refurbishmentOverview',
+      'query refurbishmentOverview($page: Int!, $pageSize: Int!, $filter: RefurbishmentOverviewFilter!) { refurbishmentOverview(page: $page, pageSize: $pageSize, filter: $filter) { items { id } } }',
+      { page: 0, pageSize: 5, filter: { stockNumbers: [sid], mainWorkshopIds: workshops } }
+    );
+    var item = ov && ov.refurbishmentOverview && ov.refurbishmentOverview.items && ov.refurbishmentOverview.items[0];
+    if (!item || !item.id) throw new Error('Auftrag in Carol nicht gefunden');
+    return item.id;
+  }
+
+  function kvaEffectiveVal(item) {
+    var vals = item.values || [];
+    var pa = vals.find(function (v) { return v.sourceType === 'POST_AUTHORIZATION' && v.proposedValue; });
+    if (pa) return { payload: pa.proposedValue, state: pa.state };
+    var auth = vals.find(function (v) { return v.sourceType === 'AUTHORIZATION' && v.proposedValue; });
+    if (auth) return { payload: auth.proposedValue, state: auth.state };
+    var ecVal = vals.find(function (v) { return v.sourceType === 'ENTRY_CHECK'; });
+    if (ecVal) {
+      if (item.verified && ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+      if (ecVal.originalValue) return { payload: ecVal.originalValue, state: ecVal.state };
+      if (ecVal.proposedValue) return { payload: ecVal.proposedValue, state: ecVal.state };
+    }
+    return null;
+  }
+
+  function kvaCleanProposed(payload, spareStatus) {
+    if (!payload) return null;
+    var pt = payload.payloadType;
+    if (pt === 'VEHICLE_SERVICE_NAME' || pt === 'DAMAGE_SERVICE_NAME') return { payloadType: pt, name: payload.name, type: payload.type };
+    if (pt === 'SERVICE_BUDGET') {
+      var budget = { payloadType: pt, budgetMinorUnits: payload.budgetMinorUnits };
+      if (payload.consumableCostMinorUnits !== undefined && payload.consumableCostMinorUnits !== null) {
+        budget.consumableCostMinorUnits = payload.consumableCostMinorUnits;
+        budget.sparePartCostMinorUnits = payload.sparePartCostMinorUnits;
+        budget.laborTimeHours = payload.laborTimeHours;
+        budget.laborRateMinorUnits = payload.laborRateMinorUnits;
+      }
+      return budget;
+    }
+    if (pt === 'SERVICE_COMMENT') return { payloadType: pt, comment: payload.comment == null ? null : payload.comment };
+    if (pt === 'SERVICE_STATE') return { payloadType: pt, serviceState: payload.serviceState };
+    if (pt === 'PARTNER_WORKSHOP_CONNECTION') return { payloadType: pt, id: payload.id };
+    if (pt === 'DAMAGE_TYPE') {
+      var base = { payloadType: pt, area: payload.area, subArea: payload.subArea, partName: payload.partName, typeName: payload.typeName, isSecondaryWheel: payload.isSecondaryWheel };
+      if (payload.isPA3Damage) {
+        base.isPA3Damage = true;
+        base.quantity = payload.quantity;
+        if (payload.attribute1Name) { base.attribute1Name = payload.attribute1Name; base.attribute1Value = payload.attribute1Value; }
+        if (payload.attribute2Name) { base.attribute2Name = payload.attribute2Name; base.attribute2Value = payload.attribute2Value; }
+      }
+      return base;
+    }
+    if (pt === 'DAMAGE_IMAGE') return { payloadType: pt, imageUrl: payload.imageUrl == null ? null : payload.imageUrl };
+    if (pt === 'DAMAGE_CANCELLATION') return { payloadType: pt, cancelComment: payload.cancelComment == null ? null : payload.cancelComment, cancelReason: payload.cancelReason == null ? null : payload.cancelReason };
+    if (pt === 'EC_COMMON_PAYLOAD') {
+      return {
+        payloadType: pt,
+        sparePart: payload.sparePart ? {
+          status: spareStatus || payload.sparePart.status,
+          comment: payload.sparePart.comment == null ? null : payload.sparePart.comment,
+          lastStatusUpdateOn: null
+        } : null
+      };
+    }
+    return null;
+  }
+
+  function kvaSparePastOrder(status) {
+    var s = String(status || '').toUpperCase();
+    return s === 'SPARE_PARTS_ORDERED' || s === 'ORDERED'
+      || s === 'SPARE_PARTS_DELIVERED' || s === 'DELIVERED'
+      || s === 'SPARE_PARTS_HANDED_OUT' || s === 'HANDED_OUT';
+  }
+
+  async function autoSetPartsOrderedInCarol(stockId) {
+    setHudStatus('wait', 'Setze Ersatzteile per Carol-API auf Bestellt…');
+    var refId = await kvaResolveRefurbishmentId(stockId);
+    var pa = await kvaGqlOne('entryCheckPostAuthorization', KVA_ENTRY_CHECK_QUERY, { refurbishmentId: refId });
+    var ec = pa && pa.entryCheckPostAuthorization;
+    if (!ec || !ec.id) throw new Error('Nachautorisierung ist auf diesem Auftrag nicht offen');
+    var byEntity = {};
+    var items = ec.items || [];
+    var i;
+    for (i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (!item || !item.entityId) continue;
+      if (item.entityType !== 'SERVICE' && item.entityType !== 'DAMAGE') continue;
+      if (!byEntity[item.entityId]) byEntity[item.entityId] = [];
+      byEntity[item.entityId].push(item);
+    }
+    var updateBatches = [];
+    var createBatches = [];
+    var spareCount = 0;
     var changedCount = 0;
-    var selects = document.querySelectorAll('select');
-    for (var s = 0; s < selects.length; s++) {
-      var opts = selects[s].options;
-      for (var o = 0; o < opts.length; o++) {
-        if (/^(bestellt|ordered)$/i.test(String(opts[o].text || '').trim())) {
-          if (selects[s].value !== opts[o].value) {
-            setNativeValue(selects[s], opts[o].value);
-            changedCount++;
-            await sleep(500);
-          }
-          break;
+    Object.keys(byEntity).forEach(function (entityId) {
+      var entityItems = byEntity[entityId];
+      var effMap = {};
+      var n;
+      for (n = 0; n < entityItems.length; n++) {
+        var eff = kvaEffectiveVal(entityItems[n]);
+        if (eff && eff.payload && eff.payload.payloadType) effMap[eff.payload.payloadType] = { item: entityItems[n], payload: eff.payload, state: eff.state };
+      }
+      var ecCommon = effMap.EC_COMMON_PAYLOAD;
+      if (!ecCommon || !ecCommon.payload.sparePart) return;
+      var declined = false;
+      Object.keys(effMap).forEach(function (pt) {
+        var info = effMap[pt];
+        if (info.state === 'DECLINED' && info.payload.payloadType !== 'DAMAGE_CANCELLATION') declined = true;
+      });
+      if (declined) return;
+      spareCount++;
+      if (kvaSparePastOrder(ecCommon.payload.sparePart.status)) return;
+      changedCount++;
+      var hasPostAuth = false;
+      for (n = 0; n < entityItems.length; n++) {
+        var vals = entityItems[n].values || [];
+        var v;
+        for (v = 0; v < vals.length; v++) {
+          var pv = vals[v].proposedValue;
+          if (vals[v].sourceType === 'POST_AUTHORIZATION' && pv && pv.payloadType !== 'DAMAGE_CUSTOMER_DISPLAY') hasPostAuth = true;
         }
       }
-    }
-
-    var statusCells = Array.from(document.querySelectorAll('div, span, button')).filter(function (el) {
-      var t = String(el.textContent || '').trim();
-      return /^(nicht\s+bestellt|not\s+ordered)$/i.test(t) && el.children.length <= 1;
-    });
-    for (var c = 0; c < statusCells.length; c++) {
-      statusCells[c].click();
-      await sleep(280);
-      var optOrdered = Array.from(document.querySelectorAll('[role="option"], li, div, span')).find(function (el) {
-        return /^(bestellt|ordered)$/i.test(String(el.textContent || '').trim()) && el.children.length === 0;
-      });
-      if (optOrdered) {
-        optOrdered.click();
-        changedCount++;
-        await sleep(600);
+      if (hasPostAuth) {
+        var updates = [];
+        Object.keys(effMap).forEach(function (pt) {
+          if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+          var info = effMap[pt];
+          var paVal = (info.item.values || []).find(function (row) { return row.sourceType === 'POST_AUTHORIZATION'; });
+          var proposedValue = kvaCleanProposed(info.payload, KVA_ORDERED_STATUS);
+          if (paVal && proposedValue) updates.push({ id: paVal.id, value: { state: 'CONFIRMED', proposedValue: proposedValue } });
+        });
+        if (updates.length) updateBatches.push(updates);
+      } else {
+        var creates = [];
+        Object.keys(effMap).forEach(function (pt) {
+          if (pt === 'DAMAGE_CUSTOMER_DISPLAY') return;
+          var info = effMap[pt];
+          var proposedValue = kvaCleanProposed(info.payload, KVA_ORDERED_STATUS);
+          if (proposedValue) creates.push({ entryCheckItemId: info.item.id, sourceType: 'POST_AUTHORIZATION', state: 'CONFIRMED', proposedValue: proposedValue });
+        });
+        if (creates.length) createBatches.push(creates);
       }
+    });
+    if (!spareCount) throw new Error('Keine Ersatzteile auf diesem Auftrag');
+    if (updateBatches.length) {
+      await kvaGqlBatch(updateBatches.map(function (inputs) {
+        return {
+          operationName: 'updateEntryCheckItemValues',
+          variables: { inputs: inputs },
+          query: 'mutation updateEntryCheckItemValues($inputs: [EntryCheckItemValueUpdateEntryInput!]!) { updateEntryCheckItemValues(inputs: $inputs) { id state } }'
+        };
+      }), false);
     }
-
-    var closeSavedBtn = await waitForElement(function () {
-      return findButtonByText(/^(schließen|close)$/i);
-    }, 2500);
-    if (closeSavedBtn) {
-      closeSavedBtn.click();
-      await sleep(500);
+    if (createBatches.length) {
+      await kvaGqlBatch(createBatches.map(function (inputs) {
+        return {
+          operationName: 'createEntryCheckItemValues',
+          variables: { inputs: inputs },
+          query: 'mutation createEntryCheckItemValues($inputs: [EntryCheckItemValueCreateInput!]!) { createEntryCheckItemValues(inputs: $inputs) { id state } }'
+        };
+      }), false);
     }
-
-    var finishBtn = findButtonByText(/^(abschließen|complete|finish)$/i);
-    if (finishBtn && !finishBtn.disabled) {
-      finishBtn.click();
-      await sleep(800);
-    }
-
+    setHudStatus('wait', 'Schließe die Nachautorisierung ab…');
+    await kvaGqlOne(
+      'postAuthorizeEntryCheck',
+      'mutation postAuthorizeEntryCheck($id: UUID!) { postAuthorizeEntryCheck(id: $id) { id state refurbishment { id state } } }',
+      { id: ec.id }
+    );
     try { sessionStorage.removeItem(STORE_AUTO_PARTS_KEY); } catch (e2) {}
     return changedCount;
   }
@@ -1421,8 +1699,9 @@
         }
 
         if (state.autoOrderParts) {
-          setHudStatus('wait', '3/3 · Setze Ersatzteile auf "Bestellt" & schließe Nachautorisierung ab…');
-          await autoSetPartsOrderedInCarol(state.stockId);
+          setHudStatus('wait', '3/3 · Setze Ersatzteile per API auf Bestellt und schließe ab…');
+          var ordered = await autoSetPartsOrderedInCarol(state.stockId);
+          state._orderedParts = ordered;
         }
 
         state.busy = false;
@@ -1431,7 +1710,7 @@
           'ok',
           'Fertig! ' + res.fileName + ' im Drive gespeichert'
             + (state.autoUploadPdf ? ', in Carol hochgeladen' : '')
-            + (state.autoOrderParts ? ' & Ersatzteile auf Bestellt gesetzt.' : '.')
+            + (state.autoOrderParts ? (state._orderedParts ? ' & ' + state._orderedParts + ' Ersatzteil(e) auf Bestellt gesetzt.' : ' & Nachautorisierung abgeschlossen.') : '.')
         );
       } catch (stepErr) {
         state.busy = false;
@@ -1887,7 +2166,18 @@
 
     var onlyPartsBtn = document.getElementById('kva-btn-only-parts');
     if (onlyPartsBtn) onlyPartsBtn.addEventListener('click', function () {
-      autoSetPartsOrderedInCarol(state.stockId);
+      if (state.busy) return;
+      state.busy = true;
+      renderHud();
+      autoSetPartsOrderedInCarol(state.stockId).then(function (n) {
+        state.busy = false;
+        renderHud();
+        setHudStatus('ok', n ? n + ' Ersatzteil(e) auf Bestellt gesetzt und abgeschlossen.' : 'Ersatzteile waren schon Bestellt. Nachautorisierung abgeschlossen.');
+      }).catch(function (err) {
+        state.busy = false;
+        renderHud();
+        setHudStatus('err', (err && err.message) || String(err));
+      });
     });
 
     var resetSheetBtn = document.getElementById('kva-btn-reset-sheet');
