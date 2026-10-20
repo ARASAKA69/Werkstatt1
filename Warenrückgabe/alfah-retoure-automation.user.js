@@ -42,8 +42,15 @@
 
     function token() {
         try {
-            return pageWindow().sessionStorage.getItem('token') || '';
-        } catch (e) {
+            var live = pageWindow().sessionStorage.getItem('token') || '';
+            if (live) {
+                try { GM_setValue('alfah_retoure_token', live); } catch (e) {}
+                return live;
+            }
+        } catch (e2) {}
+        try {
+            return String(GM_getValue('alfah_retoure_token', '') || '');
+        } catch (e3) {
             return '';
         }
     }
@@ -152,6 +159,28 @@
         return [];
     }
 
+    function orderListFrom(data) {
+        var list = asList(data);
+        if (list.length) return list;
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+        var direct = data.Orders || data.orders || data.Data || data.Results || data.results || data.Value || data.value;
+        if (Array.isArray(direct)) return direct;
+        if (direct && typeof direct === 'object') {
+            var nested = asList(direct);
+            if (nested.length) return nested;
+            if (Array.isArray(direct.$values)) return direct.$values;
+            if (Array.isArray(direct.Orders)) return direct.Orders;
+            if (Array.isArray(direct.Items)) return direct.Items;
+        }
+        var keys = Object.keys(data);
+        var i;
+        for (i = 0; i < keys.length; i++) {
+            var value = data[keys[i]];
+            if (Array.isArray(value) && value.length && value[0] && typeof value[0] === 'object') return value;
+        }
+        return [];
+    }
+
     function parseMail(text) {
         var raw = String(text || '').replace(/\u00a0/g, ' ').replace(/[\u200b\u200c\u200d\ufeff]/g, '').replace(/\uFF1A/g, ':').replace(/\uFF08/g, '(').replace(/\uFF09/g, ')');
         var orderMatch = raw.match(/Bestellung\s*Nr\.?\s*#?\s*(\d{5,})/i) || raw.match(/Auftragsbestätigung\s*#\s*(\d{5,})/i) || raw.match(/#(\d{6,})/);
@@ -188,6 +217,73 @@
         var token = String(value || '').trim().split(/[\s\/]+/)[0] || '';
         if (!/^[A-Za-z][A-Za-z0-9]{2,}$/.test(token)) return '';
         return token.toUpperCase();
+    }
+
+    function orderIdsInText(text) {
+        var ids = [];
+        var raw = String(text || '');
+        var re = /(?:Auftragsbestätigung|Bestellung)\s*(?:Nr\.?)?\s*#?\s*(\d{5,})/gi;
+        var match;
+        while ((match = re.exec(raw))) {
+            if (ids.indexOf(match[1]) === -1) ids.push(match[1]);
+        }
+        return ids;
+    }
+
+    function textHasStock(text, query) {
+        var up = String(query || '').toUpperCase();
+        if (!up) return false;
+        return new RegExp('(^|[^A-Za-z0-9])' + up.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z0-9]|$)', 'i').test(String(text || ''));
+    }
+
+    function mailDocuments() {
+        var docs = [document];
+        var frames = document.querySelectorAll('iframe');
+        var i;
+        for (i = 0; i < frames.length; i++) {
+            try {
+                if (frames[i].contentDocument) docs.push(frames[i].contentDocument);
+            } catch (e) {}
+        }
+        return docs;
+    }
+
+    function gmailStockMails(query) {
+        var hits = [];
+        var seen = {};
+        function take(text) {
+            var raw = String(text || '').replace(/\u00a0/g, ' ');
+            if (!textHasStock(raw, query)) return;
+            var parsed = parseMail(raw);
+            var ids = orderIdsInText(raw);
+            if (parsed.orderId && ids.indexOf(parsed.orderId) === -1) ids.push(parsed.orderId);
+            ids.forEach(function (id) {
+                var items = parsed.orderId === id ? parsed.items : [];
+                if (seen[id]) {
+                    hits.forEach(function (hit) {
+                        if (hit.orderId === id && items.length && !hit.items.length) hit.items = items;
+                    });
+                    return;
+                }
+                seen[id] = true;
+                hits.push({
+                    orderId: id,
+                    kommission: parsed.kommission || query,
+                    stockId: String(query || '').toUpperCase(),
+                    items: items
+                });
+            });
+        }
+        if (!/mail\.google\.com$/i.test(location.hostname)) return hits;
+        mailDocuments().forEach(function (doc) {
+            var nodes = doc.querySelectorAll('div.a3s, div.ii.gt, tr.zA');
+            var i;
+            for (i = 0; i < nodes.length; i++) {
+                if (nodes[i].closest && nodes[i].closest('#alfah-retoure-bot')) continue;
+                take(nodes[i].innerText || nodes[i].textContent || '');
+            }
+        });
+        return hits;
     }
 
     function strictStockId(value) {
@@ -498,7 +594,7 @@
     }
 
     function attrName(row) {
-        return String((row && (row.Name || row.name || row.Key || row.AttributeName || row.Code || row.Id)) || '');
+        return String((row && (row.Name || row.name || row.Key || row.AttributeName || row.Code || row.Id || row.AttributeId || row.OrderAttributeTypeId || row.Type)) || '');
     }
 
     function attrValue(row) {
@@ -526,7 +622,52 @@
     }
 
     function looksLikeLine(row) {
-        return !!(row && typeof row === 'object' && !Array.isArray(row) && (row.ArticleNumber || row.CatalogNumber || row.ArticleId || row.ExternalArticleId || row.article || row.SearchedNumber || row.PartNumber));
+        if (!row || typeof row !== 'object' || Array.isArray(row)) return false;
+        if (row.ArticleNumber || row.CatalogNumber || row.ArticleId || row.ExternalArticleId || row.article || row.SearchedNumber || row.PartNumber || row.NormalizedCatalogNumber || row.TecDocCatalogNumber) return true;
+        var text = String(row.Description || row.Name || row.ArticleName || '');
+        return /\[[A-Za-z0-9]{4,}\]/.test(text);
+    }
+
+    function asPosition(row) {
+        var line = lineOf(row);
+        if (line && line !== row) return line;
+        if (!looksLikeLine(row) && !line) return null;
+        var src = line || row;
+        return {
+            ArticleNumber: src.CatalogNumber || src.ArticleNumber || src.ExternalArticleId || src.NormalizedCatalogNumber || src.TecDocCatalogNumber || bracketArticle(src) || '',
+            CatalogNumber: src.CatalogNumber || src.NormalizedCatalogNumber || '',
+            ArticleId: src.ArticleId || null,
+            Description: src.Description || src.Name || src.ArticleName || '',
+            Name: src.Name || src.ArticleName || '',
+            Manufacturer: src.Manufacturer || src.ManufacturerName || '',
+            ManufacturerName: src.ManufacturerName || '',
+            Supplier: src.Supplier || src.SupplierName || '',
+            SupplierId: src.SupplierId || '',
+            Quantity: src.Quantity || src.Qty || src.Amount || 1,
+            Attributes: src.Attributes || src.OrderItemAttributes || [],
+            ItemId: src.ItemId || src.OrderItemId || src.Id || null,
+            OrderItemId: src.OrderItemId || src.ItemId || null
+        };
+    }
+
+    function extraPositions(row) {
+        var found = [];
+        if (!row || typeof row !== 'object') return found;
+        Object.keys(row).forEach(function (key) {
+            var value = row[key];
+            if (Array.isArray(value)) {
+                value.forEach(function (child) {
+                    var line = asPosition(child);
+                    if (line) found.push(line);
+                });
+                return;
+            }
+            if (value && typeof value === 'object' && looksLikeLine(value)) {
+                var nested = asPosition(value);
+                if (nested) found.push(nested);
+            }
+        });
+        return found;
     }
 
     function lineScore(key, rows) {
@@ -642,7 +783,28 @@
 
     function orderItems(order) {
         if (order && Array.isArray(order._alfahMailRows) && order._alfahMailRows.length) return order._alfahMailRows;
-        var rows = bestLines(order);
+        var source = [];
+        ['OrderItems', 'orderItems', 'Items', 'Positions', 'OrderPositions'].forEach(function (key) {
+            if (order && Array.isArray(order[key])) source = source.concat(order[key]);
+        });
+        var rows = [];
+        var seen = {};
+        function add(row) {
+            var line = asPosition(row);
+            if (!line) return;
+            var key = String(line.OrderItemId || line.ItemId || '') + '|' + String(articleNo(line) || line.Description || '');
+            if (seen[key]) return;
+            seen[key] = true;
+            rows.push(line);
+            extraPositions(row).forEach(function (extra) {
+                var extraKey = String(extra.OrderItemId || extra.ItemId || '') + '|' + String(articleNo(extra) || extra.Description || '');
+                if (seen[extraKey]) return;
+                seen[extraKey] = true;
+                rows.push(extra);
+            });
+        }
+        source.forEach(add);
+        if (!rows.length) bestLines(order).forEach(add);
         var described = describedParts(order);
         if (described.length > rows.length) {
             return described.map(function (part, index) {
@@ -662,6 +824,13 @@
                     OrderItemId: api.OrderItemId || api.ItemId || null
                 };
             });
+        }
+        if (source.length && rows.length !== source.length) {
+            try {
+                console.log('[ALFAH Retoure] Positionen', source.length, 'im Auftrag,', rows.length, 'angezeigt', source.map(function (row) {
+                    return { keys: Object.keys(row || {}), article: articleNo(row), name: (row && (row.Description || row.Name)) || '', qty: row && row.Quantity };
+                }));
+            } catch (e) {}
         }
         return rows;
     }
@@ -1051,7 +1220,7 @@
             + 'display:flex;flex-direction:column;background:#0b0f14;color:#e6edf3;border:1px solid #2b3545;border-radius:16px;'
             + 'box-shadow:0 18px 50px rgba(0,0,0,.45);font:16px/1.45 Segoe UI,Arial,sans-serif}'
             + '#alfah-retoure-bot *{box-sizing:border-box}'
-            + '#alfah-retoure-bot .head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;cursor:move;'
+            + '#alfah-retoure-bot .head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;cursor:move;flex:0 0 auto;'
             + 'background:linear-gradient(180deg,#161d27 0%,#10151d 100%);border-bottom:1px solid #2b3545;border-radius:16px 16px 0 0}'
             + '#alfah-retoure-bot .head b{font-size:18px;letter-spacing:.4px;text-transform:uppercase}'
             + '#alfah-retoure-bot .head b span{color:#00ffcc}'
@@ -1061,7 +1230,7 @@
             + '#alfah-retoure-bot.min{height:auto !important;width:260px !important;min-width:0 !important;min-height:0 !important;resize:none}'
             + '#alfah-retoure-bot.min .body{display:none !important}'
             + '#alfah-retoure-bot.min .head{border-radius:16px}'
-            + '#alfah-retoure-bot .body{padding:12px;display:flex;flex-direction:column;gap:8px;overflow-x:hidden;overflow-y:auto;flex:1;min-width:0}'
+            + '#alfah-retoure-bot .body{padding:12px;display:flex;flex-direction:column;gap:8px;overflow-x:hidden;overflow-y:auto;flex:1 1 auto;min-height:0;min-width:0;overscroll-behavior:contain}'
             + '#alfah-retoure-bot label{font-size:14px;font-weight:700;color:#8b949e;letter-spacing:.3px}'
             + '#alfah-retoure-bot input[type=text],#alfah-retoure-bot input[type=number],#alfah-retoure-bot input[type=file],#alfah-retoure-bot select,#alfah-retoure-bot textarea{'
             + 'width:100%;max-width:100%;min-width:0;border:1px solid #2b3545;border-radius:10px;padding:8px 10px;font:inherit;background:#141a23;color:#e6edf3}'
@@ -1080,9 +1249,10 @@
             + '#alfah-retoure-bot .item input[type=checkbox]{accent-color:#00ffcc;margin-top:3px}'
             + '#alfah-retoure-bot .item .top{display:flex;gap:8px;align-items:flex-start}'
             + '#alfah-retoure-bot .item .meta{color:#8b949e;font-size:15px}'
-            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:12px;min-height:48px;font-size:16px}'
-            + '#alfah-retoure-bot .result{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid #2b3545}'
+            + '#alfah-retoure-bot .log{white-space:pre-wrap;background:#141a23;border:1px solid #2b3545;border-radius:10px;padding:12px;min-height:0;font-size:16px;min-width:0;overflow-wrap:anywhere}'
+            + '#alfah-retoure-bot .result{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid #2b3545;min-width:0}'
             + '#alfah-retoure-bot .result-id{color:#00ffcc;font-weight:800;font-size:22px}'
+            + '#alfah-retoure-bot .result .meta{overflow-wrap:anywhere}'
             + '#alfah-retoure-bot .ok{color:#2ea043;font-weight:700}'
             + '#alfah-retoure-bot .bad{color:#f85149;font-weight:700}'
             + '#alfah-retoure-bot .hint{color:#8b949e;font-size:15px}'
@@ -1091,10 +1261,11 @@
             + '#alfah-retoure-bot .badge.bad{background:rgba(248,81,73,.16);border-color:rgba(248,81,73,.7);color:#f85149}'
             + '#alfah-retoure-bot .foot{display:flex;justify-content:space-between;gap:10px;margin-top:8px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
             + '#alfah-retoure-bot .credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px}'
-            + '#alfah-retoure-bot .qty{display:flex;gap:8px;align-items:center;min-width:0}'
+            + '#alfah-retoure-bot .qty{display:flex;gap:8px;align-items:center;min-width:0;flex-wrap:wrap}'
             + '#alfah-retoure-bot .qty input{width:72px;max-width:72px;flex:0 0 72px;text-align:center;padding:8px 4px}'
             + '#alfah-retoure-bot .qty button.step{flex:0 0 40px;width:40px;border:1px solid #2b3545;border-radius:10px;background:#141a23;color:#e6edf3;font-weight:800;font-size:18px;cursor:pointer}'
-            + '#alfah-retoure-bot .qty button.act{flex:1;min-width:0}'
+            + '#alfah-retoure-bot .qty button.act{flex:1 1 160px;min-width:0}'
+            + '#alfah-retoure-bot .result > button{width:100%;max-width:100%}'
             + '#alfah-retoure-bot .status-row{position:sticky;bottom:0;display:flex;gap:8px;align-items:stretch;background:#0b0f14;padding-top:8px;z-index:2}'
             + '#alfah-retoure-bot .status-row > button.ghost{flex:0 0 auto;padding:14px 18px;font-size:16px}'
             + '#alfah-retoure-bot .search-badge{display:none;flex:1;padding:14px 16px;border-radius:14px;background:#14342c;border:2px solid #00ffcc;color:#00ffcc;font-size:20px;font-weight:800;line-height:1.25}'
@@ -1208,7 +1379,7 @@
                 return;
             }
             var key = parsed.orderId + ':' + parsed.items.map(function (item) { return item.article; }).join(',');
-            panel.style.display = 'block';
+            panel.style.display = 'flex';
             if (key === currentKey) return;
             currentKey = key;
             info.textContent = 'Bestellung ' + parsed.orderId + (parsed.stockId ? ' · ' + parsed.stockId : '');
@@ -1498,6 +1669,11 @@
             (notes || []).forEach(function (line) {
                 log.appendChild(el('div', 'bad', line));
             });
+            requestAnimationFrame(function () {
+                var top = log.offsetTop - body.offsetTop;
+                if (top < 0) top = 0;
+                body.scrollTop = top;
+            });
         }
 
         function refreshSlipBadge() {
@@ -1700,10 +1876,22 @@
             return String(raw || '').trim().split(/[\s\/,]+/)[0];
         }
 
-        function orderStamp(order) {
+        function orderWhen(order) {
             var raw = order && (order.OrderDate || order.CreatedAt || order.Date || '');
-            var time = Date.parse(raw);
-            return isNaN(time) ? 0 : time;
+            if (typeof raw === 'number' || /^\d{12,}$/.test(String(raw))) {
+                var ms = Number(raw);
+                if (ms < 1e12) ms = ms * 1000;
+                var numeric = new Date(ms);
+                if (!isNaN(numeric.getTime())) return numeric;
+            }
+            var parsed = Date.parse(raw);
+            if (!isNaN(parsed)) return new Date(parsed);
+            return null;
+        }
+
+        function orderStamp(order) {
+            var when = orderWhen(order);
+            return when ? when.getTime() : 0;
         }
 
         function dayStamp(date) {
@@ -1741,22 +1929,33 @@
         }
 
         async function ordersBetween(from, thru) {
-            var path = 'api/ordering/orders?include-order-items=true&include-invoice-ids=true&include-shipment-info=true&include-order-attributes=true&include-order-item-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
-            var data = await api('GET', path);
-            var list = asList(data);
-            if (!list.length && data && typeof data === 'object') list = data.Orders || data.orders || data.Data || data.Results || [];
-            return Array.isArray(list) ? list : [];
+            var stamp = dayStamp(from) + ' bis ' + dayStamp(thru);
+            var heavy = 'api/ordering/orders?include-order-items=true&include-invoice-ids=true&include-shipment-info=true&include-order-attributes=true&include-order-item-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
+            var data = null;
+            try {
+                data = await api('GET', heavy);
+            } catch (error) {
+                debugSearch('Liste fehlgeschlagen ' + stamp, error && error.message ? error.message : String(error));
+            }
+            debugPayload('Antwort ' + stamp, data);
+            var list = orderListFrom(data);
+            if (list.length && list.some(function (order) { return commissionOf(order); })) return list;
+            var light = 'api/ordering/orders?include-order-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
+            var again = await api('GET', light);
+            var plain = orderListFrom(again);
+            if (plain.length > list.length) return plain;
+            return list;
         }
 
         function emptyOrderCache() {
-            return { version: 2, ranges: {}, orders: {} };
+            return { version: 4, ranges: {}, orders: {} };
         }
 
         function readOrderCache() {
             if (state.orderCache) return state.orderCache;
             try {
                 var data = JSON.parse(GM_getValue(ORDER_CACHE_KEY, '') || 'null');
-                state.orderCache = data && data.version === 2 && data.orders && data.ranges ? data : emptyOrderCache();
+                state.orderCache = data && data.version === 4 && data.orders && data.ranges ? data : emptyOrderCache();
             } catch (e) {
                 state.orderCache = emptyOrderCache();
             }
@@ -1855,12 +2054,14 @@
             if (state.stopSearch) return [];
             showProgress('Suche ' + dayStamp(from) + ' bis ' + dayStamp(thru));
             var list = await ordersBetween(from, thru);
-            if (list.length >= 400) {
+            if (list.length >= 250 && dayStamp(from) !== dayStamp(thru)) {
                 var mid = new Date(from.getTime() + (thru.getTime() - from.getTime()) / 2);
                 var newerFrom = shiftDays(mid, 1);
-                var older = await loadRange(cache, from, mid);
-                var newer = await loadRange(cache, newerFrom, thru);
-                list = older.concat(newer);
+                if (newerFrom <= thru) {
+                    var older = await loadRange(cache, from, mid);
+                    var newer = await loadRange(cache, newerFrom, thru);
+                    list = older.concat(newer);
+                }
             }
             rememberOrders(cache, from, thru, list);
             var saved = cache.ranges[rangeKey(from, thru)];
@@ -1872,11 +2073,7 @@
         function listCarriesCommission(list) {
             var i;
             for (i = 0; i < list.length; i++) {
-                var order = list[i];
-                if (!order) continue;
-                if (commissionOf(order)) return true;
-                var attrs = order.OrderAttributes || order.orderAttributes || order.Attributes;
-                if (Array.isArray(attrs)) return true;
+                if (commissionOf(list[i])) return true;
             }
             return false;
         }
@@ -1903,17 +2100,88 @@
             }
         }
 
-        async function enrichForQuery(cache, query, rows) {
+        function debugPayload(label, data) {
+            var info = { type: data == null ? 'null' : Array.isArray(data) ? 'array' : typeof data };
+            if (Array.isArray(data)) info.length = data.length;
+            else if (data && typeof data === 'object') info.keys = Object.keys(data).slice(0, 24);
+            else if (typeof data === 'string') info.preview = String(data).slice(0, 160);
+            debugSearch(label, info);
+        }
+
+        function debugSearch(label, extra) {
+            try {
+                console.log('[ALFAH Retoure]', label, extra === undefined ? '' : extra);
+            } catch (e) {}
+        }
+
+        function debugOrderBrief(order) {
+            var attrs = order && (order.OrderAttributes || order.orderAttributes || order.Attributes);
+            var names = [];
+            if (Array.isArray(attrs)) {
+                attrs.forEach(function (row) {
+                    names.push(attrName(row) + '=' + String(attrValue(row) || '').slice(0, 80));
+                });
+            } else if (attrs && typeof attrs === 'object') names = Object.keys(attrs).slice(0, 12);
+            var keys = order && typeof order === 'object' ? Object.keys(order) : [];
+            var flat = {};
+            keys.forEach(function (key) {
+                var value = order[key];
+                if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') flat[key] = value;
+                else if (Array.isArray(value)) flat[key] = 'array:' + value.length;
+                else flat[key] = 'object';
+            });
+            return {
+                id: orderIdOf(order),
+                date: (order && (order.OrderDate || order.CreatedAt || order.Date)) || '',
+                keys: keys.join(','),
+                flat: flat,
+                commission: commissionOf(order),
+                attributes: names.slice(0, 8)
+            };
+        }
+
+        function debugList(label, list, query) {
+            var dates = (list || []).map(function (order) {
+                return String((order && (order.OrderDate || order.CreatedAt || order.Date)) || '');
+            }).filter(Boolean).sort();
+            var blobHit = 0;
+            var withCommission = 0;
+            (list || []).forEach(function (order) {
+                var raw = '';
+                try { raw = JSON.stringify(order); } catch (e) {}
+                if (query && raw.toUpperCase().indexOf(String(query).toUpperCase()) !== -1) blobHit += 1;
+                if (commissionOf(order)) withCommission += 1;
+            });
+            var ids = (list || []).map(function (order) { return Number(orderIdOf(order)); }).filter(function (id) { return id; }).sort(function (a, b) { return a - b; });
+            debugSearch(label, {
+                count: (list || []).length,
+                oldest: dates[0] || '',
+                newest: dates[dates.length - 1] || '',
+                smallestId: ids[0] || '',
+                largestId: ids[ids.length - 1] || '',
+                withCommission: withCommission,
+                textHasQuery: blobHit
+            });
+            (list || []).slice(0, 3).forEach(function (order, index) {
+                debugSearch(label + ' Beispiel ' + (index + 1), debugOrderBrief(order));
+            });
+            var named = (list || []).filter(function (order) { return orderIdOf(order) === '1344059'; })[0];
+            debugSearch(label + ' 1344059', named ? debugOrderBrief(named) : 'nicht in dieser Liste');
+        }
+
+        async function enrichForQuery(cache, query, rows, onMatch) {
             var up = String(query || '').toUpperCase();
             var matches = [];
             var pending = [];
             (rows || []).forEach(function (row) {
                 if (!row || !row.id) return;
-                if (String(row.stock || '').toUpperCase() === up) matches.push(row.id);
-                else if (!row.enriched) pending.push(row);
+                if (String(row.stock || '').toUpperCase() === up) {
+                    matches.push(row.id);
+                    if (onMatch) onMatch({ OrderId: row.id, OrderDate: row.date, OrderAttributes: [{ Name: 'ORDER_COMMISSION', Value: row.stock }] });
+                } else if (!row.enriched) pending.push(row);
             });
             pending.sort(function (a, b) { return Date.parse(b.date || 0) - Date.parse(a.date || 0); });
-            var size = 12;
+            var size = 24;
             var done = 0;
             var index = 0;
             while (index < pending.length && !state.stopSearch) {
@@ -1921,9 +2189,13 @@
                 index += chunk.length;
                 showProgress('Suche ' + query + ' · ' + (done + 1) + '–' + (done + chunk.length) + ' von ' + pending.length);
                 var details = await Promise.all(chunk.map(function (row) {
-                    return orderAttrs(row.id).then(function (order) {
+                    return orderById(row.id).then(function (order) {
                         return { row: row, order: order };
-                    }).catch(function () {
+                    }).catch(function (error) {
+                        if (!state.debugFail) {
+                            state.debugFail = true;
+                            debugSearch('Bestellung fehlgeschlagen', { id: row.id, error: error && error.message ? error.message : String(error) });
+                        }
                         return { row: row, order: null };
                     });
                 }));
@@ -1933,30 +2205,33 @@
                     var order = details[i].order;
                     var id = order ? (orderIdOf(order) || details[i].row.id) : details[i].row.id;
                     var stock = order ? stockIdFromCommission(commissionOf(order)) : '';
+                    var hit = !!(order && (String(stock || '').toUpperCase() === up || orderMatches(order, query)));
                     cache.orders[id] = {
                         id: id,
                         date: (order && (order.OrderDate || order.CreatedAt || order.Date)) || details[i].row.date || '',
                         stock: stock,
                         text: order ? orderSearchText(order) : (details[i].row.text || ''),
-                        enriched: true
+                        enriched: !!order
                     };
-                    if (String(stock || '').toUpperCase() === up || (order && orderMatches(order, query))) matches.push(id);
+                    if (id === '1344059' || hit) debugSearch(hit ? 'Treffer' : '1344059 ohne Treffer', debugOrderBrief(order || { OrderId: id }));
+                    if (hit) {
+                        matches.push(id);
+                        if (onMatch) onMatch(order);
+                    }
                 }
                 writeOrderCache(cache);
             }
             return matches;
         }
 
-        async function scanSpan(cache, query, from, thru) {
+        async function scanSpan(cache, query, from, thru, onMatch) {
             if (state.stopSearch) return [];
             var list = [];
-            if (!rangeCovered(cache, from, thru)) {
-                list = await loadRange(cache, from, thru);
-                var directs = (list || []).filter(function (order) { return orderMatches(order, query); });
-                if (directs.length) {
-                    return directs.map(function (order) { return orderIdOf(order); }).filter(Boolean);
-                }
-                if (listCarriesCommission(list)) return [];
+            if (!rangeCovered(cache, from, thru)) list = await loadRange(cache, from, thru);
+            var directs = (list || []).filter(function (order) { return orderMatches(order, query); });
+            directs.forEach(function (order) { if (onMatch) onMatch(order); });
+            if (list.length && listCarriesCommission(list) && list.every(function (order) { return commissionOf(order); })) {
+                return directs.map(function (order) { return orderIdOf(order); }).filter(Boolean);
             }
             var rows = [];
             if (list.length) {
@@ -1967,7 +2242,14 @@
             } else {
                 rows = ordersInSpan(cache, from, thru);
             }
-            return enrichForQuery(cache, query, rows);
+            var opened = await enrichForQuery(cache, query, rows, onMatch);
+            return directs.map(function (order) { return orderIdOf(order); }).filter(Boolean).concat(opened);
+        }
+
+        async function latestOrders() {
+            var today = new Date();
+            var from = new Date(today.getFullYear(), today.getMonth(), 1);
+            return loadRange(readOrderCache(), from, today);
         }
 
         async function openMatch(cache, id) {
@@ -1981,13 +2263,49 @@
             }
         }
 
-        async function findStockOrders(query) {
+        async function findStockOrders(query, onMatch) {
             var cache = readOrderCache();
+            var up = String(query || '').toUpperCase();
+            cache.ranges = {};
+            Object.keys(cache.orders || {}).forEach(function (id) {
+                var row = cache.orders[id];
+                if (!row) return;
+                if (String(row.stock || '').toUpperCase() !== up) row.enriched = false;
+            });
+            writeOrderCache(cache);
+            state.debugFail = false;
+            debugSearch('neue Suche ab neuestem Datum', query);
+            showProgress('Suche ' + query + ' · neueste Bestellungen');
+            var latest = [];
+            try {
+                latest = await latestOrders();
+            } catch (error) {
+                debugSearch('letzte Bestellungen fehlgeschlagen', error && error.message ? error.message : String(error));
+                latest = [];
+            }
+            debugList('letzte Bestellungen', latest, query);
+            rememberOrders(cache, shiftDays(new Date(), -120), new Date(), latest);
             var ids = [];
+            if (latest.length && listCarriesCommission(latest)) {
+                debugSearch('Kommission steht in der Liste', latest.length);
+                latest.filter(function (order) { return orderMatches(order, query); }).forEach(function (order) {
+                    ids.push(orderIdOf(order));
+                    if (onMatch) onMatch(order);
+                });
+                debugSearch('Treffer in der Liste', ids);
+            } else if (latest.length) {
+                debugSearch('Kommission fehlt in der Liste, lese Bestellungen einzeln');
+                var rows = [];
+                latest.forEach(function (order) {
+                    var id = orderIdOf(order);
+                    if (id && cache.orders[id]) rows.push(cache.orders[id]);
+                });
+                ids = await enrichForQuery(cache, query, rows, onMatch);
+            }
+            if (ids.length || state.stopSearch) return ids;
+            debugSearch('kein Treffer im aktuellen Monat, suche ältere Monate');
             var today = new Date();
             var monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-            showProgress('Suche ' + query + ' im aktuellen Monat …');
-            ids = await scanSpan(cache, query, monthFrom, today);
             var thru = shiftDays(monthFrom, -1);
             var guard = new Date();
             guard.setMonth(guard.getMonth() - 18);
@@ -1997,26 +2315,18 @@
                 if (from < guard) from = new Date(guard.getFullYear(), guard.getMonth(), guard.getDate());
                 steps += 1;
                 showProgress('Suche ' + query + ' · ' + dayStamp(from) + ' bis ' + dayStamp(thru));
-                ids = await scanSpan(cache, query, from, thru);
+                debugSearch('älterer Zeitraum', dayStamp(from) + ' bis ' + dayStamp(thru));
+                ids = await scanSpan(cache, query, from, thru, onMatch);
                 thru = shiftDays(from, -1);
             }
-            var unique = [];
-            ids.forEach(function (id) {
-                if (id && unique.indexOf(String(id)) === -1) unique.push(String(id));
-            });
-            var orders = [];
-            var i;
-            for (i = 0; i < unique.length && !state.stopSearch; i++) {
-                var opened = await openMatch(cache, unique[i]);
-                if (opened) orders.push(opened);
-            }
-            return orders;
+            return ids;
         }
 
         function mailSource(pasted, orderId, query) {
             var sources = [];
             if (pasted && pasted.items && pasted.items.length) sources.push(pasted);
             if (state.queue && state.queue.items && state.queue.items.length) sources.push(state.queue);
+            (state.mailHits || []).forEach(function (row) { sources.push(row); });
             var i;
             for (i = 0; i < sources.length; i++) {
                 var row = sources[i];
@@ -2063,19 +2373,39 @@
                     }
                 }
                 if (/^[A-Za-z]/.test(query)) {
-                    var foundOrders = await findStockOrders(query);
-                    if (foundOrders.length) {
-                        hideProgress();
-                        order = await pickOrder(foundOrders);
-                        if (!order) {
-                            setLog(state.stopSearch ? 'Suche gestoppt.' : 'Keine Bestellung ausgewählt.');
-                            meta.textContent = '';
-                            return;
+                    var fromMail = gmailStockMails(query);
+                    if (pasted.orderId && textHasStock((pasted.kommission || '') + ' ' + pasted.stockId, query)) {
+                        if (!fromMail.some(function (row) { return row.orderId === pasted.orderId; })) fromMail.unshift(pasted);
+                    }
+                    state.mailHits = fromMail;
+                    debugSearch('Gmail', fromMail.map(function (row) { return row.orderId; }));
+                    if (fromMail.length) {
+                        var picker = startStockPick(query);
+                        var mi;
+                        for (mi = 0; mi < fromMail.length && !state.stopSearch; mi++) {
+                            showProgress('Lade Bestellung ' + fromMail[mi].orderId + ' aus der Mail …');
+                            try {
+                                var openedMail = await orderById(fromMail[mi].orderId);
+                                if (openedMail) picker.add(openedMail);
+                            } catch (e) {}
                         }
-                    } else if (state.stopSearch) {
-                        setLog('Suche gestoppt.');
+                        picker.end();
+                        order = await picker.promise;
+                    } else {
+                        var scanPick = startStockPick(query);
+                        await findStockOrders(query, scanPick.add);
+                        scanPick.end();
+                        order = await scanPick.promise;
+                    }
+                    if (!order) {
+                        setLog(state.stopSearch ? 'Suche gestoppt.' : 'Keine Bestellung mit Kommission ' + query + '.');
                         meta.textContent = '';
                         return;
+                    }
+                    if (!orderItems(order).length) {
+                        try {
+                            order = await orderById(orderIdOf(order));
+                        } catch (e) {}
                     }
                 } else if (!order || !orderItems(order).length) {
                     showProgress('Suche ' + query + ' in den letzten Bestellungen …');
@@ -2092,7 +2422,7 @@
                     }
                 }
                 if (!order) {
-                    setLog('Kein Auftrag zu ' + query + '. Die Mailbox wird nicht gelesen. Bestellnummer aus der Auftragsbestätigung eintragen oder die Mail hier reinkopieren.');
+                    setLog('Kein Auftrag zu ' + query + '. Auftragsbestätigung öffnen oder die Mail hier reinkopieren.');
                     meta.textContent = '';
                     return;
                 }
@@ -2129,7 +2459,8 @@
 
         function orderChoiceLabel(order) {
             var id = orderIdOf(order);
-            var date = String(order.OrderDate || order.CreatedAt || order.Date || '').replace('T', ' ').slice(0, 16);
+            var when = orderWhen(order);
+            var date = when ? dayStamp(when) + ' ' + String(when.getHours()).padStart(2, '0') + ':' + String(when.getMinutes()).padStart(2, '0') : '';
             var stock = stockIdFromCommission(commissionOf(order));
             var rows = orderItems(order);
             var first = rows[0] || {};
@@ -2137,6 +2468,54 @@
             if (part.length > 42) part = part.slice(0, 42) + '…';
             var supplier = rows.length ? supplierNameOf(rows[0]) : '';
             return [id, date, stock, part, supplier, rows.length > 1 ? rows.length + ' Positionen' : ''].filter(Boolean).join(' · ');
+        }
+
+        function startStockPick(query) {
+            items.textContent = '';
+            meta.textContent = 'Suche Bestellungen mit Kommission ' + query + ' …';
+            var count = 0;
+            var seen = {};
+            var settled = false;
+            var finish;
+            var promise = new Promise(function (resolve) { finish = resolve; });
+            function settle(order) {
+                if (settled) return;
+                settled = true;
+                state.pickFinish = null;
+                finish(order || null);
+            }
+            state.pickFinish = settle;
+            var cancel = el('button', 'ghost', 'Abbrechen');
+            cancel.type = 'button';
+            cancel.addEventListener('click', function () {
+                state.stopSearch = true;
+                settle(null);
+            });
+            items.appendChild(cancel);
+            return {
+                promise: promise,
+                add: function (order) {
+                    if (settled || !order) return;
+                    var id = orderIdOf(order);
+                    if (!id || seen[id]) return;
+                    seen[id] = true;
+                    count += 1;
+                    var btn = el('button', 'pick', orderChoiceLabel(order));
+                    btn.type = 'button';
+                    btn.addEventListener('click', function () {
+                        state.stopSearch = true;
+                        settle(order);
+                    });
+                    items.insertBefore(btn, cancel);
+                    meta.textContent = count + ' Bestellung(en) mit Kommission ' + query + '. Eine auswählen, die Suche läuft weiter.';
+                },
+                end: function () {
+                    hideProgress();
+                    if (settled) return;
+                    if (!count) settle(null);
+                    else meta.textContent = count + ' Bestellungen zu ' + query + '. Welche soll geladen werden?';
+                }
+            };
         }
 
         function pickOrder(list) {
