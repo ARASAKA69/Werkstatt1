@@ -191,7 +191,7 @@
     }
 
     function strictStockId(value) {
-        var match = String(value || '').toUpperCase().match(/[A-Z]{2}\d{5}/);
+        var match = String(value || '').toUpperCase().match(/[A-Z]{1,3}\d{4,6}/);
         return match ? match[0] : '';
     }
 
@@ -334,25 +334,62 @@
     }
 
     function sheetEcho(txt) {
-        var match = String(txt || '').replace(/&amp;/g, '&').match(/https:\/\/script\.googleusercontent\.com\/macros\/echo[^"'\\\s<>]*/);
-        return match ? match[0] : '';
+        var raw = String(txt || '').replace(/&amp;/g, '&');
+        var match = raw.match(/https:\/\/script\.googleusercontent\.com\/macros\/echo[^"'\\\s<>]*/);
+        if (match) return match[0];
+        var exec = raw.match(/https:\/\/script\.google\.com\/macros\/s\/[^"'\\\s<>]+\/exec[^"'\\\s<>]*/);
+        return exec ? exec[0] : '';
+    }
+
+    function sheetDecode(text) {
+        return String(text || '')
+            .replace(/^\uFEFF/, '')
+            .replace(/^\)\]\}',?\s*/, '')
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>');
     }
 
     function sheetParse(txt) {
-        var raw = String(txt || '').trim();
-        if (raw.charAt(0) === '{') {
-            try { return JSON.parse(raw); } catch (e) {}
+        var raw = sheetDecode(txt).trim();
+        function read(text) {
+            try {
+                var data = JSON.parse(text);
+                if (data && typeof data === 'object' && ('ok' in data)) return data;
+            } catch (e) {}
+            return null;
         }
+        var direct = read(raw);
+        if (direct) return direct;
         var pre = raw.match(/<pre[^>]*>([\s\S]*?)<\/pre>/i);
         if (pre) {
-            try {
-                return JSON.parse(pre[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
-            } catch (e2) {}
+            var fromPre = read(pre[1].trim());
+            if (fromPre) return fromPre;
+        }
+        var start = raw.indexOf('{"ok"');
+        if (start < 0) start = raw.indexOf('{ "ok"');
+        if (start >= 0) {
+            var end = raw.indexOf('}', start);
+            if (end > start) {
+                var found = read(raw.slice(start, end + 1));
+                if (found) return found;
+            }
         }
         return null;
     }
 
-    function sheetReq(method, url, body, hop) {
+    function sheetLocation(res) {
+        var headers = String((res && res.responseHeaders) || '');
+        var loc = headers.match(/^location:\s*(\S+)/im);
+        return loc ? loc[1] : '';
+    }
+
+    function sheetWrote(data) {
+        return !!(data && (data.added != null || data.skipped != null || data.updated != null || data.row != null || data.duplicate));
+    }
+
+    function sheetReq(method, url, body, hop, expectWrite) {
         return new Promise(function (resolve, reject) {
             GM_xmlhttpRequest({
                 method: method,
@@ -364,18 +401,26 @@
                 onload: function (res) {
                     var txt = res && res.responseText != null ? res.responseText : '';
                     var data = sheetParse(txt);
-                    if (data && (data.ok === true || data.ok === false)) {
-                        if (data.ok === false) reject(new Error(data.error || 'Sheet hat abgelehnt'));
-                        else resolve(data);
+                    var jump = hop < 4 ? (sheetEcho(txt) || sheetLocation(res)) : '';
+                    if (jump === url) jump = '';
+                    if (data && data.ok === false) {
+                        reject(new Error(data.error || 'Sheet hat abgelehnt'));
                         return;
                     }
-                    var jump = hop < 2 ? sheetEcho(txt) : '';
+                    if (data && data.ok === true && (!expectWrite || sheetWrote(data))) {
+                        resolve(data);
+                        return;
+                    }
                     if (jump) {
-                        sheetReq('GET', jump, '', hop + 1).then(resolve, reject);
+                        sheetReq('GET', jump, '', hop + 1, expectWrite).then(resolve, reject);
+                        return;
+                    }
+                    if (data && data.ok === true && expectWrite) {
+                        reject(new Error('Web-App hat nichts geschrieben. Neue Version veröffentlichen.'));
                         return;
                     }
                     var low = String(txt || '').toLowerCase();
-                    if (/accounts\.google|servicelogin|anmelden/.test(low)) reject(new Error('Google-Login fehlt fürs Sheet'));
+                    if (/accounts\.google|servicelogin|anmelden|zugriffsanfrage/.test(low)) reject(new Error('Google-Login fehlt fürs Sheet'));
                     else reject(new Error('Sheet Antwort ' + (res && res.status)));
                 },
                 onerror: function () { reject(new Error('Sheet nicht erreichbar')); },
@@ -404,14 +449,40 @@
         if (!url) return Promise.reject(new Error('Sheet-Web-App fehlt noch'));
         var entries = Array.isArray(rows) && rows.length && rows[0].lines ? rows : packSheet(rows);
         if (!entries.length) return Promise.resolve({ ok: true, added: 0, skipped: 0 });
-        return sheetReq('POST', url, JSON.stringify({ action: 'append', entries: entries }), 0);
+        var chunks = [];
+        var current = [];
+        entries.forEach(function (entry) {
+            var trial = current.concat([entry]);
+            var size = encodeURIComponent(JSON.stringify({ action: 'append', entries: trial })).length;
+            if (current.length && size > 3500) {
+                chunks.push(current);
+                current = [entry];
+            } else current = trial;
+        });
+        if (current.length) chunks.push(current);
+        var added = 0;
+        var skipped = 0;
+        var chain = Promise.resolve();
+        chunks.forEach(function (chunk) {
+            chain = chain.then(function () {
+                var payload = JSON.stringify({ action: 'append', entries: chunk });
+                var join = url.indexOf('?') === -1 ? '?' : '&';
+                return sheetReq('GET', url + join + 'payload=' + encodeURIComponent(payload), '', 0, true).then(function (saved) {
+                    added += saved.added || 0;
+                    skipped += saved.skipped || 0;
+                });
+            });
+        });
+        return chain.then(function () { return { ok: true, added: added, skipped: skipped }; });
     }
 
     function repairSheetWho() {
         var name = workerName();
         var url = sheetUrl();
         if (!name || !url) return Promise.resolve({ ok: true, updated: 0 });
-        return sheetReq('POST', url, JSON.stringify({ action: 'fixWho', who: name }), 0);
+        var payload = JSON.stringify({ action: 'fixWho', who: name });
+        var join = url.indexOf('?') === -1 ? '?' : '&';
+        return sheetReq('GET', url + join + 'payload=' + encodeURIComponent(payload), '', 0, true);
     }
 
     function orderIdOf(order, fallback) {
@@ -976,7 +1047,7 @@
         var style = document.createElement('style');
         style.id = 'alfah-retoure-style';
         style.textContent = ''
-            + '#alfah-retoure-bot{position:fixed;top:36px;right:16px;z-index:2147483646;width:720px;height:90vh;min-width:480px;min-height:520px;max-width:96vw;max-height:96vh;resize:both;overflow:hidden;'
+            + '#alfah-retoure-bot{position:fixed;top:36px;right:16px;left:auto;z-index:2147483646;width:min(720px,calc(100vw - 32px));height:min(90vh,calc(100vh - 48px));min-width:0;min-height:320px;max-width:calc(100vw - 32px);max-height:calc(100vh - 48px);resize:both;overflow:hidden;'
             + 'display:flex;flex-direction:column;background:#0b0f14;color:#e6edf3;border:1px solid #2b3545;border-radius:16px;'
             + 'box-shadow:0 18px 50px rgba(0,0,0,.45);font:16px/1.45 Segoe UI,Arial,sans-serif}'
             + '#alfah-retoure-bot *{box-sizing:border-box}'
@@ -1031,13 +1102,21 @@
             + '#alfah-retoure-bot button.stop{flex:0 0 auto;background:#3a2216;border:2px solid #ffb020;color:#ffb020;font-size:16px;font-weight:800;padding:14px 16px;border-radius:14px;cursor:pointer}'
             + '#alfah-retoure-bot button.pick{width:100%;text-align:left;border:1px solid #2b3545;border-radius:12px;padding:14px;background:#141a23;color:#e6edf3;font-size:16px;font-weight:700;cursor:pointer}'
             + '#alfah-retoure-bot button.pick:hover{border-color:#00ffcc}'
-            + '#alfah-retoure-bot .admin-pop{position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;gap:10px;padding:16px;background:#0b0f14;overflow:auto}'
+            + '#alfah-retoure-bot .admin-pop{position:absolute;inset:0;z-index:8;display:flex;flex-direction:column;background:#0b0f14;overflow:hidden}'
             + '#alfah-retoure-bot .admin-pop[hidden]{display:none !important}'
-            + '#alfah-retoure-bot .admin-pop h3{margin:0;font-size:22px;color:#00ffcc}'
-            + '#alfah-retoure-bot .case-list{display:flex;flex-direction:column;gap:8px;min-height:0}'
-            + '#alfah-retoure-bot .case{display:flex;gap:10px;align-items:flex-start;border:1px solid #2b3545;border-radius:12px;padding:12px;background:#141a23;font-size:16px}'
-            + '#alfah-retoure-bot .foot{display:flex;gap:8px}'
-            + '#alfah-retoure-bot .foot>*{flex:1}';
+            + '#alfah-retoure-bot .admin-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #2b3545;background:#10161e}'
+            + '#alfah-retoure-bot .admin-head h3{margin:0;font-size:22px;color:#00ffcc}'
+            + '#alfah-retoure-bot .admin-top{display:flex;flex-direction:column;gap:8px;padding:12px 16px;border-bottom:1px solid #2b3545}'
+            + '#alfah-retoure-bot .admin-actions{display:flex;gap:8px}'
+            + '#alfah-retoure-bot .admin-actions>*{flex:1;min-width:0}'
+            + '#alfah-retoure-bot .admin-gate{display:flex;flex-direction:column;gap:10px;padding:16px}'
+            + '#alfah-retoure-bot .case-list{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding:12px 16px}'
+            + '#alfah-retoure-bot .case{display:flex;gap:10px;align-items:flex-start;border:1px solid #2b3545;border-radius:12px;padding:12px;background:#141a23;font-size:15px;line-height:1.35}'
+            + '#alfah-retoure-bot .case input{margin-top:3px;flex:0 0 auto}'
+            + '#alfah-retoure-bot .case span{flex:1;min-width:0;overflow-wrap:anywhere}'
+            + '#alfah-retoure-bot .admin-bar{flex:0 0 auto;padding:12px 16px;border-top:1px solid #2b3545;background:#10161e}'
+            + '#alfah-retoure-bot .admin-bar .act{width:100%}'
+            + '#alfah-retoure-bot .admin-status{flex:0 0 auto;margin:0;border:0;border-radius:0;background:#0b0f14;min-height:0;padding:0 16px 14px;font-size:15px;font-weight:700;white-space:pre-wrap}';
         document.documentElement.appendChild(style);
     }
 
@@ -1638,8 +1717,10 @@
             var up = String(query || '').toUpperCase();
             if (!up || !order) return false;
             if (String(orderIdOf(order)).toUpperCase() === up) return true;
-            var stock = stockIdFromCommission(commissionOf(order));
+            var commission = commissionOf(order);
+            var stock = stockIdFromCommission(commission);
             if (stock && stock === up) return true;
+            if (commission && new RegExp('(^|[^A-Za-z0-9])' + up.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '([^A-Za-z0-9]|$)', 'i').test(commission)) return true;
             var blob = '';
             try {
                 blob = JSON.stringify(order);
@@ -1660,7 +1741,7 @@
         }
 
         async function ordersBetween(from, thru) {
-            var path = 'api/ordering/orders?include-order-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
+            var path = 'api/ordering/orders?include-order-items=true&include-invoice-ids=true&include-shipment-info=true&include-order-attributes=true&include-order-item-attributes=true&limit=400&from=' + dayStamp(from) + '&thru=' + dayStamp(thru);
             var data = await api('GET', path);
             var list = asList(data);
             if (!list.length && data && typeof data === 'object') list = data.Orders || data.orders || data.Data || data.Results || [];
@@ -1668,14 +1749,14 @@
         }
 
         function emptyOrderCache() {
-            return { ranges: {}, orders: {} };
+            return { version: 2, ranges: {}, orders: {} };
         }
 
         function readOrderCache() {
             if (state.orderCache) return state.orderCache;
             try {
                 var data = JSON.parse(GM_getValue(ORDER_CACHE_KEY, '') || 'null');
-                state.orderCache = data && data.orders && data.ranges ? data : emptyOrderCache();
+                state.orderCache = data && data.version === 2 && data.orders && data.ranges ? data : emptyOrderCache();
             } catch (e) {
                 state.orderCache = emptyOrderCache();
             }
@@ -1766,7 +1847,7 @@
         }
 
         async function orderAttrs(orderId) {
-            return api('GET', 'api/ordering/orders/' + encodeURIComponent(orderId) + '?include-order-attributes=true');
+            return api('GET', 'api/ordering/orders/' + encodeURIComponent(orderId) + '?include-order-items=true&include-order-attributes=true&include-order-item-attributes=true');
         }
 
         async function loadRange(cache, from, thru) {
@@ -1791,7 +1872,11 @@
         function listCarriesCommission(list) {
             var i;
             for (i = 0; i < list.length; i++) {
-                if (commissionOf(list[i])) return true;
+                var order = list[i];
+                if (!order) continue;
+                if (commissionOf(order)) return true;
+                var attrs = order.OrderAttributes || order.orderAttributes || order.Attributes;
+                if (Array.isArray(attrs)) return true;
             }
             return false;
         }
@@ -1898,29 +1983,22 @@
 
         async function findStockOrders(query) {
             var cache = readOrderCache();
-            var known = Object.keys(cache.orders).length;
-            if (known) showProgress('Prüfe ' + known + ' gespeicherte Bestellungen · ' + query);
             var ids = [];
-            cachedHits(cache, query).forEach(function (row) {
-                if (row.id && ids.indexOf(row.id) === -1) ids.push(row.id);
-            });
-            if (!ids.length) {
-                var today = new Date();
-                var monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
-                showProgress('Suche ' + query + ' im aktuellen Monat …');
-                ids = await scanSpan(cache, query, monthFrom, today);
-                var thru = shiftDays(monthFrom, -1);
-                var guard = new Date();
-                guard.setMonth(guard.getMonth() - 18);
-                var steps = 0;
-                while (!ids.length && !state.stopSearch && thru > guard && steps < 40) {
-                    var from = bucketStart(thru);
-                    if (from < guard) from = new Date(guard.getFullYear(), guard.getMonth(), guard.getDate());
-                    steps += 1;
-                    showProgress('Suche ' + query + ' · ' + dayStamp(from) + ' bis ' + dayStamp(thru));
-                    ids = await scanSpan(cache, query, from, thru);
-                    thru = shiftDays(from, -1);
-                }
+            var today = new Date();
+            var monthFrom = new Date(today.getFullYear(), today.getMonth(), 1);
+            showProgress('Suche ' + query + ' im aktuellen Monat …');
+            ids = await scanSpan(cache, query, monthFrom, today);
+            var thru = shiftDays(monthFrom, -1);
+            var guard = new Date();
+            guard.setMonth(guard.getMonth() - 18);
+            var steps = 0;
+            while (!ids.length && !state.stopSearch && thru > guard && steps < 20) {
+                var from = bucketStart(thru);
+                if (from < guard) from = new Date(guard.getFullYear(), guard.getMonth(), guard.getDate());
+                steps += 1;
+                showProgress('Suche ' + query + ' · ' + dayStamp(from) + ' bis ' + dayStamp(thru));
+                ids = await scanSpan(cache, query, from, thru);
+                thru = shiftDays(from, -1);
             }
             var unique = [];
             ids.forEach(function (id) {
@@ -1973,8 +2051,8 @@
                         items: pasted.items,
                         savedAt: Date.now()
                     };
-                    if (!/^\d{5,}$/.test(query) && pasted.orderId) query = pasted.orderId;
-                    if (/^[A-Za-z]/.test(query) && pasted.stockId && query.toUpperCase() !== pasted.stockId && pasted.orderId) query = pasted.orderId;
+                    var typed = orderQuery(orderInput.value);
+                    if (!/^[A-Za-z]/.test(typed) && !/^\d{5,}$/.test(query) && pasted.orderId) query = pasted.orderId;
                 }
                 var order = null;
                 if (/^\d{5,}$/.test(query)) {
@@ -1986,7 +2064,7 @@
                 }
                 if (/^[A-Za-z]/.test(query)) {
                     var foundOrders = await findStockOrders(query);
-                    if (foundOrders.length > 1) {
+                    if (foundOrders.length) {
                         hideProgress();
                         order = await pickOrder(foundOrders);
                         if (!order) {
@@ -1994,8 +2072,7 @@
                             meta.textContent = '';
                             return;
                         }
-                    } else if (foundOrders.length === 1) order = foundOrders[0];
-                    else if (state.stopSearch) {
+                    } else if (state.stopSearch) {
                         setLog('Suche gestoppt.');
                         meta.textContent = '';
                         return;
@@ -2055,8 +2132,11 @@
             var date = String(order.OrderDate || order.CreatedAt || order.Date || '').replace('T', ' ').slice(0, 16);
             var stock = stockIdFromCommission(commissionOf(order));
             var rows = orderItems(order);
+            var first = rows[0] || {};
+            var part = [articleNo(first), first.Description || first.Name || ''].filter(Boolean).join(' ');
+            if (part.length > 42) part = part.slice(0, 42) + '…';
             var supplier = rows.length ? supplierNameOf(rows[0]) : '';
-            return [id, date, stock, supplier, rows.length ? rows.length + ' Positionen' : ''].filter(Boolean).join(' · ');
+            return [id, date, stock, part, supplier, rows.length > 1 ? rows.length + ' Positionen' : ''].filter(Boolean).join(' · ');
         }
 
         function pickOrder(list) {
@@ -2187,8 +2267,9 @@
             };
             try {
                 var saved = await postSheet([row]);
-                if (saved && (saved.skipped || 0) > 0 && !(saved.added || 0)) return { ok: true, text: 'Steht schon im Sheet' };
-                return { ok: true, text: 'Im Sheet' };
+                if (saved && (saved.added || 0) > 0) return { ok: true, text: 'Im Sheet' };
+                if (saved && (saved.skipped || 0) > 0) return { ok: true, text: 'Steht schon im Sheet' };
+                return { ok: false, text: 'Nicht im Sheet: keine Zeile geschrieben' };
             } catch (error) {
                 var message = error && error.message ? error.message : String(error);
                 if (/login|anmeld|zugriff|auth/i.test(message)) {
@@ -2443,31 +2524,43 @@
         var adminList = el('div', 'case-list');
         var adminSend = el('button', 'act', 'Ausgewählte an Sheet senden');
         adminSend.type = 'button';
-        var adminClose = el('button', 'ghost', 'Schließen');
-        adminClose.type = 'button';
-        var adminStatus = el('div', 'log');
+        var adminStatus = el('div', 'admin-status');
+
+        function adminTitle(row) {
+            var name = String(row.name || '').replace(/\[[^\]]+\]/g, ' ').replace(/\([^)]{6,}\)/g, ' ').replace(/\s+/g, ' ').trim();
+            if (name.length > 48) name = name.slice(0, 48) + '…';
+            return [row.r, row.order, row.article, name, row.supplier].filter(Boolean).join(' · ');
+        }
 
         function paintAdmin(unlocked) {
             adminPop.textContent = '';
-            adminPop.appendChild(el('h3', '', 'Admin'));
+            var head = el('div', 'admin-head');
+            head.appendChild(el('h3', '', 'Admin'));
+            var close = el('button', 'ghost', 'Schließen');
+            close.type = 'button';
+            close.addEventListener('click', function () { adminPop.hidden = true; });
+            head.appendChild(close);
+            adminPop.appendChild(head);
             if (!unlocked) {
-                adminPop.appendChild(adminPass);
-                adminPop.appendChild(adminUnlock);
-                adminPop.appendChild(adminClose);
+                var gate = el('div', 'admin-gate');
+                gate.appendChild(adminPass);
+                gate.appendChild(adminUnlock);
+                adminPop.appendChild(gate);
                 return;
             }
-            adminPop.appendChild(el('label', '', 'Sheet Web-App'));
-            adminPop.appendChild(adminUrl);
-            var urlRow = el('div', 'foot');
+            var top = el('div', 'admin-top');
+            top.appendChild(el('label', '', 'Sheet Web-App'));
+            top.appendChild(adminUrl);
+            var urlRow = el('div', 'admin-actions');
             urlRow.appendChild(adminSaveUrl);
             urlRow.appendChild(adminAllow);
-            adminPop.appendChild(urlRow);
-            adminPop.appendChild(adminFilter);
+            top.appendChild(urlRow);
+            top.appendChild(adminFilter);
+            adminPop.appendChild(top);
             adminPop.appendChild(adminList);
-            var foot = el('div', 'foot');
-            foot.appendChild(adminSend);
-            foot.appendChild(adminClose);
-            adminPop.appendChild(foot);
+            var bar = el('div', 'admin-bar');
+            bar.appendChild(adminSend);
+            adminPop.appendChild(bar);
             adminPop.appendChild(adminStatus);
         }
 
@@ -2475,13 +2568,14 @@
             var needle = adminFilter.value.trim().toUpperCase();
             adminList.textContent = '';
             (state.adminRows || []).forEach(function (row) {
-                var label = [row.r, row.order, row.article, row.name, row.supplier, row.stock].filter(Boolean).join(' · ');
-                if (needle && label.toUpperCase().indexOf(needle) === -1) return;
+                var label = adminTitle(row);
+                if (needle && (label + ' ' + (row.stock || '')).toUpperCase().indexOf(needle) === -1) return;
                 var line = el('label', 'case');
                 var box = document.createElement('input');
                 box.type = 'checkbox';
+                var text = el('span', '', label);
                 line.appendChild(box);
-                line.appendChild(document.createTextNode(label));
+                line.appendChild(text);
                 line._entry = row;
                 adminList.appendChild(line);
             });
@@ -2571,9 +2665,6 @@
         });
         adminPass.addEventListener('keydown', function (event) {
             if (event.key === 'Enter') adminUnlock.click();
-        });
-        adminClose.addEventListener('click', function () {
-            adminPop.hidden = true;
         });
         adminSaveUrl.addEventListener('click', function () {
             GM_setValue(SHEET_URL_KEY, adminUrl.value.trim());

@@ -23,8 +23,28 @@ function doPost(e) {
   return alfahHandle_(params);
 }
 
+function alfahRead_(params) {
+  params = params || {};
+  if (params.payload) {
+    try {
+      var extra = JSON.parse(params.payload);
+      if (extra && typeof extra === "object") {
+        var key;
+        for (key in extra) {
+          if (Object.prototype.hasOwnProperty.call(extra, key)) params[key] = extra[key];
+        }
+      }
+    } catch (err) {}
+  }
+  if (typeof params.entries === "string") {
+    try { params.entries = JSON.parse(params.entries); } catch (err2) { params.entries = []; }
+  }
+  return params;
+}
+
 function alfahHandle_(params) {
   try {
+    params = alfahRead_(params);
     var action = String((params && params.action) || "ping");
     if (action === "ping" || action === "setup") {
       alfahSheet_();
@@ -107,7 +127,7 @@ function alfahText_(value) {
 }
 
 function alfahStock_(value) {
-  var match = String(value || "").toUpperCase().match(/[A-Z]{2}\d{5}/);
+  var match = String(value || "").toUpperCase().match(/[A-Z]{1,3}\d{4,6}/);
   return match ? match[0] : "";
 }
 
