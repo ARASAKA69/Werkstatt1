@@ -2,7 +2,7 @@
 // @name         Carol KVA Werkstattauftrag Automation
 // @namespace    arasaka-kva
 // @version      1.5.1
-// @description  In-Carol KVA HUD: Vollautomatischer 1:1 Abgleich aller Carol-Schäden, Services, Lack/Delle (1-6) & HU-Status mit dem Sheet, erstellt PDF im Drive, lädt PDF in Carol hoch und setzt Ersatzteile auf Bestellt
+// @description  In-Carol KVA HUD: Vollautomatischer 1:1 Carol Abgleich
 // @match        *://carol.autohero.com/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_getValue
