@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.24",
+    date: "21.10.2026",
+    notes:
+      "• Teile aus Packzettel trennt ATE-, Bosch- und Mann-Filter-Nummern als eigene Position. NAPA Germany bleibt der Hersteller, die ALFAH-Zeile steht in Hersteller, Artnr., Name und Menge."
+  },
+  {
     version: "2.2.23",
     date: "21.10.2026",
     notes:
@@ -3972,6 +3978,7 @@ function pzLooksLikeArtNr_(s) {
   if (!t) return false;
   if (pzLooksLikeSpecToken_(t)) return false;
   if (/^[1-9]\d?$/.test(t)) return false;
+  if (/^\d{1,5}(?:[.\-/]\d+){2,6}$/.test(t)) return true;
   if (/^\d+[.\d]*$/.test(t)) return true;
   if (/^\d{3,}$/.test(t)) return true;
   if (/^\d{1,5}[-./]\d{2,8}(?:[-./]\d+)?$/.test(t)) return true;
@@ -4326,15 +4333,36 @@ function pzLooksLikeBrandWord_(tok) {
   return /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(t);
 }
 
+function pzLooksLikeSpacedArt_(tokens, i) {
+  if (!tokens || i < 0 || i >= tokens.length) return false;
+  var j = i;
+  var t = pzCleanTok_(tokens[j]);
+  if (/^[A-ZÄÖÜ]{1,3}$/.test(t)) {
+    j++;
+    if (j >= tokens.length) return false;
+  }
+  var groups = 0;
+  var longGroup = false;
+  while (j < tokens.length && groups < 6) {
+    var g = pzCleanTok_(tokens[j]);
+    if (!/^\d{1,6}$/.test(g)) break;
+    if (g.length >= 3) longGroup = true;
+    groups++;
+    j++;
+  }
+  if (groups >= 3) return true;
+  return groups >= 2 && longGroup;
+}
+
 function pzLooksLikeRowStart_(tokens, i) {
   if (!tokens || i < 0 || i >= tokens.length) return false;
   if (!pzLooksLikeBrandWord_(tokens[i])) return false;
   var j = i + 1;
   var steps = 0;
-  while (j < tokens.length && steps < 4) {
+  while (j < tokens.length && steps < 6) {
     var n = pzCleanTok_(tokens[j]);
-    if (pzLooksLikeArtNr_(n) || /^\d{2,}$/.test(n)) return true;
-    if (!pzLooksLikeBrandWord_(n)) return false;
+    if (pzLooksLikeArtNr_(n) || pzLooksLikeSpacedArt_(tokens, j)) return true;
+    if (!pzLooksLikeBrandWord_(n) && !pzIsBrandToken_(n)) return false;
     j++;
     steps++;
   }
@@ -4360,8 +4388,14 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     }
     var hersteller = String(tokens[i]).replace(/[,.:;]+$/g, "");
     i++;
-    while (i < tokens.length && /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(tokens[i]) && !/\d/.test(tokens[i]) && !/^\d{7,}$/.test(tokens[i + 1] || "") ) {
-      hersteller += " " + String(tokens[i]).replace(/[,.:;]+$/g, "");
+    while (i < tokens.length) {
+      var brandTok = String(tokens[i]).replace(/[,.:;]+$/g, "");
+      if (!brandTok || /\d/.test(brandTok) || pzLooksLikeArtNr_(brandTok)) break;
+      var allCapsBrand = /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(brandTok);
+      var knownBrand = pzIsBrandToken_(brandTok);
+      var mixedThenArt = pzLooksLikeMixedBrand_(brandTok) && (pzLooksLikeArtNr_(pzCleanTok_(tokens[i + 1] || "")) || pzLooksLikeSpacedArt_(tokens, i + 1));
+      if (!allCapsBrand && !knownBrand && !mixedThenArt) break;
+      hersteller += " " + brandTok;
       i++;
     }
     var art = [];
@@ -4570,6 +4604,26 @@ function pzParseAlfahPartsFromText_(raw) {
     body = pzNormalizePartName_(body).replace(/^[€\s]+/, "").trim();
     if (body.length < 3) continue;
     if (!/[a-zäöüß]/i.test(body)) continue;
+    var boxed = body.match(/^\[([^\]]+)\]\s*(.+)$/);
+    if (boxed) {
+      var rest = String(boxed[2] || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\bVIN\s*:.*$/i, "").replace(/\s+/g, " ").trim();
+      var split = rest.match(/^([^:]{2,40}):\s*(.+)$/);
+      var brand = split ? split[1].trim() : "";
+      var partName = split ? split[2].trim() : rest;
+      var code = partName.match(/^[A-Z0-9]{1,4}:\s*(.+)$/);
+      if (code && /[a-zäöüß]/i.test(code[1])) partName = code[1].trim();
+      if (partName && /[a-zäöüß]/i.test(partName)) {
+        out.push({
+          name: partName,
+          tag: "ALFAH",
+          supplier: "ALFAH",
+          hersteller: brand,
+          herstellerArtnr: String(boxed[1] || "").trim(),
+          menge: String(m[1] || "")
+        });
+        continue;
+      }
+    }
     var name = m[1] + " Stk " + body;
     if (name.length > 220) name = name.slice(0, 220).trim();
     out.push({ name: name, tag: "ALFAH", supplier: "ALFAH" });
