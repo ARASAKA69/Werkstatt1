@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.23",
+    date: "21.10.2026",
+    notes:
+      "• Teile aus Packzettel trennt jede Position. Ein Hersteller wie Schaeffler bleibt eine eigene Zeile und hängt nicht mehr am Artikelnamen davor."
+  },
+  {
     version: "2.2.22",
     date: "19.10.2026",
     notes:
@@ -4303,6 +4309,38 @@ function pzIsGrosshaendlerArtnr_(tok, next) {
   return true;
 }
 
+function pzCleanTok_(tok) {
+  return String(tok || "").replace(/[,.:;!]+$/g, "");
+}
+
+function pzLooksLikeMixedBrand_(tok) {
+  var t = pzCleanTok_(tok);
+  if (t.length < 4 || t.length > 24) return false;
+  return /^[A-ZÄÖÜ][a-zäöüß]+(?:[A-ZÄÖÜ][a-zäöüß]+)*$/.test(t);
+}
+
+function pzLooksLikeBrandWord_(tok) {
+  var t = pzCleanTok_(tok);
+  if (!t || /\d/.test(t)) return false;
+  if (pzLooksLikeHerstellerToken_(t) || pzLooksLikeMixedBrand_(t)) return true;
+  return /^[A-ZÄÖÜ][A-ZÄÖÜ.+-]{1,14}$/.test(t);
+}
+
+function pzLooksLikeRowStart_(tokens, i) {
+  if (!tokens || i < 0 || i >= tokens.length) return false;
+  if (!pzLooksLikeBrandWord_(tokens[i])) return false;
+  var j = i + 1;
+  var steps = 0;
+  while (j < tokens.length && steps < 4) {
+    var n = pzCleanTok_(tokens[j]);
+    if (pzLooksLikeArtNr_(n) || /^\d{2,}$/.test(n)) return true;
+    if (!pzLooksLikeBrandWord_(n)) return false;
+    j++;
+    steps++;
+  }
+  return false;
+}
+
 function pzParseN4pTableParts_(raw, tag, supplier) {
   var text = String(raw || "").replace(/\r/g, "\n");
   var headerAt = text.search(/herstellername/i);
@@ -4316,7 +4354,7 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
   var out = [];
   var i = 0;
   while (i < tokens.length) {
-    if (!pzLooksLikeHerstellerToken_(tokens[i])) {
+    if (!pzLooksLikeRowStart_(tokens, i)) {
       i++;
       continue;
     }
@@ -4343,7 +4381,7 @@ function pzParseN4pTableParts_(raw, tag, supplier) {
     while (i < tokens.length) {
       var tok = tokens[i];
       var next = tokens[i + 1];
-      if (/^[1-9]\d?$/.test(tok) && (next == null || pzLooksLikeHerstellerToken_(next))) {
+      if (/^[1-9]\d?$/.test(tok) && (next == null || pzLooksLikeRowStart_(tokens, i + 1))) {
         menge = tok;
         i++;
         break;
