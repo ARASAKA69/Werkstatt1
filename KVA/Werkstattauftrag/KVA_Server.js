@@ -1,4 +1,4 @@
-var KVA_WA_VERSION = "1.5.0";
+var KVA_WA_VERSION = "1.6.0";
 var KVA_WA_SHEET_ID = "1oVUT3aQh1mdm2PgZV04EN_PUHrp4T5SHCNwcNKNGQ8g";
 var KVA_WA_INPUT_TAB = "Input";
 var KVA_WA_REP_TAB = "Reparaturauftrag";
@@ -127,6 +127,7 @@ function resetInput(optSs) {
     sheet.getRange("H2:H45").clearContent();
     sheet.getRange("J2:O45").clearContent();
     sheet.getRange("Q2:V45").clearContent();
+    kvaRestoreBodyPrintMarks_(sheet);
   }
   var rep = ss.getSheetByName(KVA_WA_REP_TAB);
   if (rep) {
@@ -151,9 +152,13 @@ function exportNachtrag(optSs, silent) {
   }
 
   var headerValue = String(inputSheet.getRange("B2").getValue() || "").trim();
-  var values = repSheet.getRange("C15:C35").getValues().flat().filter(function(v) { return String(v || "").trim() !== ""; });
-  if (values.length === 0) {
-    values = repSheet.getRange("C14:C35").getValues().flat().filter(function(v) { return String(v || "").trim() !== ""; });
+  var repLines = repSheet.getRange("C14:C39").getDisplayValues();
+  var values = [];
+  for (var ri = 0; ri < repLines.length; ri++) {
+    var lineTxt = String(repLines[ri][0] || "").trim();
+    if (!lineTxt) continue;
+    if (lineTxt.indexOf("#N/A") !== -1 || lineTxt.indexOf("#NV") !== -1 || lineTxt.indexOf("#REF") !== -1) continue;
+    values.push(lineTxt);
   }
 
   if (values.length === 0) {
@@ -414,6 +419,92 @@ function kvaSavePdfToDrive_(pdfBlob, fileName) {
   };
 }
 
+function kvaNormLabel_(v) {
+  return String(v || "").toLowerCase()
+    .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+    .replace(/\s+/g, " ").trim();
+}
+
+function kvaBodyPrintActions_() {
+  return [
+    { id: 1, keys: ["ganzes bauteil lackieren"], category: "Lack" },
+    { id: 2, keys: ["beilackieren"], category: "Lack" },
+    { id: 3, keys: ["delle druecken"], category: "Delle" },
+    { id: 4, keys: ["spaltmass einstellen", "andere (spaltmass einstellen)"], category: "Lack" },
+    { id: 5, keys: ["bauteil reparieren", "andere (reparatur)"], category: "Lack" },
+    { id: 6, keys: ["bauteil polieren", "polieren gesamtes fahrzeug"], category: "Lack" }
+  ];
+}
+
+function kvaMatchBodyPrintAction_(text) {
+  var raw = String(text || "").trim();
+  if (!raw) return null;
+  var baseNorm = kvaNormLabel_(raw).split(":")[0].trim();
+  var actions = kvaBodyPrintActions_();
+  for (var i = 0; i < actions.length; i++) {
+    var keys = actions[i].keys;
+    for (var k = 0; k < keys.length; k++) {
+      if (baseNorm === keys[k]) {
+        return { id: actions[i].id, category: actions[i].category, base: raw.split(":")[0].trim() };
+      }
+    }
+  }
+  return null;
+}
+
+function kvaRestoreBodyPrintMarks_(sheet) {
+  if (!sheet) return;
+  var values = sheet.getRange("W2:X52").getValues();
+  var formulas = sheet.getRange("W2:X52").getFormulas();
+  for (var r = 0; r < values.length; r++) {
+    var hit = kvaMatchBodyPrintAction_(values[r][0]);
+    if (!hit) continue;
+    if (!formulas[r][0] && String(values[r][0] || "").indexOf(":") !== -1) {
+      sheet.getRange(r + 2, 23).setValue(hit.base);
+    }
+    if (!formulas[r][1]) sheet.getRange(r + 2, 24).clearContent();
+  }
+}
+
+function kvaApplyBodyPrintMarks_(sheet, byAction) {
+  if (!sheet) return;
+  SpreadsheetApp.flush();
+  var values = sheet.getRange("W2:Y52").getDisplayValues();
+  var formulas = sheet.getRange("W2:Y52").getFormulas();
+  for (var r = 0; r < values.length; r++) {
+    var hit = kvaMatchBodyPrintAction_(values[r][0]);
+    if (!hit) continue;
+    var parts = byAction[hit.id] || [];
+    if (!parts.length) continue;
+    var row = r + 2;
+    if (!formulas[r][0]) sheet.getRange(row, 23).setValue(hit.base + ": " + parts.join(", "));
+    if (String(values[r][1] || "").trim().toLowerCase() !== "x") sheet.getRange(row, 24).setValue("x");
+    if (!formulas[r][2] && !String(values[r][2] || "").trim()) sheet.getRange(row, 25).setValue(hit.category);
+  }
+}
+
+function kvaWriteBodyWorks_(inputSheet, bodyWorks) {
+  var byAction = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  bodyWorks = bodyWorks || [];
+  for (var b = 0; b < bodyWorks.length; b++) {
+    var bw = bodyWorks[b] || {};
+    var bRow = parseInt(bw.row, 10);
+    var bSide = parseInt(bw.side, 10);
+    if (!(bRow >= 2 && bRow <= 42)) continue;
+    var partCol = bSide === 2 ? 16 : 9;
+    var label = String(bw.label || "").trim();
+    if (!label) label = String(inputSheet.getRange(bRow, partCol).getValue() || "").trim();
+    var acts = bw.actions || [];
+    for (var ac = 0; ac < acts.length; ac++) {
+      var an = parseInt(acts[ac], 10);
+      if (!(an >= 1 && an <= 6)) continue;
+      inputSheet.getRange(bRow, partCol + an).setValue("x");
+      if (label && byAction[an].indexOf(label) === -1) byAction[an].push(label);
+    }
+  }
+  kvaApplyBodyPrintMarks_(inputSheet, byAction);
+}
+
 function createKvaAuftrag(payload) {
   var lock = LockService.getScriptLock();
   var gotLock = false;
@@ -539,20 +630,7 @@ function createKvaAuftrag(payload) {
       }
     }
 
-    for (var b = 0; b < bodyWorks.length; b++) {
-      var bw = bodyWorks[b] || {};
-      var bRow = parseInt(bw.row, 10);
-      var bSide = parseInt(bw.side, 10);
-      if (!(bRow >= 2 && bRow <= 42)) continue;
-      var partCol = bSide === 2 ? 16 : 9;
-      var acts = bw.actions || [];
-      for (var ac = 0; ac < acts.length; ac++) {
-        var an = parseInt(acts[ac], 10);
-        if (an >= 1 && an <= 6) {
-          inputSheet.getRange(bRow, partCol + an).setValue("x");
-        }
-      }
-    }
+    kvaWriteBodyWorks_(inputSheet, bodyWorks);
 
     if (nach === "ja") {
       inputSheet.getRange("B44").setValue("x");
