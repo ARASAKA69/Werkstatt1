@@ -1440,6 +1440,14 @@
       syncPzPartsRowHighlight();
     }
 
+    function formatAnlieferungPartLines(text) {
+      var s = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+      s = s.replace(/(^|[^:])\/\/[ \t]*\n+[ \t]*/g, '$1//\n');
+      s = s.replace(/(^|[^:])\/\/[ \t]+(?=\S)/g, '$1//\n');
+      s = s.replace(/(^|[^:])\/\/(?=\S)/g, '$1//\n');
+      return s;
+    }
+
     function applyPzPartsToComment() {
       var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
       var comment = String((commentEl && commentEl.value) || '');
@@ -1456,12 +1464,12 @@
         var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
         if (pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, probe)) continue;
         extras.push(line);
-        probe = probe + ' ' + line;
+        probe = probe + '\n' + line;
       }
       if (!extras.length) return;
-      var next = String(comment || '').replace(/\s+$/, '');
-      var add = extras.join(' ');
-      if (commentEl) commentEl.value = next ? (next + ' ' + add) : add;
+      var next = formatAnlieferungPartLines(comment).replace(/[ \t]+$/g, '');
+      var add = extras.join('\n');
+      if (commentEl) commentEl.value = next ? (next + '\n' + add) : add;
       syncActionButtons();
     }
 
@@ -1634,7 +1642,7 @@
       var kommKick = $('commentKicker');
       if (kommKick) kommKick.textContent = isTeil ? 'Kommentar (welche Teile schon da)' : 'Kommentar';
       if (commentEl) {
-        commentEl.value = currentNbEntry ? String(currentNbEntry.kommentar || '') : '';
+        commentEl.value = currentNbEntry ? formatAnlieferungPartLines(currentNbEntry.kommentar || '') : '';
         commentEl.placeholder = isTeil ? 'z.B. Ölfilter da, Dichtung fehlt noch…' : 'Notizen…';
         commentEl.classList.toggle('is-teilweise', !!isTeil);
       }
@@ -1737,7 +1745,7 @@
       currentSource = (res && res.source === 'nachbestellung') ? 'nachbestellung' : 'refurbishment';
       currentCarolUrl = String((res && res.carolUrl) || '');
       var regal = String((res && res.regal) || '').trim();
-      var comment = String((res && res.kommAnlieferung) || '');
+      var comment = formatAnlieferungPartLines((res && res.kommAnlieferung) || '');
       baselineKommentar = comment;
       baselineRegal = regal;
       stockVal.textContent = currentStock || '—';

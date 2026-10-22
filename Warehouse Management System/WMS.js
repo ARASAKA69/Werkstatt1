@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.27",
+    date: "22.10.2026",
+    notes:
+      "• Kommentar Anlieferung: nach jedem // kommt eine neue Zeile. Im WMS und im Sheet steht jedes Teil untereinander, nicht mehr als eine lange Zeile."
+  },
+  {
     version: "2.2.26",
     date: "22.10.2026",
     notes:
@@ -1508,7 +1514,10 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
           writtenComment = currentComment;
           if (currentComment.indexOf("Reifen da //") === -1) {
             writtenComment = currentComment ? "Reifen da // " + currentComment : "Reifen da // ";
+            writtenComment = formatAnlieferungPartLines_(writtenComment);
             sheetHemau.getRange(hemauRow, 25).setValue(writtenComment);
+          } else {
+            writtenComment = formatAnlieferungPartLines_(currentComment);
           }
           reifenDaReady = true;
           sheetHemau.getRange(hemauRow, 30).setValue("Werkstatt 1");
@@ -1676,7 +1685,7 @@ function processWssVasoldBooking(stockId, carolUrlOpt, markeOpt, gummiVorhanden)
 
     var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
     if (!/wss\s+da\b/i.test(curCom)) {
-      var wssCom = curCom ? "WSS da // " + curCom : "WSS da // ";
+      var wssCom = formatAnlieferungPartLines_(curCom ? "WSS da // " + curCom : "WSS da // ");
       sheetRef.getRange(refurbRow, 25).setValue(wssCom);
       logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
     }
@@ -1815,7 +1824,7 @@ function processNachbestellVasoldWss(stockId, toggleWssJa, toggleGummi) {
     if (wroteEJa) {
       var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
       if (!/wss\s+da\b/i.test(curCom)) {
-        var wssCom2 = curCom ? "WSS da // " + curCom : "WSS da // ";
+        var wssCom2 = formatAnlieferungPartLines_(curCom ? "WSS da // " + curCom : "WSS da // ");
         sheetRef.getRange(refurbRow, 25).setValue(wssCom2);
         logKommentarVerlauf_(stockId, curCom, wssCom2, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
@@ -1961,7 +1970,7 @@ function processWssEinbuchenBooking(stockId, carolUrlOpt, markeOpt, wssJa, gummi
     if (needWssWrite && refurbRow !== -1) {
       var curCom = String(sheetRef.getRange(refurbRow, 25).getValue() || "");
       if (!/wss\s+da\b/i.test(curCom)) {
-        var wssCom = curCom ? (curCom + " // WSS da //") : "WSS da //";
+        var wssCom = formatAnlieferungPartLines_(curCom ? (curCom + " // WSS da //") : "WSS da //");
         sheetRef.getRange(refurbRow, 25).setValue(wssCom);
         logKommentarVerlauf_(stockId, curCom, wssCom, "wss", String(sheetRef.getRange(refurbRow, 28).getValue() || ""));
       }
@@ -2627,7 +2636,8 @@ function saveNachbestellungKommentarUndRegal_(stockId, text, regal, expectedKomm
   var joinedComment = currentComments.join("\n");
   var sheetRegalKey = normalizeRegalKeyForCount(currentRegal) || String(currentRegal || "").trim();
   var expRegalKey = normalizeRegalKeyForCount(expectedRegal) || String(expectedRegal || "").trim();
-  if (String(joinedComment || "") !== String(expectedKommentar == null ? joinedComment : expectedKommentar)
+  text = formatAnlieferungPartLines_(text);
+  if (formatAnlieferungPartLines_(joinedComment || "") !== formatAnlieferungPartLines_(expectedKommentar == null ? joinedComment : expectedKommentar)
       || sheetRegalKey !== expRegalKey) {
     return buildConcurrencyConflict_(joinedComment, currentRegal);
   }
@@ -3269,11 +3279,19 @@ function joergPanikRestore(stockId, snapshot) {
   });
 }
 
+function formatAnlieferungPartLines_(text) {
+  var s = String(text == null ? "" : text).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/(^|[^:])\/\/[ \t]*\n+[ \t]*/g, "$1//\n");
+  s = s.replace(/(^|[^:])\/\/[ \t]+(?=\S)/g, "$1//\n");
+  s = s.replace(/(^|[^:])\/\/(?=\S)/g, "$1//\n");
+  return s;
+}
+
 function baselinesMatch_(sheetKommentar, sheetRegal, expectedKommentar, expectedRegal) {
   if (expectedKommentar === undefined && expectedRegal === undefined) return true;
-  var expC = String(expectedKommentar == null ? "" : expectedKommentar);
+  var expC = formatAnlieferungPartLines_(expectedKommentar);
   var expR = String(expectedRegal == null ? "" : expectedRegal).trim();
-  var curC = String(sheetKommentar == null ? "" : sheetKommentar);
+  var curC = formatAnlieferungPartLines_(sheetKommentar);
   var curR = String(sheetRegal == null ? "" : sheetRegal).trim();
   return expC === curC && expR === curR;
 }
@@ -5030,7 +5048,7 @@ function getAagLieferscheinByLs(receiptNumber) {
     return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       action = String(action || "speichern");
-      text = String(text == null ? "" : text);
+      text = formatAnlieferungPartLines_(text);
       source = String(source || "").toLowerCase();
       if (source === "nachbestellung") {
         var nbForced = saveNachbestellungKommentarUndRegal_(stockId, text, "", expectedKommentar, expectedRegal, true);
@@ -5053,7 +5071,7 @@ function getAagLieferscheinByLs(receiptNumber) {
           var priorSnapshot = readRefurbPriorSnapshot_(sheet, row);
           sheet.getRange(row, 25).setValue(text);
           SpreadsheetApp.flush();
-          var check = sheet.getRange(row, 25).getValue();
+          var check = formatAnlieferungPartLines_(sheet.getRange(row, 25).getValue());
           if (check != text) return { success: false, message: "Fehler beim Verifizieren!" };
 
           var verlaufEntry = logKommentarVerlauf_(stockId, oldText, text, action, sheetRegal);
@@ -5345,7 +5363,7 @@ function getAagLieferscheinByLs(receiptNumber) {
     return withRefurbDocumentLock_(function() {
       stockId = normalizeStockId(stockId);
       regal = String(regal || "").trim();
-      text = String(text || "");
+      text = formatAnlieferungPartLines_(text);
       source = String(source || "").toLowerCase();
       if (!stockId) return { success: false, message: "Keine Stock-ID" };
       if (!text.trim()) return { success: false, message: "Bitte erst Kommentar eintragen!" };
@@ -5378,7 +5396,7 @@ function getAagLieferscheinByLs(receiptNumber) {
           }
           SpreadsheetApp.flush();
 
-          var commentCheck = sheet.getRange(row, 25).getValue();
+          var commentCheck = formatAnlieferungPartLines_(sheet.getRange(row, 25).getValue());
           var statusCheck = String(sheet.getRange(row, 26).getValue() || "").trim();
           if (commentCheck != text || statusCheck !== "Teilweise angeliefert") {
             return { success: false, message: "Fehler beim Verifizieren!" };

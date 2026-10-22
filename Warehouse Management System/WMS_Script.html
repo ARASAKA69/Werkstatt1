@@ -1804,8 +1804,16 @@
     el.setAttribute('aria-hidden', 'true');
   }
 
+  function formatAnlieferungPartLines(text) {
+    var s = String(text == null ? '' : text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    s = s.replace(/(^|[^:])\/\/[ \t]*\n+[ \t]*/g, '$1//\n');
+    s = s.replace(/(^|[^:])\/\/[ \t]+(?=\S)/g, '$1//\n');
+    s = s.replace(/(^|[^:])\/\/(?=\S)/g, '$1//\n');
+    return s;
+  }
+
   function setBaselines(kommentar, regal) {
-    baselineKommentar = String(kommentar == null ? "" : kommentar);
+    baselineKommentar = formatAnlieferungPartLines(kommentar);
     baselineRegal = String(regal == null ? "" : regal).trim();
   }
 
@@ -4552,12 +4560,12 @@
       var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
       if (pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, probe)) continue;
       extras.push(line);
-      probe = probe + ' ' + line;
+      probe = probe + '\n' + line;
     }
     if (!extras.length) return;
-    var next = String(comment || '').replace(/\s+$/, '');
-    var add = extras.join(' ');
-    setCommentText(next ? (next + ' ' + add) : add);
+    var next = formatAnlieferungPartLines(comment).replace(/[ \t]+$/g, '');
+    var add = extras.join('\n');
+    setCommentText(next ? (next + '\n' + add) : add);
   }
 
   function closePzPartsPicker() {
@@ -7848,7 +7856,7 @@
 
   function setCommentText(text) {
     clearAnlieferungGhost();
-    commentEditor.textContent = text || "";
+    commentEditor.textContent = formatAnlieferungPartLines(text);
     refreshCrossHighlights(false);
   }
 
@@ -8801,8 +8809,8 @@
   }
 
   function wmsCommentDirty(current, baseline) {
-    var a = String(current == null ? '' : current).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
-    var b = String(baseline == null ? '' : baseline).replace(/\u00a0/g, ' ').replace(/\r/g, '').trim();
+    var a = formatAnlieferungPartLines(current).replace(/\u00a0/g, ' ').trim();
+    var b = formatAnlieferungPartLines(baseline).replace(/\u00a0/g, ' ').trim();
     return a !== b;
   }
 
