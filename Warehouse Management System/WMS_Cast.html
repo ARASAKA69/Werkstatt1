@@ -399,7 +399,7 @@
       color: #6ee7b7;
     }
     .pz-parts-overlay {
-      position: fixed; inset: 0; z-index: 25;
+      position: fixed; inset: 0; z-index: 40;
       display: none; align-items: center; justify-content: center;
       background: rgba(5, 5, 6, 0.78);
       backdrop-filter: blur(8px);
@@ -409,6 +409,7 @@
     .pz-parts-overlay.show { display: flex; }
     .pz-parts-dialog {
       width: min(920px, 100%);
+      height: min(90dvh, 820px);
       max-height: min(90dvh, 820px);
       display: flex; flex-direction: column; gap: 10px;
       border-radius: var(--radius);
@@ -419,14 +420,17 @@
     }
     .pz-parts-top {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      flex-shrink: 0;
     }
     .pz-parts-top strong { font-size: 1.05rem; font-weight: 800; }
     .pz-parts-sub {
       font: 600 0.75rem/1.35 var(--font);
       color: var(--foreground-muted);
+      flex-shrink: 0;
     }
     .pz-parts-counts {
       display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px;
+      flex-shrink: 0;
     }
     .pz-parts-count-total {
       color: #f4f7fb;
@@ -446,6 +450,7 @@
     .pz-parts-count--alfah { background: rgba(177, 75, 227, 0.16); color: #d7a4f5; }
     .pz-parts-supplier-select {
       display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+      flex-shrink: 0;
     }
     .pz-parts-supplier-select:empty { display: none; }
     .pz-parts-supplier-btn {
@@ -479,6 +484,7 @@
     }
     .pz-parts-toolbar {
       display: flex; justify-content: center; gap: 8px;
+      flex-shrink: 0;
     }
     .pz-parts-mini {
       flex: 1; max-width: 160px;
@@ -492,7 +498,8 @@
     }
     .pz-parts-list {
       display: flex; flex-direction: column; gap: 8px;
-      flex: 1; min-height: 0; overflow-y: auto;
+      flex: 1 1 auto; min-height: 180px; overflow: auto;
+      -webkit-overflow-scrolling: touch;
       padding-right: 2px;
     }
     .pz-parts-head {
@@ -560,6 +567,7 @@
     .pz-parts-badge--alfah { background: rgba(177, 75, 227, 0.16); color: #d7a4f5; }
     .pz-parts-actions {
       display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+      flex-shrink: 0;
     }
     @media (max-width: 639px) {
       .pz-parts-head { display: none; }
@@ -1244,7 +1252,7 @@
     function updatePzPartsButton() {
       var btn = $('btnPzParts');
       if (!btn) return;
-      if (pzPartsCache.length > 0 && currentSource !== 'nachbestellung' && normalizeStock(pzPartsStock) === currentStock) {
+      if (pzPartsCache.length > 0 && normalizeStock(pzPartsStock) === currentStock) {
         btn.classList.remove('hidden');
         btn.textContent = 'Teile aus Packzettel (' + pzPartsCache.length + ')';
       } else {
@@ -1265,9 +1273,9 @@
     function fetchPzPartsForStock(stockId, forceReveal) {
       var stockKey = normalizeStock(stockId);
       closePzPartsPicker();
-      if (!stockKey || currentSource === 'nachbestellung') {
+      if (!stockKey) {
         pzPartsCache = [];
-        pzPartsStock = stockKey;
+        pzPartsStock = '';
         updatePzPartsButton();
         return;
       }
@@ -1355,6 +1363,7 @@
         var name = String(p.name || '');
         var tag = String(p.tag || '').toUpperCase();
         if (!name) continue;
+        total++;
         var hersteller = String(p.hersteller || '');
         var artnr = String(p.herstellerArtnr || '');
         var menge = String(p.menge || '');
@@ -1363,7 +1372,7 @@
         var isChk = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment);
         var checked = isChk ? ' checked' : '';
         var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
-        var fullLine = tag === 'ALFAH' || (!hersteller && !artnr && !menge);
+        var fullLine = !hersteller && !artnr && !menge;
         html += '<label class="pz-parts-item' + (fullLine ? ' pz-parts-item--full' : '') + (isChk ? ' is-checked' : '') + '" for="' + id + '">';
         html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
         if (fullLine) {
@@ -1380,7 +1389,6 @@
         if (tag) {
           if (counts[tag] == null) counts[tag] = 0;
           counts[tag]++;
-          total++;
           if (order.indexOf(tag) === -1) order.push(tag);
         }
       }

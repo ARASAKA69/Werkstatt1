@@ -4392,7 +4392,7 @@
       var line = pzPartCommentLine(hersteller, artnr, name, menge, tag);
       var checked = pzPartAlreadyInComment(line.replace(/\s*da\s*\/\/\s*$/i, ''), tag, comment) ? ' checked' : '';
       var badgeClass = 'pz-parts-badge pz-parts-badge--' + tag.toLowerCase();
-      var fullLine = tag === 'ALFAH' || (!hersteller && !artnr && !menge);
+      var fullLine = !hersteller && !artnr && !menge;
       html += '<label class="pz-parts-item' + (fullLine ? ' pz-parts-item--full' : '') + '" for="' + id + '">';
       html += '<input type="checkbox" id="' + id + '" data-name="' + escapeHtml(name) + '" data-tag="' + escapeHtml(tag) + '" data-hersteller="' + escapeHtml(hersteller) + '" data-artnr="' + escapeHtml(artnr) + '" data-menge="' + escapeHtml(menge) + '"' + checked + '>';
       if (fullLine) {

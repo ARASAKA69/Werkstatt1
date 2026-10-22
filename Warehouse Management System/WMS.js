@@ -31,6 +31,18 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.26",
+    date: "22.10.2026",
+    notes:
+      "• WMS Cast: Teile aus Packzettel sind wieder sichtbar und öffenbar. Die Liste hatte keine Höhe, und bei einer Nachbestellung wurde der Button gar nicht geladen."
+  },
+  {
+    version: "2.2.25",
+    date: "22.10.2026",
+    notes:
+      "• ALFAH in Teile aus Packzettel zeigt jetzt Hersteller, Artnr., Name und Menge. Vorher blieb nur der Kurzname (z.B. Leiste, BATTERIE), obwohl der Beleg die restlichen Felder hat."
+  },
+  {
     version: "2.2.24",
     date: "21.10.2026",
     notes:
@@ -4581,6 +4593,51 @@ function pzDedupeParts_(parts) {
   return out;
 }
 
+function pzAlfahBrandToken_(tok) {
+  var t = String(tok || "").replace(/[,.:;]+$/g, "");
+  if (!t || /\d/.test(t)) return false;
+  if (/-/.test(t) && /[A-Za-zÄÖÜäöüß]/.test(t)) return true;
+  return /^(vw|audi|skoda|seat|porsche|cupra|bmw|mini|mercedes|opel|ford|volkswagen)$/i.test(t);
+}
+
+function pzAlfahSplitDesc_(artnr, rest) {
+  var desc = String(rest || "").replace(/\s+/g, " ").trim();
+  var extra = desc.match(/^((?:[A-Z0-9]{2,6}\s+)+)(.+)$/);
+  if (extra && /[a-zäöüß]/.test(extra[2])) {
+    artnr = (String(artnr || "").trim() + " " + extra[1].trim()).replace(/\s+/g, " ").trim();
+    desc = extra[2].trim();
+  }
+  var brand = "";
+  var partName = desc;
+  var split = desc.match(/^([^:]{2,40}):\s*(.+)$/);
+  if (split) {
+    brand = split[1].trim();
+    partName = split[2].trim();
+  } else {
+    var tokens = desc.split(/\s+/).filter(function(t) { return !!t; });
+    var bi = 0;
+    while (bi < tokens.length - 1 && pzAlfahBrandToken_(tokens[bi])) bi++;
+    if (bi > 0) {
+      brand = tokens.slice(0, bi).join(" ");
+      partName = tokens.slice(bi).join(" ");
+    }
+  }
+  var code = partName.match(/^[A-Z0-9]{1,4}:\s*(.+)$/);
+  if (code && /[a-zäöüß]/i.test(code[1])) partName = code[1].trim();
+  partName = partName.replace(/[.\s]+$/g, "").trim();
+  return { artnr: String(artnr || "").replace(/\s+/g, " ").trim(), brand: brand, partName: partName };
+}
+
+function pzAlfahQtyNear_(slice, at, chunk) {
+  var inner = String(chunk || "").match(/(\d+)\s*Stk\b/i);
+  if (inner) return inner[1];
+  var before = String(slice || "").slice(Math.max(0, at - 180), at);
+  var hits = before.match(/(\d+)\s*Stk\b/gi);
+  if (!hits || !hits.length) return "";
+  var last = String(hits[hits.length - 1]).match(/(\d+)/);
+  return last ? last[1] : "";
+}
+
 function pzParseAlfahPartsFromText_(raw) {
   var text = String(raw || "").replace(/\r/g, "\n");
   if (!text.trim()) return [];
@@ -4595,38 +4652,40 @@ function pzParseAlfahPartsFromText_(raw) {
   slice = slice.replace(/\bversand\s*:\s*[^\n]+/ig, " ");
   slice = slice.replace(/voraussichtl\.?\s*liefertermin\s*:?\s*\d{4}-\d{2}-\d{2}/ig, " ");
   var out = [];
-  var re = /(\d+)\s*Stk\b([\s\S]*?)(?=\d+\s*Stk\b|$)/gi;
+  var re = /\[([^\]]+)\]/g;
+  var found = [];
+  var hit;
+  while ((hit = re.exec(slice))) found.push({ art: hit[1], index: hit.index, end: hit.index + hit[0].length });
+  var f;
+  for (f = 0; f < found.length; f++) {
+    var chunk = slice.slice(found[f].end, f + 1 < found.length ? found[f + 1].index : slice.length);
+    var desc = chunk.split(/\bVIN\s*:/i)[0].split(/\d+\s*Stk\b/i)[0];
+    desc = desc.replace(/\d+[.,]\d+\s*€/g, " ").replace(/\s*\([^)]*\)\s*/g, " ");
+    desc = pzNormalizePartName_(desc);
+    var parsed = pzAlfahSplitDesc_(found[f].art, desc);
+    if (!parsed.partName || !/[a-zäöüß]/i.test(parsed.partName)) continue;
+    if (/^(versand|nachtversand|zwischensumme)$/i.test(parsed.partName)) continue;
+    out.push({
+      name: parsed.partName,
+      tag: "ALFAH",
+      supplier: "ALFAH",
+      hersteller: parsed.brand,
+      herstellerArtnr: parsed.artnr,
+      menge: pzAlfahQtyNear_(slice, found[f].index, chunk)
+    });
+  }
+  if (out.length) return pzDedupeParts_(out);
+  var legacy = /(\d+)\s*Stk\b([\s\S]*?)(?=\d+\s*Stk\b|$)/gi;
   var m;
-  while ((m = re.exec(slice))) {
+  while ((m = legacy.exec(slice))) {
     var body = String(m[2] || "");
     body = body.replace(/\d+[.,]\d+\s*€/g, " ");
     body = body.replace(/\b(?:uvp|netto|gesamt|brutto|mwst|19\s*%)\b/gi, " ");
     body = pzNormalizePartName_(body).replace(/^[€\s]+/, "").trim();
-    if (body.length < 3) continue;
-    if (!/[a-zäöüß]/i.test(body)) continue;
-    var boxed = body.match(/^\[([^\]]+)\]\s*(.+)$/);
-    if (boxed) {
-      var rest = String(boxed[2] || "").replace(/\s*\([^)]*\)\s*/g, " ").replace(/\bVIN\s*:.*$/i, "").replace(/\s+/g, " ").trim();
-      var split = rest.match(/^([^:]{2,40}):\s*(.+)$/);
-      var brand = split ? split[1].trim() : "";
-      var partName = split ? split[2].trim() : rest;
-      var code = partName.match(/^[A-Z0-9]{1,4}:\s*(.+)$/);
-      if (code && /[a-zäöüß]/i.test(code[1])) partName = code[1].trim();
-      if (partName && /[a-zäöüß]/i.test(partName)) {
-        out.push({
-          name: partName,
-          tag: "ALFAH",
-          supplier: "ALFAH",
-          hersteller: brand,
-          herstellerArtnr: String(boxed[1] || "").trim(),
-          menge: String(m[1] || "")
-        });
-        continue;
-      }
-    }
+    if (body.length < 3 || !/[a-zäöüß]/i.test(body)) continue;
     var name = m[1] + " Stk " + body;
     if (name.length > 220) name = name.slice(0, 220).trim();
-    out.push({ name: name, tag: "ALFAH", supplier: "ALFAH" });
+    out.push({ name: name, tag: "ALFAH", supplier: "ALFAH", menge: String(m[1] || "") });
   }
   return pzDedupeParts_(out);
 }
