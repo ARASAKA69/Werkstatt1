@@ -256,6 +256,7 @@
       var btn = document.getElementById('btnCarol');
       if (btn) btn.disabled = false;
     }
+    syncOpenCarolButton();
     var expC = job.expectedKommentar != null ? String(job.expectedKommentar) : getCommentText();
     var expR = job.expectedRegal != null ? String(job.expectedRegal) : baselineRegal;
     setBaselines(expC, expR);
@@ -4075,6 +4076,7 @@
   var currentPzKeys = [];
   var pzPendingKeys = null;
   var pzPendingLabel = '';
+  var pzCarolDeliverQueue = {};
   var pzPartsCache = [];
   var pzPartsStock = '';
   var pzPartsPendingNb = null;
@@ -4574,9 +4576,112 @@
     pzPartsPendingNb = null;
   }
 
+  function carolDirectUrl() {
+    var raw = String(currentCarolUrl || '').trim();
+    raw = raw.replace(/[?&]arasaka_[^=&]*=[^&]*/g, '').replace(/\?&/g, '?').replace(/[?&]$/, '');
+    if (/\/refurbishment\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(raw)) return raw;
+    var sid = normalizeStockIdJs(currentStock);
+    if (!sid) return '';
+    return 'https://carol.autohero.com/en-GB/refurbishment?rsv=' + encodeURIComponent(sid);
+  }
+
+  function syncOpenCarolButton() {
+    var btn = document.getElementById('btnOpenCarol');
+    if (!btn) return;
+    btn.disabled = !normalizeStockIdJs(currentStock);
+  }
+
+  function openCarolPage() {
+    var url = carolDirectUrl();
+    if (!url) {
+      setStatus('❌ Keine Stock-ID geladen.', '#f85149');
+      return;
+    }
+    var win = window.open(url, '_blank');
+    if (!win) setStatus('❌ Carol-Popup wurde blockiert.', '#f85149');
+  }
+
+  function collectCheckedPzParts() {
+    var boxes = document.querySelectorAll('#pzPartsList input[type="checkbox"]');
+    var out = [];
+    for (var i = 0; i < boxes.length; i++) {
+      if (!boxes[i].checked) continue;
+      var name = boxes[i].getAttribute('data-name') || '';
+      if (!name) continue;
+      out.push({
+        n: name,
+        a: boxes[i].getAttribute('data-artnr') || ''
+      });
+    }
+    return out;
+  }
+
+  function openCarolPartialDeliver(parts, existingWin) {
+    if (!parts || !parts.length) {
+      if (existingWin && !existingWin.closed) existingWin.close();
+      return false;
+    }
+    var base = carolDirectUrl();
+    if (!base) {
+      if (existingWin && !existingWin.closed) existingWin.close();
+      setStatus('Kommentar gespeichert. Kein Carol-Link für Delivered.', '#f85149');
+      return false;
+    }
+    var payload = '';
+    try {
+      payload = btoa(unescape(encodeURIComponent(JSON.stringify(parts))));
+    } catch (e) {
+      if (existingWin && !existingWin.closed) existingWin.close();
+      setStatus('Carol-Teile konnten nicht übergeben werden.', '#f85149');
+      return false;
+    }
+    var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'arasaka_partial=1&arasaka_noprint=1&arasaka_parts=' + encodeURIComponent(payload);
+    if (existingWin && !existingWin.closed) {
+      existingWin.location = url;
+      setStatus('Carol setzt ' + parts.length + ' ausgewählte Teile auf Delivered…', '#3FA0DB');
+      return true;
+    }
+    var win = window.open(url, '_blank');
+    if (!win) {
+      setStatus('❌ Carol-Popup wurde blockiert. Teile stehen im Kommentar.', '#f85149');
+      return false;
+    }
+    setStatus('Carol setzt ' + parts.length + ' ausgewählte Teile auf Delivered…', '#3FA0DB');
+    return true;
+  }
+
+  function rememberPzCarolParts(stockId, parts) {
+    var sid = normalizeStockIdJs(stockId);
+    if (!sid || !parts || !parts.length) return;
+    var cur = pzCarolDeliverQueue[sid] || [];
+    var seen = {};
+    for (var i = 0; i < cur.length; i++) seen[String(cur[i].a || '') + '|' + String(cur[i].n || '')] = true;
+    for (var j = 0; j < parts.length; j++) {
+      var key = String(parts[j].a || '') + '|' + String(parts[j].n || '');
+      if (seen[key]) continue;
+      seen[key] = true;
+      cur.push(parts[j]);
+    }
+    pzCarolDeliverQueue[sid] = cur;
+  }
+
+  function peekPzCarolParts(stockId) {
+    var sid = normalizeStockIdJs(stockId);
+    return (pzCarolDeliverQueue[sid] || []).slice();
+  }
+
+  function takePzCarolParts(stockId) {
+    var sid = normalizeStockIdJs(stockId);
+    var parts = pzCarolDeliverQueue[sid] || [];
+    delete pzCarolDeliverQueue[sid];
+    return parts;
+  }
+
   function confirmPzPartsPicker() {
+    var selected = collectCheckedPzParts();
     applyPzPartsToComment();
     closePzPartsPicker();
+    if (selected.length) rememberPzCarolParts(currentStock, selected);
   }
 
   function pzLoad(query) {
@@ -8435,6 +8540,7 @@
     hidePzContext();
     var btnCarol = document.getElementById('btnCarol');
     if (btnCarol) btnCarol.disabled = true;
+    syncOpenCarolButton();
     var btnVerlauf = document.getElementById('btnVerlauf');
     if (btnVerlauf) btnVerlauf.disabled = true;
     shelfSelectIgnoreChange = true;
@@ -8572,6 +8678,7 @@
       shelfSelectIgnoreChange = false;
 
       document.getElementById('btnCarol').disabled = !res.carolUrl;
+      syncOpenCarolButton();
       var btnVerlauf = document.getElementById('btnVerlauf');
       if (btnVerlauf) btnVerlauf.disabled = false;
 
@@ -9144,6 +9251,12 @@
     }
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
+    var carolParts = peekPzCarolParts(stockId);
+    var carolWin = null;
+    if (carolParts.length) {
+      carolWin = window.open('about:blank', '_blank');
+      if (!carolWin) setStatus('Carol-Popup blockiert — Kommentar wird trotzdem gespeichert.', '#F27420');
+    }
     setStatus("💾 Speichere Kommentar + Regal im Hintergrund…", "#F27420");
     patchRefurbCacheKommentarRegal(stockId, text, regal);
     applyLocalSaveUiIfCurrent(stockId, regal);
@@ -9153,6 +9266,7 @@
 
     var timerId = setTimeout(function() {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
+      if (carolWin && !carolWin.closed) carolWin.close();
       setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
       showStickyToast(
         'err',
@@ -9168,6 +9282,7 @@
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       if (res && res.conflict) {
+        if (carolWin && !carolWin.closed) carolWin.close();
         handleSaveConcurrencyConflict(res, stockId, retrySave);
         done(false);
         return;
@@ -9209,8 +9324,17 @@
             { stockId: stockId, priorSnapshot: res.priorSnapshot || null }
           );
         }
+        var deliveredParts = peekPzCarolParts(stockId);
+        if (deliveredParts.length && carolWin && !carolWin.closed) {
+          if (openCarolPartialDeliver(deliveredParts, carolWin)) takePzCarolParts(stockId);
+        } else if (carolWin && !carolWin.closed) {
+          carolWin.close();
+        } else if (deliveredParts.length) {
+          setStatus('Gespeichert. Carol-Popup war blockiert — erneut speichern setzt die ausgewählten Teile auf Delivered.', '#F27420');
+        }
         done(true);
       } else {
+        if (carolWin && !carolWin.closed) carolWin.close();
         patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
         var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
         setStatus("❌ " + errMsg, "#f85149");
@@ -9218,6 +9342,7 @@
         done(false);
       }
     }).withFailureHandler(function(err) {
+      if (carolWin && !carolWin.closed) carolWin.close();
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
@@ -9608,7 +9733,9 @@
     }
 
     var dymoResult = sendDymoPrint({ silent: true, requireInitials: true });
-    var autoUrl = currentCarolUrl + (currentCarolUrl.indexOf('?') !== -1 ? '&' : '?') + 'arasaka_auto=1';
+    delete pzCarolDeliverQueue[stockId];
+    var autoBase = String(currentCarolUrl || '').replace(/[?&]arasaka_[^=&]*=[^&]*/g, '').replace(/\?&/g, '?').replace(/[?&]$/, '');
+    var autoUrl = autoBase + (autoBase.indexOf('?') >= 0 ? '&' : '?') + 'arasaka_auto=1';
     var carolWindow = window.open(autoUrl, opts.windowName || '_blank');
     if(!carolWindow) {
       setStatus("❌ Carol-Popup wurde blockiert!", "#f85149");

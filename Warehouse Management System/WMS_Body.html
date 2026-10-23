@@ -230,6 +230,7 @@
         <div class="search-box">
           <input type="text" id="searchInput" placeholder="STOCK-ID / BESTELLNUMMER SCAN..." autocomplete="off">
           <button type="button" class="btn-search btn-glow" onclick="loadData()">LADEN</button>
+          <button type="button" class="btn-carol-open btn-glow" id="btnOpenCarol" onclick="openCarolPage()" disabled>Carol öffnen</button>
         </div>
         <div class="search-recent" id="searchRecentChips" aria-label="Letzte Stock-IDs"></div>
       </div>
@@ -535,7 +536,7 @@
       <div class="nb-choose-title">Teile aus Packzettel</div>
       <button type="button" class="nb-choose-x" onclick="closePzPartsPicker()" title="Schließen">✕</button>
     </div>
-    <div class="nb-choose-sub">Hersteller, Artikelnummer, Name und Menge. Ankreuzen übernimmt die Zeile in den Kommentar. Speichern danach über Kommentar + Regal.</div>
+    <div class="nb-choose-sub">Hersteller, Artikelnummer, Name und Menge. Ankreuzen übernimmt die Zeile in den Kommentar. In Carol werden nur diese Teile auf Delivered gesetzt, wenn du danach Kommentar + Regal speicherst.</div>
     <div class="pz-parts-counts" id="pzPartsCounts"></div>
     <div class="pz-parts-supplier-select" id="pzPartsSupplierSelect"></div>
     <div class="pz-parts-toolbar">

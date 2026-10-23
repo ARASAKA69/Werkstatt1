@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 5.1
-// @description ARASAKA v5.1 - Spare Parts per API auf Delivered, Werkstattauftrag wird weiter von der offenen Seite gedruckt
+// @version 5.2
+// @description ARASAKA v5.2 - Delivered per API, teilweise nur die ausgewählten Packzettel-Teile
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -629,7 +629,77 @@
         return item.id;
     }
 
-    async function deliveredViaApi(onStep) {
+    function compactCarolText(value) {
+        return String(value || '')
+            .toLowerCase()
+            .replace(/ä/g, 'a')
+            .replace(/ö/g, 'o')
+            .replace(/ü/g, 'u')
+            .replace(/ß/g, 'ss')
+            .replace(/[^a-z0-9]+/g, '');
+    }
+
+    const PART_MATCH_GROUPS = [
+        ['olfilter', 'oilfilter', 'engineoil'],
+        ['luftfilter', 'airfilter', 'engineair'],
+        ['innenraum', 'innenraumfilter', 'innenraumluft', 'interiorfilter', 'pollenfilter', 'cabinfilter'],
+        ['dichtring', 'olablass', 'olablassschraube', 'drainplug'],
+        ['zundkerze', 'sparkplug'],
+        ['bremsbelag', 'brakepad'],
+        ['bremsflussigkeit', 'brakefluid']
+    ];
+
+    function partMatchesCarolRow(part, rowText) {
+        const row = compactCarolText(rowText);
+        if (!row) return false;
+        const art = compactCarolText(part && (part.a || part.artnr));
+        if (art.length >= 5 && row.indexOf(art) !== -1) return true;
+        const nameRaw = String((part && (part.n || part.name)) || '');
+        const name = compactCarolText(nameRaw);
+        if (name.length >= 6 && row.indexOf(name) !== -1) return true;
+        const words = nameRaw.toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean);
+        for (let i = 0; i < words.length; i++) {
+            const word = compactCarolText(words[i]);
+            if (word.length < 6 || word === 'filter') continue;
+            if (row.indexOf(word) !== -1) return true;
+        }
+        const hay = name + ' ' + words.map(compactCarolText).join(' ');
+        for (let g = 0; g < PART_MATCH_GROUPS.length; g++) {
+            const group = PART_MATCH_GROUPS[g];
+            let partHit = false;
+            let rowHit = false;
+            for (let k = 0; k < group.length; k++) {
+                if (hay.indexOf(group[k]) !== -1) partHit = true;
+                if (row.indexOf(group[k]) !== -1) rowHit = true;
+            }
+            if (partHit && rowHit) return true;
+        }
+        return false;
+    }
+
+    function carolRowText(effMap) {
+        const bits = [];
+        effMap.forEach((info) => {
+            const payload = (info && info.payload) || {};
+            if (payload.name) bits.push(payload.name);
+            if (payload.comment) bits.push(payload.comment);
+            if (payload.sparePart && payload.sparePart.comment) bits.push(payload.sparePart.comment);
+        });
+        return bits.join(' ');
+    }
+
+    function readPartialParts() {
+        if (location.href.indexOf('arasaka_partial=1') === -1) return null;
+        const raw = new URLSearchParams(location.search).get('arasaka_parts') || '';
+        if (!raw) return [];
+        try {
+            return JSON.parse(decodeURIComponent(escape(atob(raw))));
+        } catch (e) {
+            return [];
+        }
+    }
+
+    async function deliveredViaApi(onStep, onlyParts) {
         if (abortMission) throw new Error('Abort');
         if (onStep) onStep('Lade Spare Parts…');
         const refId = await resolveRefurbishmentId();
@@ -648,6 +718,9 @@
         const updateBatches = [];
         const createBatches = [];
         let spareCount = 0;
+        let matched = 0;
+        let alreadyDone = 0;
+        const matchedNames = [];
         byEntity.forEach((entityItems) => {
             const effMap = new Map();
             for (let i = 0; i < entityItems.length; i++) {
@@ -661,8 +734,23 @@
                 if (info.state === 'DECLINED' && info.payload.payloadType !== 'DAMAGE_CANCELLATION') declined = true;
             });
             if (declined) return;
+            if (onlyParts && onlyParts.length) {
+                const rowText = carolRowText(effMap);
+                let hit = false;
+                for (let p = 0; p < onlyParts.length; p++) {
+                    if (partMatchesCarolRow(onlyParts[p], rowText)) hit = true;
+                }
+                if (!hit) return;
+                matched++;
+                const nameInfo = effMap.get('VEHICLE_SERVICE_NAME') || effMap.get('DAMAGE_SERVICE_NAME');
+                if (nameInfo && nameInfo.payload && nameInfo.payload.name) matchedNames.push(nameInfo.payload.name);
+            }
             spareCount++;
-            if (ecCommon.payload.sparePart.status === DELIVERED_STATUS) return;
+            const currentStatus = String(ecCommon.payload.sparePart.status || '');
+            if (currentStatus === DELIVERED_STATUS || (onlyParts && (currentStatus === 'SPARE_PARTS_HANDED_OUT' || currentStatus === 'HANDED_OUT'))) {
+                alreadyDone++;
+                return;
+            }
             let hasPostAuth = false;
             for (let i = 0; i < entityItems.length; i++) {
                 const vals = entityItems[i].values || [];
@@ -690,10 +778,18 @@
                 if (inputs.length) createBatches.push(inputs);
             }
         });
-        if (!spareCount) return { status: 'error', message: 'Keine Spare Parts auf diesem Auftrag' };
+        if (onlyParts && onlyParts.length && !matched) {
+            return { status: 'error', message: 'Keine passende Carol Spare-Part-Zeile für die ausgewählten Teile' };
+        }
+        if (!onlyParts && !spareCount) return { status: 'error', message: 'Keine Spare Parts auf diesem Auftrag' };
         if (abortMission) throw new Error('Abort');
-        if (updateBatches.length || createBatches.length) {
-            if (onStep) onStep('Setze Teile auf Delivered…');
+        if (!(updateBatches.length || createBatches.length)) {
+            if (onlyParts && alreadyDone) {
+                return { status: 'ok', message: 'Passende Teile sind schon Delivered oder Handed out' };
+            }
+        }
+            if (updateBatches.length || createBatches.length) {
+            if (onStep) onStep(onlyParts ? 'Setze ausgewählte Teile auf Delivered…' : 'Setze alle Teile auf Delivered…');
             if (updateBatches.length) {
                 await gqlBatch(updateBatches.map(inputs => ({
                     operationName: 'updateEntryCheckItemValues',
@@ -716,7 +812,31 @@
             'mutation postAuthorizeEntryCheck($id: UUID!) { postAuthorizeEntryCheck(id: $id) { id state refurbishment { id state } } }',
             { id: ec.id }
         );
-        return { status: 'ok', message: 'Delivered' };
+        return { status: 'ok', message: onlyParts && matchedNames.length ? ('Delivered: ' + matchedNames.join(', ')) : 'Delivered' };
+    }
+
+    async function startPartialDeliver(parts) {
+        try {
+            hudLog = [];
+            currentStep = 0;
+            createHUD();
+            updateHUD('Teilweise Anlieferung…');
+            const result = await deliveredViaApi((step) => updateHUD(step, '#ffff00', true), parts);
+            if (!result || result.status !== 'ok') {
+                updateHUD((result && result.message) || 'Delivered fehlgeschlagen', '#ff4444', true);
+                playDing('error');
+                setTimeout(removeHUD, 7000);
+                return;
+            }
+            updateHUD(result.message || 'Ausgewählte Teile auf Delivered', '#00ff00', true);
+            playDing('success');
+            finishAndCloseTab();
+        } catch (e) {
+            if (e && e.message === 'Abort') updateHUD('ABBRUCH DURCH USER', '#ff4444');
+            else updateHUD('SYSTEMFEHLER: ' + ((e && e.message) || e), '#ff4444');
+            playDing('error');
+            setTimeout(removeHUD, 5000);
+        }
     }
 
     function forceClick(el) {
@@ -1024,11 +1144,8 @@
         }
     }
 
-    if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
-        isLocked = true;
-        playDing('success');
-        finishAndCloseTab();
-    } else if (launchedAsAuto) {
+    const partialParts = readPartialParts();
+    if (launchedAsAuto) {
         const noPrint = window.location.href.includes('arasaka_noprint=1');
         setTimeout(() => {
             if (isLocked) return;
@@ -1036,6 +1153,24 @@
             abortMission = false;
             startMacro(noPrint).finally(() => { isLocked = false; });
         }, 1500);
+    } else if (sessionStorage.getItem('arasaka_close_after_done') === '1') {
+        isLocked = true;
+        playDing('success');
+        finishAndCloseTab();
+    } else if (location.href.indexOf('arasaka_partial=1') !== -1) {
+        setTimeout(() => {
+            if (isLocked) return;
+            isLocked = true;
+            abortMission = false;
+            const run = (partialParts && partialParts.length)
+                ? startPartialDeliver(partialParts)
+                : Promise.resolve().then(() => {
+                    createHUD();
+                    updateHUD('Keine Teile zum Setzen übergeben', '#ff4444', true);
+                    playDing('error');
+                });
+            run.finally(() => { isLocked = false; });
+        }, 800);
     }
 
     document.addEventListener('keydown', (event) => {

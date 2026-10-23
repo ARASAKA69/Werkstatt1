@@ -31,22 +31,18 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.27",
-    date: "22.10.2026",
-    notes:
-      "• Kommentar Anlieferung: nach jedem // kommt eine neue Zeile. Im WMS und im Sheet steht jedes Teil untereinander, nicht mehr als eine lange Zeile."
-  },
-  {
     version: "2.2.26",
-    date: "22.10.2026",
+    date: "23.10.2026",
     notes:
-      "• WMS Cast: Teile aus Packzettel sind wieder sichtbar und öffenbar. Die Liste hatte keine Höhe, und bei einer Nachbestellung wurde der Button gar nicht geladen."
+      "• Bei geladener Stock-ID gibt es oben „Carol öffnen“ und springt direkt in den Carol-Auftrag\n\n" +
+      "• Teile aus Packzettel: nur die angehakten Positionen werden in Carol auf Delivered gesetzt, und erst wenn Kommentar + Regal speichern durch ist (WIP - Test phase)\n\n" +
+      "• Auftrag beenden & Carol starten setzt weiterhin alle Spare Parts auf Delivered, damit die Box vollständig rausgeht"
   },
   {
     version: "2.2.25",
     date: "22.10.2026",
     notes:
-      "• ALFAH in Teile aus Packzettel zeigt jetzt Hersteller, Artnr., Name und Menge. Vorher blieb nur der Kurzname (z.B. Leiste, BATTERIE), obwohl der Beleg die restlichen Felder hat."
+      "• Kommentar Anlieferung: nach jedem // kommt eine neue Zeile. Im WMS und im Sheet steht jedes Teil untereinander, nicht mehr als eine lange Zeile."
   },
   {
     version: "2.2.24",
