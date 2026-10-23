@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name Carol-Automation
 // @namespace http://tampermonkey.net/
-// @version 5.2
-// @description ARASAKA v5.2 - Delivered per API, teilweise nur die ausgewählten Packzettel-Teile
+// @version 5.4
+// @description ARASAKA v5.4 - Delivered per API, Packzettel-Teile über Spare-Part-Kommentar
 // @author ARASAKA
 // @match        *://carol.autohero.com/*
 // @updateURL https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Carol%20Automatisierung/arasaka-automation.user.js
@@ -313,14 +313,14 @@
             document.body.appendChild(overlay);
 
             document.getElementById('a-btn-yes').onclick = () => { overlay.remove(); resolve(true); };
-            document.getElementById('a-btn-no').onclick  = () => { overlay.remove(); resolve(false); };
+            document.getElementById('a-btn-no').onclick = () => { overlay.remove(); resolve(false); };
         });
     }
 
     function playDing(type = 'success') {
         try {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const osc  = ctx.createOscillator();
+            const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
@@ -629,6 +629,28 @@
         return item.id;
     }
 
+    function numberBlobs(raw) {
+        const tokens = String(raw || '').toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean);
+        const blobs = [];
+        let buf = '';
+        let digits = false;
+        const flush = () => {
+            const compact = compactCarolText(buf);
+            if (digits && compact.length >= 5) blobs.push(compact);
+            buf = '';
+            digits = false;
+        };
+        for (let i = 0; i < tokens.length; i++) {
+            const token = tokens[i];
+            if (/\d/.test(token) || (buf && token.length <= 4)) {
+                buf += token;
+                if (/\d/.test(token)) digits = true;
+            } else flush();
+        }
+        flush();
+        return blobs;
+    }
+
     function compactCarolText(value) {
         return String(value || '')
             .toLowerCase()
@@ -645,8 +667,11 @@
         ['innenraum', 'innenraumfilter', 'innenraumluft', 'interiorfilter', 'pollenfilter', 'cabinfilter'],
         ['dichtring', 'olablass', 'olablassschraube', 'drainplug'],
         ['zundkerze', 'sparkplug'],
-        ['bremsbelag', 'brakepad'],
-        ['bremsflussigkeit', 'brakefluid']
+        ['bremsbelag', 'brakepad', 'bremsscheibe', 'brakedisc', 'brakedisk', 'brakeaxle'],
+        ['bremsflussigkeit', 'brakefluid'],
+        ['kraftstofffilter', 'fuelfilter', 'dieselfilter'],
+        ['querlenker', 'controlarm', 'wishbone'],
+        ['batterie', 'battery', 'starterbatterie']
     ];
 
     function partMatchesCarolRow(part, rowText) {
@@ -655,6 +680,10 @@
         const art = compactCarolText(part && (part.a || part.artnr));
         if (art.length >= 5 && row.indexOf(art) !== -1) return true;
         const nameRaw = String((part && (part.n || part.name)) || '');
+        const blobs = numberBlobs(part && (part.a || part.artnr)).concat(numberBlobs(nameRaw));
+        for (let b = 0; b < blobs.length; b++) {
+            if (blobs[b].length >= 5 && row.indexOf(blobs[b]) !== -1) return true;
+        }
         const name = compactCarolText(nameRaw);
         if (name.length >= 6 && row.indexOf(name) !== -1) return true;
         const words = nameRaw.toLowerCase().split(/[^a-z0-9äöüß]+/).filter(Boolean);
@@ -699,10 +728,50 @@
         }
     }
 
+    async function loadSparePartRows(refId) {
+        const data = await gqlOne(
+            'refurbishmentDetails',
+            `query refurbishmentDetails($id: UUID!) {
+              refurbishmentDetails(id: $id) {
+                spareParts {
+                  damageSpareParts { refurbishmentServiceId serviceName comment part type }
+                  vehicleServiceSpareParts { refurbishmentServiceId serviceName comment }
+                  serviceWorkSpareParts { refurbishmentServiceId serviceName comment }
+                }
+              }
+            }`,
+            { id: refId }
+        );
+        const spare = data && data.refurbishmentDetails && data.refurbishmentDetails.spareParts;
+        const rows = [];
+        ['damageSpareParts', 'vehicleServiceSpareParts', 'serviceWorkSpareParts'].forEach((key) => {
+            const list = (spare && spare[key]) || [];
+            for (let i = 0; i < list.length; i++) if (list[i]) rows.push(list[i]);
+        });
+        return rows;
+    }
+
+    function spareRowExtra(rows, entityId, serviceName) {
+        const want = compactCarolText(serviceName);
+        const bits = [];
+        for (let i = 0; i < rows.length; i++) {
+            const row = rows[i];
+            const idHit = !!(entityId && row.refurbishmentServiceId === entityId);
+            const nameHit = !!(want && compactCarolText(row.serviceName) === want);
+            if (!idHit && !nameHit) continue;
+            if (row.serviceName) bits.push(row.serviceName);
+            if (row.comment) bits.push(row.comment);
+            if (row.part) bits.push(row.part);
+            if (row.type) bits.push(row.type);
+        }
+        return bits.join(' ');
+    }
+
     async function deliveredViaApi(onStep, onlyParts) {
         if (abortMission) throw new Error('Abort');
         if (onStep) onStep('Lade Spare Parts…');
         const refId = await resolveRefurbishmentId();
+        const spareRows = (onlyParts && onlyParts.length) ? await loadSparePartRows(refId) : [];
         const pa = await gqlOne('entryCheckPostAuthorization', ENTRY_CHECK_QUERY, { refurbishmentId: refId });
         const ec = pa && pa.entryCheckPostAuthorization;
         if (!ec || !ec.id) return { status: 'error', message: 'Post Authorization nicht verfügbar' };
@@ -721,7 +790,7 @@
         let matched = 0;
         let alreadyDone = 0;
         const matchedNames = [];
-        byEntity.forEach((entityItems) => {
+        byEntity.forEach((entityItems, entityId) => {
             const effMap = new Map();
             for (let i = 0; i < entityItems.length; i++) {
                 const eff = getEffectiveVal(entityItems[i]);
@@ -735,15 +804,16 @@
             });
             if (declined) return;
             if (onlyParts && onlyParts.length) {
-                const rowText = carolRowText(effMap);
+                const nameInfo = effMap.get('VEHICLE_SERVICE_NAME') || effMap.get('DAMAGE_SERVICE_NAME');
+                const serviceName = (nameInfo && nameInfo.payload && nameInfo.payload.name) || '';
+                const rowText = carolRowText(effMap) + ' ' + spareRowExtra(spareRows, entityId, serviceName);
                 let hit = false;
                 for (let p = 0; p < onlyParts.length; p++) {
                     if (partMatchesCarolRow(onlyParts[p], rowText)) hit = true;
                 }
                 if (!hit) return;
                 matched++;
-                const nameInfo = effMap.get('VEHICLE_SERVICE_NAME') || effMap.get('DAMAGE_SERVICE_NAME');
-                if (nameInfo && nameInfo.payload && nameInfo.payload.name) matchedNames.push(nameInfo.payload.name);
+                if (serviceName) matchedNames.push(serviceName);
             }
             spareCount++;
             const currentStatus = String(ecCommon.payload.sparePart.status || '');
@@ -1158,7 +1228,7 @@
         playDing('success');
         finishAndCloseTab();
     } else if (location.href.indexOf('arasaka_partial=1') !== -1) {
-        setTimeout(() => {
+        const beginPartial = () => {
             if (isLocked) return;
             isLocked = true;
             abortMission = false;
@@ -1170,7 +1240,21 @@
                     playDing('error');
                 });
             run.finally(() => { isLocked = false; });
-        }, 800);
+        };
+        if (location.href.indexOf('arasaka_hold=1') === -1) {
+            setTimeout(beginPartial, 800);
+        } else {
+            window.addEventListener('message', (event) => {
+                if (event.data && event.data.arasaka === 'partial-abort') {
+                    abortMission = true;
+                    window.close();
+                }
+            });
+            try {
+                if (window.opener && !window.opener.closed) window.opener.postMessage({ arasaka: 'partial-ready' }, '*');
+            } catch (e) {}
+            setTimeout(beginPartial, 800);
+        }
     }
 
     document.addEventListener('keydown', (event) => {

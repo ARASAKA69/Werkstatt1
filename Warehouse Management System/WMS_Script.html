@@ -4616,38 +4616,59 @@
     return out;
   }
 
-  function openCarolPartialDeliver(parts, existingWin) {
-    if (!parts || !parts.length) {
-      if (existingWin && !existingWin.closed) existingWin.close();
-      return false;
+  function signalCarolPartial(win, action) {
+    if (!win || win.closed || !action) return;
+    try { win.postMessage({ arasaka: action }, '*'); } catch (e) {}
+  }
+
+  function armCarolPartialSignal(win, getAction) {
+    if (!win) return;
+    function onMsg(e) {
+      if (!e.data || e.data.arasaka !== 'partial-ready') return;
+      try { if (e.source && e.source !== win) return; } catch (err) { return; }
+      signalCarolPartial(win, getAction());
     }
+    window.addEventListener('message', onMsg);
+    var n = 0;
+    var iv = setInterval(function() {
+      n++;
+      var action = '';
+      try { action = getAction() || ''; } catch (e) {}
+      if (action) signalCarolPartial(win, action);
+      if (!win || win.closed || n > 40) {
+        clearInterval(iv);
+        window.removeEventListener('message', onMsg);
+      }
+    }, 400);
+  }
+
+  function closeCarolPartial(win) {
+    if (win && !win.closed) {
+      try { win.close(); } catch (e) {}
+    }
+  }
+
+  function openCarolPartialDeliver(parts, hold) {
+    if (!parts || !parts.length) return null;
     var base = carolDirectUrl();
     if (!base) {
-      if (existingWin && !existingWin.closed) existingWin.close();
       setStatus('Kommentar gespeichert. Kein Carol-Link für Delivered.', '#f85149');
-      return false;
+      return null;
     }
     var payload = '';
     try {
       payload = btoa(unescape(encodeURIComponent(JSON.stringify(parts))));
     } catch (e) {
-      if (existingWin && !existingWin.closed) existingWin.close();
       setStatus('Carol-Teile konnten nicht übergeben werden.', '#f85149');
-      return false;
+      return null;
     }
-    var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'arasaka_partial=1&arasaka_noprint=1&arasaka_parts=' + encodeURIComponent(payload);
-    if (existingWin && !existingWin.closed) {
-      existingWin.location = url;
-      setStatus('Carol setzt ' + parts.length + ' ausgewählte Teile auf Delivered…', '#3FA0DB');
-      return true;
-    }
-    var win = window.open(url, '_blank');
+    var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + 'arasaka_partial=1&arasaka_noprint=1' + (hold ? '&arasaka_hold=1' : '') + '&arasaka_parts=' + encodeURIComponent(payload);
+    var win = window.open(url, 'wmsCarolPartial');
     if (!win) {
       setStatus('❌ Carol-Popup wurde blockiert. Teile stehen im Kommentar.', '#f85149');
-      return false;
+      return null;
     }
-    setStatus('Carol setzt ' + parts.length + ' ausgewählte Teile auf Delivered…', '#3FA0DB');
-    return true;
+    return win;
   }
 
   function rememberPzCarolParts(stockId, parts) {
@@ -9252,10 +9273,12 @@
 
     var token = String(Date.now()) + '-' + Math.random().toString(36).slice(2, 8);
     var carolParts = peekPzCarolParts(stockId);
+    var carolAction = '';
     var carolWin = null;
     if (carolParts.length) {
-      carolWin = window.open('about:blank', '_blank');
-      if (!carolWin) setStatus('Carol-Popup blockiert — Kommentar wird trotzdem gespeichert.', '#F27420');
+      carolWin = openCarolPartialDeliver(carolParts, true);
+      if (carolWin) armCarolPartialSignal(carolWin, function() { return carolAction; });
+      else setStatus('Carol-Popup blockiert — Kommentar wird trotzdem gespeichert.', '#F27420');
     }
     setStatus("💾 Speichere Kommentar + Regal im Hintergrund…", "#F27420");
     patchRefurbCacheKommentarRegal(stockId, text, regal);
@@ -9266,7 +9289,9 @@
 
     var timerId = setTimeout(function() {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
-      if (carolWin && !carolWin.closed) carolWin.close();
+      carolAction = 'partial-abort';
+      signalCarolPartial(carolWin, 'partial-abort');
+      closeCarolPartial(carolWin);
       setStatus("⚠️ Speichern unklar / Timeout – " + stockId, "#f85149");
       showStickyToast(
         'err',
@@ -9282,7 +9307,9 @@
     google.script.run.withSuccessHandler(function(res) {
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       if (res && res.conflict) {
-        if (carolWin && !carolWin.closed) carolWin.close();
+        carolAction = 'partial-abort';
+        signalCarolPartial(carolWin, 'partial-abort');
+        closeCarolPartial(carolWin);
         handleSaveConcurrencyConflict(res, stockId, retrySave);
         done(false);
         return;
@@ -9326,15 +9353,22 @@
         }
         var deliveredParts = peekPzCarolParts(stockId);
         if (deliveredParts.length && carolWin && !carolWin.closed) {
-          if (openCarolPartialDeliver(deliveredParts, carolWin)) takePzCarolParts(stockId);
+          carolAction = 'partial-go';
+          signalCarolPartial(carolWin, 'partial-go');
+          takePzCarolParts(stockId);
+          setStatus('Carol setzt ' + deliveredParts.length + ' ausgewählte Teile auf Delivered…', '#3FA0DB');
         } else if (carolWin && !carolWin.closed) {
-          carolWin.close();
+          carolAction = 'partial-abort';
+          signalCarolPartial(carolWin, 'partial-abort');
+          closeCarolPartial(carolWin);
         } else if (deliveredParts.length) {
           setStatus('Gespeichert. Carol-Popup war blockiert — erneut speichern setzt die ausgewählten Teile auf Delivered.', '#F27420');
         }
         done(true);
       } else {
-        if (carolWin && !carolWin.closed) carolWin.close();
+        carolAction = 'partial-abort';
+        signalCarolPartial(carolWin, 'partial-abort');
+        closeCarolPartial(carolWin);
         patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
         var errMsg = (res && res.message) ? res.message : 'Unbekannter Fehler';
         setStatus("❌ " + errMsg, "#f85149");
@@ -9342,7 +9376,9 @@
         done(false);
       }
     }).withFailureHandler(function(err) {
-      if (carolWin && !carolWin.closed) carolWin.close();
+      carolAction = 'partial-abort';
+      signalCarolPartial(carolWin, 'partial-abort');
+      closeCarolPartial(carolWin);
       if (!finishSaveKommentarRegalJob(stockId, token)) return;
       patchRefurbCacheKommentarRegal(stockId, expectedKommentar, expectedRegal);
       var failMsg = err && err.message ? err.message : String(err || 'Serverfehler');
@@ -9813,10 +9849,13 @@
             if (!finishCarolMissionJob(stockId, token)) return;
             if(res2 && res2.success) {
               rememberLastEndedRegal(res2.oldRegal, stockId);
+              var regalShown = formatOldRegalDisplay(res2.oldRegal);
+              if (/^regal\b/i.test(regalShown)) regalShown = regalShown.replace(/^regal\s*/i, '');
               var finalStatus = "✅ Kommentar gespeichert. Auftrag auf Tagesliste gesetzt.";
               if(dymoResult.skipped) finalStatus += " DYMO übersprungen.";
               else if(dymoResult.success) finalStatus += " DYMO Druck gesendet.";
               if(!dymoResult.success && !dymoResult.skipped) finalStatus += " DYMO Fehler: " + dymoResult.message;
+              finalStatus += " Regal " + regalShown + ".";
               setStatus(finalStatus, "#56d364");
               showStickyToast('ok', '✅ Tagesliste & Carol — ' + stockId, finalStatus, {
                 stockId: stockId,
