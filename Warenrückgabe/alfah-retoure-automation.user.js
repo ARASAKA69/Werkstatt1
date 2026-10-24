@@ -1070,17 +1070,38 @@
         return blob.indexOf(article) !== -1;
     }
 
-    function openCase(cases, orderId, article) {
+    function caseArticleQty(row, article) {
+        var want = String(article || '').replace(/\s+/g, '');
+        if (!want) return 0;
+        var items = row.Items || row.items || [];
+        var sum = 0;
+        var found = false;
+        if (Array.isArray(items)) {
+            items.forEach(function (item) {
+                var num = String(item.CatalogNumber || item.ArticleNumber || item.Number || '').replace(/\s+/g, '');
+                if ((num || JSON.stringify(item)).indexOf(want) === -1) return;
+                var qty = Number(item.Quantity || item.Qty || item.Amount || 0);
+                if (!(qty > 0)) qty = 1;
+                sum += qty;
+                found = true;
+            });
+        }
+        if (!found && caseHasArticle(row, want)) return 1;
+        return sum;
+    }
+
+    function returnedCases(cases, orderId, article) {
+        var list = [];
         var i;
-        for (i = 0; i < cases.length; i++) {
+        for (i = 0; i < (cases || []).length; i++) {
             var row = cases[i];
             if (String(row.OrderProcessId || '') !== String(orderId)) continue;
             if (!caseHasArticle(row, article)) continue;
             var status = String(row.StatusId || row.Status || '');
-            if (/REJECT|ABGELEHNT|CLOSED|STORNI/i.test(status)) continue;
-            return row;
+            if (/REJECT|ABGELEHNT|STORNI/i.test(status)) continue;
+            list.push(row);
         }
-        return null;
+        return list;
     }
 
     function sheetBase() {
@@ -1740,6 +1761,15 @@
                 var text = el('div');
                 text.appendChild(el('div', '', (number || '—') + ' · ' + (partName(item) || (fromMail && fromMail.name) || '')));
                 text.appendChild(el('div', 'meta', 'Hersteller: ' + (brandLabel || '—')));
+                var orderedQty = Number(item.Quantity || item.Qty || item.Amount) || 1;
+                var prior = returnedCases(state.cases, orderInput.value.trim(), number);
+                if (prior.length) {
+                    var ids = prior.map(function (row) { return row.CaseId; }).filter(Boolean).join(', ');
+                    var left = Math.max(0, orderedQty - prior.length);
+                    text.appendChild(el('div', 'meta', left
+                        ? 'Schon ' + ids + '. Das nächste Stück bekommt eine neue R-Nummer.'
+                        : 'Schon ' + ids + '. Alle ' + orderedQty + ' Stück haben eine Retoure.'));
+                }
                 top.appendChild(box);
                 top.appendChild(text);
                 var supplierSelect = document.createElement('select');
@@ -2747,16 +2777,31 @@
                         continue;
                     }
                     if (!again.checked) {
-                        var existing = openCase(state.cases, orderId, article);
-                        if (existing && existing.CaseId) {
+                        var orderedQty = Number(item.Quantity || item.Qty || item.Amount) || 1;
+                        var wantedQty = Number(card._qty.value) || 1;
+                        var prior = returnedCases(state.cases, orderId, article);
+                        var returnedQty = 0;
+                        var p;
+                        for (p = 0; p < prior.length; p++) returnedQty += caseArticleQty(prior[p], article);
+                        var existing = prior[0] || null;
+                        if (existing && existing.CaseId && returnedQty >= orderedQty && prior.length >= orderedQty) {
                             done.push({ caseId: existing.CaseId, article: article, supplier: supplierName });
                             var oldStamp = stampFromCase(existing);
                             if (!oldStamp.day) oldStamp = berlinNow();
                             sheetRows.push(sheetRowFromCard(card, existing.CaseId, orderId, workerName() || casePerson(existing) || 'nachgetragen', oldStamp));
-                            lines.push(existing.CaseId + '  ' + article + '  ' + supplierName + '  schon vorhanden');
+                            lines.push(existing.CaseId + '  ' + article + '  schon ' + prior.length + ' von ' + orderedQty + ' retour. Für ein weiteres Stück den Haken „Neu anlegen“ setzen.');
                             setLog(lines.join('\n'));
                             continue;
                         }
+                        var room = returnedQty >= orderedQty ? 1 : Math.max(1, orderedQty - returnedQty);
+                        var sendQty = Math.min(wantedQty, room);
+                        if (prior.length) {
+                            lines.push(article + '  ' + (existing && existing.CaseId ? existing.CaseId + ' bleibt. ' : '') + 'Lege ' + sendQty + ' Stück als neue R-Nummer an');
+                            setLog(lines.join('\n'));
+                        }
+                        card._sendQty = sendQty;
+                    } else {
+                        card._sendQty = Number(card._qty.value) || 1;
                     }
                     setLog(lines.concat(['Lege an ' + article + ' …']).join('\n'));
                     var uploaded = await uploadPdf(blob);
@@ -2785,7 +2830,7 @@
                             ManufacturerName: makerName(maker) || brandName,
                             CatalogNumber: article,
                             Name: item.Description || item.Name || (fromMail && fromMail.name) || '',
-                            Quantity: Number(card._qty.value) || 1,
+                            Quantity: Number(card._sendQty || card._qty.value) || 1,
                             ReplacementDeliveryDesired: card._replace.checked,
                             OrderItemId: item.ItemId || item.OrderItemId || null,
                             OrderId: orderId
