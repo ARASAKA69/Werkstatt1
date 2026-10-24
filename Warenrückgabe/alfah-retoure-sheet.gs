@@ -386,6 +386,7 @@ var ALFAH_FONT = 8;
 var ALFAH_WIDTHS = [60, 62, 64, 74, 100, 84, 68, 58, 38, 48, 80, 70, 36, 40, 48, 44];
 var ALFAH_MAIL_KEY = "alfah_mail_primed_v3";
 var ALFAH_BOX_KEY = "alfah_mail_box";
+var ALFAH_INBOX = "ersatzteile.hemau@autohero.com";
 
 function onOpen() {
   try {
@@ -593,17 +594,35 @@ function alfahMailbox_() {
   return mail;
 }
 
-function alfahThreadUrl_(threadId, mailbox) {
-  var id = String(threadId || "").trim();
-  if (!id) return "";
-  if (mailbox) return "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(mailbox) + "#all/" + id;
-  return "https://mail.google.com/mail/u/0/#all/" + id;
+function alfahGmailUrl_(hash) {
+  var target = "https://mail.google.com/mail/u/0/?authuser=" + encodeURIComponent(ALFAH_INBOX) + hash;
+  return "https://accounts.google.com/AccountChooser?Email=" + encodeURIComponent(ALFAH_INBOX) + "&continue=" + encodeURIComponent(target);
 }
 
-function alfahSearchUrl_(rNumber, mailbox) {
+function alfahThreadUrl_(threadId) {
+  var id = String(threadId || "").trim();
+  if (!id) return "";
+  return alfahGmailUrl_("#all/" + id);
+}
+
+function alfahSearchUrl_(rNumber) {
   var q = encodeURIComponent(String(rNumber || "") + " RETOURE");
-  if (mailbox) return "https://mail.google.com/mail/u/?authuser=" + encodeURIComponent(mailbox) + "#search/" + q;
-  return "https://mail.google.com/mail/u/0/#search/" + q;
+  return alfahGmailUrl_("#search/" + q);
+}
+
+function alfahInboxLink_(rich) {
+  var url = "";
+  try { url = rich ? String(rich.getLinkUrl() || "") : ""; } catch (err) { url = ""; }
+  var text = "";
+  try { text = decodeURIComponent(url); } catch (err2) { text = url; }
+  return text.toLowerCase().indexOf(ALFAH_INBOX) !== -1;
+}
+
+function alfahThreadFromUrl_(url) {
+  var text = String(url || "");
+  try { text = decodeURIComponent(text); } catch (err) {}
+  var match = text.match(/#(?:all|inbox)\/([a-f0-9]{8,})/i);
+  return match ? match[1] : "";
 }
 
 function alfahIsRueck_(text) {
@@ -694,7 +713,8 @@ function alfahScanMail() {
       return { ok: true, updated: 0, mails: Object.keys(found).length };
     }
     var links = sheet.getRange(3, ALFAH_LINK_COL, count, 1).getFormulas();
-    var searchNow = sheet.getRange(3, ALFAH_SEARCH_COL, count, 1).getDisplayValues();
+    var searchRich = sheet.getRange(3, ALFAH_SEARCH_COL, count, 1).getRichTextValues();
+    var mailRich = sheet.getRange(3, ALFAH_LINK_COL, count, 1).getRichTextValues();
     var updated = 0;
     var cleared = 0;
     for (i = 0; i < cases.length; i++) {
@@ -711,8 +731,16 @@ function alfahScanMail() {
           alfahClearAutoRow_(sheet, rowNumber);
           alfahPutSearch_(sheet, rowNumber, id[0], mailbox, ALFAH_BLUE);
           cleared++;
-        } else if (String(searchNow[i][0] || "") !== "Suche") {
+        } else if (!alfahInboxLink_(searchRich[i][0])) {
           alfahPutSearch_(sheet, rowNumber, id[0], mailbox, alfahSearchColor_(String(current[i][0] || "")));
+        }
+        if (!auto) {
+          var oldMail = "";
+          try { oldMail = mailRich[i][0] ? String(mailRich[i][0].getLinkUrl() || "") : ""; } catch (errMail) { oldMail = ""; }
+          var oldThread = alfahThreadFromUrl_(oldMail);
+          if (oldThread && !alfahInboxLink_(mailRich[i][0])) {
+            alfahPutLink_(sheet.getRange(rowNumber, ALFAH_LINK_COL), alfahThreadUrl_(oldThread), "Mail", alfahSearchColor_(String(current[i][0] || "")));
+          }
         }
         continue;
       }

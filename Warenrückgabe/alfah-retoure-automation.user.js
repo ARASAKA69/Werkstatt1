@@ -1283,6 +1283,10 @@
             + '#alfah-retoure-bot .hint{color:#8b949e;font-size:15px}'
             + '#alfah-retoure-bot .badge{display:inline-flex;align-items:center;width:fit-content;max-width:100%;padding:8px 12px;border-radius:999px;background:rgba(46,160,67,.16);border:1px solid rgba(63,185,80,.7);color:#3fb950;font-size:15px;font-weight:800}'
             + '#alfah-retoure-bot .badge[hidden]{display:none}'
+            + '#alfah-retoure-bot .stock-badge{display:flex !important;flex-direction:column;align-items:center;justify-content:center;width:100% !important;margin:0 0 10px !important;padding:16px 14px;border-radius:16px;background:#14342c;border:2px solid #00ffcc;color:#00ffcc;text-align:center;line-height:1.05}'
+            + '#alfah-retoure-bot .stock-badge[hidden]{display:none !important}'
+            + '#alfah-retoure-bot .stock-badge b{display:block;font-size:32px;font-weight:800;letter-spacing:.6px}'
+            + '#alfah-retoure-bot .stock-badge span{display:block;margin-top:4px;font-size:12px;font-weight:800;letter-spacing:1.2px;color:#8b949e}'
             + '#alfah-retoure-bot .badge.bad{background:rgba(248,81,73,.16);border-color:rgba(248,81,73,.7);color:#f85149}'
             + '#alfah-retoure-bot .foot{display:flex !important;justify-content:space-between;align-items:center;gap:10px;margin:0 !important;padding:0;border:0;color:#8b949e;font-size:12px;font-weight:800;position:static !important;inset:auto !important;float:none !important;height:auto !important;transform:none !important}'
             + '#alfah-retoure-bot .credit{text-align:right;margin:0 !important;color:#6e7681;font-size:10px;font-weight:600;letter-spacing:.3px;position:static !important}'
@@ -1546,6 +1550,9 @@
         body.appendChild(paste);
         body.appendChild(readBtn);
         body.appendChild(meta);
+        var stockBadge = el('div', 'stock-badge');
+        stockBadge.hidden = true;
+        body.appendChild(stockBadge);
         body.appendChild(items);
         body.appendChild(el('label', '', 'Adresse'));
         body.appendChild(addressSelect);
@@ -1704,6 +1711,18 @@
             });
         }
 
+        function showStockBadge(stock) {
+            var id = strictStockId(stock) || stockIdFromCommission(stock);
+            stockBadge.textContent = '';
+            if (!id) {
+                stockBadge.hidden = true;
+                return;
+            }
+            stockBadge.hidden = false;
+            stockBadge.appendChild(el('b', '', id));
+            stockBadge.appendChild(el('span', '', 'STOCK'));
+        }
+
         function refreshSlipBadge() {
             var custom = file.files && file.files[0];
             slipBadge.hidden = !(state.order && orderInput.value.trim() && !custom);
@@ -1715,6 +1734,7 @@
             file.value = '';
             items.textContent = '';
             meta.textContent = '';
+            showStockBadge('');
             state.order = null;
             state.queue = null;
             saveQueue(null);
@@ -2423,6 +2443,7 @@
                 if (!order) {
                     setLog('Kein Auftrag zu ' + query + '. Nummer prüfen, die Mail hier einfügen, oder in Gmail auf An ALFAH übergeben.');
                     meta.textContent = '';
+                    showStockBadge('');
                     return;
                 }
                 var orderId = orderIdOf(order, /^\d{5,}$/.test(query) ? query : '');
@@ -2436,7 +2457,8 @@
                 state.order = order;
                 renderItems(order);
                 refreshSlipBadge();
-                var stock = stockIdFromCommission(commissionOf(order)) || (state.queue && state.queue.stockId) || '';
+                var stock = stockIdFromCommission(commissionOf(order)) || (state.queue && (state.queue.stockId || state.queue.kommission)) || '';
+                showStockBadge(stock);
                 var count = orderItems(order).length;
                 if (!count) {
                     var keys = typeof order === 'object' ? Object.keys(order).slice(0, 25).join(', ') : typeof order;
