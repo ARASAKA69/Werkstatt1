@@ -56,6 +56,15 @@ function alfahHandle_(params) {
       return alfahOut_(alfahAppend_(entries));
     }
     if (action === "fixWho") return alfahOut_(alfahFixWho_(params.who));
+    if (action === "wmPing" || action === "wmSetup") {
+      wmSheet_();
+      return alfahOut_({ ok: true, tab: WM_TAB });
+    }
+    if (action === "wmAppend") {
+      var wmEntries = params.entries || [];
+      if (!Array.isArray(wmEntries)) wmEntries = [params];
+      return alfahOut_(wmAppend_(wmEntries));
+    }
     return alfahOut_({ ok: false, error: "unbekannt" });
   } catch (err) {
     return alfahOut_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -398,6 +407,7 @@ function onOpen() {
       .addToUi();
   } catch (err) {}
   try { alfahSheet_(); } catch (err2) {}
+  try { wmSheet_(); } catch (err3) {}
 }
 
 function installAlfahMailScan() {
@@ -878,4 +888,283 @@ function alfahRueckHtml_() {
     + 'btn.disabled=false;out.className="bad";out.textContent=String(err&&err.message?err.message:err);'
     + '}).alfahApplyRuecksendung(document.getElementById("raw").value);};'
     + '</script></body></html>';
+}
+
+var WM_GID = 891953845;
+var WM_TAB = "WM";
+var WM_TITLE = "WM Retouren";
+var WM_GREEN = "#18884a";
+var WM_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info", "Vorbereitet"];
+var WM_WIDTHS = [72, 78, 132, 120, 72, 84, 92, 76, 72, 96, 92];
+var WM_PREP_COL = 11;
+
+function wmBook_() {
+  return SpreadsheetApp.openById(ALFAH_SHEET_ID);
+}
+
+function wmTab_(ss) {
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === WM_GID) return sheets[i];
+  }
+  var named = ss.getSheetByName(WM_TAB);
+  if (named) return named;
+  return ss.insertSheet(WM_TAB);
+}
+
+function wmSheet_() {
+  var sheet = wmTab_(wmBook_());
+  sheet.setTabColor(WM_GREEN);
+  var title = String(sheet.getRange(1, 1).getValue() || "");
+  if (title && title !== WM_TITLE) return sheet;
+  wmFitLayout_(sheet);
+  return sheet;
+}
+
+function wmOldLayout_(sheet) {
+  var width = Math.min(Math.max(sheet.getLastColumn(), 1), 16);
+  var head = sheet.getRange(2, 1, 1, width).getDisplayValues()[0];
+  return String(head[2] || "") === "R-Nummer" || String(head[10] || "") === "Status" || String(head[15] || "") === "Geliefert";
+}
+
+function wmChecked_(value) {
+  if (value === true) return true;
+  var text = String(value || "").toUpperCase();
+  return text === "TRUE" || text === "WAHR";
+}
+
+function wmMigrate_(sheet) {
+  if (!wmOldLayout_(sheet)) return;
+  var last = sheet.getLastRow();
+  if (last < 3) return;
+  var count = last - 2;
+  var values = sheet.getRange(3, 1, count, 16).getValues();
+  var next = [];
+  var i;
+  for (i = 0; i < values.length; i++) {
+    var cells = values[i];
+    var part = String(cells[0] || "") || String(cells[1] || "") || String(cells[3] || "") || String(cells[4] || "");
+    if (!part) {
+      next.push(["", "", "", "", "", "", "", "", "", "", ""]);
+      continue;
+    }
+    next.push([
+      cells[0],
+      cells[1],
+      cells[3],
+      cells[4],
+      cells[5],
+      cells[6],
+      cells[7],
+      cells[8],
+      cells[9],
+      cells[11],
+      wmChecked_(cells[14])
+    ]);
+  }
+  var body = sheet.getRange(3, 1, count, 16);
+  body.clearDataValidations();
+  body.clearContent();
+  body.setBorder(false, false, false, false, false, false);
+  var fresh = sheet.getRange(3, 1, count, WM_HEADERS.length);
+  fresh.setValues(next);
+  sheet.getRange(3, 1, count, WM_HEADERS.length - 1).setNumberFormat("@");
+}
+
+function wmClearExtra_(sheet) {
+  var lastCol = Math.max(sheet.getLastColumn(), 16);
+  if (lastCol <= WM_HEADERS.length) return;
+  var extra = sheet.getRange(1, WM_HEADERS.length + 1, Math.max(sheet.getLastRow(), 2), lastCol - WM_HEADERS.length);
+  if (extra.isPartOfMerge()) extra.breakApart();
+  extra.clear();
+  extra.clearDataValidations();
+  extra.setBorder(false, false, false, false, false, false);
+}
+
+function wmPutCheck_(sheet, rowNumber) {
+  var box = sheet.getRange(rowNumber, WM_PREP_COL);
+  box.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
+  box.setHorizontalAlignment("center");
+  box.setVerticalAlignment("middle");
+  box.setFontSize(ALFAH_FONT);
+}
+
+function wmPaintRow_(sheet, rowNumber) {
+  var rowRange = sheet.getRange(rowNumber, 1, 1, WM_HEADERS.length);
+  rowRange.setBackground("#ffffff");
+  rowRange.setFontColor("#1f2933");
+  rowRange.setFontFamily("Arial");
+  rowRange.setFontSize(ALFAH_FONT);
+  rowRange.setVerticalAlignment("middle");
+  rowRange.setWrap(true);
+  rowRange.setBorder(true, true, true, true, true, true, "#d6deea", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(rowNumber, 2).setFontWeight("bold");
+  sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(WM_GREEN);
+  wmPutCheck_(sheet, rowNumber);
+  sheet.autoResizeRows(rowNumber, 1);
+}
+
+function wmStyleBody_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return;
+  var count = last - 2;
+  var keys = sheet.getRange(3, 1, count, 4).getValues();
+  var i;
+  for (i = 0; i < keys.length; i++) {
+    var rowNumber = 3 + i;
+    var has = !!(String(keys[i][0] || "") || String(keys[i][1] || "") || String(keys[i][2] || "") || String(keys[i][3] || ""));
+    var rowRange = sheet.getRange(rowNumber, 1, 1, WM_HEADERS.length);
+    if (!has) {
+      sheet.getRange(rowNumber, WM_PREP_COL).clearDataValidations().clearContent();
+      rowRange.setBackground(null);
+      rowRange.setBorder(false, false, false, false, false, false);
+      continue;
+    }
+    wmPaintRow_(sheet, rowNumber);
+  }
+}
+
+function wmFitLayout_(sheet) {
+  wmMigrate_(sheet);
+  wmClearExtra_(sheet);
+  var titleRange = sheet.getRange(1, 1, 1, WM_HEADERS.length);
+  if (titleRange.isPartOfMerge()) titleRange.breakApart();
+  titleRange.merge();
+  titleRange
+    .setValue(WM_TITLE)
+    .setBackground(WM_GREEN)
+    .setFontColor("#ffffff")
+    .setFontWeight("bold")
+    .setFontSize(11)
+    .setFontFamily("Arial")
+    .setHorizontalAlignment("left")
+    .setVerticalAlignment("middle")
+    .setWrap(true);
+  var head = sheet.getRange(2, 1, 1, WM_HEADERS.length);
+  head.setValues([WM_HEADERS]);
+  head.setBackground(WM_GREEN);
+  head.setFontColor("#ffffff");
+  head.setFontWeight("bold");
+  head.setFontSize(ALFAH_FONT);
+  head.setFontFamily("Arial");
+  head.setHorizontalAlignment("center");
+  head.setVerticalAlignment("middle");
+  head.setWrap(true);
+  sheet.setFrozenRows(2);
+  sheet.setRowHeight(1, 22);
+  var c;
+  for (c = 0; c < WM_WIDTHS.length; c++) sheet.setColumnWidth(c + 1, WM_WIDTHS[c]);
+  sheet.autoResizeRows(2, 1);
+  wmStyleBody_(sheet);
+}
+
+function wmText_(value) {
+  return alfahText_(value);
+}
+
+function wmStock_(value) {
+  var match = String(value || "").toUpperCase().match(/[A-Z]{2,3}\d{4,8}/);
+  return match ? match[0] : "";
+}
+
+function wmInfo_(line) {
+  var bits = [];
+  var qty = String(line.qty == null ? "" : line.qty).replace(/[^\d]/g, "");
+  if (qty) bits.push(qty + " Stk");
+  var ean = wmText_(line.ean);
+  var article = wmText_(line.article || line.part || "");
+  if (!article) article = ean;
+  if (ean && ean !== article) bits.push("EAN " + ean);
+  return bits.join(" · ");
+}
+
+function wmStamp_() {
+  var text = Utilities.formatDate(new Date(), "Europe/Berlin", "dd.MM.yyyy HH:mm");
+  var parts = text.split(" ");
+  return { date: parts[0] || "", time: parts[1] || "" };
+}
+
+function wmHasToken_(token) {
+  var id = String(token || "");
+  if (!id) return false;
+  var raw = String(PropertiesService.getScriptProperties().getProperty("wm_retoure_tokens") || "");
+  return ("," + raw + ",").indexOf("," + id + ",") !== -1;
+}
+
+function wmRememberToken_(token) {
+  var id = String(token || "");
+  if (!id || wmHasToken_(id)) return;
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(props.getProperty("wm_retoure_tokens") || "");
+  var list = raw ? raw.split(",") : [];
+  list.push(id);
+  if (list.length > 250) list = list.slice(list.length - 250);
+  props.setProperty("wm_retoure_tokens", list.join(","));
+}
+
+function wmStartRow_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return 3;
+  var filled = sheet.getRange(last, 1, 1, 5).getDisplayValues()[0].join("");
+  if (!filled) return last + 1;
+  return last + 2;
+}
+
+function wmAppend_(entries) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = wmSheet_();
+    var added = 0;
+    var skipped = 0;
+    var cursor = wmStartRow_(sheet);
+    var e;
+    for (e = 0; e < entries.length; e++) {
+      var lines = entries[e] && entries[e].lines ? entries[e].lines : [entries[e]];
+      var n;
+      for (n = 0; n < lines.length; n++) {
+        var line = lines[n] || {};
+        var token = String(line.token || "");
+        if (token && wmHasToken_(token)) {
+          skipped++;
+          continue;
+        }
+        var article = wmText_(line.article || line.part || "");
+        var ean = wmText_(line.ean);
+        if (!article) article = ean;
+        var name = wmText_(line.name);
+        if (!article && !name) {
+          skipped++;
+          continue;
+        }
+        var stamp = wmStamp_();
+        if (line.date && line.time) {
+          stamp = { date: wmText_(line.date), time: wmText_(line.time) };
+        }
+        var row = [
+          wmText_(line.orderId),
+          wmStock_(line.stockId),
+          article,
+          name,
+          wmText_(line.supplier) || "WM",
+          wmText_(line.brand),
+          stamp.date,
+          stamp.time,
+          wmText_(line.who),
+          wmInfo_(line)
+        ];
+        var range = sheet.getRange(cursor, 1, 1, row.length);
+        range.setNumberFormat("@");
+        range.setValues([row]);
+        wmPaintRow_(sheet, cursor);
+        if (token) wmRememberToken_(token);
+        added++;
+        cursor += 2;
+      }
+    }
+    return { ok: true, added: added, skipped: skipped, tab: WM_TAB };
+  } finally {
+    lock.releaseLock();
+  }
 }
