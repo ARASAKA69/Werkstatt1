@@ -972,11 +972,18 @@ function wmMigrate_(sheet) {
   sheet.getRange(3, 1, count, WM_HEADERS.length - 1).setNumberFormat("@");
 }
 
+function wmUnmerge_(range) {
+  var merges = range.getMergedRanges();
+  var i;
+  for (i = 0; i < merges.length; i++) merges[i].breakApart();
+}
+
 function wmClearExtra_(sheet) {
-  var lastCol = Math.max(sheet.getLastColumn(), 16);
+  var lastCol = Math.max(sheet.getLastColumn(), WM_HEADERS.length);
+  var height = Math.max(sheet.getLastRow(), 2);
+  wmUnmerge_(sheet.getRange(1, 1, height, lastCol));
   if (lastCol <= WM_HEADERS.length) return;
-  var extra = sheet.getRange(1, WM_HEADERS.length + 1, Math.max(sheet.getLastRow(), 2), lastCol - WM_HEADERS.length);
-  if (extra.isPartOfMerge()) extra.breakApart();
+  var extra = sheet.getRange(1, WM_HEADERS.length + 1, height, lastCol - WM_HEADERS.length);
   extra.clear();
   extra.clearDataValidations();
   extra.setBorder(false, false, false, false, false, false);
@@ -1025,11 +1032,22 @@ function wmStyleBody_(sheet) {
   }
 }
 
+function wmSeedIfEmpty_(sheet) {
+  if (sheet.getLastRow() >= 3) return;
+  if (PropertiesService.getScriptProperties().getProperty("wm_seed_hm62348") === "1") return;
+  var row = ["944668", "HM62348", "F 026 407 279", "ÖLFILTER FORD", "WM", "BOH", "25.10.2026", "21:01", "Berger", "1 Stk"];
+  var range = sheet.getRange(3, 1, 1, row.length);
+  range.setNumberFormat("@");
+  range.setValues([row]);
+  wmPaintRow_(sheet, 3);
+  PropertiesService.getScriptProperties().setProperty("wm_seed_hm62348", "1");
+}
+
 function wmFitLayout_(sheet) {
   wmMigrate_(sheet);
   wmClearExtra_(sheet);
   var titleRange = sheet.getRange(1, 1, 1, WM_HEADERS.length);
-  if (titleRange.isPartOfMerge()) titleRange.breakApart();
+  wmUnmerge_(titleRange);
   titleRange.merge();
   titleRange
     .setValue(WM_TITLE)
@@ -1057,6 +1075,7 @@ function wmFitLayout_(sheet) {
   for (c = 0; c < WM_WIDTHS.length; c++) sheet.setColumnWidth(c + 1, WM_WIDTHS[c]);
   sheet.autoResizeRows(2, 1);
   wmStyleBody_(sheet);
+  wmSeedIfEmpty_(sheet);
 }
 
 function wmText_(value) {
