@@ -1,20 +1,28 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Sucht AAG Retouren per Artikelnummer oder EAN, nimmt die letzte Lieferung und schickt den Warenkorb ab
+// @version      1.2
+// @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
 // @run-at       document-start
 // @updateURL    https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Warenr%C3%BCckgabe/aag-retoure-automation.user.js
 // @downloadURL  https://github.com/ARASAKA69/Werkstatt1/raw/refs/heads/main/Warenr%C3%BCckgabe/aag-retoure-automation.user.js
-// @grant        none
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      www.bing.com
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0';
+    var BOT_VERSION = '1.2';
+    var WORKER_KEY = 'aag_retoure_worker';
+    var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
     var HUD_POS_KEY = 'aag_retoure_hud_position';
     var QUEUE_KEY = 'aag_retoure_queue';
@@ -22,6 +30,7 @@
     var FINISH_KEY = 'aag_retoure_finish';
     var ADDED_KEY = 'aag_retoure_added';
     var EAN_MAP_KEY = 'aag_retoure_ean_map';
+    var TRANSLATE_KEY = 'aag_retoure_translate';
     var PATHS_KEY = 'aag_retoure_api_paths';
     var MIN_LEN = 3;
 
@@ -34,19 +43,32 @@
     var lastKeyAt = 0;
     var eanMap = loadEanMap();
     var eanMiss = {};
+    var lookupEanNow = '';
+    var translateBusy = false;
     var apiPaths = null;
+    var pageWin = (typeof unsafeWindow !== 'undefined' && unsafeWindow) ? unsafeWindow : window;
+    var pendingPairEan = '';
+    var askWait = null;
+    var lastEan = '';
+    var sheetBusyToken = '';
     var lastPath = location.pathname;
 
     patchTraffic();
     hookHistory();
 
     function loadEanMap() {
+        var map = {};
+        try {
+            var saved = JSON.parse(gmGet(EAN_MAP_KEY, '{}') || '{}');
+            if (saved && typeof saved === 'object') map = saved;
+        } catch (e) {}
         try {
             var data = JSON.parse(sessionStorage.getItem(EAN_MAP_KEY) || '{}');
-            return data && typeof data === 'object' ? data : {};
-        } catch (e) {
-            return {};
-        }
+            if (data && typeof data === 'object') {
+                Object.keys(data).forEach(function (key) { map[key] = data[key]; });
+            }
+        } catch (e2) {}
+        return map;
     }
 
     function rememberEan(ean, article) {
@@ -57,6 +79,61 @@
         var keys = Object.keys(eanMap);
         if (keys.length > 300) delete eanMap[keys[0]];
         try { sessionStorage.setItem(EAN_MAP_KEY, JSON.stringify(eanMap)); } catch (e) {}
+        gmSet(EAN_MAP_KEY, JSON.stringify(eanMap));
+    }
+
+    function gmGet(key, fallback) {
+        try {
+            if (typeof GM_getValue === 'function') {
+                var stored = GM_getValue(key, fallback);
+                if (stored != null && stored !== '') return stored;
+            }
+        } catch (e) {}
+        try {
+            var local = localStorage.getItem(key);
+            return local == null || local === '' ? fallback : local;
+        } catch (e2) {
+            return fallback;
+        }
+    }
+
+    function gmSet(key, value) {
+        try { if (typeof GM_setValue === 'function') GM_setValue(key, value); } catch (e) {}
+        try { localStorage.setItem(key, String(value)); } catch (e2) {}
+    }
+
+    function workerName() {
+        return normSpace(gmGet(WORKER_KEY, ''));
+    }
+
+    function saveWorkerName(value) {
+        var name = normSpace(value).slice(0, 40);
+        gmSet(WORKER_KEY, name);
+        return name;
+    }
+
+    function sheetUrl() {
+        var saved = String(gmGet(SHEET_URL_KEY, '') || '').trim();
+        return /^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(saved) ? saved : '';
+    }
+
+    function saveSheetUrl(value) {
+        var url = String(value || '').trim();
+        if (!url) {
+            gmSet(SHEET_URL_KEY, '');
+            return true;
+        }
+        if (!/^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(url)) return false;
+        gmSet(SHEET_URL_KEY, url);
+        return true;
+    }
+
+    function cleanStockId(value) {
+        var raw = String(value || '').toUpperCase().replace(/\s+/g, '');
+        if (!raw) return '';
+        var match = raw.match(/[A-Z]{2,3}\d{4,8}/);
+        if (!match) return null;
+        return match[0];
     }
 
     function loadQueue() {
@@ -376,10 +453,23 @@
         return true;
     }
 
+    function orderScope(card) {
+        var nodes = [];
+        var el = card;
+        while (el && nodes.length < 4) {
+            nodes.push(el);
+            var next = el.nextElementSibling;
+            if (!next) break;
+            var head = normSpace(next.innerText || '').slice(0, 48);
+            if (/LS\d{6,}/i.test(head)) break;
+            el = next;
+        }
+        return nodes;
+    }
+
     function returnButtonsNear(card, article) {
-        var roots = [card, card.nextElementSibling, card.parentElement].filter(Boolean);
         var seen = [];
-        roots.forEach(function (root) {
+        orderScope(card).forEach(function (root) {
             Array.prototype.forEach.call(root.querySelectorAll('button'), function (button) {
                 if (seen.indexOf(button) !== -1) return;
                 if (fold(button.innerText || '').indexOf('zurueckgeben') === -1) return;
@@ -390,12 +480,24 @@
         return seen;
     }
 
+    function forceClick(el) {
+        if (!el) return;
+        try { el.scrollIntoView({ block: 'center' }); } catch (e) {}
+        el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: pageWin }));
+        el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: pageWin }));
+        try { el.click(); } catch (e2) {}
+    }
+
     function cartBadge() {
         var tab = findButton(/warenkorb/);
         if (!tab) return 0;
         var root = tab.parentElement || tab;
-        var match = normSpace(root.innerText || '').match(/(\d+)/);
-        return match ? Number(match[1]) : 0;
+        var nodes = root.querySelectorAll('span, sup, div, em');
+        for (var i = 0; i < nodes.length; i++) {
+            var text = normSpace(nodes[i].innerText || '');
+            if (/^\d{1,3}$/.test(text)) return Number(text);
+        }
+        return 0;
     }
 
     function cartHasItems() {
@@ -444,6 +546,48 @@
         var data;
         try { data = JSON.parse(trimmed); } catch (e) { return; }
         harvestNode(data, 0);
+        if (lookupEanNow) harvestLookup(data, lookupEanNow);
+    }
+
+    function preferredArticle(obj, ean) {
+        var keys = ['articleNumber', 'articleNo', 'articleNr', 'wholesalerArticleNumber', 'supplierArticleNumber', 'itemNumber', 'partNumber', 'manufacturerArticleNumber', 'tecdocArticleNumber'];
+        for (var i = 0; i < keys.length; i++) {
+            if (!obj[keys[i]]) continue;
+            var art = usableArticle(obj[keys[i]], ean);
+            if (art) return art;
+        }
+        return '';
+    }
+
+    function objectMentionsEan(obj, ean) {
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            var value = obj[keys[i]];
+            if ((typeof value === 'string' || typeof value === 'number') && String(value).indexOf(ean) !== -1) return true;
+        }
+        return false;
+    }
+
+    function harvestLookup(node, ean, depth, found) {
+        if (depth == null) depth = 0;
+        if (!found) found = [];
+        if (!node || depth > 7) {
+            if (depth === 0 && found.length === 1) rememberEan(ean, found[0]);
+            return;
+        }
+        if (!found) found = [];
+        if (Array.isArray(node)) {
+            for (var i = 0; i < node.length && i < 40; i++) harvestLookup(node[i], ean, depth + 1, found);
+        } else if (typeof node === 'object' && objectMentionsEan(node, ean)) {
+            var art = preferredArticle(node, ean);
+            if (art && found.indexOf(art) === -1) found.push(art);
+            var keys = Object.keys(node);
+            for (var k = 0; k < keys.length && k < 30; k++) harvestLookup(node[keys[k]], ean, depth + 1, found);
+        } else if (typeof node === 'object') {
+            var childKeys = Object.keys(node);
+            for (var c = 0; c < childKeys.length && c < 30; c++) harvestLookup(node[childKeys[c]], ean, depth + 1, found);
+        }
+        if (depth === 0 && found.length === 1) rememberEan(ean, found[0]);
     }
 
     function harvestNode(node, depth) {
@@ -461,7 +605,7 @@
     }
 
     function patchTraffic() {
-        var xhrProto = XMLHttpRequest.prototype;
+        var xhrProto = pageWin.XMLHttpRequest.prototype;
         if (!xhrProto.__aagRetourePatched) {
             var originalHeader = xhrProto.setRequestHeader;
             xhrProto.setRequestHeader = function (name, value) {
@@ -479,8 +623,8 @@
             };
             xhrProto.__aagRetourePatched = true;
         }
-        if (window.fetch && !window.fetch.__aagRetoureFetch) {
-            var originalFetch = window.fetch;
+        if (pageWin.fetch && !pageWin.fetch.__aagRetoureFetch) {
+            var originalFetch = pageWin.fetch;
             var wrapped = function () {
                 try {
                     var init = arguments[1];
@@ -493,7 +637,7 @@
                 });
             };
             wrapped.__aagRetoureFetch = true;
-            window.fetch = wrapped;
+            pageWin.fetch = wrapped;
         }
     }
 
@@ -632,15 +776,470 @@
         return '';
     }
 
-    async function resolveCode(code) {
-        if (!looksLikeEan(code)) return { code: code, eanFailed: false };
-        setStatus('EAN ' + code + ' wird aufgelöst...', 'active');
-        var art = eanMap[code] || await lookupEan(code);
-        if (art) {
-            setStatus('EAN gehört zu ' + art, 'active');
-            return { code: art, eanFailed: false };
+    function loadTranslate() {
+        try {
+            var data = JSON.parse(sessionStorage.getItem(TRANSLATE_KEY) || 'null');
+            return data && data.ean ? data : null;
+        } catch (e) {
+            return null;
         }
-        return { code: code, eanFailed: true };
+    }
+
+    function saveTranslate(job) {
+        try { sessionStorage.setItem(TRANSLATE_KEY, JSON.stringify(job)); } catch (e) {}
+    }
+
+    function findArtikelsucheLink() {
+        var nodes = document.querySelectorAll('a, button, [role="link"], [role="menuitem"]');
+        var best = null;
+        for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (el.closest('#aag-retoure-hud') || !isVisible(el)) continue;
+            var text = fold(el.innerText || el.getAttribute('aria-label') || '');
+            if (!text || text.length > 24 || text.indexOf('artikelsuche') === -1) continue;
+            if (text === 'artikelsuche') return el;
+            best = el;
+        }
+        return best;
+    }
+
+    function openArtikelsuche(ean) {
+        var job = loadTranslate() || {};
+        if (job.ean === ean && job.clicked) return;
+        lookupEanNow = ean;
+        job.ean = ean;
+        job.phase = 'open';
+        job.clicked = true;
+        job.at = Date.now();
+        saveTranslate(job);
+        setStatus('EAN ' + ean + ' geht in die Artikelsuche...', 'active');
+        var link = findArtikelsucheLink();
+        if (!link) {
+            sessionStorage.removeItem(TRANSLATE_KEY);
+            lookupEanNow = '';
+            setStatus('Artikelsuche in der oberen Leiste nicht gefunden.', 'error');
+            return;
+        }
+        var href = link.href || link.getAttribute('href') || '';
+        link.click();
+        setTimeout(function () {
+            var current = loadTranslate();
+            if (!current || current.phase !== 'open' || !onRetours()) return;
+            if (href && href.charAt(0) === '/') location.assign(href);
+        }, 1200);
+    }
+
+    function findCatalogInput() {
+        var inputs = document.querySelectorAll('input');
+        var fallback = null;
+        for (var i = 0; i < inputs.length; i++) {
+            var input = inputs[i];
+            if (input.closest('#aag-retoure-hud') || !isVisible(input) || input.readOnly) continue;
+            var type = (input.getAttribute('type') || 'text').toLowerCase();
+            if (type === 'hidden' || type === 'checkbox' || type === 'radio' || type === 'password') continue;
+            var hint = fold((input.getAttribute('placeholder') || '') + ' ' + (input.getAttribute('aria-label') || '') + ' ' + (input.id || '') + ' ' + (input.name || ''));
+            if (/ean|artikel|suche|search|gtin|barcode|nummer/.test(hint)) return input;
+            if (!fallback) fallback = input;
+        }
+        return fallback;
+    }
+
+    function looksLikePart(value, ean) {
+        var raw = normSpace(value);
+        var compact = raw.replace(/\s/g, '');
+        if (compact.length < 4 || compact.length > 22) return false;
+        if (onlyDigits(compact) === ean) return false;
+        if (/^\d{12,14}$/.test(compact)) return false;
+        if (/^\d{1,2}\.\d{1,2}\.\d{2,4}$/.test(raw)) return false;
+        if (/€|eur/i.test(raw)) return false;
+        if (!/[0-9]/.test(compact)) return false;
+        if (!/[A-Za-z]/.test(compact) && !/^\d{5,11}$/.test(compact)) return false;
+        return true;
+    }
+
+    function labeledArticle(ean) {
+        var root = document.querySelector('main') || document.body;
+        if (!root) return '';
+        var match = (root.innerText || '').match(/Artikel(?:nummer|[\s\-]*Nr\.?)\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-\/\.]{2,24})/i);
+        if (!match) return '';
+        var art = normSpace(match[1]);
+        if (onlyDigits(art) === ean || !looksLikePart(art, ean)) return '';
+        return art;
+    }
+
+    function scrapeChoices(ean) {
+        var root = document.querySelector('main') || document.body;
+        var nodes = root.querySelectorAll('a, button, td, span, div, h1, h2, h3, h4');
+        var out = [];
+        for (var i = 0; i < nodes.length && out.length < 8; i++) {
+            var el = nodes[i];
+            if (el.closest('#aag-retoure-hud') || !isVisible(el) || el.children.length > 2) continue;
+            var raw = normSpace(el.innerText || '');
+            if (!looksLikePart(raw, ean) || out.indexOf(raw) !== -1) continue;
+            out.push(raw);
+        }
+        return out;
+    }
+
+    function renderChoices(list) {
+        var host = document.getElementById('aag-retoure-choices');
+        if (!host) return;
+        var sig = (list || []).join('|');
+        if (host.getAttribute('data-sig') === sig) return;
+        host.setAttribute('data-sig', sig);
+        host.innerHTML = '';
+        if (!list || !list.length) return;
+        var label = document.createElement('div');
+        label.className = 'aag-last-label';
+        label.textContent = 'Artikelnummer antippen';
+        host.appendChild(label);
+        list.forEach(function (art) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'aag-choice';
+            btn.textContent = art;
+            btn.addEventListener('click', function () { acceptTranslated(art); });
+            host.appendChild(btn);
+        });
+    }
+
+    function acceptTranslated(article) {
+        var job = loadTranslate();
+        var art = normSpace(article);
+        if (!art) return;
+        if (job && job.ean) rememberEan(job.ean, art);
+        lookupEanNow = '';
+        sessionStorage.removeItem(TRANSLATE_KEY);
+        renderChoices([]);
+        setStatus(art + ' aus der Artikelsuche. Zurück zur Retoure...', 'done');
+        if (onRetours()) {
+            addArticle(art);
+            return;
+        }
+        sessionStorage.setItem(PENDING_KEY, art);
+        location.assign('/ordering/retours/search');
+    }
+
+    function catalogMiss() {
+        var nodes = document.querySelectorAll('[class*="toast"], [class*="snack"], [role="alert"]');
+        for (var i = 0; i < nodes.length; i++) {
+            if (!isVisible(nodes[i])) continue;
+            if (fold(nodes[i].innerText || '').indexOf('kein artikel') !== -1) return true;
+        }
+        return false;
+    }
+
+    async function fillCatalog(job) {
+        if (translateBusy) return;
+        translateBusy = true;
+        try {
+            lookupEanNow = job.ean;
+            var input = await waitFor(findCatalogInput, 8000);
+            if (abortMission || !loadTranslate()) return;
+            if (!input) {
+                setStatus('Suchfeld in der Artikelsuche nicht gefunden. Nummer hier eintippen und Enter.', 'error');
+                job.phase = 'pick';
+                job.filledAt = Date.now();
+                saveTranslate(job);
+                return;
+            }
+            input.focus();
+            setNativeValue(input, job.ean);
+            await sleep(120);
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+            var suchen = findButton(/suchen$/, /rueckgaben|retour/);
+            if (suchen) suchen.click();
+            job.phase = 'pick';
+            job.filledAt = Date.now();
+            saveTranslate(job);
+            setStatus('Artikelsuche läuft für ' + job.ean + '...', 'active');
+        } finally {
+            translateBusy = false;
+        }
+    }
+
+    function translateTick() {
+        var job = loadTranslate();
+        if (!job) return;
+        ensureHud();
+        if (eanMap[job.ean]) {
+            acceptTranslated(eanMap[job.ean]);
+            return;
+        }
+        if (job.phase === 'open' && !onRetours()) {
+            job.phase = 'fill';
+            saveTranslate(job);
+        }
+        if (job.phase === 'fill' && !translateBusy) fillCatalog(job);
+        if (job.phase !== 'pick') return;
+        var labeled = labeledArticle(job.ean);
+        if (labeled) {
+            acceptTranslated(labeled);
+            return;
+        }
+        if (job.filledAt && Date.now() - job.filledAt > 900) renderChoices(scrapeChoices(job.ean));
+        if (job.filledAt && Date.now() - job.filledAt > 2500 && catalogMiss()) setStatus('Artikelsuche kennt diese EAN nicht. Die Artikelnummer hier eintippen und Enter.', 'error');
+        else setStatus('EAN ' + job.ean + ' liegt in der Artikelsuche. Artikelnummer antippen, oder hier eintippen.', 'active');
+    }
+
+    function partFromSearch(html, ean) {
+        var text = String(html || '');
+        if (!text || text.indexOf(ean) === -1) return '';
+        var chunks = text.split(/b_algo|b_caption/i);
+        var labeled = '';
+        var loose = {};
+        chunks.forEach(function (chunk) {
+            if (chunk.indexOf(ean) === -1) return;
+            var plain = chunk.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
+            var marked = plain.match(/(?:artikelnummer|artikel-nr|item number|hersteller-nr|manufacturer number|part number|teile-nr)[^A-Z0-9]{0,16}([A-Z]{1,3}\d{4,10})/i);
+            if (marked && !labeled) labeled = marked[1].toUpperCase();
+            var codes = plain.match(/\b[A-Z]{1,3}\d{4,10}\b/g) || [];
+            codes.forEach(function (hit) {
+                var token = hit.toUpperCase();
+                if (token.indexOf(ean) !== -1) return;
+                loose[token] = true;
+            });
+        });
+        if (labeled && usableArticle(labeled, ean)) return labeled;
+        var keys = Object.keys(loose).filter(function (token) { return usableArticle(token, ean); });
+        return keys.length === 1 ? keys[0] : '';
+    }
+
+    function gmText(url) {
+        return new Promise(function (resolve) {
+            if (typeof GM_xmlhttpRequest !== 'function') {
+                resolve('');
+                return;
+            }
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                timeout: 12000,
+                headers: { 'Accept': 'text/html', 'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8' },
+                onload: function (res) { resolve(res && res.responseText || ''); },
+                onerror: function () { resolve(''); },
+                ontimeout: function () { resolve(''); }
+            });
+        });
+    }
+
+    async function translateEan(ean) {
+        if (eanMap[ean]) return eanMap[ean];
+        var html = await gmText('https://www.bing.com/search?q=' + encodeURIComponent('"' + ean + '" Artikelnummer') + '&setlang=de&cc=de');
+        return partFromSearch(html, ean);
+    }
+
+    function askStock(found, article) {
+        return new Promise(function (resolve) {
+            var box = document.getElementById('aag-retoure-ask');
+            var stock = document.getElementById('aag-retoure-stock');
+            var who = document.getElementById('aag-retoure-who');
+            var take = document.getElementById('aag-retoure-take');
+            if (!box || !stock || !who || !take) {
+                resolve(null);
+                return;
+            }
+            var done = false;
+            box.hidden = false;
+            take.hidden = false;
+            if (!who.value) who.value = workerName();
+            setStatus(article + ' in ' + (found.ls || 'der neuesten Lieferung') + '. Stock-ID leer lassen oder eintragen, Enter gibt zurück.', 'active');
+            stock.focus();
+            function close() {
+                done = true;
+                askWait = null;
+                box.hidden = true;
+                take.hidden = true;
+                stock.removeEventListener('keydown', onKey);
+                take.removeEventListener('click', onTake);
+            }
+            function finish(ok) {
+                if (done) return;
+                if (!ok) {
+                    close();
+                    resolve(null);
+                    return;
+                }
+                if (!normSpace(who.value)) {
+                    setStatus('Name fehlt. Zum Beispiel Semmel.', 'error');
+                    who.focus();
+                    return;
+                }
+                var stockId = cleanStockId(stock.value);
+                if (stockId === null) {
+                    setStatus('Stock-ID leer lassen oder so schreiben: JR97017.', 'error');
+                    stock.focus();
+                    return;
+                }
+                var name = saveWorkerName(who.value);
+                close();
+                resolve({ who: name, stockId: stockId });
+            }
+            function onKey(e) {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                e.stopPropagation();
+                finish(true);
+            }
+            function onTake() { finish(true); }
+            askWait = function () { finish(false); };
+            stock.addEventListener('keydown', onKey);
+            take.addEventListener('click', onTake);
+        });
+    }
+
+    function sheetEcho(txt) {
+        var raw = String(txt || '').replace(/&amp;/g, '&');
+        var match = raw.match(/https:\/\/script\.googleusercontent\.com\/macros\/echo[^"'\\\s<>]*/);
+        if (match) return match[0];
+        var exec = raw.match(/https:\/\/script\.google\.com\/macros\/s\/[^"'\\\s<>]+\/exec[^"'\\\s<>]*/);
+        return exec ? exec[0] : '';
+    }
+
+    function sheetDecode(text) {
+        return String(text || '')
+            .replace(/^\uFEFF/, '')
+            .replace(/^\)\]\}',?\s*/, '')
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>');
+    }
+
+    function sheetParse(txt) {
+        var raw = sheetDecode(txt).trim();
+        function read(text) {
+            try {
+                var data = JSON.parse(text);
+                if (data && typeof data === 'object' && ('ok' in data)) return data;
+            } catch (e) {}
+            return null;
+        }
+        var direct = read(raw);
+        if (direct) return direct;
+        var start = raw.indexOf('{"ok"');
+        if (start >= 0) {
+            var end = raw.lastIndexOf('}');
+            if (end > start) {
+                var found = read(raw.slice(start, end + 1));
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    function sheetLocation(res) {
+        var headers = String((res && res.responseHeaders) || '');
+        var loc = headers.match(/^location:\s*(\S+)/im);
+        return loc ? loc[1] : '';
+    }
+
+    function sheetReq(url, hop) {
+        return new Promise(function (resolve, reject) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url: url,
+                anonymous: false,
+                timeout: 30000,
+                onload: function (res) {
+                    var txt = res && res.responseText != null ? res.responseText : '';
+                    var data = sheetParse(txt);
+                    var jump = hop < 4 ? (sheetEcho(txt) || sheetLocation(res)) : '';
+                    if (jump === url) jump = '';
+                    if (data && data.ok === false) {
+                        reject(new Error(data.error || 'Sheet hat abgelehnt'));
+                        return;
+                    }
+                    if (data && data.ok === true && (data.added != null || data.skipped != null)) {
+                        resolve(data);
+                        return;
+                    }
+                    if (jump) {
+                        sheetReq(jump, hop + 1).then(resolve, reject);
+                        return;
+                    }
+                    var low = String(txt || '').toLowerCase();
+                    if (/accounts\.google|servicelogin|anmelden|zugriffsanfrage/.test(low)) reject(new Error('Google-Login fehlt fürs Sheet'));
+                    else if (data && data.ok === true) reject(new Error('Web-App neu veröffentlichen'));
+                    else reject(new Error('Sheet Antwort ' + (res && res.status)));
+                },
+                onerror: function () { reject(new Error('Sheet nicht erreichbar')); },
+                ontimeout: function () { reject(new Error('Sheet Timeout')); }
+            });
+        });
+    }
+
+    function postAagSheet(row) {
+        var url = sheetUrl();
+        if (!url) return Promise.resolve({ ok: false, error: 'Sheet-Link fehlt' });
+        if (!row || !row.article) return Promise.resolve({ ok: false, error: 'Teil fehlt' });
+        if (row.token && sheetBusyToken === row.token) return Promise.resolve({ ok: false, error: 'läuft' });
+        sheetBusyToken = row.token || 'x';
+        var payload = JSON.stringify({ action: 'aagAppend', entries: [row] });
+        var join = url.indexOf('?') === -1 ? '?' : '&';
+        return sheetReq(url + join + 'payload=' + encodeURIComponent(payload), 0).then(function (data) {
+            if (sheetBusyToken === row.token) sheetBusyToken = '';
+            return data;
+        }).catch(function (err) {
+            if (sheetBusyToken === row.token) sheetBusyToken = '';
+            var message = err && err.message ? err.message : 'Sheet fehlgeschlagen';
+            if (message === 'unbekannt') message = 'Web-App neu veröffentlichen';
+            return { ok: false, error: message };
+        });
+    }
+
+    async function addArticle(raw, fromEan) {
+        var code = cleanScan(raw);
+        if (!code || code.length < MIN_LEN) return;
+        if (busy) {
+            var queued = loadQueue();
+            queued.push(code);
+            saveQueue(queued);
+            setStatus('Wartet: ' + code, 'active');
+            return;
+        }
+        busy = true;
+        leaving = false;
+        abortMission = false;
+        var skipPump = false;
+        try {
+            var sourceEan = looksLikeEan(fromEan) ? fromEan : '';
+            if (looksLikeEan(code)) sourceEan = code;
+            if (looksLikeEan(code) && !eanMap[code]) {
+                setStatus('EAN ' + code + ' wird extern in eine Artikelnummer übersetzt...', 'active');
+                var art = await translateEan(code);
+                if (abortMission) return;
+                if (!art) {
+                    pendingPairEan = code;
+                    setStatus('AAG kennt keine EAN. Artikelnummer eintippen, ich merke sie zu ' + code + '.', 'error');
+                    focusScan();
+                    return;
+                }
+                rememberEan(code, art);
+                sourceEan = code;
+                code = art;
+            } else if (looksLikeEan(code)) {
+                sourceEan = code;
+                code = eanMap[code];
+            }
+            if (!sourceEan && lastEan && eanMap[lastEan] === code) sourceEan = lastEan;
+            lastEan = sourceEan;
+            var article = code;
+            if (pageKind() !== 'search') {
+                sessionStorage.setItem(PENDING_KEY, article);
+                leaving = true;
+                skipPump = true;
+                goSearch();
+                return;
+            }
+            await runSearchAdd(article, false);
+        } catch (e) {
+            setStatus('Fehler beim Suchen.', 'error');
+        } finally {
+            busy = false;
+            if (!skipPump && !abortMission && sessionStorage.getItem(FINISH_KEY) !== '1') pump();
+        }
     }
 
     async function clearSearchForm() {
@@ -661,12 +1260,12 @@
         return normArt(input.value) === normArt(code);
     }
 
-    async function addFromCard(card, article) {
+    async function addFromCard(card, article, hold) {
         var buttons = returnButtonsNear(card, article);
         if (!buttons.length) {
             var open = expander(card);
             try { card.scrollIntoView({ block: 'center' }); } catch (e) {}
-            if (open && open.getAttribute('aria-expanded') !== 'true') open.click();
+            if (open && open.getAttribute('aria-expanded') !== 'true') forceClick(open);
             var appeared = await waitFor(function () {
                 return returnButtonsNear(card, article).length ? true : null;
             }, 2500);
@@ -685,19 +1284,24 @@
             break;
         }
         if (!addButton) return buttons.length ? 'already' : 'miss';
+        if (hold) return { hold: true, button: addButton, name: lineName(line, article), ls: lsOf(card), date: dateOf(card) };
+        return clickReturnButton(addButton, { name: lineName(line, article), ls: lsOf(card), date: dateOf(card) });
+    }
+
+    async function clickReturnButton(addButton, info) {
         var before = cartBadge();
-        addButton.click();
+        forceClick(addButton);
         var proof = await waitFor(function () {
             if (cartBadge() > before) return 'added';
             if (!isAddButton(addButton)) return 'flipped';
             return null;
         }, 4000);
         if (cartBadge() < before) {
-            addButton.click();
+            forceClick(addButton);
             return 'fail';
         }
         if (!proof) return 'fail';
-        return { ok: true, name: lineName(line, article), ls: lsOf(card), date: dateOf(card) };
+        return { ok: true, name: info.name || '', ls: info.ls || '', date: info.date || '' };
     }
 
     async function runSearchAdd(code, eanFailed) {
@@ -741,56 +1345,50 @@
             focusScan();
             return;
         }
-        var already = false;
-        for (var i = 0; i < cards.length && i < 8; i++) {
-            if (abortMission) return;
-            setStatus('Lieferung ' + (lsOf(cards[i]) || '') + ' vom ' + (dateOf(cards[i]) || '?') + '...', 'active');
-            var added = await addFromCard(cards[i], code);
-            if (added && added.ok) {
-                rememberAdded({ article: code, name: added.name || '', ls: added.ls || '' });
-                setStatus(code + ' liegt im Warenkorb. Nächste Nummer, oder Drucken und absenden.', 'done');
-                focusScan();
-                return;
-            }
-            if (added === 'already') already = true;
-        }
-        if (already) setStatus(code + ' liegt schon im Warenkorb.', 'warn');
-        else if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen und Enter.', 'error');
-        else setStatus(code + ' ist in den Lieferungen nicht rückgabefähig.', 'error');
-        focusScan();
-    }
-
-    async function addArticle(raw) {
-        var code = cleanScan(raw);
-        if (!code || code.length < MIN_LEN) return;
-        if (busy) {
-            var queued = loadQueue();
-            queued.push(code);
-            saveQueue(queued);
-            setStatus('Wartet: ' + code, 'active');
+        var card = cards[0];
+        if (abortMission) return;
+        setStatus('Nur ' + (lsOf(card) || 'die neueste Lieferung') + ' vom ' + (dateOf(card) || '?') + '.', 'active');
+        var found = await addFromCard(card, code, true);
+        if (found === 'already') {
+            setStatus(code + ' liegt in der neuesten Lieferung schon im Warenkorb.', 'warn');
+            focusScan();
             return;
         }
-        busy = true;
-        leaving = false;
-        abortMission = false;
-        var skipPump = false;
-        try {
-            if (pageKind() !== 'search') {
-                sessionStorage.setItem(PENDING_KEY, code);
-                leaving = true;
-                skipPump = true;
-                goSearch();
-                return;
-            }
-            var resolved = await resolveCode(code);
-            if (abortMission) return;
-            await runSearchAdd(resolved.code, resolved.eanFailed && resolved.code === code);
-        } catch (e) {
-            setStatus('Fehler beim Suchen.', 'error');
-        } finally {
-            busy = false;
-            if (!skipPump && !abortMission && sessionStorage.getItem(FINISH_KEY) !== '1') pump();
+        if (!found || !found.hold) {
+            if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen und Enter.', 'error');
+            else setStatus(code + ' steht in der neuesten Lieferung nicht zum Zurückgeben. Ältere Lieferungen bleiben zu.', 'error');
+            focusScan();
+            return;
         }
+        var extra = await askStock(found, code);
+        if (!extra || abortMission) {
+            setStatus('Zurückgeben abgebrochen.', 'warn');
+            focusScan();
+            return;
+        }
+        var added = await clickReturnButton(found.button, found);
+        if (!(added && added.ok)) {
+            setStatus(code + ' ist nicht in den Warenkorb gegangen.', 'error');
+            focusScan();
+            return;
+        }
+        rememberAdded({ article: code, name: added.name || '', ls: added.ls || '' });
+        var stockBox = document.getElementById('aag-retoure-stock');
+        if (stockBox) stockBox.value = '';
+        var sheet = await postAagSheet({
+            token: [code, added.ls || '', extra.stockId || ''].join('|'),
+            orderId: added.ls || '',
+            stockId: extra.stockId || '',
+            article: code,
+            name: added.name || '',
+            supplier: 'AAG',
+            who: extra.who || '',
+            ean: lastEan && lastEan !== code ? lastEan : ''
+        });
+        if (sheet && sheet.added) setStatus(code + ' im Warenkorb und im Blatt KNOLL / AAG.', 'done');
+        else if (sheet && sheet.skipped) setStatus(code + ' im Warenkorb. Steht schon im Blatt.', 'done');
+        else setStatus(code + ' im Warenkorb. Sheet: ' + ((sheet && sheet.error) || 'nicht geschrieben') + '.', 'warn');
+        focusScan();
     }
 
     function pump() {
@@ -806,7 +1404,14 @@
     function submitScan(raw) {
         var code = cleanScan(raw);
         if (!code || code.length < MIN_LEN) return;
-        addArticle(code);
+        if (askWait) return;
+        var paired = '';
+        if (pendingPairEan && !looksLikeEan(code)) {
+            rememberEan(pendingPairEan, code);
+            paired = pendingPairEan;
+            pendingPairEan = '';
+        }
+        addArticle(code, paired);
     }
 
     function isGrundText(text) {
@@ -998,7 +1603,7 @@
     }
 
     function onFinishClick() {
-        if (busy) return;
+        if (busy || loadTranslate()) return;
         if (pageKind() === 'cart' && grundReady()) {
             sessionStorage.removeItem(FINISH_KEY);
             printAndSendSync();
@@ -1024,27 +1629,28 @@
     }
 
     function hookHistory() {
-        if (history.pushState && !history.pushState.__aagRetoure) {
-            var original = history.pushState;
+        var hist = pageWin.history;
+        if (hist.pushState && !hist.pushState.__aagRetoure) {
+            var original = hist.pushState;
             var wrapped = function () {
                 var result = original.apply(this, arguments);
                 setTimeout(continueFlow, 40);
                 return result;
             };
             wrapped.__aagRetoure = true;
-            history.pushState = wrapped;
+            hist.pushState = wrapped;
         }
-        if (history.replaceState && !history.replaceState.__aagRetoure) {
-            var originalReplace = history.replaceState;
+        if (hist.replaceState && !hist.replaceState.__aagRetoure) {
+            var originalReplace = hist.replaceState;
             var wrappedReplace = function () {
                 var result = originalReplace.apply(this, arguments);
                 setTimeout(continueFlow, 40);
                 return result;
             };
             wrappedReplace.__aagRetoure = true;
-            history.replaceState = wrappedReplace;
+            hist.replaceState = wrappedReplace;
         }
-        window.addEventListener('popstate', function () { setTimeout(continueFlow, 40); });
+        pageWin.addEventListener('popstate', function () { setTimeout(continueFlow, 40); });
     }
 
     function setStatus(text, tone) {
@@ -1072,24 +1678,34 @@
     }
 
     function focusScan() {
+        var ask = document.getElementById('aag-retoure-ask');
+        if (ask && !ask.hidden) return;
         var input = document.getElementById('aag-retoure-scan');
         if (!input) return;
         setTimeout(function () {
             if (!onRetours()) return;
+            if (ask && !ask.hidden) return;
             input.focus();
         }, 60);
     }
 
     function resetHud() {
         abortMission = true;
+        if (askWait) askWait();
+        pendingPairEan = '';
         saveQueue([]);
         sessionStorage.removeItem(PENDING_KEY);
         sessionStorage.removeItem(FINISH_KEY);
         sessionStorage.removeItem(ADDED_KEY);
+        sessionStorage.removeItem(TRANSLATE_KEY);
+        lookupEanNow = '';
+        renderChoices([]);
         var input = document.getElementById('aag-retoure-scan');
         if (input) input.value = '';
+        var stock = document.getElementById('aag-retoure-stock');
+        if (stock) stock.value = '';
         renderAdded();
-        setStatus('HUD leer. Der Warenkorb auf der Seite bleibt.', 'neutral');
+        setStatus('HUD leer. Name und Sheet-Link bleiben. Der Warenkorb auf der Seite bleibt.', 'neutral');
         setTimeout(function () { abortMission = false; focusScan(); }, 80);
     }
 
@@ -1155,7 +1771,12 @@
             + '.aag-retoure-body{padding:14px}'
             + '#aag-retoure-reset{width:100%;min-height:38px;border:none;border-radius:12px;background:#f0883e;color:#1a1208;font-size:13px;font-weight:900}'
             + '#aag-retoure-reset:hover{background:#ff9d4d}'
-            + '#aag-retoure-scan{width:100%;box-sizing:border-box;margin-top:10px;min-height:44px;border-radius:12px;border:1px solid #3a4452;background:#0d1117;color:#f0f6fc;font-size:16px;font-weight:700;padding:0 12px}'
+            + '#aag-retoure-scan,.aag-field input{width:100%;box-sizing:border-box;margin-top:8px;min-height:40px;border-radius:12px;border:1px solid #3a4452;background:#0d1117;color:#f0f6fc;font-size:15px;font-weight:700;padding:0 12px}'
+            + '.aag-field{display:block;margin-top:8px}'
+            + '.aag-field span{display:block;color:#8b949e;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px}'
+            + '.aag-field input{margin-top:0;min-height:36px;font-size:14px}'
+            + '#aag-retoure-ask{margin-top:8px}'
+            + '#aag-retoure-take{width:100%;min-height:36px;border:none;border-radius:12px;background:#f0883e;color:#1a1208;font-size:13px;font-weight:900}'
             + '.aag-actions{display:flex;gap:8px;margin-top:10px}'
             + '.aag-actions button{flex:1;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8;font-size:12px;font-weight:900}'
             + '#aag-retoure-finish{border-color:rgba(220,61,61,.55);color:#f07070;background:rgba(220,61,61,.12)}'
@@ -1167,6 +1788,8 @@
             + '.aag-last-row b{color:#f07070}'
             + '.aag-last-row span{flex:1;color:#f0f6fc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
             + '.aag-last-row em{color:#8b949e;font-style:normal;font-size:10px}'
+            + '#aag-retoure-choices{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}'
+            + '.aag-choice{min-height:36px;padding:6px 10px;border-radius:10px;border:1px solid rgba(220,61,61,.45);background:rgba(220,61,61,.12);color:#f07070;font-size:13px;font-weight:800}'
             + '.aag-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
             + '.aag-credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600}'
             + '@media print{#aag-retoure-hud,#aag-lieferschein-sync-status{display:none !important}}';
@@ -1176,7 +1799,7 @@
     function ensureHud() {
         if (!document.body) return;
         var hud = document.getElementById('aag-retoure-hud');
-        if (!onRetours()) {
+        if (!onRetours() && !loadTranslate()) {
             if (hud) hud.style.display = 'none';
             return;
         }
@@ -1196,12 +1819,17 @@
             + '<div class="aag-retoure-body">'
             + '  <button type="button" id="aag-retoure-reset">Zurücksetzen</button>'
             + '  <input id="aag-retoure-scan" autocomplete="off" spellcheck="false" placeholder="Artikelnummer oder EAN">'
+            + '  <label class="aag-field"><span>Stock-ID</span><input id="aag-retoure-stock" autocomplete="off" spellcheck="false" placeholder="z.B. JR97017"></label>'
+            + '  <label class="aag-field"><span>Name</span><input id="aag-retoure-who" autocomplete="off" spellcheck="false" placeholder="z.B. Semmel"></label>'
+            + '  <label class="aag-field"><span>Sheet</span><input id="aag-retoure-sheet" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/.../exec"></label>'
+            + '  <div id="aag-retoure-ask" hidden><button type="button" id="aag-retoure-take">Zurückgeben</button></div>'
             + '  <div class="aag-actions">'
             + '    <button type="button" id="aag-retoure-cart">Warenkorb</button>'
             + '    <button type="button" id="aag-retoure-finish">Drucken und absenden</button>'
             + '  </div>'
             + '  <div id="aag-retoure-badge">BEREIT</div>'
-            + '  <div id="aag-retoure-message">Artikelnummer scannen oder eintippen. Enter nimmt die letzte Lieferung in den Warenkorb.</div>'
+            + '  <div id="aag-retoure-message">Artikelnummer scannen. Eine EAN übersetzt der Bot extern, AAG selbst kennt keine EAN. Geöffnet wird nur die neueste Lieferung.</div>'
+            + '  <div id="aag-retoure-choices"></div>'
             + '  <div id="aag-retoure-last"></div>'
             + '  <div class="aag-foot"><span>Bot v' + BOT_VERSION + '</span><span>ESC Stop</span></div>'
             + '  <div class="aag-credit">by Arasaka</div>'
@@ -1224,6 +1852,14 @@
             goCart();
         });
         document.getElementById('aag-retoure-finish').addEventListener('click', onFinishClick);
+        var who = document.getElementById('aag-retoure-who');
+        who.value = workerName();
+        who.addEventListener('change', function () { saveWorkerName(who.value); });
+        var sheet = document.getElementById('aag-retoure-sheet');
+        sheet.value = String(gmGet(SHEET_URL_KEY, '') || '');
+        sheet.addEventListener('change', function () {
+            if (!saveSheetUrl(sheet.value)) setStatus('Sheet-Link muss auf script.google.com und /exec enden.', 'error');
+        });
         var scan = document.getElementById('aag-retoure-scan');
         scan.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') return;
@@ -1260,15 +1896,22 @@
             document.addEventListener('DOMContentLoaded', boot);
             return;
         }
+        try { sessionStorage.removeItem(TRANSLATE_KEY); } catch (e) {}
         ensureHud();
         window.addEventListener('beforeprint', hideForPrint);
         window.addEventListener('afterprint', showAfterPrint);
         document.addEventListener('keydown', function (e) {
-            if (e.key !== 'Escape' || !onRetours()) return;
+            if (e.key !== 'Escape') return;
+            if (!onRetours() && !loadTranslate()) return;
             abortMission = true;
+            if (askWait) askWait();
+            pendingPairEan = '';
             saveQueue([]);
             sessionStorage.removeItem(PENDING_KEY);
             sessionStorage.removeItem(FINISH_KEY);
+            sessionStorage.removeItem(TRANSLATE_KEY);
+            lookupEanNow = '';
+            renderChoices([]);
             setStatus('Stop. Nächster Scan geht wieder.', 'warn');
             setTimeout(function () { abortMission = false; }, 50);
         }, true);
