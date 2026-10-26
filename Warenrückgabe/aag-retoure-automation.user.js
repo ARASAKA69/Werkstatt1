@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -20,7 +20,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.2';
+    var BOT_VERSION = '1.3';
     var WORKER_KEY = 'aag_retoure_worker';
     var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
@@ -114,7 +114,7 @@
 
     function sheetUrl() {
         var saved = String(gmGet(SHEET_URL_KEY, '') || '').trim();
-        return /^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(saved) ? saved : '';
+        return /^https:\/\/script\.google\.com\/.+\/exec\/?(\?.*)?$/i.test(saved) ? saved : '';
     }
 
     function saveSheetUrl(value) {
@@ -123,9 +123,20 @@
             gmSet(SHEET_URL_KEY, '');
             return true;
         }
-        if (!/^https:\/\/script\.google\.com\/.+\/exec\/?$/i.test(url)) return false;
+        if (!/^https:\/\/script\.google\.com\/.+\/exec\/?(\?.*)?$/i.test(url)) return false;
         gmSet(SHEET_URL_KEY, url);
         return true;
+    }
+
+    function paintSheet() {
+        var box = document.getElementById('aag-retoure-sheet-box');
+        var state = document.getElementById('aag-retoure-sheet-state');
+        var saved = sheetUrl();
+        if (box) box.hidden = !!saved;
+        if (state) {
+            state.textContent = saved ? 'verbunden' : 'Link fehlt';
+            state.className = 'aag-sheet-state' + (saved ? ' is-ok' : ' is-bad');
+        }
     }
 
     function cleanStockId(value) {
@@ -389,9 +400,9 @@
     function lineOf(button, article) {
         var want = normArt(article);
         var el = button.parentElement;
-        for (var i = 0; i < 8 && el; i++) {
+        for (var i = 0; i < 14 && el; i++) {
             var raw = el.innerText || '';
-            if (raw.length < 500 && normArt(raw).indexOf(want) !== -1 && lineHasArticle(el, article)) return el;
+            if (raw.length < 1200 && normArt(raw).indexOf(want) !== -1 && lineHasArticle(el, article)) return el;
             el = el.parentElement;
         }
         return null;
@@ -446,38 +457,105 @@
 
     function isAddButton(button) {
         if (!button || !isVisible(button) || isDisabled(button)) return false;
-        var raw = button.innerText || '';
-        if (fold(raw).indexOf('zurueckgeben') === -1) return false;
-        if (/[−–]|remove/i.test(raw)) return false;
+        var raw = (button.innerText || '') + ' ' + (button.getAttribute('aria-label') || '');
+        if (buttonText(button).indexOf('zurueckgeben') === -1) return false;
+        if (/[−–]|remove/i.test(raw) && !/[+]/.test(raw)) return false;
         if (looksFilled(button) && !/[+]/.test(raw)) return false;
         return true;
     }
 
-    function orderScope(card) {
-        var nodes = [];
-        var el = card;
-        while (el && nodes.length < 4) {
-            nodes.push(el);
+    function buttonText(el) {
+        return fold((el.innerText || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || ''));
+    }
+
+    function isHeaderNode(el) {
+        if (!el || (el.closest && el.closest('#aag-retoure-hud'))) return false;
+        var text = normSpace(el.innerText || '');
+        if (!text || text.length > 180) return false;
+        if ((text.match(/LS\d{6,}/gi) || []).length !== 1) return false;
+        return /\d{2}\.\d{2}\.\d{2}/.test(text);
+    }
+
+    function branchOf(header) {
+        var headers = deliveryCards();
+        var el = header;
+        var best = header;
+        while (el && el.parentElement && el.parentElement !== document.body) {
+            var parent = el.parentElement;
+            if (parent.closest && parent.closest('#aag-retoure-hud')) break;
+            var count = 0;
+            for (var i = 0; i < headers.length; i++) {
+                if (parent.contains(headers[i])) count++;
+                if (count > 1) break;
+            }
+            if (count !== 1) break;
+            best = parent;
+            el = parent;
+        }
+        return best;
+    }
+
+    function headerOwns(header, node) {
+        if (!header || !node) return false;
+        var branch = branchOf(header);
+        if (branch.contains(node)) return true;
+        var headers = deliveryCards();
+        var el = branch;
+        var steps = 0;
+        while (el && steps < 8) {
             var next = el.nextElementSibling;
             if (!next) break;
-            var head = normSpace(next.innerText || '').slice(0, 48);
-            if (/LS\d{6,}/i.test(head)) break;
+            if (isHeaderNode(next)) break;
+            var foreign = false;
+            for (var i = 0; i < headers.length; i++) {
+                if (headers[i] !== header && next.contains(headers[i])) {
+                    foreign = true;
+                    break;
+                }
+            }
+            if (foreign) break;
+            if (next.contains(node)) return true;
             el = next;
+            steps++;
         }
-        return nodes;
+        return false;
+    }
+
+    function headerByLs(ls) {
+        var headers = deliveryCards();
+        for (var i = 0; i < headers.length; i++) {
+            if (lsOf(headers[i]) === ls) return headers[i];
+        }
+        return null;
     }
 
     function returnButtonsNear(card, article) {
+        var header = headerByLs(lsOf(card)) || card;
+        var nodes = document.querySelectorAll('button, a, [role="button"]');
         var seen = [];
-        orderScope(card).forEach(function (root) {
-            Array.prototype.forEach.call(root.querySelectorAll('button'), function (button) {
-                if (seen.indexOf(button) !== -1) return;
-                if (fold(button.innerText || '').indexOf('zurueckgeben') === -1) return;
-                if (!lineOf(button, article)) return;
-                seen.push(button);
-            });
+        Array.prototype.forEach.call(nodes, function (button) {
+            if (button.closest && button.closest('#aag-retoure-hud')) return;
+            if (buttonText(button).indexOf('zurueckgeben') === -1) return;
+            if (!headerOwns(header, button)) return;
+            if (!lineOf(button, article)) return;
+            seen.push(button);
         });
         return seen;
+    }
+
+    function expandHeader(header) {
+        var root = branchOf(header);
+        var buttons = root.querySelectorAll('button, [role="button"]');
+        for (var i = 0; i < buttons.length; i++) {
+            var button = buttons[i];
+            if (buttonText(button).indexOf('zurueckgeben') !== -1) continue;
+            if (button.getAttribute('aria-expanded') === 'true') return;
+            if (button.getAttribute('aria-expanded') === 'false') {
+                forceClick(button);
+                return;
+            }
+        }
+        forceClick(header);
     }
 
     function forceClick(el) {
@@ -1261,16 +1339,21 @@
     }
 
     async function addFromCard(card, article, hold) {
-        var buttons = returnButtonsNear(card, article);
+        var ls = lsOf(card);
+        var date = dateOf(card);
+        function current() {
+            return headerByLs(ls) || card;
+        }
+        var buttons = returnButtonsNear(current(), article);
         if (!buttons.length) {
-            var open = expander(card);
-            try { card.scrollIntoView({ block: 'center' }); } catch (e) {}
-            if (open && open.getAttribute('aria-expanded') !== 'true') forceClick(open);
+            var header = current();
+            try { header.scrollIntoView({ block: 'center' }); } catch (e) {}
+            expandHeader(header);
             var appeared = await waitFor(function () {
-                return returnButtonsNear(card, article).length ? true : null;
-            }, 2500);
+                return returnButtonsNear(current(), article).length ? true : null;
+            }, 3500);
             if (!appeared) return 'miss';
-            buttons = returnButtonsNear(card, article);
+            buttons = returnButtonsNear(current(), article);
         }
         var addButton = null;
         var line = null;
@@ -1284,8 +1367,9 @@
             break;
         }
         if (!addButton) return buttons.length ? 'already' : 'miss';
-        if (hold) return { hold: true, button: addButton, name: lineName(line, article), ls: lsOf(card), date: dateOf(card) };
-        return clickReturnButton(addButton, { name: lineName(line, article), ls: lsOf(card), date: dateOf(card) });
+        var fresh = current();
+        if (hold) return { hold: true, button: addButton, name: lineName(line, article), ls: lsOf(fresh) || ls, date: dateOf(fresh) || date };
+        return clickReturnButton(addButton, { name: lineName(line, article), ls: lsOf(fresh) || ls, date: dateOf(fresh) || date });
     }
 
     async function clickReturnButton(addButton, info) {
@@ -1775,7 +1859,11 @@
             + '.aag-field{display:block;margin-top:8px}'
             + '.aag-field span{display:block;color:#8b949e;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;margin-bottom:4px}'
             + '.aag-field input{margin-top:0;min-height:36px;font-size:14px}'
-            + '#aag-retoure-ask{margin-top:8px}'
+            + '.aag-sheet-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}'
+            + '#aag-retoure-sheet-toggle{min-height:32px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(13,17,23,.72);color:#d7dee8;font-size:12px;font-weight:800}'
+            + '.aag-sheet-state{font-size:12px;font-weight:800}'
+            + '.aag-sheet-state.is-ok{color:#86f0b0}'
+            + '.aag-sheet-state.is-bad{color:#fecaca}'
             + '#aag-retoure-take{width:100%;min-height:36px;border:none;border-radius:12px;background:#f0883e;color:#1a1208;font-size:13px;font-weight:900}'
             + '.aag-actions{display:flex;gap:8px;margin-top:10px}'
             + '.aag-actions button{flex:1;min-height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8;font-size:12px;font-weight:900}'
@@ -1821,7 +1909,8 @@
             + '  <input id="aag-retoure-scan" autocomplete="off" spellcheck="false" placeholder="Artikelnummer oder EAN">'
             + '  <label class="aag-field"><span>Stock-ID</span><input id="aag-retoure-stock" autocomplete="off" spellcheck="false" placeholder="z.B. JR97017"></label>'
             + '  <label class="aag-field"><span>Name</span><input id="aag-retoure-who" autocomplete="off" spellcheck="false" placeholder="z.B. Semmel"></label>'
-            + '  <label class="aag-field"><span>Sheet</span><input id="aag-retoure-sheet" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/.../exec"></label>'
+            + '  <div class="aag-sheet-row"><button type="button" id="aag-retoure-sheet-toggle">Sheet</button><span id="aag-retoure-sheet-state"></span></div>'
+            + '  <label class="aag-field" id="aag-retoure-sheet-box"><span>Sheet</span><input id="aag-retoure-sheet" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/.../exec"></label>'
             + '  <div id="aag-retoure-ask" hidden><button type="button" id="aag-retoure-take">Zurückgeben</button></div>'
             + '  <div class="aag-actions">'
             + '    <button type="button" id="aag-retoure-cart">Warenkorb</button>'
@@ -1857,9 +1946,30 @@
         who.addEventListener('change', function () { saveWorkerName(who.value); });
         var sheet = document.getElementById('aag-retoure-sheet');
         sheet.value = String(gmGet(SHEET_URL_KEY, '') || '');
-        sheet.addEventListener('change', function () {
-            if (!saveSheetUrl(sheet.value)) setStatus('Sheet-Link muss auf script.google.com und /exec enden.', 'error');
+        function commitSheet() {
+            if (!saveSheetUrl(sheet.value)) {
+                setStatus('Sheet-Link muss auf script.google.com enden mit /exec.', 'error');
+                var box = document.getElementById('aag-retoure-sheet-box');
+                if (box) box.hidden = false;
+                return;
+            }
+            paintSheet();
+            if (sheetUrl()) setStatus('Sheet-Link gespeichert.', 'done');
+        }
+        sheet.addEventListener('change', commitSheet);
+        sheet.addEventListener('keydown', function (e) {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            e.stopPropagation();
+            commitSheet();
         });
+        document.getElementById('aag-retoure-sheet-toggle').addEventListener('click', function () {
+            var box = document.getElementById('aag-retoure-sheet-box');
+            if (!box) return;
+            box.hidden = !box.hidden;
+            if (!box.hidden) sheet.focus();
+        });
+        paintSheet();
         var scan = document.getElementById('aag-retoure-scan');
         scan.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') return;
