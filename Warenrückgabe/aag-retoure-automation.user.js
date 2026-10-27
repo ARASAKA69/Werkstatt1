@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.0.0-rc.1
 // @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.11';
+    var BOT_VERSION = '1.0 RC1';
     var WORKER_KEY = 'aag_retoure_worker';
     var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
