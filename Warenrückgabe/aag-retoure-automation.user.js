@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -12,7 +12,8 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
-// @connect      www.bing.com
+// @connect      ean-suche.net
+// @connect      api.barcodelookup.com
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
 // ==/UserScript==
@@ -20,7 +21,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.3';
+    var BOT_VERSION = '1.4';
     var WORKER_KEY = 'aag_retoure_worker';
     var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
@@ -30,6 +31,7 @@
     var FINISH_KEY = 'aag_retoure_finish';
     var ADDED_KEY = 'aag_retoure_added';
     var EAN_MAP_KEY = 'aag_retoure_ean_map';
+    var BARCODE_KEY = 'aag_retoure_barcode_key';
     var TRANSLATE_KEY = 'aag_retoure_translate';
     var PATHS_KEY = 'aag_retoure_api_paths';
     var MIN_LEN = 3;
@@ -1061,51 +1063,86 @@
         else setStatus('EAN ' + job.ean + ' liegt in der Artikelsuche. Artikelnummer antippen, oder hier eintippen.', 'active');
     }
 
-    function partFromSearch(html, ean) {
-        var text = String(html || '');
-        if (!text || text.indexOf(ean) === -1) return '';
-        var chunks = text.split(/b_algo|b_caption/i);
-        var labeled = '';
-        var loose = {};
-        chunks.forEach(function (chunk) {
-            if (chunk.indexOf(ean) === -1) return;
-            var plain = chunk.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ');
-            var marked = plain.match(/(?:artikelnummer|artikel-nr|item number|hersteller-nr|manufacturer number|part number|teile-nr)[^A-Z0-9]{0,16}([A-Z]{1,3}\d{4,10})/i);
-            if (marked && !labeled) labeled = marked[1].toUpperCase();
-            var codes = plain.match(/\b[A-Z]{1,3}\d{4,10}\b/g) || [];
-            codes.forEach(function (hit) {
-                var token = hit.toUpperCase();
-                if (token.indexOf(ean) !== -1) return;
-                loose[token] = true;
-            });
-        });
-        if (labeled && usableArticle(labeled, ean)) return labeled;
-        var keys = Object.keys(loose).filter(function (token) { return usableArticle(token, ean); });
-        return keys.length === 1 ? keys[0] : '';
+    function partFromLookupText(text, ean) {
+        var plain = normSpace(String(text || '').replace(/<[^>]+>/g, ' '));
+        if (!plain) return '';
+        var spaced = plain.match(/\b(\d{2})[\s.\-]+(\d{2})[\s.\-]+(\d{3,5})\b/);
+        if (spaced) {
+            var joined = spaced[1] + spaced[2] + spaced[3];
+            if (usableArticle(joined, ean)) return joined;
+        }
+        if (plain.length <= 24) {
+            var compact = normArt(plain);
+            if (usableArticle(compact, ean) && compact.length >= 5) return compact;
+        }
+        var word = plain.match(/\b[A-Z]{1,4}\d{4,10}\b/i);
+        if (word && usableArticle(word[0], ean)) return normArt(word[0]);
+        return '';
     }
 
-    function gmText(url) {
+    function shortProduct_(name) {
+        var text = normSpace(name);
+        if (!text) return '';
+        if (text.length > 90) text = text.slice(0, 87) + '...';
+        return text + '. ';
+    }
+
+    function gmFetch(url) {
         return new Promise(function (resolve) {
             if (typeof GM_xmlhttpRequest !== 'function') {
-                resolve('');
+                resolve({ status: 0, text: '' });
                 return;
             }
             GM_xmlhttpRequest({
                 method: 'GET',
                 url: url,
                 timeout: 12000,
-                headers: { 'Accept': 'text/html', 'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8' },
-                onload: function (res) { resolve(res && res.responseText || ''); },
-                onerror: function () { resolve(''); },
-                ontimeout: function () { resolve(''); }
+                headers: { 'Accept': 'application/json, text/plain', 'Accept-Language': 'de-DE,de;q=0.9' },
+                onload: function (res) {
+                    resolve({ status: res && res.status || 0, text: res && res.responseText || '' });
+                },
+                onerror: function () { resolve({ status: 0, text: '' }); },
+                ontimeout: function () { resolve({ status: 0, text: '' }); }
             });
         });
     }
 
+    function readJson_(text) {
+        try { return JSON.parse(text); } catch (e) { return null; }
+    }
+
+    async function lookupBarcodeApi(ean) {
+        var key = String(gmGet(BARCODE_KEY, '') || '').trim();
+        if (!key) return null;
+        var res = await gmFetch('https://api.barcodelookup.com/v3/products?barcode=' + encodeURIComponent(ean) + '&key=' + encodeURIComponent(key));
+        var data = readJson_(res.text);
+        var item = data && data.products && data.products[0];
+        if (!item) return { article: '', name: '' };
+        var name = normSpace([item.manufacturer || item.brand || '', item.title || item.product_name || ''].join(' '));
+        var article = partFromLookupText(item.mpn || '', ean) || partFromLookupText(name, ean);
+        return { article: article, name: name };
+    }
+
+    async function lookupEanSucheNet(ean) {
+        var res = await gmFetch('https://ean-suche.net/api/produkt/' + encodeURIComponent(ean));
+        if (res.status === 429) return { article: '', name: '', limited: true };
+        var data = readJson_(res.text);
+        if (!data || data.found === false) return { article: '', name: '' };
+        var name = normSpace(data.product_name || '');
+        return { article: partFromLookupText(name, ean), name: name };
+    }
+
     async function translateEan(ean) {
-        if (eanMap[ean]) return eanMap[ean];
-        var html = await gmText('https://www.bing.com/search?q=' + encodeURIComponent('"' + ean + '" Artikelnummer') + '&setlang=de&cc=de');
-        return partFromSearch(html, ean);
+        if (eanMap[ean]) return { article: eanMap[ean], name: '' };
+        var best = { article: '', name: '', limited: false };
+        var api = await lookupBarcodeApi(ean);
+        if (api && api.article) return api;
+        if (api && api.name) best.name = api.name;
+        var net = await lookupEanSucheNet(ean);
+        if (net.limited) best.limited = true;
+        if (net.article) return { article: net.article, name: net.name || best.name };
+        if (net.name) best.name = net.name;
+        return best;
     }
 
     function askStock(found, article) {
@@ -1285,18 +1322,18 @@
             var sourceEan = looksLikeEan(fromEan) ? fromEan : '';
             if (looksLikeEan(code)) sourceEan = code;
             if (looksLikeEan(code) && !eanMap[code]) {
-                setStatus('EAN ' + code + ' wird extern in eine Artikelnummer übersetzt...', 'active');
-                var art = await translateEan(code);
+                setStatus('EAN ' + code + ' wird extern nachgeschlagen...', 'active');
+                var looked = await translateEan(code);
                 if (abortMission) return;
-                if (!art) {
+                if (!looked.article) {
                     pendingPairEan = code;
-                    setStatus('AAG kennt keine EAN. Artikelnummer eintippen, ich merke sie zu ' + code + '.', 'error');
+                    var why = looked.limited ? 'EAN-Suche ist gerade voll. ' : shortProduct_(looked.name);
+                    setStatus(why + 'Keine Hersteller-Nr. AAG-Artikelnummer eintippen, ich merke sie zu ' + code + '.', 'error');
                     focusScan();
                     return;
                 }
-                rememberEan(code, art);
                 sourceEan = code;
-                code = art;
+                code = looked.article;
             } else if (looksLikeEan(code)) {
                 sourceEan = code;
                 code = eanMap[code];
@@ -1424,7 +1461,10 @@
         }, 8000);
         var cards = result || deliveryCards();
         if (!cards.length) {
-            if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen, zum Beispiel J1340842, und Enter.', 'error');
+            if (lastEan && code !== lastEan) {
+                pendingPairEan = lastEan;
+                setStatus(code + ' ist die Hersteller-Nr zu ' + lastEan + '. AAG findet dazu keine Lieferung. AAG-Artikelnummer eintippen.', 'error');
+            } else if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen, zum Beispiel J1340842, und Enter.', 'error');
             else setStatus(code + ' nicht gefunden. Letztes Jahr steht oben, sonst die Nummer prüfen.', 'error');
             focusScan();
             return;
@@ -1434,16 +1474,21 @@
         setStatus('Nur ' + (lsOf(card) || 'die neueste Lieferung') + ' vom ' + (dateOf(card) || '?') + '.', 'active');
         var found = await addFromCard(card, code, true);
         if (found === 'already') {
+            if (lastEan) rememberEan(lastEan, code);
             setStatus(code + ' liegt in der neuesten Lieferung schon im Warenkorb.', 'warn');
             focusScan();
             return;
         }
         if (!found || !found.hold) {
-            if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen und Enter.', 'error');
+            if (lastEan && code !== lastEan) {
+                pendingPairEan = lastEan;
+                setStatus(code + ' steht nicht als Artikel auf der neuesten Lieferung. AAG-Artikelnummer eintippen, ich merke sie zu ' + lastEan + '.', 'error');
+            } else if (eanFailed) setStatus('EAN nicht aufgelöst. Artikelnummer eintippen und Enter.', 'error');
             else setStatus(code + ' steht in der neuesten Lieferung nicht zum Zurückgeben. Ältere Lieferungen bleiben zu.', 'error');
             focusScan();
             return;
         }
+        if (lastEan) rememberEan(lastEan, code);
         var extra = await askStock(found, code);
         if (!extra || abortMission) {
             setStatus('Zurückgeben abgebrochen.', 'warn');
@@ -1880,6 +1925,7 @@
             + '.aag-choice{min-height:36px;padding:6px 10px;border-radius:10px;border:1px solid rgba(220,61,61,.45);background:rgba(220,61,61,.12);color:#f07070;font-size:13px;font-weight:800}'
             + '.aag-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
             + '.aag-credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600}'
+            + '.aag-credit a{color:#8b949e}'
             + '@media print{#aag-retoure-hud,#aag-lieferschein-sync-status{display:none !important}}';
         document.documentElement.appendChild(style);
     }
@@ -1910,18 +1956,18 @@
             + '  <label class="aag-field"><span>Stock-ID</span><input id="aag-retoure-stock" autocomplete="off" spellcheck="false" placeholder="z.B. JR97017"></label>'
             + '  <label class="aag-field"><span>Name</span><input id="aag-retoure-who" autocomplete="off" spellcheck="false" placeholder="z.B. Semmel"></label>'
             + '  <div class="aag-sheet-row"><button type="button" id="aag-retoure-sheet-toggle">Sheet</button><span id="aag-retoure-sheet-state"></span></div>'
-            + '  <label class="aag-field" id="aag-retoure-sheet-box"><span>Sheet</span><input id="aag-retoure-sheet" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/.../exec"></label>'
+            + '  <label class="aag-field" id="aag-retoure-sheet-box"><span>Sheet</span><input id="aag-retoure-sheet" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/.../exec"><span>Barcode Lookup Key</span><input id="aag-retoure-barcode" autocomplete="off" spellcheck="false" placeholder="optional, sonst ean-suche.net"></label>'
             + '  <div id="aag-retoure-ask" hidden><button type="button" id="aag-retoure-take">Zurückgeben</button></div>'
             + '  <div class="aag-actions">'
             + '    <button type="button" id="aag-retoure-cart">Warenkorb</button>'
             + '    <button type="button" id="aag-retoure-finish">Drucken und absenden</button>'
             + '  </div>'
             + '  <div id="aag-retoure-badge">BEREIT</div>'
-            + '  <div id="aag-retoure-message">Artikelnummer scannen. Eine EAN übersetzt der Bot extern, AAG selbst kennt keine EAN. Geöffnet wird nur die neueste Lieferung.</div>'
+            + '  <div id="aag-retoure-message">Artikelnummer scannen. Eine EAN wird zur Hersteller-Nr. AAG selbst kennt keine EAN. Geöffnet wird nur die neueste Lieferung.</div>'
             + '  <div id="aag-retoure-choices"></div>'
             + '  <div id="aag-retoure-last"></div>'
             + '  <div class="aag-foot"><span>Bot v' + BOT_VERSION + '</span><span>ESC Stop</span></div>'
-            + '  <div class="aag-credit">by Arasaka</div>'
+            + '  <div class="aag-credit">EAN-Daten <a href="https://ean-suche.net" target="_blank" rel="noopener">ean-suche.net</a> · by Arasaka</div>'
             + '</div>';
         document.body.appendChild(hud);
         var pos = hudPosition();
@@ -1963,6 +2009,14 @@
             e.stopPropagation();
             commitSheet();
         });
+        var barcodeKey = document.getElementById('aag-retoure-barcode');
+        if (barcodeKey) {
+            barcodeKey.value = String(gmGet(BARCODE_KEY, '') || '');
+            barcodeKey.addEventListener('change', function () {
+                gmSet(BARCODE_KEY, String(barcodeKey.value || '').trim());
+                setStatus(String(barcodeKey.value || '').trim() ? 'Barcode Lookup Key gespeichert.' : 'Barcode Lookup Key entfernt.', 'done');
+            });
+        }
         document.getElementById('aag-retoure-sheet-toggle').addEventListener('click', function () {
             var box = document.getElementById('aag-retoure-sheet-box');
             if (!box) return;
