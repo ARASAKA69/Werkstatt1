@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.6
 // @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -12,6 +12,7 @@
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
+// @connect      myproduct.guru
 // @connect      ean-suche.net
 // @connect      api.barcodelookup.com
 // @connect      script.google.com
@@ -21,7 +22,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.4';
+    var BOT_VERSION = '1.6';
     var WORKER_KEY = 'aag_retoure_worker';
     var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
@@ -1063,21 +1064,64 @@
         else setStatus('EAN ' + job.ean + ' liegt in der Artikelsuche. Artikelnummer antippen, oder hier eintippen.', 'active');
     }
 
-    function partFromLookupText(text, ean) {
+    function partCandidates_(text, ean) {
         var plain = normSpace(String(text || '').replace(/<[^>]+>/g, ' '));
-        if (!plain) return '';
-        var spaced = plain.match(/\b(\d{2})[\s.\-]+(\d{2})[\s.\-]+(\d{3,5})\b/);
-        if (spaced) {
-            var joined = spaced[1] + spaced[2] + spaced[3];
-            if (usableArticle(joined, ean)) return joined;
+        var out = [];
+        var seen = {};
+        function add(raw) {
+            var compact = normArt(raw);
+            if (!compact || seen[compact] || compact.length > 18) return;
+            if (compact.replace(/\D/g, '').length < 6) return;
+            if (!usableArticle(compact, ean)) return;
+            seen[compact] = true;
+            out.push(compact);
         }
-        if (plain.length <= 24) {
-            var compact = normArt(plain);
-            if (usableArticle(compact, ean) && compact.length >= 5) return compact;
+        var re = /\b((?=[A-Z0-9]{0,3}\d)[A-Z0-9]{2,4}(?:[\s.\-]+(?=[A-Z0-9]{0,3}\d)[A-Z0-9]{2,4}){1,5})\b/gi;
+        var hit;
+        while ((hit = re.exec(plain))) {
+            var groups = hit[1].split(/[\s.\-]+/);
+            var start = 0;
+            if (groups.length >= 3 && /[A-Z]/i.test(groups[0])) {
+                var rest = groups.slice(1).join('');
+                if (/^\d{8,12}$/.test(rest)) start = 1;
+            }
+            add(groups.slice(start).join(''));
         }
-        var word = plain.match(/\b[A-Z]{1,4}\d{4,10}\b/i);
-        if (word && usableArticle(word[0], ean)) return normArt(word[0]);
-        return '';
+        var word = /\b(?=[A-Z0-9]*\d)[A-Z0-9]{6,16}\b/gi;
+        while ((hit = word.exec(plain))) add(hit[0]);
+        return out;
+    }
+
+    function preferPart_(list) {
+        var best = '';
+        var bestScore = -1;
+        var i;
+        for (i = 0; i < list.length; i++) {
+            var token = list[i];
+            var digits = token.replace(/\D/g, '').length;
+            var letters = token.replace(/[0-9]/g, '').length;
+            var score = digits * 10 - letters * 3;
+            if (/^\d{7,12}$/.test(token)) score += 40;
+            if (score > bestScore) {
+                bestScore = score;
+                best = token;
+            }
+        }
+        return best;
+    }
+
+    function partFromLookupText(text, ean) {
+        return preferPart_(partCandidates_(text, ean));
+    }
+
+    function offerTexts_(html) {
+        var block = String(html || '').match(/<table[^>]*class="[^"]*offers-table[^"]*"[\s\S]*?<\/table>/i);
+        if (!block) return '';
+        var texts = [];
+        var re = /<td\b[^>]*>([\s\S]*?)<\/td>/gi;
+        var hit;
+        while ((hit = re.exec(block[0]))) texts.push(hit[1].replace(/<[^>]+>/g, ' '));
+        return texts.join('\n');
     }
 
     function shortProduct_(name) {
@@ -1087,7 +1131,7 @@
         return text + '. ';
     }
 
-    function gmFetch(url) {
+    function gmFetch(url, accept) {
         return new Promise(function (resolve) {
             if (typeof GM_xmlhttpRequest !== 'function') {
                 resolve({ status: 0, text: '' });
@@ -1097,7 +1141,7 @@
                 method: 'GET',
                 url: url,
                 timeout: 12000,
-                headers: { 'Accept': 'application/json, text/plain', 'Accept-Language': 'de-DE,de;q=0.9' },
+                headers: { 'Accept': accept || 'application/json, text/html;q=0.9', 'Accept-Language': 'de-DE,de;q=0.9' },
                 onload: function (res) {
                     resolve({ status: res && res.status || 0, text: res && res.responseText || '' });
                 },
@@ -1123,13 +1167,28 @@
         return { article: article, name: name };
     }
 
+    async function lookupProductGuru(ean) {
+        var res = await gmFetch('https://myproduct.guru/lookup/' + encodeURIComponent(ean) + '.json');
+        if (res.status === 429 || res.status === 504) return { article: '', name: '', limited: true };
+        var data = readJson_(res.text);
+        if (!data || !data.name) return { article: '', name: '' };
+        var name = normSpace(data.name);
+        var article = partFromLookupText(name, ean);
+        return { article: article, name: name };
+    }
+
     async function lookupEanSucheNet(ean) {
         var res = await gmFetch('https://ean-suche.net/api/produkt/' + encodeURIComponent(ean));
         if (res.status === 429) return { article: '', name: '', limited: true };
         var data = readJson_(res.text);
         if (!data || data.found === false) return { article: '', name: '' };
         var name = normSpace(data.product_name || '');
-        return { article: partFromLookupText(name, ean), name: name };
+        var article = partFromLookupText(name, ean);
+        if (article) return { article: article, name: name };
+        var page = await gmFetch('https://ean-suche.net/produkt/' + encodeURIComponent(ean), 'text/html');
+        var offers = offerTexts_(page.text);
+        article = partFromLookupText(offers, ean);
+        return { article: article, name: name };
     }
 
     async function translateEan(ean) {
@@ -1138,6 +1197,10 @@
         var api = await lookupBarcodeApi(ean);
         if (api && api.article) return api;
         if (api && api.name) best.name = api.name;
+        var guru = await lookupProductGuru(ean);
+        if (guru.limited) best.limited = true;
+        if (guru.article) return { article: guru.article, name: guru.name || best.name };
+        if (guru.name) best.name = guru.name;
         var net = await lookupEanSucheNet(ean);
         if (net.limited) best.limited = true;
         if (net.article) return { article: net.article, name: net.name || best.name };
@@ -1967,7 +2030,7 @@
             + '  <div id="aag-retoure-choices"></div>'
             + '  <div id="aag-retoure-last"></div>'
             + '  <div class="aag-foot"><span>Bot v' + BOT_VERSION + '</span><span>ESC Stop</span></div>'
-            + '  <div class="aag-credit">EAN-Daten <a href="https://ean-suche.net" target="_blank" rel="noopener">ean-suche.net</a> · by Arasaka</div>'
+            + '  <div class="aag-credit">Data: <a href="https://myproduct.guru" target="_blank" rel="noopener">ProductGuru</a> · <a href="https://ean-suche.net" target="_blank" rel="noopener">ean-suche.net</a> · by Arasaka</div>'
             + '</div>';
         document.body.appendChild(hud);
         var pos = hudPosition();
