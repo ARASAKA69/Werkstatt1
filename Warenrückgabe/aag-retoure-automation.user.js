@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AAG Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.11
 // @description  Sucht AAG Retouren, nimmt nur die neueste Lieferung und schreibt sie ins Blatt KNOLL / AAG
 // @author       ARASAKA
 // @match        https://portal.allianceautomotive.de/*
@@ -22,7 +22,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.6';
+    var BOT_VERSION = '1.11';
     var WORKER_KEY = 'aag_retoure_worker';
     var SHEET_URL_KEY = 'aag_retoure_sheet_url';
     var GRUND = 'Falscher Artikel';
@@ -55,6 +55,9 @@
     var lastEan = '';
     var sheetBusyToken = '';
     var lastPath = location.pathname;
+    var grundAt = 0;
+    var grundTries = 0;
+    var cartHold = false;
 
     patchTraffic();
     hookHistory();
@@ -351,9 +354,8 @@
         return document.body;
     }
 
-    function deliveryCards() {
-        var root = resultRoot();
-        var nodes = root.querySelectorAll('tr, [role="row"], mat-expansion-panel, li, div');
+    function collectDeliveryCards(root) {
+        var nodes = (root || document.body).querySelectorAll('tr, [role="row"], mat-expansion-panel, li, div');
         var hits = [];
         for (var i = 0; i < nodes.length; i++) {
             var el = nodes[i];
@@ -367,6 +369,13 @@
         return hits.filter(function (el) {
             return !hits.some(function (other) { return other !== el && el.contains(other); });
         }).sort(function (a, b) { return cardTime(b) - cardTime(a); });
+    }
+
+    function deliveryCards() {
+        var root = resultRoot();
+        var cards = collectDeliveryCards(root);
+        if (cards.length || root === document.body) return cards;
+        return collectDeliveryCards(document.body);
     }
 
     function cardTime(el) {
@@ -532,17 +541,92 @@
         return null;
     }
 
+    function textHasArticle(text, article) {
+        var want = normArt(article);
+        if (!want) return false;
+        var parts = String(text || '').split(/[\s,;|/]+/);
+        var i;
+        for (i = 0; i < parts.length; i++) {
+            if (normArt(parts[i]) === want) return true;
+        }
+        return false;
+    }
+
+    function articleRows(article) {
+        var want = normArt(article);
+        var nodes = document.querySelectorAll('td, [role="cell"], mat-cell, div, span, a');
+        var rows = [];
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (el.closest && el.closest('#aag-retoure-hud')) continue;
+            var own = normSpace(el.innerText || '');
+            if (!own || own.length > 40) continue;
+            if (normArt(own) !== want && !textHasArticle(own, article)) continue;
+            var row = el;
+            var p = el;
+            var up;
+            for (up = 0; up < 8 && p; up++) {
+                var tag = (p.tagName || '').toLowerCase();
+                var role = p.getAttribute ? (p.getAttribute('role') || '') : '';
+                var cls = String(p.className || '');
+                if (tag === 'tr' || role === 'row' || /mat-row|mdc-row/.test(cls)) {
+                    row = p;
+                    break;
+                }
+                var size = (p.innerText || '').length;
+                if (size > 40 && size < 500 && textHasArticle(p.innerText, article)) row = p;
+                p = p.parentElement;
+            }
+            if (rows.indexOf(row) === -1) rows.push(row);
+        }
+        return rows;
+    }
+
+    function returnButtonOnRow(row) {
+        if (!row) return null;
+        var inside = row.querySelectorAll('button, a, [role="button"]');
+        var i;
+        for (i = 0; i < inside.length; i++) {
+            if (inside[i].closest && inside[i].closest('#aag-retoure-hud')) continue;
+            if (buttonText(inside[i]).indexOf('zurueckgeben') !== -1) return inside[i];
+        }
+        var rect = row.getBoundingClientRect();
+        if (!rect.height) return null;
+        var limit = Math.max(28, rect.height * 0.65);
+        var mid = (rect.top + rect.bottom) / 2;
+        var all = document.querySelectorAll('button, a, [role="button"]');
+        var best = null;
+        var bestDy = limit;
+        for (i = 0; i < all.length; i++) {
+            var button = all[i];
+            if (button.closest && button.closest('#aag-retoure-hud')) continue;
+            if (buttonText(button).indexOf('zurueckgeben') === -1) continue;
+            var br = button.getBoundingClientRect();
+            if (!br.height) continue;
+            var dy = Math.abs((br.top + br.bottom) / 2 - mid);
+            if (dy < bestDy) {
+                bestDy = dy;
+                best = button;
+            }
+        }
+        return best;
+    }
+
     function returnButtonsNear(card, article) {
         var header = headerByLs(lsOf(card)) || card;
-        var nodes = document.querySelectorAll('button, a, [role="button"]');
+        var rows = articleRows(article);
+        var owned = [];
+        var i;
+        for (i = 0; i < rows.length; i++) {
+            if (headerOwns(header, rows[i])) owned.push(rows[i]);
+        }
+        var use = owned.length ? owned : rows;
         var seen = [];
-        Array.prototype.forEach.call(nodes, function (button) {
-            if (button.closest && button.closest('#aag-retoure-hud')) return;
-            if (buttonText(button).indexOf('zurueckgeben') === -1) return;
-            if (!headerOwns(header, button)) return;
-            if (!lineOf(button, article)) return;
-            seen.push(button);
-        });
+        for (i = 0; i < use.length; i++) {
+            var button = returnButtonOnRow(use[i]);
+            if (button && seen.indexOf(button) === -1) seen.push(button);
+        }
         return seen;
     }
 
@@ -581,9 +665,26 @@
         return 0;
     }
 
+    function outsideHudText() {
+        var text = document.body ? (document.body.innerText || '') : '';
+        var hud = document.getElementById('aag-retoure-hud');
+        var hudText = hud ? (hud.innerText || '') : '';
+        if (hudText && text.indexOf(hudText) !== -1) text = text.replace(hudText, ' ');
+        return text;
+    }
+
+    function cartVisible() {
+        if (!onRetours() || !document.body) return false;
+        if (pageKind() === 'cart') return true;
+        if (findByText(document, /bitte grund/, 40)) return true;
+        var send = findButton(/^absenden$/);
+        return !!(send && /LS\d{6,}/i.test(outsideHudText()));
+    }
+
     function cartHasItems() {
-        if (pageKind() !== 'cart' || !document.body) return false;
-        if (/LS\d{6,}/i.test(document.body.innerText || '')) return true;
+        if (!cartVisible()) return false;
+        if (/keine artikel/i.test(outsideHudText())) return false;
+        if (/LS\d{6,}/i.test(outsideHudText())) return true;
         return !!findByText(document, /bitte grund/, 40);
     }
 
@@ -1438,6 +1539,73 @@
         return normArt(input.value) === normArt(code);
     }
 
+    function articleOptionScore(text, want) {
+        var parts = String(text || '').split(/[\s:()\/,;.]+/);
+        var exact = false;
+        var i;
+        for (i = 0; i < parts.length; i++) {
+            if (normArt(parts[i]) === want) exact = true;
+        }
+        if (!exact) return -1;
+        var score = 40;
+        if (normArt(parts[parts.length - 1] || '') === want) score += 30;
+        score -= Math.min(String(text || '').length, 80) / 10;
+        return score;
+    }
+
+    function findArticleOption(code) {
+        var want = normArt(code);
+        var input = formInputs()[0];
+        if (!want || !input) return null;
+        var box = input.getBoundingClientRect();
+        var nodes = document.querySelectorAll('mat-option, [role="option"], li, a, button, div, span');
+        var best = null;
+        var bestScore = -1;
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!isVisible(el) || (el.closest && el.closest('#aag-retoure-hud'))) continue;
+            if (el === input || (el.contains && el.contains(input))) continue;
+            var text = normSpace(el.innerText || el.textContent || '');
+            if (!text || text.length > 160) continue;
+            var score = articleOptionScore(text, want);
+            if (score < 0) continue;
+            var kids = el.querySelectorAll('mat-option, [role="option"], li, a, button, div, span');
+            var nested = false;
+            var k;
+            for (k = 0; k < kids.length; k++) {
+                if (kids[k] === el) continue;
+                var childText = normSpace(kids[k].innerText || kids[k].textContent || '');
+                if (childText && childText.length < text.length && articleOptionScore(childText, want) >= 0) {
+                    var childRect = kids[k].getBoundingClientRect();
+                    if (childRect.height >= 8 && childRect.width >= 30) {
+                        nested = true;
+                        break;
+                    }
+                }
+            }
+            if (nested) continue;
+            var rect = el.getBoundingClientRect();
+            if (rect.height < 8 || rect.height > 120 || rect.width < 30) continue;
+            if (rect.bottom < box.top - 8 || rect.top > box.bottom + 460) continue;
+            if (rect.right < box.left - 40 || rect.left > box.right + 80) continue;
+            if (score > bestScore) {
+                bestScore = score;
+                best = el;
+            }
+        }
+        return best;
+    }
+
+    async function chooseArticleOption(code, waitMs) {
+        var picked = await waitFor(function () { return findArticleOption(code); }, waitMs || 5600);
+        if (!picked) return false;
+        var host = picked.closest('mat-option, [role="option"], li, a, button') || picked;
+        forceClick(host);
+        await sleep(280);
+        return true;
+    }
+
     async function addFromCard(card, article, hold) {
         var ls = lsOf(card);
         var date = dateOf(card);
@@ -1459,6 +1627,16 @@
         var line = null;
         for (var i = 0; i < buttons.length; i++) {
             var row = lineOf(buttons[i], article);
+            if (!row) {
+                var foundRows = articleRows(article);
+                var r;
+                for (r = 0; r < foundRows.length; r++) {
+                    if (returnButtonOnRow(foundRows[r]) === buttons[i]) {
+                        row = foundRows[r];
+                        break;
+                    }
+                }
+            }
             var qty = returnableQty(row);
             if (qty === 0) continue;
             if (!isAddButton(buttons[i])) continue;
@@ -1503,16 +1681,20 @@
             setStatus('Artikelnummer steht nicht im Suchfeld.', 'error');
             return;
         }
+        await chooseArticleOption(code, lastEan ? 5600 : 1800);
+        if (abortMission) return;
         var suchen = findButton(/suchen$/, /rueckgaben/);
         if (!suchen) {
             setStatus('Button Suchen nicht gefunden.', 'error');
             return;
         }
+        if (findArticleOption(code)) await chooseArticleOption(code, 1200);
         var beforeSig = deliveryCards().map(lsOf).join('|');
         var sawSpinner = false;
         suchen.click();
-        focusScan();
         var result = await waitFor(function () {
+            var option = findArticleOption(code);
+            if (option) return { option: option };
             var spinning = !!document.querySelector('mat-progress-spinner, mat-spinner, .mat-mdc-progress-spinner');
             if (spinning) sawSpinner = true;
             if (spinning) return null;
@@ -1522,7 +1704,32 @@
             if (sig !== beforeSig || sawSpinner) return cards;
             return null;
         }, 8000);
-        var cards = result || deliveryCards();
+        if (result && result.option) {
+            var optionHost = result.option.closest('mat-option, [role="option"], li, a, button') || result.option;
+            forceClick(optionHost);
+            await sleep(280);
+            suchen = findButton(/suchen$/, /rueckgaben/);
+            if (suchen) suchen.click();
+            beforeSig = deliveryCards().map(lsOf).join('|');
+            sawSpinner = false;
+            result = await waitFor(function () {
+                var still = findArticleOption(code);
+                if (still) {
+                    forceClick(still.closest('mat-option, [role="option"], li, a, button') || still);
+                    return null;
+                }
+                var spinning = !!document.querySelector('mat-progress-spinner, mat-spinner, .mat-mdc-progress-spinner');
+                if (spinning) sawSpinner = true;
+                if (spinning) return null;
+                var cards = deliveryCards();
+                var sig = cards.map(lsOf).join('|');
+                if (!sig) return null;
+                if (sig !== beforeSig || sawSpinner) return cards;
+                return null;
+            }, 8000);
+        }
+        focusScan();
+        var cards = (result && result.option) ? deliveryCards() : (result || deliveryCards());
         if (!cards.length) {
             if (lastEan && code !== lastEan) {
                 pendingPairEan = lastEan;
@@ -1612,6 +1819,41 @@
         return text.indexOf('bitte grund') !== -1;
     }
 
+    function inReasonMenu(el) {
+        var parent = el && el.parentElement;
+        if (!parent) return false;
+        var text = fold(parent.innerText || '');
+        var marks = ['zur auswahl bestellt', 'doppelt geliefert', 'falscher artikel', 'falscher inhalt', 'transportschaden'];
+        var n = 0;
+        for (var i = 0; i < marks.length; i++) {
+            if (text.indexOf(marks[i]) !== -1) n++;
+        }
+        return n >= 3;
+    }
+
+    function selectInRow(trigger) {
+        if (!trigger) return null;
+        if (trigger.tagName === 'SELECT') return trigger;
+        var node = trigger;
+        var depth;
+        for (depth = 0; depth < 6 && node; depth++) {
+            var selects = node.querySelectorAll ? node.querySelectorAll('select') : [];
+            var found = [];
+            var i;
+            for (i = 0; i < selects.length; i++) {
+                if (selects[i].closest('#aag-retoure-hud')) continue;
+                var s;
+                for (s = 0; s < selects[i].options.length; s++) {
+                    if (fold(selects[i].options[s].text).indexOf('falscher artikel') !== -1) found.push(selects[i]);
+                }
+            }
+            if (found.length === 1) return found[0];
+            if (found.length > 1) return null;
+            node = node.parentElement;
+        }
+        return null;
+    }
+
     function grundIsSet(trigger) {
         if (!trigger) return false;
         if (trigger.tagName === 'SELECT') {
@@ -1621,42 +1863,54 @@
         return fold(trigger.innerText || '').indexOf('falscher artikel') !== -1 && fold(trigger.innerText || '').indexOf('bitte grund') === -1;
     }
 
+    function applyNativeGrund(select) {
+        var i;
+        for (i = 0; i < select.options.length; i++) {
+            if (fold(select.options[i].text).indexOf('falscher artikel') === -1) continue;
+            select.selectedIndex = i;
+            select.options[i].selected = true;
+            select.value = select.options[i].value;
+            select.dispatchEvent(new Event('input', { bubbles: true }));
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            return grundIsSet(select);
+        }
+        return false;
+    }
+
     async function chooseGrund(trigger) {
         if (grundIsSet(trigger)) return true;
-        if (trigger.tagName === 'SELECT') {
-            for (var i = 0; i < trigger.options.length; i++) {
-                if (fold(trigger.options[i].text).indexOf('falscher artikel') !== -1) {
-                    trigger.selectedIndex = i;
-                    trigger.dispatchEvent(new Event('input', { bubbles: true }));
-                    trigger.dispatchEvent(new Event('change', { bubbles: true }));
-                    return true;
-                }
-            }
+        var select = selectInRow(trigger);
+        if (select && applyNativeGrund(select)) {
+            await sleep(120);
             return true;
         }
-        trigger.click();
+        forceClick(trigger);
         var option = await waitFor(findGrundOption, 2000);
         if (!option) return false;
-        option.click();
-        await sleep(250);
-        return grundIsSet(trigger);
+        var host = option.closest('mat-option, [role="option"], li, button, a') || option;
+        forceClick(host);
+        var set = await waitFor(function () {
+            return grundIsSet(trigger) || (select && grundIsSet(select)) ? true : null;
+        }, 1200);
+        return !!set;
     }
 
     function findGrundOption() {
-        var overlay = document.querySelector('.cdk-overlay-container');
-        var scope = overlay || document;
-        var nodes = scope.querySelectorAll('mat-option, [role="option"]');
-        if (!nodes.length && overlay) nodes = overlay.querySelectorAll('li, button, span, div');
+        var nodes = document.querySelectorAll('mat-option, [role="option"], li, button, a, span, div');
         var best = null;
-        var bestLen = 999;
-        for (var i = 0; i < nodes.length; i++) {
+        var bestRank = 9;
+        var i;
+        for (i = 0; i < nodes.length; i++) {
             var el = nodes[i];
+            if (el.closest && el.closest('#aag-retoure-hud')) continue;
             if (!isVisible(el)) continue;
-            var text = fold(el.innerText || '');
-            if (!text || text.length > 40 || text.indexOf('falscher artikel') === -1) continue;
-            if (text.length < bestLen) {
+            if (fold(el.innerText || '') !== 'falscher artikel') continue;
+            var rank = 2;
+            if (el.tagName === 'MAT-OPTION' || el.getAttribute('role') === 'option') rank = 0;
+            else if (el.tagName === 'LI' || el.tagName === 'BUTTON' || el.tagName === 'A') rank = 1;
+            if (rank < bestRank) {
                 best = el;
-                bestLen = text.length;
+                bestRank = rank;
             }
         }
         return best;
@@ -1677,6 +1931,8 @@
         for (var n = 0; n < nodes.length; n++) {
             var el = nodes[n];
             if (el.closest('#aag-retoure-hud') || !isVisible(el)) continue;
+            if (inReasonMenu(el)) continue;
+            if (el.closest && el.closest('[role="listbox"], [role="menu"], mat-option, .cdk-overlay-pane')) continue;
             if (!isGrundText(fold(el.innerText || ''))) continue;
             hits.push(el);
         }
@@ -1700,10 +1956,67 @@
             if (grundReady()) return true;
             var pending = grundTriggers().filter(function (trigger) { return !grundIsSet(trigger); });
             if (!pending.length) return false;
+            var total = grundTriggers().length;
+            setStatus(GRUND + ' ' + (total - pending.length + 1) + ' von ' + total + '...', 'active');
             var ok = await chooseGrund(pending[0]);
-            if (!ok) return false;
+            if (!ok) {
+                setStatus(GRUND + ' ' + (total - pending.length + 1) + ' von ' + total + ' noch offen...', 'active');
+                await sleep(200);
+            }
         }
         return grundReady();
+    }
+
+    async function ensureCartReasons() {
+        if (busy || !cartVisible() || grundReady()) return;
+        if (grundTries >= 4) return;
+        grundTries += 1;
+        busy = true;
+        try {
+            setStatus('Setze ' + GRUND + ' auf alle Positionen...', 'active');
+            var seen = await waitFor(function () {
+                if (!cartHasItems()) return null;
+                var count = grundTriggers().length;
+                if (!count) return null;
+                setStatus(GRUND + ' auf ' + count + (count === 1 ? ' Position...' : ' Positionen...'), 'active');
+                return true;
+            }, 5000);
+            if (!cartHasItems()) {
+                setStatus('Warenkorb ist leer.', 'error');
+                return;
+            }
+            if (!seen) {
+                setStatus('Warenkorb ohne Grund-Feld.', 'error');
+                return;
+            }
+            var ok = await applyGrundAll();
+            if (ok) {
+                grundTries = 0;
+                setStatus(GRUND + ' steht auf allen Positionen. Drucken und absenden.', 'done');
+            } else if (grundTries >= 4) {
+                setStatus('Grund ' + GRUND + ' nicht auf allen Positionen gesetzt.', 'error');
+            }
+        } catch (e) {
+            setStatus('Grund ' + GRUND + ' nicht gesetzt.', 'error');
+        } finally {
+            busy = false;
+        }
+    }
+
+    function maybeCartReasons() {
+        if (cartHold) {
+            if (!cartVisible()) cartHold = false;
+            return;
+        }
+        if (!cartVisible()) {
+            grundTries = 0;
+            return;
+        }
+        if (!cartHasItems()) return;
+        if (grundReady() || busy) return;
+        if (Date.now() - grundAt < 1500) return;
+        grundAt = Date.now();
+        ensureCartReasons();
     }
 
     function hideForPrint() {
@@ -1730,7 +2043,7 @@
         abortMission = false;
         var skipPump = false;
         try {
-            if (pageKind() !== 'cart') {
+            if (!cartVisible()) {
                 sessionStorage.setItem(FINISH_KEY, '1');
                 leaving = true;
                 skipPump = true;
@@ -1739,7 +2052,7 @@
                 return;
             }
             sessionStorage.removeItem(FINISH_KEY);
-            setStatus('Setze Grund auf ' + GRUND + '...', 'active');
+            setStatus('Setze ' + GRUND + '...', 'active');
             await waitFor(function () { return cartHasItems() ? true : null; }, 8000);
             if (!cartHasItems()) {
                 setStatus('Warenkorb ist leer.', 'error');
@@ -1782,21 +2095,42 @@
             return;
         }
         sendBtn.click();
+        setStatus('Sende die Retoure...', 'active');
         setTimeout(function () {
             var dialog = document.querySelector('mat-dialog-container, [role="dialog"]');
-            if (!dialog) {
-                setStatus('Retoure abgeschickt.', 'done');
-                return;
+            if (dialog) {
+                var confirm = findByText(dialog, /^(bestaetigen|ja|ok|absenden)$/, 24);
+                if (confirm) confirm.click();
             }
-            var confirm = findByText(dialog, /^(bestaetigen|ja|ok|absenden)$/, 24);
-            if (confirm) confirm.click();
-            setStatus('Retoure abgeschickt.', 'done');
-        }, 400);
+            clearAfterSend();
+        }, 700);
+    }
+
+    function clearAfterSend() {
+        cartHold = true;
+        grundTries = 0;
+        pendingPairEan = '';
+        lastEan = '';
+        saveQueue([]);
+        sessionStorage.removeItem(PENDING_KEY);
+        sessionStorage.removeItem(FINISH_KEY);
+        sessionStorage.removeItem(ADDED_KEY);
+        sessionStorage.removeItem(TRANSLATE_KEY);
+        lookupEanNow = '';
+        renderChoices([]);
+        var input = document.getElementById('aag-retoure-scan');
+        if (input) input.value = '';
+        var stock = document.getElementById('aag-retoure-stock');
+        if (stock) stock.value = '';
+        renderAdded();
+        setStatus('Abgeschickt. Bereit für die nächsten.', 'done');
+        goSearch();
+        focusScan();
     }
 
     function onFinishClick() {
         if (busy || loadTranslate()) return;
-        if (pageKind() === 'cart' && grundReady()) {
+        if (cartVisible() && grundReady()) {
             sessionStorage.removeItem(FINISH_KEY);
             printAndSendSync();
             return;
@@ -1807,7 +2141,7 @@
     function continueFlow() {
         ensureHud();
         if (!onRetours() || busy) return;
-        if (sessionStorage.getItem(FINISH_KEY) === '1' && pageKind() === 'cart') {
+        if (sessionStorage.getItem(FINISH_KEY) === '1' && cartVisible()) {
             finishCart();
             return;
         }
@@ -1883,6 +2217,7 @@
 
     function resetHud() {
         abortMission = true;
+        cartHold = false;
         if (askWait) askWait();
         pendingPairEan = '';
         saveQueue([]);
@@ -2046,8 +2381,11 @@
         });
         document.getElementById('aag-retoure-reset').addEventListener('click', resetHud);
         document.getElementById('aag-retoure-cart').addEventListener('click', function () {
-            setStatus('Warenkorb offen. Grund, dann Drucken und absenden.', 'neutral');
+            grundTries = 0;
+            grundAt = 0;
+            setStatus('Warenkorb. Setze ' + GRUND + '...', 'active');
             goCart();
+            setTimeout(maybeCartReasons, 500);
         });
         document.getElementById('aag-retoure-finish').addEventListener('click', onFinishClick);
         var who = document.getElementById('aag-retoure-who');
@@ -2147,6 +2485,7 @@
             lastPath = location.pathname;
             if (pathChanged || sessionStorage.getItem(FINISH_KEY) === '1' || sessionStorage.getItem(PENDING_KEY)) continueFlow();
             else ensureHud();
+            maybeCartReasons();
         }, 700);
         continueFlow();
     }
