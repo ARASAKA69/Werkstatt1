@@ -74,6 +74,15 @@ function alfahHandle_(params) {
       if (!Array.isArray(aagEntries)) aagEntries = [params];
       return alfahOut_(aagAppend_(aagEntries));
     }
+    if (action === "staPing" || action === "staSetup") {
+      staSheet_();
+      return alfahOut_({ ok: true, tab: STA_TAB });
+    }
+    if (action === "staAppend") {
+      var staEntries = params.entries || [];
+      if (!Array.isArray(staEntries)) staEntries = [params];
+      return alfahOut_(staAppend_(staEntries));
+    }
     return alfahOut_({ ok: false, error: "unbekannt" });
   } catch (err) {
     return alfahOut_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -1364,6 +1373,164 @@ function aagAppend_(entries) {
       }
     }
     return { ok: true, added: added, skipped: skipped, tab: AAG_TAB };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+var STA_GID = 441953307;
+var STA_TAB = "STA";
+var STA_TITLE = "STA Retouren";
+var STA_BLUE = "#1d4ed8";
+var STA_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info", "Vorbereitet"];
+var STA_WIDTHS = [110, 90, 140, 180, 90, 110, 92, 76, 90, 160, 92];
+var STA_PREP_COL = 11;
+
+function staBook_() {
+  return SpreadsheetApp.openById(ALFAH_SHEET_ID);
+}
+
+function staTab_(ss) {
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === STA_GID) return sheets[i];
+  }
+  var named = ss.getSheetByName(STA_TAB);
+  if (named) return named;
+  return ss.insertSheet(STA_TAB);
+}
+
+function staSheet_() {
+  var sheet = staTab_(staBook_());
+  sheet.setTabColor(STA_BLUE);
+  var title = String(sheet.getRange(1, 1).getValue() || "");
+  if (title && title !== STA_TITLE) return sheet;
+  staFitLayout_(sheet);
+  return sheet;
+}
+
+function staPutCheck_(sheet, rowNumber) {
+  var box = sheet.getRange(rowNumber, STA_PREP_COL);
+  box.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
+  box.setHorizontalAlignment("center");
+  box.setVerticalAlignment("middle");
+  box.setFontSize(ALFAH_FONT);
+}
+
+function staPaintRow_(sheet, rowNumber) {
+  var rowRange = sheet.getRange(rowNumber, 1, 1, STA_HEADERS.length);
+  rowRange.setBackground("#ffffff");
+  rowRange.setFontColor("#1f2933");
+  rowRange.setFontFamily("Arial");
+  rowRange.setFontSize(ALFAH_FONT);
+  rowRange.setVerticalAlignment("middle");
+  rowRange.setWrap(true);
+  rowRange.setBorder(true, true, true, true, true, true, "#d6deea", SpreadsheetApp.BorderStyle.SOLID);
+  sheet.getRange(rowNumber, 2).setFontWeight("bold");
+  sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(STA_BLUE);
+  staPutCheck_(sheet, rowNumber);
+  sheet.autoResizeRows(rowNumber, 1);
+}
+
+function staFitLayout_(sheet) {
+  var titleRange = sheet.getRange(1, 1, 1, STA_HEADERS.length);
+  wmUnmerge_(titleRange);
+  titleRange.merge();
+  titleRange
+    .setValue(STA_TITLE)
+    .setBackground(STA_BLUE)
+    .setFontColor("#ffffff")
+    .setFontWeight("bold")
+    .setFontSize(11)
+    .setFontFamily("Arial")
+    .setHorizontalAlignment("left")
+    .setVerticalAlignment("middle");
+  var head = sheet.getRange(2, 1, 1, STA_HEADERS.length);
+  head.setValues([STA_HEADERS]);
+  head.setBackground(STA_BLUE);
+  head.setFontColor("#ffffff");
+  head.setFontWeight("bold");
+  head.setFontSize(ALFAH_FONT);
+  head.setFontFamily("Arial");
+  head.setHorizontalAlignment("center");
+  head.setVerticalAlignment("middle");
+  head.setWrap(true);
+  sheet.setFrozenRows(2);
+  sheet.setRowHeight(1, 22);
+  var c;
+  for (c = 0; c < STA_WIDTHS.length; c++) sheet.setColumnWidth(c + 1, STA_WIDTHS[c]);
+}
+
+function staHasToken_(token) {
+  var id = String(token || "");
+  if (!id) return false;
+  var raw = String(PropertiesService.getScriptProperties().getProperty("sta_retoure_tokens") || "");
+  return ("," + raw + ",").indexOf("," + id + ",") !== -1;
+}
+
+function staRememberToken_(token) {
+  var id = String(token || "");
+  if (!id || staHasToken_(id)) return;
+  var props = PropertiesService.getScriptProperties();
+  var raw = String(props.getProperty("sta_retoure_tokens") || "");
+  var list = raw ? raw.split(",") : [];
+  list.push(id);
+  if (list.length > 250) list = list.slice(list.length - 250);
+  props.setProperty("sta_retoure_tokens", list.join(","));
+}
+
+function staAppend_(entries) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sheet = staSheet_();
+    var added = 0;
+    var skipped = 0;
+    var cursor = wmStartRow_(sheet);
+    var e;
+    for (e = 0; e < entries.length; e++) {
+      var lines = entries[e] && entries[e].lines ? entries[e].lines : [entries[e]];
+      var n;
+      for (n = 0; n < lines.length; n++) {
+        var line = lines[n] || {};
+        var token = String(line.token || "");
+        if (token && staHasToken_(token)) {
+          skipped++;
+          continue;
+        }
+        var article = wmText_(line.article || line.part || "");
+        var ean = wmText_(line.ean);
+        if (!article) article = ean;
+        var name = wmText_(line.name);
+        if (!article && !name) {
+          skipped++;
+          continue;
+        }
+        var stamp = wmStamp_();
+        if (line.date && line.time) stamp = { date: wmText_(line.date), time: wmText_(line.time) };
+        var row = [
+          wmText_(line.orderId),
+          wmStock_(line.stockId),
+          article,
+          name,
+          wmText_(line.supplier) || "STAKIS",
+          wmText_(line.brand),
+          stamp.date,
+          stamp.time,
+          wmText_(line.who),
+          wmInfo_(line)
+        ];
+        var range = sheet.getRange(cursor, 1, 1, row.length);
+        range.setNumberFormat("@");
+        range.setValues([row]);
+        staPaintRow_(sheet, cursor);
+        if (token) staRememberToken_(token);
+        added++;
+        cursor += 2;
+      }
+    }
+    return { ok: true, added: added, skipped: skipped, tab: STA_TAB };
   } finally {
     lock.releaseLock();
   }
