@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.0.1
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0';
+    var BOT_VERSION = '1.0.1';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -60,11 +60,25 @@
         return style.display !== 'none' && style.visibility !== 'hidden';
     }
 
+    function pageWindow() {
+        try {
+            if (typeof unsafeWindow !== 'undefined' && unsafeWindow) return unsafeWindow;
+        } catch (e) {}
+        return window;
+    }
+
     function fireClick(el) {
         if (!el) return;
-        ['pointerdown', 'mousedown', 'mouseup', 'click'].forEach(function (type) {
-            el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        var win = pageWindow();
+        var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+        var opts = { bubbles: true, cancelable: true, view: win, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0 };
+        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
+            try {
+                var Ctor = type.indexOf('pointer') === 0 && win.PointerEvent ? win.PointerEvent : win.MouseEvent;
+                el.dispatchEvent(new Ctor(type, opts));
+            } catch (e) {}
         });
+        try { el.click(); } catch (e2) {}
     }
 
     function setNativeValue(input, value) {
@@ -291,6 +305,8 @@
         return slot;
     }
 
+    var ART_WORDS = { katalognummer: 1, artikelnummer: 1, belegnummer: 1, ean: 1, hersteller: 1 };
+
     function findArtSelect() {
         var selects = document.querySelectorAll('select');
         var i;
@@ -301,17 +317,138 @@
         return null;
     }
 
-    function findExact(word) {
-        var want = String(word || '').toLowerCase();
-        var nodes = document.querySelectorAll('button, [role="button"], [role="combobox"], [role="option"], li, span, div');
+    function fieldValue(el) {
+        if (!el) return '';
+        var copy = el.cloneNode(true);
+        var menus = copy.querySelectorAll('[role="listbox"], [role="menu"], ul');
+        var i;
+        for (i = 0; i < menus.length; i++) menus[i].remove();
+        return String(copy.textContent || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function findArtLabel() {
+        var nodes = document.querySelectorAll('label, span, div, p');
+        var best = null;
+        var bestArea = Infinity;
         var i;
         for (i = 0; i < nodes.length; i++) {
-            if (!visible(nodes[i])) continue;
-            if (textOf(nodes[i]).toLowerCase() !== want) continue;
-            if (nodes[i].closest && nodes[i].closest('#sta-retoure-bot')) continue;
-            return nodes[i];
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            if (textOf(el).toLowerCase() !== 'art') continue;
+            var rect = el.getBoundingClientRect();
+            if (rect.width > 90) continue;
+            var area = rect.width * rect.height;
+            if (area < bestArea) {
+                best = el;
+                bestArea = area;
+            }
+        }
+        return best;
+    }
+
+    function findArtControl() {
+        var label = findArtLabel();
+        if (!label) return null;
+        var labelRect = label.getBoundingClientRect();
+        var root = label.parentElement;
+        var guard = 0;
+        var best = null;
+        var bestArea = Infinity;
+        while (root && guard < 6) {
+            var nodes = root.querySelectorAll('button, [role="button"], [role="combobox"], div, span');
+            var i;
+            for (i = 0; i < nodes.length; i++) {
+                var el = nodes[i];
+                if (el === label || (label.contains && label.contains(el))) continue;
+                if (!visible(el)) continue;
+                if (el.closest && (el.closest('#sta-retoure-bot') || el.closest('[role="listbox"], [role="menu"], [role="option"]'))) continue;
+                if (!ART_WORDS[fieldValue(el).toLowerCase()]) continue;
+                var rect = el.getBoundingClientRect();
+                if (rect.width < 70 || rect.height < 16) continue;
+                if (rect.top > labelRect.bottom + 90) continue;
+                if (rect.bottom < labelRect.top - 30) continue;
+                var area = rect.width * rect.height;
+                if (area < bestArea) {
+                    best = el;
+                    bestArea = area;
+                }
+            }
+            if (best) return best;
+            root = root.parentElement;
+            guard++;
         }
         return null;
+    }
+
+    function artOpener(el) {
+        var node = el;
+        var guard = 0;
+        while (node && guard < 6) {
+            var role = node.getAttribute ? (node.getAttribute('role') || '') : '';
+            if (node.tagName === 'BUTTON' || role === 'button' || role === 'combobox' || (node.getAttribute && node.getAttribute('aria-haspopup'))) return node;
+            node = node.parentElement;
+            guard++;
+        }
+        return el;
+    }
+
+    function findEanOption() {
+        var nodes = document.querySelectorAll('[role="option"], [role="menuitem"], li, div, span, button');
+        var best = null;
+        var bestArea = Infinity;
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            if (textOf(el).toLowerCase() !== 'ean') continue;
+            var role = el.getAttribute ? (el.getAttribute('role') || '') : '';
+            var parent = el.parentElement;
+            var menuHits = 0;
+            var guard = 0;
+            while (parent && guard < 3 && menuHits < 3) {
+                var kids = parent.children;
+                var k;
+                menuHits = 0;
+                for (k = 0; k < kids.length; k++) {
+                    if (ART_WORDS[textOf(kids[k]).toLowerCase()]) menuHits++;
+                }
+                if (menuHits >= 3) break;
+                parent = parent.parentElement;
+                guard++;
+            }
+            var inMenu = role === 'option' || role === 'menuitem' || el.tagName === 'LI' || menuHits >= 3 || (el.closest && el.closest('[role="listbox"], [role="menu"], ul'));
+            if (!inMenu) continue;
+            var rect = el.getBoundingClientRect();
+            var area = rect.width * rect.height;
+            if (area > 0 && area < bestArea) {
+                best = el;
+                bestArea = area;
+            }
+        }
+        if (!best) return null;
+        var row = best.closest && best.closest('[role="option"], [role="menuitem"], li');
+        return row || best;
+    }
+
+    function pressKey(target, key) {
+        if (!target) return;
+        var code = key === 'ArrowDown' ? 'ArrowDown' : key === 'ArrowUp' ? 'ArrowUp' : key === 'Enter' ? 'Enter' : key;
+        var keyCode = key === 'ArrowDown' ? 40 : key === 'ArrowUp' ? 38 : key === 'Enter' ? 13 : 0;
+        var init = { key: key, code: code, bubbles: true, cancelable: true, view: window, keyCode: keyCode, which: keyCode };
+        try { target.dispatchEvent(new KeyboardEvent('keydown', init)); } catch (e) {}
+        try { target.dispatchEvent(new KeyboardEvent('keyup', init)); } catch (e2) {}
+    }
+
+    function artIsEan() {
+        var select = findArtSelect();
+        if (select) {
+            var opt = Array.prototype.filter.call(select.options, function (item) { return /^ean$/i.test(textOf(item)); })[0];
+            return !!(opt && select.value === opt.value);
+        }
+        var control = findArtControl();
+        return !!(control && fieldValue(control).toLowerCase() === 'ean');
     }
 
     function findMenu(pattern) {
@@ -331,19 +468,61 @@
     async function ensureEan() {
         var select = findArtSelect();
         if (select) {
-            var opt = Array.prototype.filter.call(select.options, function (item) { return /^ean$/i.test(textOf(item)); })[0];
-            if (opt && select.value !== opt.value) setNativeValue(select, opt.value);
-            return;
+            var picked = Array.prototype.filter.call(select.options, function (item) { return /^ean$/i.test(textOf(item)); })[0];
+            if (picked && select.value !== picked.value) setNativeValue(select, picked.value);
+            return artIsEan();
         }
-        if (findExact('EAN')) return;
-        var art = findExact('Art');
-        if (!art) return;
-        var opener = art.parentElement ? art.parentElement.querySelector('button, [role="button"], [role="combobox"]') : null;
-        fireClick(opener || art);
-        await sleep(250);
-        var option = findExact('EAN') || findMenu(/^ean$/i);
-        if (option) fireClick(option);
-        await sleep(200);
+        if (artIsEan()) return true;
+        var control = findArtControl();
+        if (!control) return false;
+        var option = findEanOption();
+        if (!option) {
+            fireClick(artOpener(control));
+            var tries = 0;
+            while (tries < 10 && !option) {
+                await sleep(120);
+                option = findEanOption();
+                tries++;
+            }
+        }
+        if (option) {
+            fireClick(option);
+            await sleep(200);
+            if (!artIsEan()) {
+                fireClick(option);
+                await sleep(200);
+            }
+        }
+        if (artIsEan()) return true;
+        var options = document.querySelectorAll('[role="option"], [role="menuitem"], li');
+        var list = [];
+        var index = -1;
+        var current = 0;
+        var i;
+        for (i = 0; i < options.length; i++) {
+            if (!visible(options[i])) continue;
+            if (options[i].closest && options[i].closest('#sta-retoure-bot')) continue;
+            var word = textOf(options[i]).toLowerCase();
+            if (!ART_WORDS[word]) continue;
+            if (options[i].querySelector && options[i].querySelector('[role="option"], [role="menuitem"], li')) continue;
+            if (word === 'ean') index = list.length;
+            if (options[i].getAttribute('aria-selected') === 'true') current = list.length;
+            list.push(options[i]);
+        }
+        if (index < 0) return false;
+        var steps = index - current;
+        var dir = steps < 0 ? 'ArrowUp' : 'ArrowDown';
+        var n = Math.abs(steps);
+        var focus = document.activeElement || list[current] || list[0];
+        for (i = 0; i < n; i++) {
+            pressKey(document.activeElement || focus, dir);
+            await sleep(50);
+        }
+        pressKey(document.activeElement || list[index], 'Enter');
+        await sleep(180);
+        if (!artIsEan()) fireClick(list[index]);
+        await sleep(120);
+        return artIsEan();
     }
 
     function findSearchInput() {
@@ -859,19 +1038,22 @@
             if (old) old.remove();
             return;
         }
-        var ready = isReturns()
-            ? 'Warenrückgabe. Gründe setzen, dann Drucken und absenden.'
-            : 'EAN scannen. Art steht auf EAN. Der älteste Beleg wird genommen.';
-        paintHud(ready, '');
-        if (!isLieferungen()) return;
-        ensureEan();
-        var input = findSearchInput();
-        if (input) {
-            bindSearch(input);
-            if (!busy) {
+        if (isReturns()) {
+            paintHud('Warenrückgabe. Gründe setzen, dann Drucken und absenden.', '');
+            return;
+        }
+        paintHud('Stelle Art auf EAN …', '');
+        ensureEan().then(function (ok) {
+            if (!isLieferungen() || busy) return;
+            paintHud(ok
+                ? 'EAN scannen. Art steht auf EAN. Der älteste Beleg wird genommen.'
+                : 'Art steht noch nicht auf EAN.', ok ? '' : 'bad');
+            var input = findSearchInput();
+            if (input) {
+                bindSearch(input);
                 try { input.focus(); } catch (e) {}
             }
-        }
+        });
     }
 
     document.addEventListener('keydown', function (event) {
