@@ -22,7 +22,7 @@ var DPL_MAX_CHUNK = 95000;
 
 var DPL_NOINFO_COLOR = '#FF9900';
 
-var DPL_CAROL_GREEN_COLOR = '#00ff00';
+var DPL_CAROL_GREEN_COLOR = '#6aa84f';
 
 var DPL_NACHBESTELL_BLUE_COLOR = '#3d85c6';
 
@@ -957,7 +957,7 @@ function dplIsGreenHex_(hex) {
 
   var h = String(hex || '').trim().toLowerCase();
 
-  return h === '#00ff00' || h === '#34a853' || h === '#56d364' || h === '#b6fcb6' || h === '#00ff66' || h === '#93c47d';
+  return h === '#6aa84f' || h === '#34a853' || h === '#56d364' || h === '#b6fcb6' || h === '#00ff66' || h === '#93c47d';
 
 }
 
