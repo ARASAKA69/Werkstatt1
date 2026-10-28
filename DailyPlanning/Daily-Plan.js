@@ -1,6 +1,8 @@
 var DPL_SOURCE_FILE_ID = '13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM';
 
-var DPL_SOURCE_SHEET = 'Daily Planning List';
+var DPL_SOURCE_SHEET = 'Refurbishment List';
+
+var DPL_SOURCE_SHEET_FALLBACK = 'Refurbisment List';
 
 var DPL_TAGESLISTE_FILE_ID = '1PuCLw8UmDjB_pBo_jCZ9rmSD3GJQESHzPoBVu_--MRo';
 
@@ -10,11 +12,11 @@ var DPL_CACHE_TTL = 21600;
 
 var DPL_REFRESH_MINUTES = 5;
 
-var DPL_MAP_CHUNK_KEY = 'DPL_MAP_';
+var DPL_MAP_CHUNK_KEY = 'DPL_MAP_V3_';
 
-var DPL_MAP_COUNT_KEY = 'DPL_MAP_COUNT';
+var DPL_MAP_COUNT_KEY = 'DPL_MAP_COUNT_V3';
 
-var DPL_LAST_REFRESH_KEY = 'DPL_LAST_REFRESH';
+var DPL_LAST_REFRESH_KEY = 'DPL_LAST_REFRESH_V3';
 
 var DPL_MAX_CHUNK = 95000;
 
@@ -30,7 +32,20 @@ var DPL_BRIDGE_STATUS_KEY = 'DPL_CAROL_BRIDGE_STATUS_V2';
 
 var DPL_CAROL_SEARCH_BASE = 'https://carol.autohero.com/en-GB/refurbishment?rsv=';
 
-var DPL_COLS = [2, 8, 9, 12, 13, 14, 15, 16];
+var DPL_STOCK_ALIASES = ['stockid'];
+
+var DPL_STOCK_FALLBACK = 1;
+
+var DPL_SOURCE_FIELDS = [
+  { key: 'carol', aliases: ['carollink', 'carol'], fallback: 2 },
+  { key: 'marke', aliases: ['markemodel', 'markemodell', 'markeundmodel', 'markeundmodell'], fallback: 12 },
+  { key: 'hsn', aliases: ['hsntsn'], fallback: 13 },
+  { key: 'mechanik', aliases: ['mechanik'], fallback: 14 },
+  { key: 'lack', aliases: ['lack'], fallback: 15 },
+  { key: 'delle', aliases: ['delle'], fallback: 16 },
+  { key: 'wss', aliases: ['wss'], fallback: 17 },
+  { key: 'reifen', aliases: ['reifen'], fallback: 18 }
+];
 
 function dplNormalizeStockId(v) {
 
@@ -130,31 +145,231 @@ function dplGetTageslisteSheet_(ss) {
 
 }
 
+function dplHeaderKey_(v) {
+
+  return String(v == null ? '' : v).toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/ß/g, 'ss').replace(/[^a-z0-9]/g, '');
+
+}
+
+function dplFindHeaderCol_(headerRow, aliases) {
+
+  var i;
+
+  var a;
+
+  var key;
+
+  if (!headerRow) return -1;
+
+  for (i = 0; i < headerRow.length; i++) {
+
+    key = dplHeaderKey_(headerRow[i]);
+
+    if (!key) continue;
+
+    for (a = 0; a < aliases.length; a++) {
+
+      if (key === aliases[a]) return i;
+
+    }
+
+  }
+
+  return -1;
+
+}
+
+function dplFindSourceHeaderRow_(data) {
+
+  var limit = Math.min(data.length, 30);
+
+  var best = -1;
+
+  var bestScore = 0;
+
+  var r;
+
+  var c;
+
+  var key;
+
+  var score;
+
+  var hasStock;
+
+  for (r = 0; r < limit; r++) {
+
+    score = 0;
+
+    hasStock = false;
+
+    for (c = 0; c < data[r].length; c++) {
+
+      key = dplHeaderKey_(data[r][c]);
+
+      if (!key) continue;
+
+      if (key === 'stockid') {
+
+        score += 5;
+
+        hasStock = true;
+
+      }
+
+      if (key === 'carollink' || key === 'carol') score += 3;
+
+      if (key === 'markemodel' || key === 'markemodell' || key.indexOf('marke') === 0) score += 2;
+
+      if (key === 'mechanik' || key === 'lack' || key === 'delle' || key === 'wss' || key === 'reifen' || key === 'hsntsn') score += 1;
+
+    }
+
+    if (hasStock && score > bestScore) {
+
+      bestScore = score;
+
+      best = r;
+
+    }
+
+  }
+
+  return best;
+
+}
+
+function dplResolveSourceCols_(headerRow) {
+
+  var stockCol = dplFindHeaderCol_(headerRow, DPL_STOCK_ALIASES);
+
+  if (stockCol < 0) stockCol = DPL_STOCK_FALLBACK;
+
+  var fields = [];
+
+  var i;
+
+  var col;
+
+  for (i = 0; i < DPL_SOURCE_FIELDS.length; i++) {
+
+    col = dplFindHeaderCol_(headerRow, DPL_SOURCE_FIELDS[i].aliases);
+
+    if (col < 0) col = DPL_SOURCE_FIELDS[i].fallback;
+
+    fields.push({ key: DPL_SOURCE_FIELDS[i].key, col: col });
+
+  }
+
+  return { stockCol: stockCol, fields: fields };
+
+}
+
+function dplGetSourceSheet_(ss) {
+
+  var sh = ss.getSheetByName(DPL_SOURCE_SHEET);
+
+  if (sh) return sh;
+
+  sh = ss.getSheetByName(DPL_SOURCE_SHEET_FALLBACK);
+
+  if (sh) return sh;
+
+  throw new Error('Tab "' + DPL_SOURCE_SHEET + '" nicht gefunden');
+
+}
+
+function dplCarolCellValue_(val, formula) {
+
+  var direct = String(val == null ? '' : val).trim();
+
+  if (/^https?:\/\//i.test(direct)) return direct;
+
+  var fromFormula = dplExtractUrlFromCellParts_(val, formula, '');
+
+  return fromFormula || direct;
+
+}
+
 function dplBuildMap() {
 
   var sourceSs = SpreadsheetApp.openById(DPL_SOURCE_FILE_ID);
 
-  var sourceSh = sourceSs.getSheetByName(DPL_SOURCE_SHEET);
+  var sourceSh = dplGetSourceSheet_(sourceSs);
 
-  var sourceData = sourceSh.getDataRange().getValues();
+  var lastRow = sourceSh.getLastRow();
+
+  var lastCol = sourceSh.getLastColumn();
+
+  if (lastRow < 1 || lastCol < 1) return {};
+
+  var sourceData = sourceSh.getRange(1, 1, lastRow, lastCol).getValues();
+
+  var headerIdx = dplFindSourceHeaderRow_(sourceData);
+
+  var headerRow = headerIdx >= 0 ? sourceData[headerIdx] : null;
+
+  var cols = dplResolveSourceCols_(headerRow);
+
+  var start = headerIdx >= 0 ? headerIdx + 1 : 0;
+
+  var carolCol = -1;
+
+  var f;
+
+  for (f = 0; f < cols.fields.length; f++) {
+
+    if (cols.fields[f].key === 'carol') carolCol = cols.fields[f].col;
+
+  }
+
+  var carolFormulas = [];
+
+  if (carolCol >= 0) {
+
+    carolFormulas = sourceSh.getRange(1, carolCol + 1, lastRow, 1).getFormulas();
+
+  }
 
   var byNorm = {};
 
   var i;
 
-  for (i = 0; i < sourceData.length; i++) {
+  for (i = start; i < sourceData.length; i++) {
 
-    var keyNorm = dplNormalizeStockId(sourceData[i][1]);
+    var row = sourceData[i];
 
-    if (!keyNorm) continue;
+    var keyNorm = dplNormalizeStockId(cols.stockCol < row.length ? row[cols.stockCol] : '');
 
-    byNorm[keyNorm] = DPL_COLS.map(function(c) {
+    if (!keyNorm || !dplLooksLikeStockId(keyNorm)) continue;
 
-      return sourceData[i][c];
+    var vals = [];
 
-    });
+    for (f = 0; f < cols.fields.length; f++) {
+
+      var col = cols.fields[f].col;
+
+      var cell = col >= 0 && col < row.length ? row[col] : '';
+
+      if (cols.fields[f].key === 'carol') {
+
+        var formula = carolFormulas[i] ? carolFormulas[i][0] : '';
+
+        vals.push(dplCarolCellValue_(cell, formula));
+
+      } else {
+
+        vals.push(cell == null ? '' : cell);
+
+      }
+
+    }
+
+    byNorm[keyNorm] = vals;
 
   }
+
+  console.log('Refurbishment map: ' + Object.keys(byNorm).length + ' stock ids from "' + sourceSh.getName() + '", header row ' + (headerIdx + 1));
 
   return byNorm;
 
@@ -270,7 +485,7 @@ function dplRefreshCache() {
 
   dplStoreMap(map);
 
-  console.log('Daily Planning cache refreshed: ' + Object.keys(map).length + ' entries');
+  console.log('Refurbishment cache refreshed: ' + Object.keys(map).length + ' entries');
 
 }
 
