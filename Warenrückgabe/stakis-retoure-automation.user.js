@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.8
+// @version      1.0.9
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.8';
+    var BOT_VERSION = '1.0.9';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -252,6 +252,8 @@
             + '#sta-retoure-bot .picks button.pick b{color:#f0f6fc;font-size:13px}'
             + '#sta-retoure-bot .picks button.pick span{color:#93c5fd;font-size:11px;font-weight:700}'
             + '#sta-retoure-bot .picks button.pick:hover{background:rgba(59,130,246,.24)}'
+            + '#sta-retoure-bot .picks button.pick.grey{border-color:rgba(248,158,73,.55);background:rgba(248,158,73,.1)}'
+            + '#sta-retoure-bot .picks button.pick.grey span{color:#f0b86e}'
             + '.sta-picked-row{outline:3px solid #3b82f6 !important;outline-offset:-3px}'
             + '#sta-retoure-bot .picks button.ghost{border-color:rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8}'
             + '#sta-retoure-bot .gear{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}'
@@ -990,7 +992,7 @@
         if (hits.length === 1) return hits[0];
         if (target) {
             var byTarget = lines.filter(function (row) { return samePart(row, target); });
-            if (byTarget.length === 1) return byTarget[0];
+            if (byTarget.length) return byTarget.filter(returnableLine)[0] || byTarget[0];
         }
         if (lines.length === 1) return lines[0];
         return null;
@@ -1152,13 +1154,14 @@
             waitPick = resolve;
             lines.forEach(function (line, index) {
                 var info = parsePosition(textOf(line));
+                var grey = !returnableLine(line);
                 var button = document.createElement('button');
                 button.type = 'button';
-                button.className = 'pick';
+                button.className = grey ? 'pick grey' : 'pick';
                 var title = document.createElement('b');
                 title.textContent = (info.name || 'Position ' + (index + 1)) + (info.brand ? ' | ' + info.brand : '');
                 var sub = document.createElement('span');
-                sub.textContent = [info.article, info.dealer && info.dealer !== info.article ? 'Händler ' + info.dealer : '', info.qty ? info.qty + ' Stk' : ''].filter(Boolean).join(' · ');
+                sub.textContent = [info.article, info.dealer && info.dealer !== info.article ? 'Händler ' + info.dealer : '', info.qty ? info.qty + ' Stk' : '', grey ? 'hier ausgegraut → nächstes Datum' : ''].filter(Boolean).join(' · ');
                 button.appendChild(title);
                 button.appendChild(sub);
                 button.addEventListener('click', function () { resolve(lines[index]); });
@@ -1267,12 +1270,8 @@
                 if (!lines || !lines.length) continue;
                 var candidate = lines.length === 1 ? lines[0] : matchPosition(lines, ean, targetPart);
                 if (!candidate) {
-                    var openLines = lines.filter(returnableLine);
-                    if (!openLines.length) {
-                        hadGrey = true;
-                        continue;
-                    }
-                    candidate = openLines.length === 1 && !targetPart ? openLines[0] : await askChoice(openLines);
+                    if (targetPart) continue;
+                    candidate = await askChoice(lines);
                     if (!candidate) {
                         paintHud('Abgebrochen. Nächste EAN scannen.', '');
                         clearSearch();
@@ -1280,7 +1279,7 @@
                     }
                 }
                 var candInfo = parsePosition(textOf(candidate));
-                if (!targetPart && (candInfo.article || candInfo.dealer)) targetPart = candInfo;
+                if (!targetPart && (candInfo.article || candInfo.dealer || candInfo.name)) targetPart = candInfo;
                 if (!returnableLine(candidate)) {
                     hadGrey = true;
                     paintHud('In ' + number + ' (' + when + ') ausgegraut. Prüfe nächstes Datum …', '');
