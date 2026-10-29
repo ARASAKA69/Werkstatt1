@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.3';
+    var BOT_VERSION = '1.0.4';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -218,6 +218,11 @@
             + '#sta-retoure-bot label{display:block;margin:8px 0 4px;color:#8b949e;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase}'
             + '#sta-retoure-bot .picks{display:flex;flex-direction:column;gap:6px;margin-top:8px}'
             + '#sta-retoure-bot .picks button{text-align:left;min-height:36px;border:1px solid rgba(59,130,246,.45);border-radius:10px;background:rgba(59,130,246,.12);color:#93c5fd;padding:8px 10px;font-size:13px;font-weight:800}'
+            + '#sta-retoure-bot .picks button.pick{display:flex;flex-direction:column;gap:3px}'
+            + '#sta-retoure-bot .picks button.pick b{color:#f0f6fc;font-size:13px}'
+            + '#sta-retoure-bot .picks button.pick span{color:#93c5fd;font-size:11px;font-weight:700}'
+            + '#sta-retoure-bot .picks button.pick:hover{background:rgba(59,130,246,.24)}'
+            + '.sta-picked-row{outline:3px solid #3b82f6 !important;outline-offset:-3px}'
             + '#sta-retoure-bot .picks button.ghost{border-color:rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8}'
             + '#sta-retoure-bot .gear{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}'
             + '#sta-retoure-bot .foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
@@ -685,17 +690,47 @@
         return scoreBest > 0 ? best : null;
     }
 
+    function buttonHint(button) {
+        var hint = (button.getAttribute('aria-label') || '') + ' ' + (button.getAttribute('title') || '') + ' ' + textOf(button);
+        var icons = button.querySelectorAll('svg, [data-testid], i');
+        var i;
+        for (i = 0; i < icons.length; i++) {
+            hint += ' ' + (icons[i].getAttribute('data-testid') || '') + ' ' + (icons[i].getAttribute('class') || '');
+        }
+        return hint.toLowerCase();
+    }
+
+    function insideField(button) {
+        var node = button.parentElement;
+        var guard = 0;
+        while (node && guard < 3) {
+            if (node.querySelector && node.querySelector('input')) return true;
+            node = node.parentElement;
+            guard++;
+        }
+        return false;
+    }
+
     function searchButtonNear(input) {
         if (!input) return null;
+        var inputRect = input.getBoundingClientRect();
         var root = input.parentElement;
         var guard = 0;
-        while (root && guard < 4) {
-            var buttons = root.querySelectorAll('button, [role="button"]');
-            var i;
-            for (i = 0; i < buttons.length; i++) {
-                if (!visible(buttons[i])) continue;
-                var hint = ((buttons[i].getAttribute('aria-label') || '') + ' ' + (buttons[i].getAttribute('title') || '') + ' ' + textOf(buttons[i])).toLowerCase();
-                if (/such|search|lup/.test(hint) || textOf(buttons[i]).length < 2) return buttons[i];
+        while (root && guard < 7) {
+            var buttons = Array.prototype.filter.call(root.querySelectorAll('button, [role="button"]'), function (button) {
+                if (!visible(button)) return false;
+                if (button.closest && button.closest('#sta-retoure-bot')) return false;
+                if (insideField(button)) return false;
+                var rect = button.getBoundingClientRect();
+                if (rect.left < inputRect.right) return false;
+                if (Math.abs((rect.top + rect.height / 2) - (inputRect.top + inputRect.height / 2)) > 30) return false;
+                return !/refresh|reset|replay|restart|calendar|event|date|kalender|datum/.test(buttonHint(button));
+            });
+            var named = buttons.filter(function (button) { return /search|such|lupe|magnif/.test(buttonHint(button)); });
+            if (named.length) return named[0];
+            if (buttons.length) {
+                buttons.sort(function (a, b) { return a.getBoundingClientRect().left - b.getBoundingClientRect().left; });
+                return buttons[0];
             }
             root = root.parentElement;
             guard++;
@@ -729,22 +764,7 @@
         });
     }
 
-    function voucherRows() {
-        var nodes = document.querySelectorAll('tr, [role="row"], li, div');
-        var found = [];
-        var i;
-        for (i = 0; i < nodes.length; i++) {
-            var el = nodes[i];
-            if (!visible(el)) continue;
-            if (el.closest && el.closest('#sta-retoure-bot')) continue;
-            var text = textOf(el);
-            if (text.length < 10 || text.length > 320) continue;
-            if (!parseDate(text) || !/eur/i.test(text)) continue;
-            if (!el.querySelector('button, [role="button"]')) continue;
-            found.push(el);
-        }
-        return smallestRows(found);
-    }
+    var ROW_SKIP = '#sta-retoure-bot, [role="dialog"], [role="presentation"], [role="tooltip"], .MuiPopover-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
 
     function rowButtons(row) {
         return Array.prototype.filter.call(row.querySelectorAll('button, [role="button"]'), function (button) {
@@ -752,55 +772,91 @@
         });
     }
 
-    function openButton(row) {
-        var buttons = rowButtons(row);
-        var named = buttons.filter(function (button) {
-            var hint = ((button.getAttribute('aria-label') || '') + ' ' + (button.getAttribute('title') || '') + ' ' + textOf(button)).toLowerCase();
-            return /such|search|detail|öffn|oeffn|anzeig|lup/.test(hint);
-        });
-        if (named.length) return named[0];
-        var icons = buttons.filter(function (button) {
-            return textOf(button).length < 3 && !button.getAttribute('aria-expanded');
-        });
-        if (icons.length >= 2) return icons[icons.length - 1];
-        return icons[0] || buttons[buttons.length - 1] || null;
-    }
-
-    function positionRows() {
-        var nodes = document.querySelectorAll('tr, [role="row"], li, div');
+    function tableRows(test) {
+        var nodes = document.querySelectorAll('tr, [role="row"], div, li');
         var found = [];
         var i;
         for (i = 0; i < nodes.length; i++) {
             var el = nodes[i];
             if (!visible(el)) continue;
-            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            if (el.closest && el.closest(ROW_SKIP)) continue;
+            if (el.querySelector('input, select, textarea, [role="combobox"]')) continue;
             var text = textOf(el);
-            if (text.length < 12 || text.length > 360) continue;
-            if (!/[a-zäöü]/i.test(text)) continue;
-            if (/eur/i.test(text) && parseDate(text)) continue;
-            if (!rowButtons(el).length) continue;
+            if (text.length < 10 || text.length > 400) continue;
+            if (/\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(text)) continue;
+            if (!/^\d{6,12}\s+\d{2}\.\d{2}\.\d{4}\b/.test(text)) continue;
+            if ((text.match(/\d{2}\.\d{2}\.\d{4}/g) || []).length !== 1) continue;
+            var buttons = rowButtons(el);
+            if (!test(text, buttons)) continue;
             found.push(el);
         }
         return smallestRows(found);
     }
 
+    function voucherRows() {
+        return tableRows(function (text, buttons) {
+            return buttons.length >= 1 && buttons.length <= 2 && /eur/i.test(text);
+        });
+    }
+
+    function voucherNumber(row) {
+        var match = textOf(row).match(/^(\d{6,12})\b/);
+        return match ? match[1] : '';
+    }
+
+    function openButton(row) {
+        var buttons = rowButtons(row);
+        return buttons.length ? buttons[buttons.length - 1] : null;
+    }
+
+    function positionRows() {
+        return tableRows(function (text, buttons) {
+            return buttons.length >= 3 && /[a-zäöü]{3,}/i.test(text);
+        });
+    }
+
     function returnButton(row) {
         var buttons = rowButtons(row);
-        var named = buttons.filter(function (button) {
-            var hint = ((button.getAttribute('aria-label') || '') + ' ' + (button.getAttribute('title') || '') + ' ' + textOf(button)).toLowerCase();
-            return /rückgabe|rueckgabe|retoure|return|warenkorb/.test(hint) && !/beauftragen|drucken/.test(hint);
-        });
-        if (named.length) return named[0];
-        var icons = buttons.filter(function (button) {
-            var hint = ((button.getAttribute('aria-label') || '') + ' ' + (button.getAttribute('title') || '')).toLowerCase();
-            return textOf(button).length < 3 && !/lösch|loesch|delete|trash|papierkorb/.test(hint);
-        });
-        if (icons.length >= 2) return icons[1];
-        return icons[0] || null;
+        if (buttons.length < 3) return null;
+        return buttons[buttons.length - 1];
+    }
+
+    function moneyValue(text) {
+        var match = String(text || '').match(/(\d{1,3}(?:\.\d{3})*,\d{2})(?!.*\d,\d{2})/);
+        if (!match) return 0;
+        return Number(match[1].replace(/\./g, '').replace(',', '.'));
+    }
+
+    function detailBrutto() {
+        var body = textOf(document.body);
+        var match = body.match(/Gesamtsumme\s*-?\s*Brutto\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+        return match ? Number(match[1].replace(/\./g, '').replace(',', '.')) : 0;
+    }
+
+    function matchPosition(lines, ean) {
+        var hits = lines.filter(function (row) { return String(row.textContent || '').indexOf(ean) !== -1; });
+        if (hits.length === 1) return hits[0];
+        if (lines.length === 1) return lines[0];
+        var brutto = detailBrutto();
+        if (!brutto) return null;
+        var scored = lines.map(function (row) {
+            return { row: row, diff: Math.abs(moneyValue(textOf(row)) * 1.19 - brutto) };
+        }).sort(function (a, b) { return a.diff - b.diff; });
+        if (!scored.length) return null;
+        var best = scored[0];
+        var next = scored[1];
+        if (best.diff > brutto * 0.08 + 1) return null;
+        if (next && next.diff - best.diff < 1) return null;
+        return best.row;
     }
 
     function parsePosition(text) {
         var raw = String(text || '').replace(/\s+/g, ' ').trim();
+        var cols = raw.match(/^(\d{6,12})\s+\d{2}\.\d{2}\.\d{4}\s+(\S+)\s+(\S+)\s+(.+?)\s*\|\s*(.+?)(?:\s+MwSt\.?|\s+\d|$)/i);
+        if (cols) {
+            var qtyCol = raw.match(/MwSt\.?\s+[\d.,]+\s+(\d{1,4})\b/i);
+            return { article: cols[3] || cols[2], dealer: cols[2], name: cols[4].trim(), brand: cols[5].trim(), qty: qtyCol ? qtyCol[1] : '' };
+        }
         var brand = '';
         var nameSide = raw;
         var pipe = raw.indexOf('|');
@@ -888,15 +944,22 @@
     }
 
     function askChoice(lines) {
-        paintHud(lines.length + ' Positionen. Welche gehört zum gescannten Teil?', '');
+        paintHud('Lieferung hat ' + lines.length + ' Positionen. Welches Teil geht zurück?', '');
         var slot = setSlot('<div class="picks" id="sta-picks"></div>');
         var box = slot.querySelector('#sta-picks');
         return new Promise(function (resolve) {
             waitPick = resolve;
             lines.forEach(function (line, index) {
+                var info = parsePosition(textOf(line));
                 var button = document.createElement('button');
                 button.type = 'button';
-                button.textContent = textOf(line).slice(0, 90);
+                button.className = 'pick';
+                var title = document.createElement('b');
+                title.textContent = (info.name || 'Position ' + (index + 1)) + (info.brand ? ' | ' + info.brand : '');
+                var sub = document.createElement('span');
+                sub.textContent = [info.article, info.dealer && info.dealer !== info.article ? 'Händler ' + info.dealer : '', info.qty ? info.qty + ' Stk' : ''].filter(Boolean).join(' · ');
+                button.appendChild(title);
+                button.appendChild(sub);
                 button.addEventListener('click', function () { resolve(lines[index]); });
                 box.appendChild(button);
             });
@@ -914,8 +977,10 @@
     }
 
     function askStock(info) {
-        paintHud((info.name || info.article || 'Teil') + ' hinzufügen. Stock-ID ist optional.', '');
-        var slot = setSlot('<label>Stock-ID optional</label><input id="sta-stock" maxlength="16" placeholder="z.B. MA45327" autocomplete="off">'
+        paintHud('Gefunden in Lieferung ' + (info.beleg || '?') + '. Stock-ID ist optional.', '');
+        var slot = setSlot('<div class="last"><em>TEIL</em><div>' + hudEscape((info.name || 'Teil') + (info.brand ? ' | ' + info.brand : '')) + '</div>'
+            + '<div>' + hudEscape([info.article, info.qty ? info.qty + ' Stk' : ''].filter(Boolean).join(' · ')) + '</div></div>'
+            + '<label>Stock-ID optional</label><input id="sta-stock" maxlength="16" placeholder="z.B. MA45327" autocomplete="off">'
             + '<div class="row"><button type="button" class="ghost" id="sta-skip">Ohne Stock-ID</button><button type="button" class="act" id="sta-add">Hinzufügen</button></div>');
         var input = slot.querySelector('#sta-stock');
         return new Promise(function (resolve) {
@@ -953,53 +1018,71 @@
                 paintHud('Das Suche-Feld auf Lieferungen wurde nicht gefunden.', 'bad');
                 return;
             }
+            var before = voucherRows().map(textOf).join('|');
             setNativeValue(input, ean);
+            await sleep(80);
             submitSearch(input);
+            var started = Date.now();
             var rows = await waitFor(function () {
                 var list = voucherRows();
-                return list.length ? list : null;
-            }, 8000);
+                if (!list.length) return null;
+                if (list.map(textOf).join('|') === before && Date.now() - started < 2500) return null;
+                return list;
+            }, 9000);
             if (!rows) {
-                paintHud('Keine Lieferung zu ' + ean + '.', 'bad');
+                paintHud('Keine Lieferung zu ' + ean + ' gefunden.', 'bad');
                 return;
             }
+            await sleep(300);
+            rows = voucherRows().length ? voucherRows() : rows;
             rows.sort(function (a, b) { return parseDate(textOf(a)) - parseDate(textOf(b)); });
             var oldest = rows[0];
+            var number = voucherNumber(oldest);
             var when = textOf(oldest).match(/\d{2}\.\d{2}\.\d{4}/);
-            paintHud('Ältester Beleg ' + (when ? when[0] : '') + '. Öffne ihn …', '');
+            paintHud(rows.length + ' Lieferungen. Öffne die älteste: ' + number + ' vom ' + (when ? when[0] : '') + ' …', '');
             var opener = openButton(oldest);
             if (!opener) {
-                paintHud('Die Lupe am ältesten Beleg wurde nicht gefunden.', 'bad');
+                paintHud('Lupe an Lieferung ' + number + ' nicht gefunden.', 'bad');
                 return;
             }
             fireClick(opener);
-            await sleep(500);
+            if (number) {
+                await waitFor(function () { return location.pathname.indexOf(number) !== -1 || new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body)) ? true : null; }, 6000);
+            }
+            await sleep(600);
             var lines = await waitFor(function () {
-                var list = positionRows().filter(function (row) { return returnButton(row); });
+                var list = positionRows();
                 return list.length ? list : null;
             }, 8000);
             if (!lines) {
-                paintHud('Im Beleg keine Position mit Rückgabe-Icon.', 'bad');
+                paintHud('In Lieferung ' + number + ' keine Position mit Rückgabe-Icon gefunden.', 'bad');
                 return;
             }
-            var matched = lines.filter(function (row) { return textOf(row).indexOf(ean) !== -1; });
-            var line = matched[0] || null;
-            if (!line && lines.length === 1) line = lines[0];
+            var line = matchPosition(lines, ean);
             if (!line) line = await askChoice(lines);
             if (!line) {
                 paintHud('Abgebrochen. Nächste EAN scannen.', '');
                 clearSearch();
                 return;
             }
-            var parsed = parsePosition(textOf(line));
-            var beleg = belegNumber();
-            var stockRaw = await askStock({ name: parsed.name, article: parsed.article });
+            var lineText = textOf(line);
+            var parsed = parsePosition(lineText);
+            var beleg = number || belegNumber();
+            try {
+                line.classList.add('sta-picked-row');
+                line.scrollIntoView({ block: 'center' });
+            } catch (e) {}
+            var stockRaw = await askStock({ name: parsed.name, article: parsed.article, brand: parsed.brand, qty: parsed.qty, beleg: beleg });
             if (stockRaw == null) return;
             var stock = cleanStock(stockRaw);
             if (stock == null) {
                 paintHud('Stock-ID passt nicht. Leer lassen oder z.B. MA45327.', 'bad');
                 return;
             }
+            if (!document.contains(line)) {
+                line = positionRows().filter(function (row) { return textOf(row) === lineText; })[0] || line;
+            }
+            try { line.classList.remove('sta-picked-row'); } catch (e2) {}
             var button = returnButton(line);
             if (!button) {
                 paintHud('Rückgabe-Icon an der Position nicht gefunden.', 'bad');
