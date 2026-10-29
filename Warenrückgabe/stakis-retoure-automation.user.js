@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.5
+// @version      1.0.6
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.5';
+    var BOT_VERSION = '1.0.6';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -764,7 +764,7 @@
         });
     }
 
-    var ROW_SKIP = '#sta-retoure-bot, [role="dialog"], [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-root, .MuiModal-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
+    var ROW_SKIP = '#sta-retoure-bot, [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-paper, .MuiMenu-paper, .MuiPickersPopper-root, .MuiDateRangeCalendar-root, [class*="Calendar"], [class*="DatePicker"], [class*="DateRange"]';
 
     function rowButtons(row) {
         var list = Array.prototype.filter.call(row.querySelectorAll('button, [role="button"], [role="combobox"], [aria-haspopup]'), function (button) {
@@ -803,37 +803,61 @@
         return (best.closest && best.closest('[role="option"], [role="menuitem"], li, button, a')) || best;
     }
 
-    var POS_SKIP = '#sta-retoure-bot, [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
+    var POS_SKIP = ROW_SKIP;
 
-    function tableRows(test, skip) {
-        var nodes = document.querySelectorAll('tr, [role="row"], div, li');
-        var found = [];
+    function numberCells(skip) {
+        var nodes = document.querySelectorAll('td, div, span, p, a, b, strong');
+        var cells = [];
         var i;
         for (i = 0; i < nodes.length; i++) {
             var el = nodes[i];
+            var text = String(el.textContent || '').replace(/\s+/g, ' ').trim();
+            if (!/^\d{6,12}$/.test(text)) continue;
             if (!visible(el)) continue;
             if (el.closest && el.closest(skip || ROW_SKIP)) continue;
-            if (el.querySelector('textarea, input[type="text"]:not([aria-hidden="true"]), input:not([type]):not([aria-hidden="true"]):not(.MuiSelect-nativeInput)')) continue;
-            var text = textOf(el);
-            if (text.length < 10 || text.length > 400) continue;
-            if (/\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(text)) continue;
-            if (!/^\d{6,12}\s+\d{2}\.\d{2}\.\d{4}\b/.test(text)) continue;
-            if ((text.match(/\d{2}\.\d{2}\.\d{4}/g) || []).length !== 1) continue;
-            var buttons = rowButtons(el);
-            if (!test(text, buttons)) continue;
-            found.push(el);
+            if (el.closest('input, button, [role="button"], [role="combobox"]')) continue;
+            cells.push(el);
         }
-        return smallestRows(found);
+        return smallestRows(cells);
+    }
+
+    function rowOfCell(cell) {
+        var node = cell.parentElement;
+        var guard = 0;
+        while (node && node !== document.body && guard < 10) {
+            var text = textOf(node);
+            var dates = (text.match(/\d{2}\.\d{2}\.\d{4}/g) || []).length;
+            if (dates > 1 || text.length > 500) return null;
+            if (dates === 1 && rowButtons(node).length >= 1) return node;
+            node = node.parentElement;
+            guard++;
+        }
+        return null;
+    }
+
+    function tableRows(test, skip) {
+        var cells = numberCells(skip);
+        var found = [];
+        var i;
+        for (i = 0; i < cells.length; i++) {
+            var row = rowOfCell(cells[i]);
+            if (!row || found.indexOf(row) !== -1) continue;
+            var text = textOf(row);
+            if (/\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(text)) continue;
+            if (!test(text, rowButtons(row))) continue;
+            found.push(row);
+        }
+        return found;
     }
 
     function voucherRows() {
         return tableRows(function (text, buttons) {
-            return buttons.length >= 1 && buttons.length <= 3 && /eur/i.test(text) && !/mwst/i.test(text);
+            return buttons.length >= 1 && buttons.length <= 3 && /\d,\d{2}/.test(text) && !/mwst|belegnummer|anzahl der positionen/i.test(text);
         });
     }
 
     function voucherNumber(row) {
-        var match = textOf(row).match(/^(\d{6,12})\b/);
+        var match = textOf(row).match(/(?:^|\s)(\d{6,12})(?=\s|$)/);
         return match ? match[1] : '';
     }
 
@@ -856,12 +880,19 @@
 
     function debugRows(reason) {
         try {
-            var sample = Array.prototype.filter.call(document.querySelectorAll('tr, [role="row"], div'), function (el) {
-                return visible(el) && !(el.closest && el.closest('#sta-retoure-bot')) && /^\d{6,12}\s+\d{2}\.\d{2}\.\d{4}/.test(textOf(el)) && textOf(el).length < 400;
-            }).slice(0, 12).map(function (el) {
-                return { tag: el.tagName, cls: String(el.getAttribute('class') || '').slice(0, 80), text: textOf(el).slice(0, 160), controls: rowButtons(el).map(function (b) { return b.tagName + '[' + (b.getAttribute('role') || '') + '] ' + buttonHint(b).slice(0, 60); }) };
+            var sample = numberCells().slice(0, 12).map(function (cell) {
+                var chain = [];
+                var node = cell.parentElement;
+                var guard = 0;
+                while (node && node !== document.body && guard < 8) {
+                    chain.push(node.tagName + '.' + String(node.getAttribute('class') || '').split(/\s+/).slice(0, 2).join('.') + ' dates=' + (textOf(node).match(/\d{2}\.\d{2}\.\d{4}/g) || []).length + ' controls=' + rowButtons(node).length + ' len=' + textOf(node).length);
+                    node = node.parentElement;
+                    guard++;
+                }
+                var row = rowOfCell(cell);
+                return { cell: textOf(cell), row: row ? textOf(row).slice(0, 160) : null, controls: row ? rowButtons(row).map(function (b) { return b.tagName + '[' + (b.getAttribute('role') || '') + '] ' + buttonHint(b).slice(0, 60); }) : [], chain: chain };
             });
-            console.log('[STA ' + BOT_VERSION + '] ' + reason, { vouchers: voucherRows().length, positions: positionRows().length, sample: sample });
+            console.log('[STA ' + BOT_VERSION + '] ' + reason + ' ' + JSON.stringify({ vouchers: voucherRows().length, positions: positionRows().length, sample: sample }, null, 1));
         } catch (e) {}
     }
 
@@ -905,7 +936,7 @@
 
     function parsePosition(text) {
         var raw = String(text || '').replace(/\s+/g, ' ').trim();
-        var cols = raw.match(/^(\d{6,12})\s+\d{2}\.\d{2}\.\d{4}\s+(\S+)\s+(\S+)\s+(.+?)\s*\|\s*(.+?)(?:\s+MwSt\.?|\s+\d|$)/i);
+        var cols = raw.match(/(\d{6,12})\s+\d{2}\.\d{2}\.\d{4}\s+(\S+)\s+(\S+)\s+(.+?)\s*\|\s*(.+?)(?:\s+MwSt\.?|\s+\d|$)/i);
         if (cols) {
             var qtyCol = raw.match(/MwSt\.?\s+[\d.,]+\s+(\d{1,4})\b/i);
             return { article: cols[3] || cols[2], dealer: cols[2], name: cols[4].trim(), brand: cols[5].trim(), qty: qtyCol ? qtyCol[1] : '' };
