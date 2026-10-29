@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.6
+// @version      1.0.7
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.6';
+    var BOT_VERSION = '1.0.7';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -90,6 +90,36 @@
     function fireClick(el) {
         if (!el) return;
         fireMouse(el, ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']);
+        try { if (typeof el.click === 'function') el.click(); } catch (e) {}
+    }
+
+    function invokeReactClick(el) {
+        var node = el;
+        var guard = 0;
+        while (node && guard < 4) {
+            var props = reactProps(node);
+            if (props && typeof props.onClick === 'function') {
+                try {
+                    var Ctor = pageWindow().MouseEvent || MouseEvent;
+                    props.onClick({ currentTarget: node, target: node, button: 0, nativeEvent: new Ctor('click', { bubbles: true }), preventDefault: function () {}, stopPropagation: function () {} });
+                    return true;
+                } catch (e) {}
+            }
+            if (props && typeof props.onMouseDown === 'function') {
+                try {
+                    props.onMouseDown({ button: 0, currentTarget: node, target: node, preventDefault: function () {}, stopPropagation: function () {} });
+                    return true;
+                } catch (e2) {}
+            }
+            node = node.parentElement;
+            guard++;
+        }
+        return false;
+    }
+
+    function pressControl(el) {
+        if (!el) return;
+        if (!invokeReactClick(el)) fireClick(el);
     }
 
     function setNativeValue(input, value) {
@@ -766,13 +796,42 @@
 
     var ROW_SKIP = '#sta-retoure-bot, [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-paper, .MuiMenu-paper, .MuiPickersPopper-root, .MuiDateRangeCalendar-root, [class*="Calendar"], [class*="DatePicker"], [class*="DateRange"]';
 
+    function iconControls(row) {
+        var icons = Array.prototype.slice.call(row.querySelectorAll('svg, i'));
+        var found = [];
+        var i;
+        for (i = 0; i < icons.length; i++) {
+            var node = icons[i];
+            var picked = null;
+            var guard = 0;
+            while (node && node !== row && guard < 5) {
+                if (visible(node)) {
+                    var rect = node.getBoundingClientRect();
+                    if (rect.width >= 18 && rect.width <= 72 && rect.height >= 18 && rect.height <= 56) picked = node;
+                    if (node.tagName === 'BUTTON' || node.tagName === 'A' || node.getAttribute('role') === 'button' || node.getAttribute('role') === 'combobox') break;
+                }
+                node = node.parentElement;
+                guard++;
+            }
+            if (picked && found.indexOf(picked) === -1) found.push(picked);
+        }
+        return found;
+    }
+
     function rowButtons(row) {
-        var list = Array.prototype.filter.call(row.querySelectorAll('button, [role="button"], [role="combobox"], [aria-haspopup]'), function (button) {
-            return visible(button) && !(button.closest && button.closest('#sta-retoure-bot'));
+        var raw = Array.prototype.slice.call(row.querySelectorAll('button, a, [role="button"], [role="combobox"], [aria-haspopup]')).concat(iconControls(row));
+        var list = raw.filter(function (button, index) {
+            if (raw.indexOf(button) !== index) return false;
+            if (!visible(button)) return false;
+            if (button.closest && button.closest('#sta-retoure-bot')) return false;
+            var rect = button.getBoundingClientRect();
+            return rect.width <= 90 && rect.height <= 60;
         });
-        return list.filter(function (button) {
-            return !list.some(function (other) { return other !== button && other.contains(button); });
+        list = list.filter(function (button) {
+            return !list.some(function (other) { return other !== button && button.contains(other); });
         });
+        list.sort(function (a, b) { return a.getBoundingClientRect().left - b.getBoundingClientRect().left; });
+        return list;
     }
 
     function isDisabled(button) {
@@ -824,15 +883,19 @@
     function rowOfCell(cell) {
         var node = cell.parentElement;
         var guard = 0;
+        var picked = null;
         while (node && node !== document.body && guard < 10) {
             var text = textOf(node);
             var dates = (text.match(/\d{2}\.\d{2}\.\d{4}/g) || []).length;
-            if (dates > 1 || text.length > 500) return null;
-            if (dates === 1 && rowButtons(node).length >= 1) return node;
+            if (dates > 1 || text.length > 500) break;
+            var count = rowButtons(node).length;
+            if (dates === 1 && count >= 1) {
+                if (!picked || count > rowButtons(picked).length) picked = node;
+            }
             node = node.parentElement;
             guard++;
         }
-        return null;
+        return picked;
     }
 
     function tableRows(test, skip) {
@@ -852,7 +915,7 @@
 
     function voucherRows() {
         return tableRows(function (text, buttons) {
-            return buttons.length >= 1 && buttons.length <= 3 && /\d,\d{2}/.test(text) && !/mwst|belegnummer|anzahl der positionen/i.test(text);
+            return buttons.length >= 1 && buttons.length <= 4 && /\d,\d{2}/.test(text) && !/mwst|belegnummer|anzahl der positionen/i.test(text);
         });
     }
 
@@ -906,20 +969,18 @@
     function rowToggle(row) {
         var controls = rowButtons(row);
         if (controls.length < 2) return null;
-        return controls[0];
+        return controls[controls.length - 2];
     }
 
     async function showMatchedPositions(row, number) {
         var toggle = rowToggle(row);
         if (!toggle) return null;
         var before = positionRows();
-        var role = toggle.getAttribute('role') || '';
-        if (role === 'combobox' || toggle.getAttribute('aria-haspopup')) openArt(toggle);
-        else fireClick(toggle);
-        var item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 2500);
-        if (!item && role !== 'combobox') {
+        pressControl(toggle);
+        var item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 1800);
+        if (!item) {
             openArt(toggle);
-            item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 1500);
+            item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 1200);
         }
         if (item) pickOption(item);
         return waitFor(function () {
@@ -931,7 +992,33 @@
             var next = voucherRows().filter(function (other) { return other !== row && (row.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING); })[0];
             if (next) owned = owned.filter(function (line) { return next.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_PRECEDING; });
             return owned.length ? owned : list;
-        }, 5000);
+        }, 4000);
+    }
+
+    async function openDelivery(row, number) {
+        var opener = openButton(row);
+        if (!opener) return false;
+        pressControl(opener);
+        var opened = await waitFor(function () {
+            return (number && location.pathname.indexOf(number) !== -1) || (number && new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body))) ? true : null;
+        }, 3000);
+        if (opened) return true;
+        fireClick(opener);
+        opened = await waitFor(function () {
+            return (number && location.pathname.indexOf(number) !== -1) || (number && new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body))) ? true : null;
+        }, 2500);
+        if (opened) return true;
+        if (number && location.pathname.indexOf(number) === -1) {
+            var base = location.pathname.replace(/\/$/, '').replace(/\/\d{6,12}$/, '');
+            try {
+                history.pushState(null, '', base + '/' + number);
+                window.dispatchEvent(new PopStateEvent('popstate'));
+            } catch (e) {}
+            opened = await waitFor(function () {
+                return new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body)) || positionRows().length ? true : null;
+            }, 3500);
+        }
+        return !!opened;
     }
 
     function parsePosition(text) {
@@ -1128,21 +1215,13 @@
             var lines = await showMatchedPositions(oldest, number);
             var line = lines && lines.length === 1 ? lines[0] : null;
             if (!lines) {
-                var opener = openButton(oldest);
-                if (!opener) {
-                    debugRows('keine Lupe');
-                    paintHud('Lupe an Lieferung ' + number + ' nicht gefunden.', 'bad');
-                    return;
-                }
-                fireClick(opener);
-                if (number) {
-                    await waitFor(function () { return location.pathname.indexOf(number) !== -1 || new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body)) ? true : null; }, 6000);
-                }
-                await sleep(600);
+                paintHud('Öffne Lieferung ' + number + ' …', '');
+                await openDelivery(oldest, number);
+                await sleep(500);
                 lines = await waitFor(function () {
                     var list = positionRows();
                     return list.length ? list : null;
-                }, 8000);
+                }, 6000);
             }
             if (!lines) {
                 debugRows('keine Position');
@@ -1185,7 +1264,7 @@
                 clearSearch();
                 return;
             }
-            fireClick(button);
+            pressControl(button);
             await sleep(400);
             var row = {
                 orderId: beleg,
