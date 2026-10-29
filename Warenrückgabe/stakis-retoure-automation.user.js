@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.11
+// @version      1.0.12
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.11';
+    var BOT_VERSION = '1.0.12';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -150,28 +150,52 @@
 
     function clickTab(name) {
         var want = String(name || '').toUpperCase();
-        var nodes = document.querySelectorAll('a, button, [role="tab"], div, span');
+        var nodes = document.querySelectorAll('[role="tab"], a, button, div, span');
+        var best = null;
+        var bestArea = Infinity;
         var i;
         for (i = 0; i < nodes.length; i++) {
-            if (!visible(nodes[i])) continue;
-            if (textOf(nodes[i]).toUpperCase() !== want) continue;
-            if (nodes[i].children && nodes[i].children.length > 3) continue;
-            fireClick(nodes[i]);
-            return true;
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            var label = textOf(el).replace(/\s+\d+\s*$/, '').trim().toUpperCase();
+            if (label !== want) continue;
+            var rect = el.getBoundingClientRect();
+            var area = rect.width * rect.height;
+            if (area > 0 && area < bestArea) {
+                best = el;
+                bestArea = area;
+            }
         }
-        return false;
+        if (!best) return false;
+        var target = (best.closest && best.closest('[role="tab"], a, button')) || best;
+        pressControl(target);
+        fireClick(target);
+        return true;
     }
 
     function goLieferungen() {
         var root = workRoot();
-        if (root) location.assign(root + '/vouchers');
-        else clickTab('LIEFERUNGEN');
+        var targetUrl = (root || '') + '/vouchers/3';
+        if (clickTab('LIEFERUNGEN')) {
+            setTimeout(function () {
+                if (!isLieferungen() && root) location.assign(targetUrl);
+            }, 400);
+            return;
+        }
+        if (root) location.assign(targetUrl);
     }
 
     function goReturns() {
         var root = workRoot();
-        if (root) location.assign(root + '/returns');
-        else clickTab('WARENRÜCKGABE');
+        var targetUrl = (root || '') + '/returns';
+        if (clickTab('WARENRÜCKGABE')) {
+            setTimeout(function () {
+                if (!isReturns() && root) location.assign(targetUrl);
+            }, 400);
+            return;
+        }
+        if (root) location.assign(targetUrl);
     }
 
     function basketCount() {
