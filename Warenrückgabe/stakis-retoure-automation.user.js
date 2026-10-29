@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.7
+// @version      1.0.8
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.7';
+    var BOT_VERSION = '1.0.8';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -835,9 +835,26 @@
     }
 
     function isDisabled(button) {
-        if (!button) return true;
-        if (button.disabled || button.getAttribute('aria-disabled') === 'true') return true;
-        return /(^|\s)Mui-disabled(\s|$)/.test(button.getAttribute('class') || '');
+        var node = button;
+        var guard = 0;
+        while (node && guard < 4) {
+            if (node.disabled || node.getAttribute('aria-disabled') === 'true' || node.getAttribute('disabled') !== null) return true;
+            var cls = String(node.getAttribute('class') || '');
+            if (/(^|\s|-)disabled(\s|$)/i.test(cls)) return true;
+            var style = window.getComputedStyle(node);
+            if (style.pointerEvents === 'none' || style.cursor === 'not-allowed' || style.cursor === 'default') return true;
+            if (Number(style.opacity || '1') < 0.7) return true;
+            var bg = (style.backgroundColor || '').match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+            if (bg && Number(bg[1]) > 140 && Number(bg[2]) > 160 && Number(bg[3]) > 210) return true;
+            node = node.parentElement;
+            guard++;
+        }
+        return false;
+    }
+
+    function returnableLine(row) {
+        var button = returnButton(row);
+        return !!(button && !isDisabled(button));
     }
 
     function findMenuItem(pattern) {
@@ -959,9 +976,22 @@
         } catch (e) {}
     }
 
-    function matchPosition(lines, ean) {
+    function samePart(line, target) {
+        if (!target) return false;
+        var info = parsePosition(textOf(line));
+        var norm = function (s) { return String(s || '').replace(/\s+/g, '').toUpperCase(); };
+        if (target.dealer && info.dealer && norm(target.dealer) === norm(info.dealer)) return true;
+        if (target.article && info.article && norm(target.article) === norm(info.article)) return true;
+        return !!(target.name && info.name && info.name.toLowerCase() === target.name.toLowerCase());
+    }
+
+    function matchPosition(lines, ean, target) {
         var hits = lines.filter(function (row) { return String(row.textContent || '').indexOf(ean) !== -1; });
         if (hits.length === 1) return hits[0];
+        if (target) {
+            var byTarget = lines.filter(function (row) { return samePart(row, target); });
+            if (byTarget.length === 1) return byTarget[0];
+        }
         if (lines.length === 1) return lines[0];
         return null;
     }
@@ -1023,10 +1053,10 @@
 
     function parsePosition(text) {
         var raw = String(text || '').replace(/\s+/g, ' ').trim();
-        var cols = raw.match(/(\d{6,12})\s+\d{2}\.\d{2}\.\d{4}\s+(\S+)\s+(\S+)\s+(.+?)\s*\|\s*(.+?)(?:\s+MwSt\.?|\s+\d|$)/i);
+        var cols = raw.match(/(\d{6,12})\s+\d{2}\.\d{2}\.\d{4}\s+(\d{5,12})\s+(.+?)\s+([A-ZÄÖÜ][A-Za-zÄÖÜäöüß0-9\s,./()-]*?)\s*\|\s*(.+?)(?:\s+MwSt\.?|\s+\d|$)/);
         if (cols) {
             var qtyCol = raw.match(/MwSt\.?\s+[\d.,]+\s+(\d{1,4})\b/i);
-            return { article: cols[3] || cols[2], dealer: cols[2], name: cols[4].trim(), brand: cols[5].trim(), qty: qtyCol ? qtyCol[1] : '' };
+            return { article: cols[3].trim() || cols[2], dealer: cols[2], name: cols[4].trim(), brand: cols[5].trim(), qty: qtyCol ? qtyCol[1] : '' };
         }
         var brand = '';
         var nameSide = raw;
@@ -1208,30 +1238,63 @@
             await sleep(300);
             rows = voucherRows().length ? voucherRows() : rows;
             rows.sort(function (a, b) { return parseDate(textOf(a)) - parseDate(textOf(b)); });
-            var oldest = rows[0];
-            var number = voucherNumber(oldest);
-            var when = textOf(oldest).match(/\d{2}\.\d{2}\.\d{4}/);
-            paintHud(rows.length + ' Lieferungen. Älteste: ' + number + ' vom ' + (when ? when[0] : '') + '. Zeige Position …', '');
-            var lines = await showMatchedPositions(oldest, number);
-            var line = lines && lines.length === 1 ? lines[0] : null;
-            if (!lines) {
-                paintHud('Öffne Lieferung ' + number + ' …', '');
-                await openDelivery(oldest, number);
-                await sleep(500);
-                lines = await waitFor(function () {
-                    var list = positionRows();
-                    return list.length ? list : null;
-                }, 6000);
+            var numbers = rows.map(voucherNumber).filter(Boolean);
+            var dates = rows.map(function (r) { var m = textOf(r).match(/\d{2}\.\d{2}\.\d{4}/); return m ? m[0] : ''; });
+            var targetPart = null;
+            var line = null;
+            var number = '';
+            var hadGrey = false;
+            var idx;
+            for (idx = 0; idx < numbers.length; idx++) {
+                if (abortMission) return;
+                number = numbers[idx];
+                var when = dates[idx];
+                var rowEl = voucherRows().filter(function (r) { return voucherNumber(r) === number; })[0] || rows[idx];
+                paintHud('Prüfe Lieferung ' + (idx + 1) + '/' + numbers.length + ': ' + number + ' vom ' + when + ' …', '');
+                var beforeSigns = positionRows().map(textOf).join('|');
+                var lines = await showMatchedPositions(rowEl, number);
+                if (!lines) {
+                    await openDelivery(rowEl, number);
+                    await sleep(400);
+                    var waitStart = Date.now();
+                    lines = await waitFor(function () {
+                        var list = positionRows();
+                        if (!list.length) return null;
+                        if (idx > 0 && list.map(textOf).join('|') === beforeSigns && Date.now() - waitStart < 2500) return null;
+                        return list;
+                    }, 6000);
+                }
+                if (!lines || !lines.length) continue;
+                var candidate = lines.length === 1 ? lines[0] : matchPosition(lines, ean, targetPart);
+                if (!candidate) {
+                    var openLines = lines.filter(returnableLine);
+                    if (!openLines.length) {
+                        hadGrey = true;
+                        continue;
+                    }
+                    candidate = openLines.length === 1 && !targetPart ? openLines[0] : await askChoice(openLines);
+                    if (!candidate) {
+                        paintHud('Abgebrochen. Nächste EAN scannen.', '');
+                        clearSearch();
+                        return;
+                    }
+                }
+                var candInfo = parsePosition(textOf(candidate));
+                if (!targetPart && (candInfo.article || candInfo.dealer)) targetPart = candInfo;
+                if (!returnableLine(candidate)) {
+                    hadGrey = true;
+                    paintHud('In ' + number + ' (' + when + ') ausgegraut. Prüfe nächstes Datum …', '');
+                    await sleep(250);
+                    continue;
+                }
+                line = candidate;
+                break;
             }
-            if (!lines) {
-                debugRows('keine Position');
-                paintHud('In Lieferung ' + number + ' keine Position mit Rückgabe-Icon gefunden.', 'bad');
-                return;
-            }
-            if (!line) line = matchPosition(lines, ean);
-            if (!line) line = await askChoice(lines);
             if (!line) {
-                paintHud('Abgebrochen. Nächste EAN scannen.', '');
+                debugRows(hadGrey ? 'alle ausgegraut' : 'keine Position');
+                paintHud(hadGrey
+                    ? 'In allen ' + numbers.length + ' Lieferungen ist dieses Teil ausgegraut (nicht mehr rückgabefähig).'
+                    : 'In keiner Lieferung eine passende Position gefunden.', 'bad');
                 clearSearch();
                 return;
             }
