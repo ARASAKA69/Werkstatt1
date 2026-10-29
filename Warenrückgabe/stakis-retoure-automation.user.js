@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.10
+// @version      1.0.11
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.10';
+    var BOT_VERSION = '1.0.11';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -326,6 +326,8 @@
                 + '<label>Sheet Web-App</label><input id="sta-sheet" placeholder="https://script.google.com/.../exec" value="' + hudEscape(sheetUrl()) + '">'
                 + '<button type="button" class="ghost" data-act="save">Speichern</button></div>'
             : '';
+        var prevSlot = panel.querySelector('#sta-slot');
+        var slotKids = prevSlot ? Array.prototype.slice.call(prevSlot.childNodes) : [];
         var toneKey = tone === 'bad' ? 'error' : tone === 'ok' ? 'done' : busy ? 'active' : 'neutral';
         var toneLabel = toneKey === 'error' ? 'FEHLER' : toneKey === 'done' ? 'OK' : toneKey === 'active' ? 'LÄUFT' : 'BEREIT';
         panel.setAttribute('data-tone', toneKey);
@@ -341,6 +343,10 @@
             + gear
             + '<div class="foot"><span>Bot v' + BOT_VERSION + '</span><span>ESC Stop</span></div>'
             + '<div class="credit">by Arasaka</div></div>';
+        if (slotKids.length) {
+            var nextSlot = panel.querySelector('#sta-slot');
+            slotKids.forEach(function (child) { nextSlot.appendChild(child); });
+        }
         panel.querySelector('[data-act="min"]').addEventListener('click', function () {
             panel.classList.toggle('min');
             this.textContent = panel.classList.contains('min') ? '+' : '–';
@@ -1157,6 +1163,7 @@
     }
 
     function askChoice(lines) {
+        setSlot('');
         paintHud('Lieferung hat ' + lines.length + ' Positionen. Welches Teil geht zurück?', '');
         var slot = setSlot('<div class="picks" id="sta-picks"></div>');
         var box = slot.querySelector('#sta-picks');
@@ -1191,6 +1198,7 @@
     }
 
     function askStock(info) {
+        setSlot('');
         paintHud('Gefunden in Lieferung ' + (info.beleg || '?') + '. Stock-ID ist optional.', '');
         var slot = setSlot('<div class="last"><em>TEIL</em><div>' + hudEscape((info.name || 'Teil') + (info.brand ? ' | ' + info.brand : '')) + '</div>'
             + '<div>' + hudEscape([info.article, info.qty ? info.qty + ' Stk' : ''].filter(Boolean).join(' · ')) + '</div></div>'
@@ -1199,6 +1207,7 @@
         var input = slot.querySelector('#sta-stock');
         return new Promise(function (resolve) {
             function done(stock) { resolve(stock); }
+            waitPick = function () { done(null); };
             slot.querySelector('#sta-add').addEventListener('click', function () { done(input.value.trim()); });
             slot.querySelector('#sta-skip').addEventListener('click', function () { done(''); });
             input.addEventListener('keydown', function (event) {
@@ -1206,6 +1215,7 @@
             });
             setTimeout(function () { try { input.focus(); } catch (e) {} }, 30);
         }).then(function (stock) {
+            waitPick = null;
             setSlot('');
             return stock;
         });
@@ -1495,14 +1505,31 @@
         }
     }
 
+    function pageSection() {
+        if (isReturns()) return 'returns';
+        if (isLieferungen()) return 'vouchers';
+        return '';
+    }
+
     function boot() {
         if (!isBotPage()) {
             var old = hudEl();
             if (old) old.remove();
             return;
         }
+        if (busy) return;
         if (isReturns()) {
+            setSlot('');
             paintHud('Warenrückgabe. Gründe setzen, dann Drucken und absenden.', '');
+            return;
+        }
+        if (artIsEan()) {
+            showEanState(true, true);
+            var readyInput = findSearchInput();
+            if (readyInput) {
+                bindSearch(readyInput);
+                if (!hudFocused()) selectSearch();
+            }
             return;
         }
         paintHud('Stelle Art auf EAN …', '');
@@ -1548,7 +1575,10 @@
     }
 
     setInterval(function () {
-        if (!isLieferungen() || busy || eanRunning) return;
+        if (!isLieferungen()) return;
+        var input = findSearchInput();
+        if (input) bindSearch(input);
+        if (busy || eanRunning) return;
         var ok = artIsEan();
         if (ok) {
             showEanState(true, false);
@@ -1563,14 +1593,16 @@
         busy = false;
         if (scanTimer) clearTimeout(scanTimer);
         if (waitPick) waitPick(null);
+        setSlot('');
         paintHud('Gestoppt. ESC nochmal schließt nichts weiter. Nächste EAN scannen.', 'bad');
         selectSearch();
     });
 
-    var lastPath = location.pathname;
+    var lastSection = pageSection();
     setInterval(function () {
-        if (location.pathname !== lastPath) {
-            lastPath = location.pathname;
+        var section = pageSection();
+        if (section !== lastSection) {
+            lastSection = section;
             boot();
             return;
         }
