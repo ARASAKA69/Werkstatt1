@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.12
+// @version      1.0.14
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.12';
+    var BOT_VERSION = '1.0.14';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -334,10 +334,9 @@
                 + (last.sheet ? '<div>' + hudEscape(last.sheet) + '</div>' : '')
                 + '</div>';
         }
-        var count = basketCount();
         var actions = '';
-        if (isLieferungen() && count > 0) {
-            actions += '<button type="button" class="act" data-act="returns">Zur Warenrückgabe (' + count + ')</button>';
+        if (isLieferungen()) {
+            actions += '<button type="button" class="act" data-act="returns">Zur Warenrückgabe</button>';
         }
         if (isReturns()) {
             actions += '<button type="button" class="act" data-act="reasons">Falscher Artikel setzen</button>';
@@ -1426,13 +1425,75 @@
         });
     }
 
+    function findOpenReasonOption() {
+        var menus = document.querySelectorAll('[role="listbox"], [role="menu"], .MuiPopover-paper ul, .MuiMenu-list');
+        var m;
+        for (m = 0; m < menus.length; m++) {
+            if (!visible(menus[m])) continue;
+            var opts = menus[m].querySelectorAll('[role="option"], [role="menuitem"], li');
+            var k;
+            for (k = 0; k < opts.length; k++) {
+                if (!visible(opts[k])) continue;
+                if (/^falscher artikel$/i.test(textOf(opts[k]))) return opts[k];
+            }
+        }
+        var items = document.querySelectorAll('[role="option"], [role="menuitem"], li.MuiMenuItem-root');
+        var i;
+        for (i = 0; i < items.length; i++) {
+            if (!visible(items[i])) continue;
+            if (items[i].closest && items[i].closest('#sta-retoure-bot')) continue;
+            if (/^falscher artikel$/i.test(textOf(items[i]))) return items[i];
+        }
+        return null;
+    }
+
+    function openReasonControls() {
+        var nodes = document.querySelectorAll('button, [role="button"], [role="combobox"], .MuiSelect-select');
+        var list = [];
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot, [role="listbox"], [role="menu"], .MuiPopover-paper')) continue;
+            var label = fieldValue(el);
+            if (!/^rückgabegrund$|^rueckgabegrund$/i.test(label)) continue;
+            var opener = artOpener(el);
+            if (list.indexOf(opener) === -1) list.push(opener);
+        }
+        return list;
+    }
+
+    async function setOneReason(control) {
+        var attempt;
+        for (attempt = 0; attempt < 3; attempt++) {
+            openArt(control);
+            var option = await waitFor(findOpenReasonOption, 1500);
+            if (!option) {
+                fireClick(control);
+                option = await waitFor(findOpenReasonOption, 1200);
+            }
+            if (option) {
+                pickOption(option);
+                var done = await waitFor(function () {
+                    return /falscher artikel/i.test(fieldValue(control)) && !findOpenReasonOption() ? true : null;
+                }, 1200);
+                if (done || /falscher artikel/i.test(fieldValue(control))) {
+                    await sleep(150);
+                    return true;
+                }
+            }
+            await sleep(150);
+        }
+        return /falscher artikel/i.test(fieldValue(control));
+    }
+
     async function applyReasons() {
         var changed = 0;
         var selects = document.querySelectorAll('select');
         var i;
         for (i = 0; i < selects.length; i++) {
             var opt = Array.prototype.filter.call(selects[i].options, function (item) {
-                return /falscher artikel/i.test(textOf(item));
+                return /falscher artikel/i.test(optionWord(item));
             })[0];
             if (!opt) continue;
             if (selects[i].value !== opt.value) {
@@ -1440,21 +1501,16 @@
                 changed++;
             }
         }
-        var buttons = document.querySelectorAll('button, [role="button"], [role="combobox"]');
-        for (i = 0; i < buttons.length; i++) {
-            if (!visible(buttons[i])) continue;
-            if (buttons[i].closest && buttons[i].closest('#sta-retoure-bot')) continue;
-            var label = textOf(buttons[i]);
-            if (!/rückgabegrund|rueckgabegrund/i.test(label)) continue;
-            if (/falscher artikel/i.test(label)) continue;
-            fireClick(buttons[i]);
-            await sleep(220);
-            var item = findMenu(/falscher artikel/i);
-            if (item) {
-                fireClick(item);
-                changed++;
-                await sleep(180);
+        var pass;
+        for (pass = 0; pass < 4; pass++) {
+            var pending = openReasonControls();
+            if (!pending.length) break;
+            for (i = 0; i < pending.length; i++) {
+                if (abortMission) return changed;
+                var ok = await setOneReason(pending[i]);
+                if (ok) changed++;
             }
+            await sleep(200);
         }
         return changed;
     }
@@ -1465,7 +1521,12 @@
         paintHud('Setze alle Gründe auf Falscher Artikel …', '');
         try {
             var changed = await applyReasons();
-            paintHud(changed ? (changed + ' Gründe auf Falscher Artikel.') : 'Keine offenen Rückgabegründe gefunden.', changed ? 'ok' : 'bad');
+            var left = openReasonControls().length;
+            if (left > 0) {
+                paintHud(changed + ' gesetzt, ' + left + ' noch offen — nochmal klicken.', 'bad');
+            } else {
+                paintHud(changed ? ('Alle ' + changed + ' Gründe auf Falscher Artikel gesetzt.') : 'Alle Gründe stehen bereits auf Falscher Artikel.', 'ok');
+            }
         } finally {
             busy = false;
         }
