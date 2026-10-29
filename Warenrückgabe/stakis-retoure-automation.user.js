@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.1';
+    var BOT_VERSION = '1.0.2';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -172,36 +172,46 @@
         var style = document.createElement('style');
         style.id = 'sta-retoure-style';
         style.textContent = ''
-            + '#sta-retoure-bot{position:fixed;top:24px;right:18px;z-index:2147483646;width:380px;max-width:calc(100vw - 24px);'
-            + 'background:#0b0f14;color:#e7eef8;border:1px solid #1d4ed8;border-radius:18px;box-shadow:0 18px 50px rgba(0,0,0,.45);'
-            + 'font-family:Arial,sans-serif;overflow:hidden}'
+            + '#sta-retoure-bot{position:fixed;z-index:2147483646;top:84px;right:16px;width:min(380px,calc(100vw - 24px));color:#c9d1d9;font-family:"Segoe UI",Arial,sans-serif;border-radius:22px;overflow:hidden;'
+            + 'background:radial-gradient(circle at top left,rgba(59,130,246,.18),transparent 34%),linear-gradient(180deg,rgba(21,27,35,.98),rgba(14,19,26,.98));border:1px solid #2d3642;box-shadow:0 24px 56px rgba(0,0,0,.52);user-select:none}'
             + '#sta-retoure-bot *{box-sizing:border-box}'
-            + '#sta-retoure-bot .head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 14px;cursor:move;'
-            + 'background:#101826;border-bottom:1px solid #1e3a5f}'
-            + '#sta-retoure-bot .head b{font-size:16px;letter-spacing:.4px}'
-            + '#sta-retoure-bot .head b span{color:#5b9bff}'
-            + '#sta-retoure-bot .head button{width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:#9fb0c9;font-weight:700;cursor:pointer}'
+            + '#sta-retoure-bot[data-tone="active"]{border-color:rgba(59,130,246,.55)}'
+            + '#sta-retoure-bot[data-tone="done"]{border-color:rgba(86,211,100,.55)}'
+            + '#sta-retoure-bot[data-tone="error"]{border-color:rgba(248,81,73,.68)}'
+            + '#sta-retoure-bot button{font-family:inherit;cursor:pointer}'
+            + '#sta-retoure-bot .head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 14px 12px;cursor:move;border-bottom:1px solid #242d39}'
+            + '#sta-retoure-bot .eyebrow{color:#8b949e;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase}'
+            + '#sta-retoure-bot .title{color:#f0f6fc;font-size:18px;font-weight:900;letter-spacing:.4px}'
+            + '#sta-retoure-bot .title span{color:#3b82f6}'
+            + '#sta-retoure-bot .tools{display:flex;gap:6px}'
+            + '#sta-retoure-bot .icon{min-width:36px;height:34px;border-radius:12px;border:1px solid rgba(255,255,255,.12);background:rgba(13,17,23,.72);color:#c9d1d9;font-weight:900}'
             + '#sta-retoure-bot.min .body{display:none}'
-            + '#sta-retoure-bot .body{padding:12px 14px 14px;max-height:calc(100vh - 80px);overflow:auto}'
-            + '#sta-retoure-bot .status{font-size:14px;line-height:1.4;margin:0 0 10px}'
-            + '#sta-retoure-bot .status.bad{color:#ff8d8d}'
-            + '#sta-retoure-bot .status.ok{color:#8fd0ff}'
-            + '#sta-retoure-bot .last{border:1px solid #1e3a5f;border-radius:12px;padding:10px;margin:0 0 10px;background:#101826}'
-            + '#sta-retoure-bot .last em{display:block;color:#8ea0b8;font-style:normal;font-size:11px;font-weight:700;letter-spacing:.4px;margin-bottom:4px}'
-            + '#sta-retoure-bot .stock{color:#8ec5ff;font-weight:800}'
-            + '#sta-retoure-bot button.act, #sta-retoure-bot button.ghost{width:100%;border-radius:12px;padding:11px 12px;font-weight:800;cursor:pointer;margin-top:8px}'
-            + '#sta-retoure-bot button.act{border:0;background:#1d4ed8;color:#fff}'
+            + '#sta-retoure-bot .body{padding:14px;max-height:calc(100vh - 160px);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}'
+            + '#sta-retoure-bot .badge{display:inline-flex;min-height:28px;align-items:center;padding:4px 10px;border-radius:999px;border:2px solid rgba(59,130,246,.45);color:#3b82f6;font-size:11px;font-weight:900;letter-spacing:1px}'
+            + '#sta-retoure-bot[data-tone="done"] .badge{border-color:rgba(86,211,100,.5);color:#56d364}'
+            + '#sta-retoure-bot[data-tone="error"] .badge{border-color:rgba(248,81,73,.55);color:#f85149}'
+            + '#sta-retoure-bot .status{margin:8px 0 10px;color:#d7dee8;font-size:14px;font-weight:700;line-height:1.4;user-select:text}'
+            + '#sta-retoure-bot .last{border:1px solid rgba(59,130,246,.28);border-radius:16px;padding:12px;margin:0 0 10px;background:rgba(13,30,60,.42);font-size:13px;line-height:1.4}'
+            + '#sta-retoure-bot .last em{display:block;color:#8b949e;font-style:normal;font-size:10px;font-weight:800;letter-spacing:1px;margin-bottom:4px}'
+            + '#sta-retoure-bot .last div:first-of-type{color:#f0f6fc;font-weight:800}'
+            + '#sta-retoure-bot .stock{color:#60a5fa;font-weight:900}'
+            + '#sta-retoure-bot button.act,#sta-retoure-bot button.ghost{width:100%;min-height:40px;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:900;margin-top:8px}'
+            + '#sta-retoure-bot button.act{border:none;background:#3b82f6;color:#06122a}'
+            + '#sta-retoure-bot button.act:hover{background:#60a5fa}'
             + '#sta-retoure-bot button.act:disabled{opacity:.55;cursor:wait}'
-            + '#sta-retoure-bot button.ghost{border:1px solid #1e3a5f;background:#121a26;color:#d5e4ff}'
+            + '#sta-retoure-bot button.ghost{border:1px solid rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8}'
             + '#sta-retoure-bot .row{display:flex;gap:8px}'
-            + '#sta-retoure-bot .row > *{flex:1}'
-            + '#sta-retoure-bot input{width:100%;border:1px solid #1e3a5f;border-radius:10px;background:#0b0f14;color:#e7eef8;padding:8px 10px;font:14px Arial,sans-serif}'
-            + '#sta-retoure-bot label{display:block;margin:8px 0 4px;color:#8ea0b8;font-size:12px;font-weight:700}'
+            + '#sta-retoure-bot .row > *{flex:1;min-width:0}'
+            + '#sta-retoure-bot input{width:100%;min-height:38px;border:1px solid #3a4452;border-radius:12px;background:#0d1117;color:#f0f6fc;padding:0 12px;font:700 14px "Segoe UI",Arial,sans-serif;user-select:text}'
+            + '#sta-retoure-bot input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.18)}'
+            + '#sta-retoure-bot label{display:block;margin:8px 0 4px;color:#8b949e;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase}'
             + '#sta-retoure-bot .picks{display:flex;flex-direction:column;gap:6px;margin-top:8px}'
-            + '#sta-retoure-bot .picks button{text-align:left;border:1px solid #1e3a5f;border-radius:10px;background:#121a26;color:#e7eef8;padding:8px 10px;cursor:pointer;font-weight:700}'
-            + '#sta-retoure-bot .foot{display:flex;justify-content:space-between;margin-top:12px;color:#8ea0b8;font-size:11px;font-weight:800}'
-            + '#sta-retoure-bot .credit{text-align:right;color:#6d7d93;font-size:10px;margin-top:2px}'
-            + '#sta-retoure-bot .gear{margin-top:8px;padding-top:8px;border-top:1px solid #1e3a5f}';
+            + '#sta-retoure-bot .picks button{text-align:left;min-height:36px;border:1px solid rgba(59,130,246,.45);border-radius:10px;background:rgba(59,130,246,.12);color:#93c5fd;padding:8px 10px;font-size:13px;font-weight:800}'
+            + '#sta-retoure-bot .picks button.ghost{border-color:rgba(255,255,255,.12);background:rgba(13,17,23,.82);color:#d7dee8}'
+            + '#sta-retoure-bot .gear{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.07)}'
+            + '#sta-retoure-bot .foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(255,255,255,.07);color:#8b949e;font-size:12px;font-weight:800}'
+            + '#sta-retoure-bot .credit{text-align:right;margin-top:4px;color:#6e7681;font-size:10px;font-weight:600}'
+            + '@media print{#sta-retoure-bot{display:none !important}}';
         document.documentElement.appendChild(style);
     }
 
@@ -268,16 +278,25 @@
                 + '<label>Sheet Web-App</label><input id="sta-sheet" placeholder="https://script.google.com/.../exec" value="' + hudEscape(sheetUrl()) + '">'
                 + '<button type="button" class="ghost" data-act="save">Speichern</button></div>'
             : '';
+        var toneKey = tone === 'bad' ? 'error' : tone === 'ok' ? 'done' : busy ? 'active' : 'neutral';
+        var toneLabel = toneKey === 'error' ? 'FEHLER' : toneKey === 'done' ? 'OK' : toneKey === 'active' ? 'LÄUFT' : 'BEREIT';
+        panel.setAttribute('data-tone', toneKey);
+        var minimized = panel.classList.contains('min');
         panel.innerHTML = ''
-            + '<div class="head"><b>STAKIS <span>RETOURE</span></b><span><button type="button" data-act="gear">⚙</button><button type="button" data-act="min">–</button></span></div>'
-            + '<div class="body"><div class="status ' + (tone || '') + '">' + hudEscape(message || '') + '</div>'
+            + '<div class="head"><div><div class="eyebrow">STAKIS Retoure · ' + (isReturns() ? 'Warenrückgabe' : 'Lieferungen') + '</div>'
+            + '<div class="title">STAKIS <span>RETOURE</span> v' + BOT_VERSION + '</div></div>'
+            + '<div class="tools"><button type="button" class="icon" data-act="gear">⚙</button><button type="button" class="icon" data-act="min">' + (minimized ? '+' : '–') + '</button></div></div>'
+            + '<div class="body"><div class="badge">' + toneLabel + '</div><div class="status">' + hudEscape(message || '') + '</div>'
             + lastHtml
             + '<div id="sta-slot"></div>'
             + actions
             + gear
-            + '<div class="foot"><span>Bot v' + BOT_VERSION + '</span><span>' + (isReturns() ? 'Warenrückgabe' : 'Lieferungen') + '</span></div>'
+            + '<div class="foot"><span>Bot v' + BOT_VERSION + '</span><span>ESC Stop</span></div>'
             + '<div class="credit">by Arasaka</div></div>';
-        panel.querySelector('[data-act="min"]').addEventListener('click', function () { panel.classList.toggle('min'); });
+        panel.querySelector('[data-act="min"]').addEventListener('click', function () {
+            panel.classList.toggle('min');
+            this.textContent = panel.classList.contains('min') ? '+' : '–';
+        });
         panel.querySelector('[data-act="gear"]').addEventListener('click', function () {
             sessionStorage.setItem(GEAR_KEY, gearOpen ? '0' : '1');
             paintHud(message, tone);
@@ -465,6 +484,42 @@
         return null;
     }
 
+    function reactProps(el) {
+        if (!el) return null;
+        var target = el.wrappedJSObject || el;
+        var keys;
+        try { keys = Object.keys(target); } catch (e) { return null; }
+        var i;
+        for (i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf('__reactProps$') === 0) return target[keys[i]];
+        }
+        return null;
+    }
+
+    function openArt(el) {
+        var props = reactProps(el);
+        if (props && typeof props.onMouseDown === 'function') {
+            try {
+                props.onMouseDown({ button: 0, currentTarget: el, target: el, preventDefault: function () {}, stopPropagation: function () {} });
+                return;
+            } catch (e) {}
+        }
+        fireClick(el);
+    }
+
+    function pickOption(el) {
+        var row = (el.closest && el.closest('[role="option"], [role="menuitem"], li')) || el;
+        var props = reactProps(row);
+        if (props && typeof props.onClick === 'function') {
+            try {
+                var Ctor = pageWindow().MouseEvent || MouseEvent;
+                props.onClick({ currentTarget: row, target: row, nativeEvent: new Ctor('click', { bubbles: true }), preventDefault: function () {}, stopPropagation: function () {} });
+                return;
+            } catch (e) {}
+        }
+        fireClick(row);
+    }
+
     async function ensureEan() {
         var select = findArtSelect();
         if (select) {
@@ -475,23 +530,24 @@
         if (artIsEan()) return true;
         var control = findArtControl();
         if (!control) return false;
-        var option = findEanOption();
-        if (!option) {
-            fireClick(artOpener(control));
-            var tries = 0;
-            while (tries < 10 && !option) {
-                await sleep(120);
-                option = findEanOption();
-                tries++;
+        var attempt;
+        for (attempt = 0; attempt < 3; attempt++) {
+            var option = findEanOption();
+            if (!option) {
+                openArt(artOpener(control));
+                var tries = 0;
+                while (tries < 12 && !option) {
+                    await sleep(120);
+                    option = findEanOption();
+                    tries++;
+                }
             }
-        }
-        if (option) {
-            fireClick(option);
-            await sleep(200);
-            if (!artIsEan()) {
-                fireClick(option);
-                await sleep(200);
+            if (option) {
+                pickOption(option);
+                await sleep(250);
+                if (artIsEan()) return true;
             }
+            control = findArtControl() || control;
         }
         if (artIsEan()) return true;
         var options = document.querySelectorAll('[role="option"], [role="menuitem"], li');
