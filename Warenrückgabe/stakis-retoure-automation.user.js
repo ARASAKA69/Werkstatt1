@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.0.3
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.2';
+    var BOT_VERSION = '1.0.3';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -67,18 +67,29 @@
         return window;
     }
 
+    function makeMouse(type, opts) {
+        var Ctor = type.indexOf('pointer') === 0 && typeof PointerEvent === 'function' ? PointerEvent : MouseEvent;
+        var full = Object.assign({ view: window }, opts);
+        try { return new Ctor(type, full); } catch (e) {}
+        try { return new Ctor(type, opts); } catch (e2) {}
+        try { return new MouseEvent(type, opts); } catch (e3) {}
+        return null;
+    }
+
+    function fireMouse(el, types) {
+        if (!el) return;
+        var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
+        var opts = { bubbles: true, cancelable: true, composed: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0, buttons: 1, pointerType: 'mouse', isPrimary: true };
+        types.forEach(function (type) {
+            var ev = makeMouse(type, opts);
+            if (!ev) return;
+            try { el.dispatchEvent(ev); } catch (e) {}
+        });
+    }
+
     function fireClick(el) {
         if (!el) return;
-        var win = pageWindow();
-        var rect = el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0, top: 0, width: 0, height: 0 };
-        var opts = { bubbles: true, cancelable: true, view: win, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, button: 0 };
-        ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(function (type) {
-            try {
-                var Ctor = type.indexOf('pointer') === 0 && win.PointerEvent ? win.PointerEvent : win.MouseEvent;
-                el.dispatchEvent(new Ctor(type, opts));
-            } catch (e) {}
-        });
-        try { el.click(); } catch (e2) {}
+        fireMouse(el, ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']);
     }
 
     function setNativeValue(input, value) {
@@ -326,14 +337,60 @@
 
     var ART_WORDS = { katalognummer: 1, artikelnummer: 1, belegnummer: 1, ean: 1, hersteller: 1 };
 
+    function optionWord(opt) {
+        return String((opt && (opt.textContent || opt.label || opt.text)) || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function eanSelectOption(select) {
+        return Array.prototype.filter.call(select.options || [], function (opt) {
+            return /^ean$/i.test(optionWord(opt)) || /^europeanarticlenumber$/i.test(String(opt.value || ''));
+        })[0] || null;
+    }
+
     function findArtSelect() {
         var selects = document.querySelectorAll('select');
         var i;
         for (i = 0; i < selects.length; i++) {
-            var opts = Array.prototype.slice.call(selects[i].options || []);
-            if (opts.some(function (opt) { return /^ean$/i.test(textOf(opt)); })) return selects[i];
+            if (selects[i].closest && selects[i].closest('#sta-retoure-bot')) continue;
+            if (eanSelectOption(selects[i])) return selects[i];
         }
         return null;
+    }
+
+    function findArtCombo() {
+        var nodes = document.querySelectorAll('[role="combobox"], [aria-haspopup="listbox"], .MuiSelect-select');
+        var label = findArtLabel();
+        var labelRect = label ? label.getBoundingClientRect() : null;
+        var best = null;
+        var bestDist = Infinity;
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (el.tagName === 'INPUT' || el.tagName === 'SELECT') continue;
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            if (!ART_WORDS[fieldValue(el).toLowerCase()]) continue;
+            if (!labelRect) return el;
+            var rect = el.getBoundingClientRect();
+            var dist = Math.abs(rect.left - labelRect.left) + Math.abs(rect.top - labelRect.bottom);
+            if (dist < bestDist) {
+                best = el;
+                bestDist = dist;
+            }
+        }
+        return best;
+    }
+
+    function hiddenArtValue(control) {
+        var box = control;
+        var guard = 0;
+        while (box && guard < 3) {
+            var input = box.querySelector && box.querySelector('input');
+            if (input && input !== control) return String(input.value || '');
+            box = box.parentElement;
+            guard++;
+        }
+        return '';
     }
 
     function fieldValue(el) {
@@ -367,6 +424,8 @@
     }
 
     function findArtControl() {
+        var combo = findArtCombo();
+        if (combo) return combo;
         var label = findArtLabel();
         if (!label) return null;
         var labelRect = label.getBoundingClientRect();
@@ -462,12 +521,14 @@
 
     function artIsEan() {
         var select = findArtSelect();
-        if (select) {
-            var opt = Array.prototype.filter.call(select.options, function (item) { return /^ean$/i.test(textOf(item)); })[0];
+        if (select && visible(select)) {
+            var opt = eanSelectOption(select);
             return !!(opt && select.value === opt.value);
         }
         var control = findArtControl();
-        return !!(control && fieldValue(control).toLowerCase() === 'ean');
+        if (!control) return false;
+        if (fieldValue(control).toLowerCase() === 'ean') return true;
+        return /^(2|ean|europeanarticlenumber)$/i.test(hiddenArtValue(control));
     }
 
     function findMenu(pattern) {
@@ -504,7 +565,12 @@
                 return;
             } catch (e) {}
         }
-        fireClick(el);
+        fireMouse(el, ['pointerdown', 'mousedown']);
+    }
+
+    function openArtByKey(el) {
+        try { el.focus(); } catch (e) {}
+        pressKey(el, 'ArrowDown');
     }
 
     function pickOption(el) {
@@ -521,20 +587,27 @@
     }
 
     async function ensureEan() {
+        var waited = 0;
+        while (waited < 40 && !findArtSelect() && !findArtControl()) {
+            await sleep(250);
+            waited++;
+        }
         var select = findArtSelect();
-        if (select) {
-            var picked = Array.prototype.filter.call(select.options, function (item) { return /^ean$/i.test(textOf(item)); })[0];
+        if (select && visible(select)) {
+            var picked = eanSelectOption(select);
             if (picked && select.value !== picked.value) setNativeValue(select, picked.value);
+            await sleep(150);
             return artIsEan();
         }
         if (artIsEan()) return true;
         var control = findArtControl();
         if (!control) return false;
         var attempt;
-        for (attempt = 0; attempt < 3; attempt++) {
+        for (attempt = 0; attempt < 4; attempt++) {
             var option = findEanOption();
             if (!option) {
-                openArt(artOpener(control));
+                if (attempt % 2 === 0) openArt(artOpener(control));
+                else openArtByKey(artOpener(control));
                 var tries = 0;
                 while (tries < 12 && !option) {
                     await sleep(120);
@@ -1099,18 +1172,56 @@
             return;
         }
         paintHud('Stelle Art auf EAN …', '');
+        runEanGuard(true);
+    }
+
+    var eanRunning = false;
+    var eanShown = null;
+    var eanLastTry = 0;
+
+    function hudFocused() {
+        var panel = hudEl();
+        return !!(panel && document.activeElement && panel.contains(document.activeElement));
+    }
+
+    function showEanState(ok, force) {
+        if (!isLieferungen() || busy) return;
+        if (!force && eanShown === ok) return;
+        if (!force && hudFocused()) return;
+        eanShown = ok;
+        paintHud(ok
+            ? 'EAN scannen. Art steht auf EAN. Der älteste Beleg wird genommen.'
+            : 'Art konnte nicht auf EAN gestellt werden. Versuche es weiter …', ok ? '' : 'bad');
+    }
+
+    function runEanGuard(force) {
+        if (eanRunning || busy || !isLieferungen()) return;
+        eanRunning = true;
+        eanLastTry = Date.now();
         ensureEan().then(function (ok) {
-            if (!isLieferungen() || busy) return;
-            paintHud(ok
-                ? 'EAN scannen. Art steht auf EAN. Der älteste Beleg wird genommen.'
-                : 'Art steht noch nicht auf EAN.', ok ? '' : 'bad');
+            eanRunning = false;
+            showEanState(ok, force);
             var input = findSearchInput();
             if (input) {
                 bindSearch(input);
-                try { input.focus(); } catch (e) {}
+                if (ok && force && !hudFocused()) {
+                    try { input.focus(); } catch (e) {}
+                }
             }
+        }, function () {
+            eanRunning = false;
         });
     }
+
+    setInterval(function () {
+        if (!isLieferungen() || busy || eanRunning) return;
+        var ok = artIsEan();
+        if (ok) {
+            showEanState(true, false);
+            return;
+        }
+        if (Date.now() - eanLastTry > 2500) runEanGuard(false);
+    }, 1000);
 
     document.addEventListener('keydown', function (event) {
         if (event.key !== 'Escape') return;
