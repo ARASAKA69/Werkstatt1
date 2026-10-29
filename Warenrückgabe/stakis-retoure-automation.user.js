@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.9
+// @version      1.0.10
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.9';
+    var BOT_VERSION = '1.0.10';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -777,11 +777,21 @@
         if (button) fireClick(button);
     }
 
+    function selectSearch() {
+        var input = findSearchInput();
+        if (!input) return;
+        try {
+            input.focus();
+            input.select();
+            if (typeof input.setSelectionRange === 'function') input.setSelectionRange(0, String(input.value || '').length);
+        } catch (e) {}
+    }
+
     function clearSearch() {
         var input = findSearchInput();
         if (!input) return;
         setNativeValue(input, '');
-        try { input.focus(); } catch (e) {}
+        selectSearch();
     }
 
     function parseDate(text) {
@@ -1236,6 +1246,7 @@
             if (!rows) {
                 debugRows('keine Lieferung');
                 paintHud('Keine Lieferung zu ' + ean + ' gefunden.', 'bad');
+                selectSearch();
                 return;
             }
             await sleep(300);
@@ -1319,6 +1330,7 @@
             if (!button) {
                 debugRows('kein Rückgabe-Icon');
                 paintHud('Rückgabe-Icon an der Position nicht gefunden.', 'bad');
+                selectSearch();
                 return;
             }
             if (isDisabled(button)) {
@@ -1354,6 +1366,7 @@
             paintHud('Drin. Suche ist leer für das nächste Teil. ' + note, saved && saved.ok ? 'ok' : 'bad');
         } catch (err) {
             paintHud(err && err.message ? err.message : String(err), 'bad');
+            selectSearch();
         } finally {
             busy = false;
         }
@@ -1551,6 +1564,7 @@
         if (scanTimer) clearTimeout(scanTimer);
         if (waitPick) waitPick(null);
         paintHud('Gestoppt. ESC nochmal schließt nichts weiter. Nächste EAN scannen.', 'bad');
+        selectSearch();
     });
 
     var lastPath = location.pathname;
