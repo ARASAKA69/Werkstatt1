@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.14
+// @version      1.0.15
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.14';
+    var BOT_VERSION = '1.0.15';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -1532,31 +1532,53 @@
         }
     }
 
-    function printButton() {
-        var nodes = document.querySelectorAll('button, [role="button"], a');
-        var send = null;
+    function findSendButton() {
+        var nodes = document.querySelectorAll('button, [role="button"], a, div, span');
+        var best = null;
+        var bestArea = Infinity;
         var i;
         for (i = 0; i < nodes.length; i++) {
-            if (/WARENRÜCKGABE BEAUFTRAGEN/i.test(textOf(nodes[i]))) {
-                send = nodes[i];
-                break;
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            if (!/WARENRÜCKGABE\s+BEAUFTRAGEN/i.test(textOf(el))) continue;
+            var rect = el.getBoundingClientRect();
+            var area = rect.width * rect.height;
+            if (area > 0 && area < bestArea) {
+                best = el;
+                bestArea = area;
             }
         }
+        if (!best) return null;
+        return (best.closest && best.closest('button, [role="button"], a')) || best;
+    }
+
+    function printButton() {
+        var send = findSendButton();
         if (!send) return null;
-        var parent = send.parentElement;
-        var previous = send.previousElementSibling;
-        while (previous) {
-            if (previous.matches && previous.matches('button, [role="button"], a')) return previous;
-            var inner = previous.querySelector && previous.querySelector('button, [role="button"], a');
-            if (inner) return inner;
-            previous = previous.previousElementSibling;
-        }
-        if (!parent) return null;
-        var buttons = parent.querySelectorAll('button, [role="button"]');
-        var prev = null;
-        for (i = 0; i < buttons.length; i++) {
-            if (buttons[i] === send || buttons[i].contains(send)) return prev;
-            prev = buttons[i];
+        var sendRect = send.getBoundingClientRect();
+        var root = send.parentElement;
+        var guard = 0;
+        while (root && guard < 6) {
+            var candidates = Array.prototype.slice.call(root.querySelectorAll('button, [role="button"], a')).concat(iconControls(root));
+            var matches = candidates.filter(function (el, idx) {
+                if (candidates.indexOf(el) !== idx) return false;
+                if (!visible(el)) return false;
+                if (el === send || send.contains(el) || el.contains(send)) return false;
+                if (el.closest && el.closest('#sta-retoure-bot')) return false;
+                var rect = el.getBoundingClientRect();
+                if (rect.width < 20 || rect.width > 90 || rect.height < 20 || rect.height > 70) return false;
+                if (rect.right > sendRect.left + 8) return false;
+                if (sendRect.left - rect.right > 60) return false;
+                if (Math.abs((rect.top + rect.height / 2) - (sendRect.top + sendRect.height / 2)) > 28) return false;
+                return true;
+            });
+            if (matches.length) {
+                matches.sort(function (a, b) { return b.getBoundingClientRect().right - a.getBoundingClientRect().right; });
+                return matches[0];
+            }
+            root = root.parentElement;
+            guard++;
         }
         return null;
     }
@@ -1582,6 +1604,7 @@
                 paintHud('Das Druck-Icon neben Warenrückgabe beauftragen fehlt.', 'bad');
                 return;
             }
+            pressControl(button);
             fireClick(button);
             paintHud('Druck ist angestoßen. Danach geht es zurück zur Suche.', 'ok');
             setTimeout(function () { finishCycle('Nächster Vorgang. EAN scannen.'); }, 1600);
