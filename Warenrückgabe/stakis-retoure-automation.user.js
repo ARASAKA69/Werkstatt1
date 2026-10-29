@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.15
+// @version      1.0.16
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.15';
+    var BOT_VERSION = '1.0.16';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -1541,7 +1541,7 @@
             var el = nodes[i];
             if (!visible(el)) continue;
             if (el.closest && el.closest('#sta-retoure-bot')) continue;
-            if (!/WARENRÜCKGABE\s+BEAUFTRAGEN/i.test(textOf(el))) continue;
+            if (!/^WARENRÜCKGABE\s+BEAUFTRAGEN$/i.test(textOf(el))) continue;
             var rect = el.getBoundingClientRect();
             var area = rect.width * rect.height;
             if (area > 0 && area < bestArea) {
@@ -1550,7 +1550,18 @@
             }
         }
         if (!best) return null;
-        return (best.closest && best.closest('button, [role="button"], a')) || best;
+        var btn = best.closest && best.closest('button, [role="button"], a');
+        if (btn) return btn;
+        var node = best;
+        var guard = 0;
+        while (node.parentElement && guard < 4) {
+            var pRect = node.parentElement.getBoundingClientRect();
+            if (pRect.width > 360 || pRect.height > 64) break;
+            if (textOf(node.parentElement).toUpperCase() !== 'WARENRÜCKGABE BEAUFTRAGEN') break;
+            node = node.parentElement;
+            guard++;
+        }
+        return node;
     }
 
     function printButton() {
@@ -1593,21 +1604,64 @@
         }, 600);
     }
 
+    function findConfirmButton(send) {
+        var dialogs = document.querySelectorAll('[role="dialog"], .MuiDialog-root, .MuiModal-root');
+        var d;
+        for (d = 0; d < dialogs.length; d++) {
+            if (!visible(dialogs[d])) continue;
+            var btns = dialogs[d].querySelectorAll('button, [role="button"], a, div, span');
+            var b;
+            for (b = 0; b < btns.length; b++) {
+                var el = btns[b];
+                if (!visible(el) || el === send) continue;
+                var t = textOf(el);
+                if (/^(ja|ok|bestätigen|bestaetigen|beauftragen|absenden|senden|warenkorb|weiter)$/i.test(t)) {
+                    return (el.closest && el.closest('button, [role="button"], a')) || el;
+                }
+            }
+        }
+        return null;
+    }
+
     async function runPrint() {
         if (busy) return;
         busy = true;
         paintHud('Gründe setzen, dann drucken und absenden …', '');
         try {
             await applyReasons();
+            var left = openReasonControls().length;
+            if (left > 0) {
+                paintHud('Noch ' + left + ' Rückgabegrund offen. Bitte kurz prüfen.', 'bad');
+                return;
+            }
             var button = printButton();
             if (!button) {
                 paintHud('Das Druck-Icon neben Warenrückgabe beauftragen fehlt.', 'bad');
                 return;
             }
+            paintHud('Öffne Druckansicht …', '');
             pressControl(button);
-            fireClick(button);
-            paintHud('Druck ist angestoßen. Danach geht es zurück zur Suche.', 'ok');
-            setTimeout(function () { finishCycle('Nächster Vorgang. EAN scannen.'); }, 1600);
+            await sleep(1400);
+            var send = findSendButton();
+            if (!send) {
+                paintHud('Button WARENRÜCKGABE BEAUFTRAGEN nicht gefunden.', 'bad');
+                return;
+            }
+            paintHud('Beauftrage Warenrückgabe …', '');
+            pressControl(send);
+            await sleep(700);
+            var confirmBtn = await waitFor(function () { return findConfirmButton(send); }, 1200);
+            if (confirmBtn) {
+                pressControl(confirmBtn);
+                await sleep(600);
+            } else if (!/Positionen\s+0\b/i.test(textOf(document.body)) && findSendButton() && send.parentElement) {
+                fireClick(send.parentElement);
+            }
+            await waitFor(function () {
+                return /Positionen\s+0\b/i.test(textOf(document.body)) || !findSendButton() ? true : null;
+            }, 3500);
+            paintHud('Warenrückgabe gedruckt und beauftragt. Zurück zur Suche …', 'ok');
+            setTimeout(function () { finishCycle('Nächster Vorgang. EAN scannen.'); }, 900);
         } finally {
             busy = false;
         }
