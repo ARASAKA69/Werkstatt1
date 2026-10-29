@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         STAKIS Warenrückgabe Retoure Bot
 // @namespace    http://tampermonkey.net/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Sucht STAKIS Lieferungen per EAN, nimmt den ältesten Beleg und schreibt ihn ins Blatt STA
 // @author       ARASAKA
 // @match        *://*.stakis.de/*
@@ -19,7 +19,7 @@
 (function () {
     'use strict';
 
-    var BOT_VERSION = '1.0.4';
+    var BOT_VERSION = '1.0.5';
     var WORKER_KEY = 'sta_retoure_worker';
     var SHEET_URL_KEY = 'sta_retoure_sheet_url';
     var COUNT_KEY = 'sta_retoure_count';
@@ -764,23 +764,56 @@
         });
     }
 
-    var ROW_SKIP = '#sta-retoure-bot, [role="dialog"], [role="presentation"], [role="tooltip"], .MuiPopover-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
+    var ROW_SKIP = '#sta-retoure-bot, [role="dialog"], [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-root, .MuiModal-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
 
     function rowButtons(row) {
-        return Array.prototype.filter.call(row.querySelectorAll('button, [role="button"]'), function (button) {
+        var list = Array.prototype.filter.call(row.querySelectorAll('button, [role="button"], [role="combobox"], [aria-haspopup]'), function (button) {
             return visible(button) && !(button.closest && button.closest('#sta-retoure-bot'));
+        });
+        return list.filter(function (button) {
+            return !list.some(function (other) { return other !== button && other.contains(button); });
         });
     }
 
-    function tableRows(test) {
+    function isDisabled(button) {
+        if (!button) return true;
+        if (button.disabled || button.getAttribute('aria-disabled') === 'true') return true;
+        return /(^|\s)Mui-disabled(\s|$)/.test(button.getAttribute('class') || '');
+    }
+
+    function findMenuItem(pattern) {
+        var nodes = document.querySelectorAll('[role="option"], [role="menuitem"], li, button, a, div, span, p');
+        var best = null;
+        var bestArea = Infinity;
+        var i;
+        for (i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!visible(el)) continue;
+            if (el.closest && el.closest('#sta-retoure-bot')) continue;
+            var text = textOf(el);
+            if (text.length > 40 || !pattern.test(text)) continue;
+            var rect = el.getBoundingClientRect();
+            var area = rect.width * rect.height;
+            if (area < bestArea) {
+                best = el;
+                bestArea = area;
+            }
+        }
+        if (!best) return null;
+        return (best.closest && best.closest('[role="option"], [role="menuitem"], li, button, a')) || best;
+    }
+
+    var POS_SKIP = '#sta-retoure-bot, [role="tooltip"], [role="listbox"], [role="menu"], .MuiPopover-root, .MuiPopper-root, .MuiPickersPopper-root, header, nav';
+
+    function tableRows(test, skip) {
         var nodes = document.querySelectorAll('tr, [role="row"], div, li');
         var found = [];
         var i;
         for (i = 0; i < nodes.length; i++) {
             var el = nodes[i];
             if (!visible(el)) continue;
-            if (el.closest && el.closest(ROW_SKIP)) continue;
-            if (el.querySelector('input, select, textarea, [role="combobox"]')) continue;
+            if (el.closest && el.closest(skip || ROW_SKIP)) continue;
+            if (el.querySelector('textarea, input[type="text"]:not([aria-hidden="true"]), input:not([type]):not([aria-hidden="true"]):not(.MuiSelect-nativeInput)')) continue;
             var text = textOf(el);
             if (text.length < 10 || text.length > 400) continue;
             if (/\d{2}\.\d{2}\.\d{4}\s*[-–]\s*\d{2}\.\d{2}\.\d{4}/.test(text)) continue;
@@ -795,7 +828,7 @@
 
     function voucherRows() {
         return tableRows(function (text, buttons) {
-            return buttons.length >= 1 && buttons.length <= 2 && /eur/i.test(text);
+            return buttons.length >= 1 && buttons.length <= 3 && /eur/i.test(text) && !/mwst/i.test(text);
         });
     }
 
@@ -812,7 +845,7 @@
     function positionRows() {
         return tableRows(function (text, buttons) {
             return buttons.length >= 3 && /[a-zäöü]{3,}/i.test(text);
-        });
+        }, POS_SKIP);
     }
 
     function returnButton(row) {
@@ -821,33 +854,53 @@
         return buttons[buttons.length - 1];
     }
 
-    function moneyValue(text) {
-        var match = String(text || '').match(/(\d{1,3}(?:\.\d{3})*,\d{2})(?!.*\d,\d{2})/);
-        if (!match) return 0;
-        return Number(match[1].replace(/\./g, '').replace(',', '.'));
-    }
-
-    function detailBrutto() {
-        var body = textOf(document.body);
-        var match = body.match(/Gesamtsumme\s*-?\s*Brutto\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
-        return match ? Number(match[1].replace(/\./g, '').replace(',', '.')) : 0;
+    function debugRows(reason) {
+        try {
+            var sample = Array.prototype.filter.call(document.querySelectorAll('tr, [role="row"], div'), function (el) {
+                return visible(el) && !(el.closest && el.closest('#sta-retoure-bot')) && /^\d{6,12}\s+\d{2}\.\d{2}\.\d{4}/.test(textOf(el)) && textOf(el).length < 400;
+            }).slice(0, 12).map(function (el) {
+                return { tag: el.tagName, cls: String(el.getAttribute('class') || '').slice(0, 80), text: textOf(el).slice(0, 160), controls: rowButtons(el).map(function (b) { return b.tagName + '[' + (b.getAttribute('role') || '') + '] ' + buttonHint(b).slice(0, 60); }) };
+            });
+            console.log('[STA ' + BOT_VERSION + '] ' + reason, { vouchers: voucherRows().length, positions: positionRows().length, sample: sample });
+        } catch (e) {}
     }
 
     function matchPosition(lines, ean) {
         var hits = lines.filter(function (row) { return String(row.textContent || '').indexOf(ean) !== -1; });
         if (hits.length === 1) return hits[0];
         if (lines.length === 1) return lines[0];
-        var brutto = detailBrutto();
-        if (!brutto) return null;
-        var scored = lines.map(function (row) {
-            return { row: row, diff: Math.abs(moneyValue(textOf(row)) * 1.19 - brutto) };
-        }).sort(function (a, b) { return a.diff - b.diff; });
-        if (!scored.length) return null;
-        var best = scored[0];
-        var next = scored[1];
-        if (best.diff > brutto * 0.08 + 1) return null;
-        if (next && next.diff - best.diff < 1) return null;
-        return best.row;
+        return null;
+    }
+
+    function rowToggle(row) {
+        var controls = rowButtons(row);
+        if (controls.length < 2) return null;
+        return controls[0];
+    }
+
+    async function showMatchedPositions(row, number) {
+        var toggle = rowToggle(row);
+        if (!toggle) return null;
+        var before = positionRows();
+        var role = toggle.getAttribute('role') || '';
+        if (role === 'combobox' || toggle.getAttribute('aria-haspopup')) openArt(toggle);
+        else fireClick(toggle);
+        var item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 2500);
+        if (!item && role !== 'combobox') {
+            openArt(toggle);
+            item = await waitFor(function () { return findMenuItem(/^positionen?\s+anzeigen$/i); }, 1500);
+        }
+        if (item) pickOption(item);
+        return waitFor(function () {
+            var list = positionRows().filter(function (line) { return before.indexOf(line) === -1; });
+            if (!list.length) return null;
+            var owned = list.filter(function (line) {
+                return row.contains(line) || (row.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING);
+            });
+            var next = voucherRows().filter(function (other) { return other !== row && (row.compareDocumentPosition(other) & Node.DOCUMENT_POSITION_FOLLOWING); })[0];
+            if (next) owned = owned.filter(function (line) { return next.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_PRECEDING; });
+            return owned.length ? owned : list;
+        }, 5000);
     }
 
     function parsePosition(text) {
@@ -1030,6 +1083,7 @@
                 return list;
             }, 9000);
             if (!rows) {
+                debugRows('keine Lieferung');
                 paintHud('Keine Lieferung zu ' + ean + ' gefunden.', 'bad');
                 return;
             }
@@ -1039,26 +1093,32 @@
             var oldest = rows[0];
             var number = voucherNumber(oldest);
             var when = textOf(oldest).match(/\d{2}\.\d{2}\.\d{4}/);
-            paintHud(rows.length + ' Lieferungen. Öffne die älteste: ' + number + ' vom ' + (when ? when[0] : '') + ' …', '');
-            var opener = openButton(oldest);
-            if (!opener) {
-                paintHud('Lupe an Lieferung ' + number + ' nicht gefunden.', 'bad');
-                return;
-            }
-            fireClick(opener);
-            if (number) {
-                await waitFor(function () { return location.pathname.indexOf(number) !== -1 || new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body)) ? true : null; }, 6000);
-            }
-            await sleep(600);
-            var lines = await waitFor(function () {
-                var list = positionRows();
-                return list.length ? list : null;
-            }, 8000);
+            paintHud(rows.length + ' Lieferungen. Älteste: ' + number + ' vom ' + (when ? when[0] : '') + '. Zeige Position …', '');
+            var lines = await showMatchedPositions(oldest, number);
+            var line = lines && lines.length === 1 ? lines[0] : null;
             if (!lines) {
+                var opener = openButton(oldest);
+                if (!opener) {
+                    debugRows('keine Lupe');
+                    paintHud('Lupe an Lieferung ' + number + ' nicht gefunden.', 'bad');
+                    return;
+                }
+                fireClick(opener);
+                if (number) {
+                    await waitFor(function () { return location.pathname.indexOf(number) !== -1 || new RegExp('Belegnummer\\s*' + number, 'i').test(textOf(document.body)) ? true : null; }, 6000);
+                }
+                await sleep(600);
+                lines = await waitFor(function () {
+                    var list = positionRows();
+                    return list.length ? list : null;
+                }, 8000);
+            }
+            if (!lines) {
+                debugRows('keine Position');
                 paintHud('In Lieferung ' + number + ' keine Position mit Rückgabe-Icon gefunden.', 'bad');
                 return;
             }
-            var line = matchPosition(lines, ean);
+            if (!line) line = matchPosition(lines, ean);
             if (!line) line = await askChoice(lines);
             if (!line) {
                 paintHud('Abgebrochen. Nächste EAN scannen.', '');
@@ -1085,7 +1145,13 @@
             try { line.classList.remove('sta-picked-row'); } catch (e2) {}
             var button = returnButton(line);
             if (!button) {
+                debugRows('kein Rückgabe-Icon');
                 paintHud('Rückgabe-Icon an der Position nicht gefunden.', 'bad');
+                return;
+            }
+            if (isDisabled(button)) {
+                paintHud((parsed.name || 'Teil') + ' liegt schon in der Warenrückgabe oder ist nicht rückgabefähig.', 'bad');
+                clearSearch();
                 return;
             }
             fireClick(button);
