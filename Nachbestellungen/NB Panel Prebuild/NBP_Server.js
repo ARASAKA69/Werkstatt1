@@ -4,6 +4,7 @@ function doGet() {
   }
   var t = HtmlService.createTemplateFromFile("NBP_App");
   t.appVersion = NBP_VERSION;
+  t.appIcon = NBP_ICON;
   return t
     .evaluate()
     .setTitle("NB Panel")
@@ -385,7 +386,7 @@ function getPanelData() {
       version: NBP_VERSION,
       user: nbpUser_(),
       loadedAt: Utilities.formatDate(now, NBP_TZ, "dd.MM.yyyy HH:mm"),
-      loadedClock: Utilities.formatDate(now, NBP_TZ, "HH:mm"),
+      loadedClock: Utilities.formatDate(now, NBP_TZ, "HH:mm:ss"),
       sheetUrl: ss.getUrl(),
       nb: nb,
       sections: sections

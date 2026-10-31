@@ -6,25 +6,29 @@
     nbFilter: { q: "", group: "", art: "", haendler: "", besteller: "", openOnly: true, sort: "daysOpen", dir: -1 },
     secFilter: {},
     drawer: null,
-    busy: false
+    busy: false,
+    writes: 0,
+    writeSeq: 0,
+    pendingData: null,
+    fromCache: false
   };
 
   var GROUPS = [
     { key: "leer", label: "Ohne Status" },
-    { key: "nichtbestellt", label: "Nicht bestellt" },
     { key: "bestellt", label: "Bestellt" },
     { key: "teilweise", label: "Teilweise angeliefert" },
     { key: "rueckstand", label: "Lieferrückstand" },
     { key: "nachfrage", label: "Nachfrage an Werkstatt" },
     { key: "verschwunden", label: "Verschwunden" },
     { key: "andere", label: "Sonstige" },
+    { key: "nichtbestellt", label: "Nicht bestellt" },
     { key: "komplett", label: "Komplett angeliefert" },
     { key: "konsi", label: "Konsi-Lager" },
     { key: "b2a1", label: "B2A1" },
     { key: "fertig", label: "Fertiggestellt" },
     { key: "entfallen", label: "Entfallen (nicht notwendig / nicht genehmigt / abgebrochen)" }
   ];
-  var CLOSED = { komplett: true, konsi: true, b2a1: true, fertig: true, entfallen: true };
+  var CLOSED = { nichtbestellt: true, komplett: true, konsi: true, b2a1: true, fertig: true, entfallen: true };
 
   var STATUS_GROUP = {
     "bestellt": "bestellt",
@@ -69,6 +73,22 @@
       "anfrage eoa": "dblue",
       "in klärung": "purple"
     },
+    art: {
+      "exit mechanik": "lred",
+      "exit lack": "green",
+      "erstbestellung falsch": "lred",
+      "nachbestellung falsch": "lpurple",
+      "verschwunden": "blue",
+      "defekt": "dred",
+      "platzschaden": "yellow",
+      "mechanik nachbestellung": "purple",
+      "diagnose notwendig": "brown",
+      "lack nachbestellung": "pink",
+      "bestellung nach reparaturversuch": "green",
+      "kein teil erforderlich": "dgreen",
+      "q-check": "tan",
+      "foto": "green"
+    },
     carol: {
       "erledigt": "green",
       "nicht genehmigt": "lred",
@@ -98,8 +118,8 @@
   var NB_COLS = [
     { key: "datumMs", label: "Datum", get: function (r) { return r.f.datum; }, sort: function (r) { return r.datumMs || 0; } },
     { key: "daysOpen", label: "Tage", num: true, html: function (r) { return daysHtml(r.daysOpen, r); }, sort: function (r) { return r.daysOpen == null ? -1 : r.daysOpen; } },
-    { key: "stockId", label: "Stock ID", get: function (r) { return r.f.stockId; } },
-    { key: "art", label: "Art", get: function (r) { return r.f.art; } },
+    { key: "stockId", label: "Stock ID", html: function (r) { return stockBadge(r.f.stockId); }, sort: function (r) { return r.f.stockId; } },
+    { key: "art", label: "Art", html: function (r) { return chip("art", r.f.art); }, sort: function (r) { return norm(r.f.art); } },
     { key: "besteller", label: "Besteller", get: function (r) { return r.f.besteller; } },
     { key: "ersatzteil", label: "Ersatzteil", wrap: true, get: function (r) { return r.f.ersatzteil; } },
     { key: "preis", label: "Preis", num: true, get: function (r) { return r.f.preis; }, sort: function (r) { return numOf(r.f.preis); } },
@@ -125,8 +145,6 @@
     var n = parseFloat(s);
     return isNaN(n) ? 0 : n;
   }
-  function eur(n) { return n.toLocaleString("de-DE", { style: "currency", currency: "EUR" }); }
-
   function groupOf(status) {
     var s = norm(status);
     if (!s) return "leer";
@@ -136,6 +154,36 @@
     if (!value) return "";
     var tone = (TONES[field] || {})[norm(value)] || "gray";
     return "<span class=\"pill t-" + tone + "\">" + esc(value) + "</span>";
+  }
+  var TH_TONES = {
+    datumMs: "blue", daysOpen: "orange", daysStatus: "orange", stockId: "blue", art: "purple", et: "red",
+    besteller: "teal", bearbeiter: "teal", ersatzteil: "gray", grund: "gray", bemerkung: "gray", extra: "gray",
+    preis: "green", haendler: "orange", costGate: "green", carol: "purple", status: "yellow", lagerort: "teal", liefert: "blue"
+  };
+  function thBadge(label, key, arrow) {
+    return "<span class=\"th-badge h-" + (TH_TONES[key] || "gray") + "\">" + esc(label) + (arrow ? "<i>" + arrow + "</i>" : "") + "</span>";
+  }
+  function stockBadge(s, size) {
+    if (!s) return "";
+    return "<button type=\"button\" class=\"stock-badge" + (size ? " " + size : "") + "\" data-copy=\"" + esc(s) + "\" title=\"Klicken zum Kopieren\">" +
+      "<span>" + esc(s) + "</span><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2\"/><path d=\"M5 15V5a1 1 0 0 1 1-1h9\"/></svg></button>";
+  }
+  function copyText(text) {
+    var ok = false;
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove();
+    if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () {});
+      ok = true;
+    }
+    return ok;
   }
   function costGateOpen(r) { return !COSTGATE_DONE[norm(r.f.costGate)]; }
   function groupLabel(k) {
@@ -168,9 +216,29 @@
     setTimeout(function () { el.remove(); }, kind === "err" ? 7000 : 3500);
   }
 
+  var pending = 0;
+  function busyBar(delta) {
+    pending = Math.max(0, pending + delta);
+    $("loadBar").classList.toggle("on", pending > 0);
+  }
+
   function call(fn, args, ok, fail) {
+    busyBar(1);
+    var isWrite = fn !== "getPanelData";
+    if (isWrite) {
+      S.writes++;
+      S.writeSeq++;
+    }
+    var end = function () {
+      busyBar(-1);
+      if (isWrite) {
+        S.writes--;
+        S.writeSeq++;
+      }
+    };
     var r = google.script.run
       .withSuccessHandler(function (res) {
+        end();
         if (res && res.ok === false) {
           toast(res.message || "Fehler", "err");
           if (fail) fail(res);
@@ -179,32 +247,195 @@
         ok && ok(res);
       })
       .withFailureHandler(function (err) {
+        end();
         toast(String(err && err.message ? err.message : err), "err");
         if (fail) fail(err);
       });
     r[fn].apply(r, args || []);
   }
 
-  function load(silent) {
-    if (S.busy) return;
+  var CACHE_KEY = "nbp_cache_v1";
+  var AUTO_MS = 60000;
+
+  function readCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeCache(raw) {
+    try {
+      localStorage.setItem(CACHE_KEY, raw);
+    } catch (e) {
+      try { localStorage.removeItem(CACHE_KEY); } catch (e2) {}
+    }
+  }
+
+  function stampLine() {
+    var chip = $("liveChip");
+    chip.classList.remove("loading", "live", "cache");
+    if (!S.data) {
+      chip.classList.add("loading");
+      $("loadedAt").textContent = "Lade Daten…";
+      return;
+    }
+    if (S.busy) chip.classList.add("loading");
+    else chip.classList.add(S.fromCache ? "cache" : "live");
+    var clock = S.data.loadedClock || S.data.loadedAt;
+    $("loadedAt").textContent = (S.busy ? "Synchronisiere · " : S.fromCache ? "Cache · " : "Live · ") + clock;
+    chip.title = "Stand " + S.data.loadedAt + " · automatisch alle 60 Sekunden";
+  }
+
+  function load(manual) {
+    if (S.busy) {
+      S.reloadQueued = true;
+      if (manual) S.manualQueued = true;
+      return;
+    }
     S.busy = true;
-    if (!silent) $("btnRefresh").disabled = true;
+    S.lastLoad = Date.now();
+    var seq = S.writeSeq;
+    var btn = $("btnRefresh");
+    if (manual) {
+      btn.disabled = true;
+      btn.classList.add("loading");
+    }
+    stampLine();
+    var done = function () {
+      S.busy = false;
+      btn.disabled = false;
+      btn.classList.remove("loading");
+      stampLine();
+      if (S.reloadQueued && S.writes === 0) {
+        var m = S.manualQueued;
+        S.reloadQueued = false;
+        S.manualQueued = false;
+        load(m);
+      }
+    };
     call("getPanelData", [], function (d) {
-      S.busy = false;
-      $("btnRefresh").disabled = false;
-      prepare(d);
-      S.data = d;
-      $("loadedAt").textContent = "Stand " + d.loadedAt;
-      $("userLine").textContent = d.user;
-      $("sheetLink").href = d.sheetUrl;
-      renderNav();
-      render();
-      if (S.drawer) reopenDrawer();
+      if (seq !== S.writeSeq || S.writes > 0) {
+        S.reloadQueued = true;
+        S.manualQueued = S.manualQueued || manual;
+        done();
+        return;
+      }
+      writeCache(JSON.stringify(d));
+      S.fromCache = false;
+      applyData(d);
+      if (manual && S.loadedOnce) toast("Daten aktualisiert · " + d.nb.rows.length + " Nachbestellungen", "ok");
+      S.loadedOnce = true;
+      done();
     }, function () {
-      S.busy = false;
-      $("btnRefresh").disabled = false;
+      done();
+      stampLine();
       if (!S.data) $("view").innerHTML = "<div class=\"empty\">Daten konnten nicht geladen werden.</div>";
     });
+  }
+
+  function uiLocked() {
+    var a = document.activeElement;
+    if (a && a.tagName === "SELECT") return true;
+    if (S.writes > 0) return true;
+    if (S.pointerDown) return true;
+    return false;
+  }
+
+  function applyData(d) {
+    if (S.data && uiLocked()) {
+      S.pendingData = d;
+      return;
+    }
+    S.pendingData = null;
+    var st = S.data ? captureUi() : null;
+    prepare(d);
+    S.data = d;
+    stampLine();
+    $("userLine").textContent = d.user;
+    $("sheetLink").href = d.sheetUrl;
+    renderNav();
+    render();
+    if (S.drawer) reopenDrawer();
+    if (st) restoreUi(st);
+  }
+
+  function flushPending() {
+    if (!S.pendingData) return;
+    setTimeout(function () {
+      if (S.pendingData && !uiLocked()) applyData(S.pendingData);
+    }, 150);
+  }
+
+  function formEls(root) {
+    return $(root).querySelectorAll("input[id],select[id],textarea[id]");
+  }
+
+  function captureUi() {
+    var st = { vals: {}, tw: [], view: $("view").scrollTop, drawer: $("drawerBody").scrollTop, nav: $("nav").scrollLeft, active: null };
+    ["view", "drawerBody"].forEach(function (root) {
+      var els = formEls(root);
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (el.getAttribute("data-dirty") !== "1") continue;
+        st.vals[el.id] = el.type === "checkbox" ? { c: el.checked } : { v: el.value };
+      }
+    });
+    var tws = $("view").querySelectorAll(".table-wrap");
+    for (var t = 0; t < tws.length; t++) st.tw.push({ t: tws[t].scrollTop, l: tws[t].scrollLeft });
+    var a = document.activeElement;
+    if (a && a.id && /INPUT|TEXTAREA/.test(a.tagName)) {
+      st.active = { id: a.id, s: null, e: null };
+      try {
+        st.active.s = a.selectionStart;
+        st.active.e = a.selectionEnd;
+      } catch (e) {}
+    }
+    return st;
+  }
+
+  function restoreUi(st) {
+    for (var id in st.vals) {
+      var el = $(id);
+      if (!el) continue;
+      if ("c" in st.vals[id]) el.checked = st.vals[id].c;
+      else {
+        if (el.tagName === "SELECT" && st.vals[id].v && !Array.prototype.some.call(el.options, function (o) { return o.value === st.vals[id].v; })) {
+          var o = document.createElement("option");
+          o.value = st.vals[id].v;
+          o.textContent = st.vals[id].v;
+          el.appendChild(o);
+        }
+        el.value = st.vals[id].v;
+      }
+      el.setAttribute("data-dirty", "1");
+    }
+    $("view").scrollTop = st.view;
+    $("drawerBody").scrollTop = st.drawer;
+    $("nav").scrollLeft = st.nav;
+    var tws = $("view").querySelectorAll(".table-wrap");
+    for (var t = 0; t < tws.length && t < st.tw.length; t++) {
+      tws[t].scrollTop = st.tw[t].t;
+      tws[t].scrollLeft = st.tw[t].l;
+    }
+    if (st.active) {
+      var a = $(st.active.id);
+      if (a) {
+        a.focus({ preventScroll: true });
+        try {
+          if (st.active.s != null) a.setSelectionRange(st.active.s, st.active.e);
+        } catch (e) {}
+      }
+    }
+  }
+
+  function clearDirty(root, prefix) {
+    var els = formEls(root);
+    for (var i = 0; i < els.length; i++) {
+      if (prefix && els[i].id.indexOf(prefix) !== 0) continue;
+      els[i].removeAttribute("data-dirty");
+    }
   }
 
   function prepare(d) {
@@ -304,14 +535,13 @@
     var over14 = open.filter(function (r) { return (r.daysOpen || 0) >= 14; }).length;
     var lead = rows.filter(function (r) { return r.group === "komplett" && r.leadDays != null && r.leadDays >= 0; });
     var avgLead = lead.length ? (lead.reduce(function (a, r) { return a + r.leadDays; }, 0) / lead.length).toFixed(1) : "–";
-    var openValue = open.reduce(function (a, r) { return a + numOf(r.f.preis); }, 0);
     var noCostGate = open.filter(costGateOpen).length;
     var today = d.sections.reduce(function (a, s) { return a + s.rows.filter(function (r) { return r.days === 0; }).length; }, 0);
 
     var h = "<div class=\"grid kpis\">";
     h += kpi("Offen", open.length, "von " + rows.length + " gesamt", "open");
     h += kpi("Ohne Status", cnt.leer, "noch nicht bearbeitet", "g:leer");
-    h += kpi("Nicht bestellt", cnt.nichtbestellt, "muss noch bestellt werden", "g:nichtbestellt");
+    h += kpi("Nicht bestellt", cnt.nichtbestellt, "abgeschlossen, nicht offen", "g:nichtbestellt");
     h += kpi("Bestellt", cnt.bestellt, "warten auf Lieferung", "g:bestellt");
     h += kpi("Teilweise angeliefert", cnt.teilweise, "Rest fehlt noch", "g:teilweise");
     h += kpi("Lieferrückstand", cnt.rueckstand, "beim Händler im Rückstand", "g:rueckstand");
@@ -319,7 +549,6 @@
     h += kpi("Verschwunden", cnt.verschwunden, "Teil nicht auffindbar", "g:verschwunden");
     h += kpi("≥ 14 Tage offen", over14, "Ø " + avgOpen + " Tage offen", "old");
     h += kpi("Ø Tage bis Lieferung", avgLead, lead.length + " komplett angeliefert", "");
-    h += kpi("Offener Warenwert", eur(openValue), "Summe Preis (Netto)", "");
     h += kpi("Cost Gate offen", noCostGate, "nicht erledigt / genehmigt", "cg");
     h += kpi("Inputs heute", today, "über alle Bereiche", "");
     h += "</div>";
@@ -492,7 +721,7 @@
     var h = "<div class=\"table-wrap\"><table><thead><tr>";
     NB_COLS.forEach(function (c) {
       var on = sortable && f.sort === c.key;
-      h += "<th" + (sortable ? " data-k=\"" + c.key + "\"" : "") + (on ? " class=\"sorted\"" : "") + ">" + esc(c.label) + (on ? (f.dir < 0 ? " ▾" : " ▴") : "") + "</th>";
+      h += "<th" + (sortable ? " data-k=\"" + c.key + "\"" : "") + (on ? " class=\"sorted\"" : "") + ">" + thBadge(c.label, c.key, on ? (f.dir < 0 ? "▾" : "▴") : "") + "</th>";
     });
     h += "</tr></thead><tbody>";
     rows.forEach(function (r, i) {
@@ -502,7 +731,7 @@
         if (c.num) cls.push("num");
         if (c.wrap) cls.push("wrap");
         var v = c.html ? c.html(r) : esc(c.get(r));
-        h += "<td" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + v + "</td>";
+        h += "<td data-l=\"" + esc(c.label) + "\"" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + v + "</td>";
       });
       h += "</tr>";
     });
@@ -516,8 +745,8 @@
     }
   }
 
-  function showDrawer(title, sub, html) {
-    $("drawerTitle").textContent = title;
+  function showDrawer(stock, sub, html) {
+    $("drawerTitle").innerHTML = stockBadge(stock, "lg");
     $("drawerSub").textContent = sub || "";
     $("drawerBody").innerHTML = html;
     $("drawer").classList.remove("hidden");
@@ -580,7 +809,7 @@
       ["Bestellt am", r.f.datum + (r.daysOpen != null ? "  ·  vor " + r.daysOpen + " Tagen" : "")],
       ["Statusänderung", r.f.statusAenderung],
       ["Besteller", r.f.besteller],
-      ["Art", r.f.art],
+      ["Art", chip("art", r.f.art) || "–", true],
       ["Ersatzteil", r.f.ersatzteil],
       ["Sheet-Zeile", String(r.row)],
       ["EntryID", r.entryId]
@@ -648,7 +877,10 @@
       btn.textContent = "Speichere…";
       call("nbpUpdateNbEntry", [r.row, r.entryId, patch], function (res) {
         toast("Gespeichert" + (res.exitPushed ? " · Input Exit aktualisiert" : ""), "ok");
-        load(true);
+        clearDirty("drawerBody");
+        btn.disabled = false;
+        btn.textContent = "Speichern";
+        load(false);
       }, function () {
         btn.disabled = false;
         btn.textContent = "Speichern";
@@ -663,7 +895,7 @@
       esc(x.bearbeiter) + (x.days != null ? "<br>vor " + x.days + " T" : "") + "</div></div>";
   }
   function miniNb(x) {
-    return "<div class=\"mini\" data-nb=\"" + esc(x.entryId) + "\" data-row=\"" + x.row + "\"><div><b>NB</b> · " + esc(x.f.datum) + " · " + esc(x.f.art) +
+    return "<div class=\"mini\" data-nb=\"" + esc(x.entryId) + "\" data-row=\"" + x.row + "\"><div><b>NB</b> · " + esc(x.f.datum) + " · " + chip("art", x.f.art) +
       "<div class=\"muted small\">" + esc(x.f.ersatzteil) + "</div></div><div>" + statusPill(x) + "</div></div>";
   }
   function relatedHtml(stock, selfEid) {
@@ -671,7 +903,7 @@
     var nbs = (idx.nbByStock[stock] || []).filter(function (x) { return x.entryId !== selfEid; });
     var ins = (idx.inputByStock[stock] || []).filter(function (x) { return x.entryId !== selfEid; });
     if (!nbs.length && !ins.length) return "";
-    var h = "<div class=\"sec\"><h4>Weitere Einträge zu " + esc(stock) + "</h4>";
+    var h = "<div class=\"sec\"><h4>Weitere Einträge zu " + stockBadge(stock, "sm") + "</h4>";
     nbs.forEach(function (x) { h += miniNb(x); });
     ins.forEach(function (x) { h += miniInput(x, sectionByKey(x.sec)); });
     return h + "</div>";
@@ -786,17 +1018,20 @@
     if (!rows.length) {
       h += "<div class=\"table-wrap\"><div class=\"empty\">Keine Einträge.</div></div>";
     } else {
-      h += "<div class=\"table-wrap\"><table><thead><tr><th>Datum</th><th>Tage</th><th>Stock ID</th><th>ET</th><th>Art</th><th>Grund</th><th>Bearbeiter</th>";
-      if (sec.layout.hasBem) h += "<th>Bemerkung</th>";
-      extras.forEach(function (ex) { h += "<th>" + esc(ex.label) + "</th>"; });
-      h += "<th>NB</th></tr></thead><tbody>";
+      h += "<div class=\"table-wrap\"><table><thead><tr>";
+      [["Datum", "datumMs"], ["Tage", "daysOpen"], ["Stock ID", "stockId"], ["ET", "et"], ["Art", "art"], ["Grund", "grund"], ["Bearbeiter", "bearbeiter"]].forEach(function (p) {
+        h += "<th>" + thBadge(p[0], p[1]) + "</th>";
+      });
+      if (sec.layout.hasBem) h += "<th>" + thBadge("Bemerkung", "bemerkung") + "</th>";
+      extras.forEach(function (ex) { h += "<th>" + thBadge(ex.label, /liefert/i.test(ex.label) ? "liefert" : /claim/i.test(ex.label) ? "preis" : "extra") + "</th>"; });
+      h += "<th>" + thBadge("NB", "status") + "</th></tr></thead><tbody>";
       rows.forEach(function (r, i) {
         var nb = r.entryId ? findNb(r.entryId) : null;
-        h += "<tr data-i=\"" + i + "\"><td>" + esc(r.datum) + "</td><td class=\"num\">" + (r.days == null ? "" : "<span class=\"days\">" + r.days + "</span>") + "</td><td>" + esc(r.stockId) +
-          "</td><td>" + esc(r.et) + "</td><td>" + esc(r.art) + "</td><td class=\"wrap\">" + esc(r.grund) + "</td><td>" + esc(r.bearbeiter) + "</td>";
-        if (sec.layout.hasBem) h += "<td class=\"wrap\">" + esc(r.bemerkung) + "</td>";
-        extras.forEach(function (ex, j) { h += "<td>" + esc(r.extra[j]) + "</td>"; });
-        h += "<td>" + (nb ? statusPill(nb) : "") + "</td></tr>";
+        h += "<tr data-i=\"" + i + "\"><td data-l=\"Datum\">" + esc(r.datum) + "</td><td data-l=\"Tage\" class=\"num\">" + (r.days == null ? "" : "<span class=\"days\">" + r.days + "</span>") + "</td><td data-l=\"Stock ID\">" + stockBadge(r.stockId) +
+          "</td><td data-l=\"ET\">" + esc(r.et) + "</td><td data-l=\"Art\">" + chip("art", r.art) + "</td><td data-l=\"Grund\" class=\"wrap\">" + esc(r.grund) + "</td><td data-l=\"Bearbeiter\">" + esc(r.bearbeiter) + "</td>";
+        if (sec.layout.hasBem) h += "<td data-l=\"Bemerkung\" class=\"wrap\">" + esc(r.bemerkung) + "</td>";
+        extras.forEach(function (ex, j) { h += "<td data-l=\"" + esc(ex.label) + "\">" + esc(r.extra[j]) + "</td>"; });
+        h += "<td data-l=\"NB\">" + (nb ? statusPill(nb) : "") + "</td></tr>";
       });
       h += "</tbody></table></div>";
     }
@@ -823,7 +1058,7 @@
     for (var i = 0; i < trs.length; i++) {
       trs[i].onclick = function () { openInput(sec, rows[Number(this.getAttribute("data-i"))]); };
     }
-    $("new_clear").onclick = function () { renderSection(key); };
+    $("new_clear").onclick = function () { clearDirty("view", "new_"); renderSection(key); };
     $("new_save").onclick = function () {
       var form = readInputForm(sec, "new_", true, {});
       if (!form.stockId) return toast("Stock ID fehlt.", "err");
@@ -837,7 +1072,7 @@
         ["grund", "bemerkung"].forEach(function (k) { var e = $("new_" + k); if (e) e.value = ""; });
         btn.disabled = false;
         btn.textContent = "Eintragen";
-        load(true);
+        load(false);
       }, function () {
         btn.disabled = false;
         btn.textContent = "Eintragen";
@@ -848,11 +1083,19 @@
   function snapshotNew() {
     var m = {};
     var els = $("view").querySelectorAll("[id^=new_]");
-    for (var i = 0; i < els.length; i++) if ("value" in els[i]) m[els[i].id] = els[i].value;
+    for (var i = 0; i < els.length; i++) {
+      if (!("value" in els[i])) continue;
+      m[els[i].id] = { v: els[i].value, d: els[i].getAttribute("data-dirty") === "1" };
+    }
     return m;
   }
   function restoreNew(m) {
-    for (var id in m) { var el = $(id); if (el) el.value = m[id]; }
+    for (var id in m) {
+      var el = $(id);
+      if (!el) continue;
+      el.value = m[id].v;
+      if (m[id].d) el.setAttribute("data-dirty", "1");
+    }
   }
 
   function nbMsg(code) {
@@ -886,7 +1129,10 @@
       btn.textContent = "Speichere…";
       call("nbpUpdateInputEntry", [sec.key, r.row, r.entryId, patch], function (res) {
         toast("Gespeichert" + nbMsg(res.nb) + (res.ziel ? " · Repair Status: " + res.ziel : ""), "ok");
-        load(true);
+        clearDirty("drawerBody");
+        btn.disabled = false;
+        btn.textContent = "Speichern";
+        load(false);
       }, function () {
         btn.disabled = false;
         btn.textContent = "Speichern";
@@ -895,23 +1141,51 @@
     bindMini();
   }
 
-  $("btnRefresh").onclick = function () { load(false); };
+  $("btnRefresh").onclick = function () { load(true); };
   $("drawerClose").onclick = closeDrawer;
   $("drawerBack").onclick = closeDrawer;
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
 
-  setInterval(function () {
-    if (document.hidden || S.drawer) return;
-    var a = document.activeElement;
-    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
-    if (S.view.indexOf("sec:") === 0) {
-      var k = snapshotNew();
-      for (var id in k) if (k[id]) return;
+  var markDirty = function (e) {
+    var t = e.target;
+    if (t && t.id && /INPUT|SELECT|TEXTAREA/.test(t.tagName)) t.setAttribute("data-dirty", "1");
+  };
+  document.addEventListener("click", function (e) {
+    var b = e.target && e.target.closest ? e.target.closest("[data-copy]") : null;
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var val = b.getAttribute("data-copy");
+    if (copyText(val)) {
+      b.classList.add("copied");
+      setTimeout(function () { b.classList.remove("copied"); }, 1200);
+      toast(val + " kopiert", "ok");
+    } else {
+      toast("Kopieren nicht möglich", "err");
     }
-    load(true);
-  }, 180000);
+  }, true);
+  document.addEventListener("input", markDirty, true);
+  document.addEventListener("change", markDirty, true);
+  document.addEventListener("focusout", flushPending, true);
+  document.addEventListener("mousedown", function () { S.pointerDown = true; }, true);
+  document.addEventListener("mouseup", function () { S.pointerDown = false; flushPending(); }, true);
+  window.addEventListener("blur", function () { S.pointerDown = false; });
+
+  setInterval(function () {
+    if (document.hidden) return;
+    load(false);
+  }, AUTO_MS);
+  setInterval(flushPending, 2000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && Date.now() - (S.lastLoad || 0) > AUTO_MS) load(false);
+  });
 
   resetNbFilter({});
-  load(false);
+  var cached = readCache();
+  if (cached && cached.ok) {
+    S.fromCache = true;
+    applyData(cached);
+  }
+  load(!cached);
 })();
 </script>

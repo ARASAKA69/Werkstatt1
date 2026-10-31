@@ -5,33 +5,41 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>NB Panel</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,<?= appIcon ?>">
   <?!= include("NBP_Styles"); ?>
 </head>
 <body>
+  <div id="loadBar" class="loadbar on"><span></span></div>
   <div class="app">
     <aside class="side">
       <div class="brand">
-        <div class="brand-mark">NB</div>
-        <div>
-          <div class="brand-title">NB Panel</div>
-          <div class="brand-sub">Nachbestellungen / Exit · v<?= appVersion ?></div>
+        <img class="brand-mark" alt="NB Panel" src="data:image/svg+xml;base64,<?= appIcon ?>">
+        <div class="brand-text">
+          <span class="brand-title">NB Panel</span>
+          <span class="brand-ver">v<?= appVersion ?></span>
         </div>
       </div>
       <nav id="nav" class="nav"></nav>
       <div class="side-foot">
-        <div id="userLine" class="muted small"></div>
+        <div id="userLine" class="user-badge"></div>
         <a id="sheetLink" class="muted small" href="#" target="_blank" rel="noopener">Sheet öffnen</a>
       </div>
     </aside>
     <main class="main">
       <header class="top">
-        <div>
+        <div class="top-title">
           <h1 id="viewTitle">Übersicht</h1>
-          <div id="viewSub" class="muted small"></div>
+          <div id="viewSub" class="top-sub"></div>
         </div>
         <div class="top-actions">
-          <span id="loadedAt" class="muted small"></span>
-          <button id="btnRefresh" class="btn ghost" type="button">Aktualisieren</button>
+          <div id="liveChip" class="live-chip loading">
+            <span class="dot"></span>
+            <span id="loadedAt">Lade Daten…</span>
+          </div>
+          <button id="btnRefresh" class="refresh" type="button" title="Jetzt aktualisieren">
+            <svg class="refresh-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5M4 13a8 8 0 0 0 14.6 4.5"/><path d="M4 4v4.5h4.5M20 20v-4.5h-4.5"/></svg>
+            <span class="refresh-label">Aktualisieren</span>
+          </button>
         </div>
       </header>
       <section id="view" class="view">
