@@ -1,0 +1,917 @@
+<script>
+(function () {
+  var S = {
+    data: null,
+    view: "overview",
+    nbFilter: { q: "", group: "", art: "", haendler: "", besteller: "", openOnly: true, sort: "daysOpen", dir: -1 },
+    secFilter: {},
+    drawer: null,
+    busy: false
+  };
+
+  var GROUPS = [
+    { key: "leer", label: "Ohne Status" },
+    { key: "nichtbestellt", label: "Nicht bestellt" },
+    { key: "bestellt", label: "Bestellt" },
+    { key: "teilweise", label: "Teilweise angeliefert" },
+    { key: "rueckstand", label: "Lieferrückstand" },
+    { key: "nachfrage", label: "Nachfrage an Werkstatt" },
+    { key: "verschwunden", label: "Verschwunden" },
+    { key: "andere", label: "Sonstige" },
+    { key: "komplett", label: "Komplett angeliefert" },
+    { key: "konsi", label: "Konsi-Lager" },
+    { key: "b2a1", label: "B2A1" },
+    { key: "fertig", label: "Fertiggestellt" },
+    { key: "entfallen", label: "Entfallen (nicht notwendig / nicht genehmigt / abgebrochen)" }
+  ];
+  var CLOSED = { komplett: true, konsi: true, b2a1: true, fertig: true, entfallen: true };
+
+  var STATUS_GROUP = {
+    "bestellt": "bestellt",
+    "nicht bestellt": "nichtbestellt",
+    "teilweise angeliefert": "teilweise",
+    "komplett angeliefert": "komplett",
+    "lieferrückstand": "rueckstand",
+    "b2a1": "b2a1",
+    "fertiggestellt": "fertig",
+    "konsi-lager": "konsi",
+    "nachfrage an werkstatt": "nachfrage",
+    "nicht notwendig": "entfallen",
+    "nicht genehmigt": "entfallen",
+    "abgebrochen": "entfallen",
+    "verschwunden": "verschwunden"
+  };
+
+  var TONES = {
+    status: {
+      "bestellt": "yellow",
+      "nicht bestellt": "red",
+      "teilweise angeliefert": "salmon",
+      "komplett angeliefert": "green",
+      "lieferrückstand": "blue",
+      "b2a1": "lpurple",
+      "fertiggestellt": "dgreen",
+      "konsi-lager": "dblue",
+      "nachfrage an werkstatt": "red",
+      "nicht notwendig": "brown",
+      "nicht genehmigt": "lred",
+      "abgebrochen": "dred",
+      "verschwunden": "gray"
+    },
+    costGate: {
+      "erledigt": "green",
+      "push to senior": "yellow",
+      "keine daten verfügbar": "gray",
+      "nicht notwendig": "brown",
+      "anfrage alfah": "orange",
+      "durch senior genehmigt": "dgreen",
+      "nicht genehmigt": "lred",
+      "anfrage eoa": "dblue",
+      "in klärung": "purple"
+    },
+    carol: {
+      "erledigt": "green",
+      "nicht genehmigt": "lred",
+      "nicht notwendig": "brown",
+      "exit": "lpurple",
+      "angefragt eoa": "purple",
+      "b2a1": "dred",
+      "eingetragen, nicht abgeschlossen": "dblue",
+      "eingetragen nicht abgeschlossen": "dblue",
+      "nicht möglich": "red"
+    }
+  };
+  var COSTGATE_DONE = { "erledigt": true, "durch senior genehmigt": true, "nicht notwendig": true, "keine daten verfügbar": true };
+
+  var NB_EDIT = [
+    { key: "status", label: "Status", type: "list" },
+    { key: "haendler", label: "Händler", type: "list" },
+    { key: "preis", label: "Preis (Netto)", type: "text" },
+    { key: "artikelnummer", label: "Artikelnummer", type: "text" },
+    { key: "costGate", label: "Cost Gate (Senior)", type: "list" },
+    { key: "carol", label: "Carol eingetragen", type: "list" },
+    { key: "lagerort", label: "Lagerort", type: "list" },
+    { key: "bearbeitetVon", label: "Bearbeitet von", type: "list" },
+    { key: "kommentar", label: "Kommentar", type: "area" }
+  ];
+
+  var NB_COLS = [
+    { key: "datumMs", label: "Datum", get: function (r) { return r.f.datum; }, sort: function (r) { return r.datumMs || 0; } },
+    { key: "daysOpen", label: "Tage", num: true, html: function (r) { return daysHtml(r.daysOpen, r); }, sort: function (r) { return r.daysOpen == null ? -1 : r.daysOpen; } },
+    { key: "stockId", label: "Stock ID", get: function (r) { return r.f.stockId; } },
+    { key: "art", label: "Art", get: function (r) { return r.f.art; } },
+    { key: "besteller", label: "Besteller", get: function (r) { return r.f.besteller; } },
+    { key: "ersatzteil", label: "Ersatzteil", wrap: true, get: function (r) { return r.f.ersatzteil; } },
+    { key: "preis", label: "Preis", num: true, get: function (r) { return r.f.preis; }, sort: function (r) { return numOf(r.f.preis); } },
+    { key: "haendler", label: "Händler", get: function (r) { return r.f.haendler; } },
+    { key: "costGate", label: "Cost Gate", html: function (r) { return chip("costGate", r.f.costGate); }, sort: function (r) { return norm(r.f.costGate); } },
+    { key: "carol", label: "Carol", html: function (r) { return chip("carol", r.f.carol); }, sort: function (r) { return norm(r.f.carol); } },
+    { key: "status", label: "Status", html: function (r) { return statusPill(r); }, sort: function (r) { return r.f.status.toLowerCase(); } },
+    { key: "daysStatus", label: "seit Status", num: true, get: function (r) { return r.daysStatus == null ? "" : r.daysStatus + " T"; }, sort: function (r) { return r.daysStatus == null ? -1 : r.daysStatus; } },
+    { key: "lagerort", label: "Lagerort", get: function (r) { return r.f.lagerort; } }
+  ];
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function norm(v) { return String(v == null ? "" : v).toLowerCase().replace(/\s+/g, " ").trim(); }
+  function numOf(v) {
+    var s = String(v || "").replace(/[^\d,.\-]/g, "");
+    if (/,\d{1,2}$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+    else s = s.replace(/,/g, "");
+    var n = parseFloat(s);
+    return isNaN(n) ? 0 : n;
+  }
+  function eur(n) { return n.toLocaleString("de-DE", { style: "currency", currency: "EUR" }); }
+
+  function groupOf(status) {
+    var s = norm(status);
+    if (!s) return "leer";
+    return STATUS_GROUP[s] || "andere";
+  }
+  function chip(field, value) {
+    if (!value) return "";
+    var tone = (TONES[field] || {})[norm(value)] || "gray";
+    return "<span class=\"pill t-" + tone + "\">" + esc(value) + "</span>";
+  }
+  function costGateOpen(r) { return !COSTGATE_DONE[norm(r.f.costGate)]; }
+  function groupLabel(k) {
+    for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].key === k) return GROUPS[i].label;
+    return k;
+  }
+  function isOpen(r) { return !CLOSED[r.group]; }
+
+  function daysClass(d) {
+    if (d == null) return "";
+    if (d >= 14) return "bad";
+    if (d >= 7) return "warn";
+    return "ok";
+  }
+  function daysHtml(d, r) {
+    if (d == null) return "";
+    var cls = r && !isOpen(r) ? "" : daysClass(d);
+    return "<span class=\"days " + cls + "\">" + d + "</span>";
+  }
+  function statusPill(r) {
+    if (!r.f.status) return "<span class=\"pill t-none\">–</span>";
+    return chip("status", r.f.status);
+  }
+
+  function toast(msg, kind) {
+    var el = document.createElement("div");
+    el.className = "toast " + (kind || "");
+    el.textContent = msg;
+    $("toasts").appendChild(el);
+    setTimeout(function () { el.remove(); }, kind === "err" ? 7000 : 3500);
+  }
+
+  function call(fn, args, ok, fail) {
+    var r = google.script.run
+      .withSuccessHandler(function (res) {
+        if (res && res.ok === false) {
+          toast(res.message || "Fehler", "err");
+          if (fail) fail(res);
+          return;
+        }
+        ok && ok(res);
+      })
+      .withFailureHandler(function (err) {
+        toast(String(err && err.message ? err.message : err), "err");
+        if (fail) fail(err);
+      });
+    r[fn].apply(r, args || []);
+  }
+
+  function load(silent) {
+    if (S.busy) return;
+    S.busy = true;
+    if (!silent) $("btnRefresh").disabled = true;
+    call("getPanelData", [], function (d) {
+      S.busy = false;
+      $("btnRefresh").disabled = false;
+      prepare(d);
+      S.data = d;
+      $("loadedAt").textContent = "Stand " + d.loadedAt;
+      $("userLine").textContent = d.user;
+      $("sheetLink").href = d.sheetUrl;
+      renderNav();
+      render();
+      if (S.drawer) reopenDrawer();
+    }, function () {
+      S.busy = false;
+      $("btnRefresh").disabled = false;
+      if (!S.data) $("view").innerHTML = "<div class=\"empty\">Daten konnten nicht geladen werden.</div>";
+    });
+  }
+
+  function prepare(d) {
+    var byEid = {};
+    var byStock = {};
+    for (var s = 0; s < d.sections.length; s++) {
+      var sec = d.sections[s];
+      for (var i = 0; i < sec.rows.length; i++) {
+        var r = sec.rows[i];
+        r.sec = sec.key;
+        if (r.entryId) byEid[r.entryId] = r;
+        (byStock[r.stockId] = byStock[r.stockId] || []).push(r);
+      }
+    }
+    var nbByStock = {};
+    for (var n = 0; n < d.nb.rows.length; n++) {
+      var x = d.nb.rows[n];
+      x.group = groupOf(x.f.status);
+      x.source = x.entryId ? byEid[x.entryId] || null : null;
+      (nbByStock[x.f.stockId] = nbByStock[x.f.stockId] || []).push(x);
+    }
+    d.idx = { inputByEid: byEid, inputByStock: byStock, nbByStock: nbByStock };
+  }
+
+  function sectionByKey(k) {
+    var secs = S.data ? S.data.sections : [];
+    for (var i = 0; i < secs.length; i++) if (secs[i].key === k) return secs[i];
+    return null;
+  }
+
+  function renderNav() {
+    var d = S.data;
+    var open = d.nb.rows.filter(isOpen).length;
+    var h = "";
+    h += "<div class=\"nav-group\">Panel</div>";
+    h += navItem("overview", "Übersicht", "");
+    h += navItem("nb", "Nachbestellung", open + " offen");
+    h += "<div class=\"nav-group\">Input</div>";
+    for (var i = 0; i < d.sections.length; i++) {
+      var s = d.sections[i];
+      h += navItem("sec:" + s.key, s.label, s.missing ? "fehlt" : String(s.rows.length));
+    }
+    $("nav").innerHTML = h;
+    var btns = $("nav").querySelectorAll(".nav-item");
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].onclick = function () { go(this.getAttribute("data-view")); };
+    }
+  }
+  function navItem(v, label, count) {
+    return "<button type=\"button\" class=\"nav-item" + (S.view === v ? " active" : "") + "\" data-view=\"" + v + "\"><span>" + esc(label) + "</span>" +
+      (count ? "<span class=\"nav-count\">" + esc(count) + "</span>" : "") + "</button>";
+  }
+
+  function go(v) {
+    S.view = v;
+    renderNav();
+    render();
+    $("view").scrollTop = 0;
+  }
+
+  function render() {
+    if (!S.data) return;
+    if (S.view === "overview") return renderOverview();
+    if (S.view === "nb") return renderNb();
+    if (S.view.indexOf("sec:") === 0) return renderSection(S.view.slice(4));
+  }
+
+  function countBy(rows, fn) {
+    var m = {};
+    for (var i = 0; i < rows.length; i++) {
+      var k = fn(rows[i]) || "–";
+      m[k] = (m[k] || 0) + 1;
+    }
+    return Object.keys(m).map(function (k) { return { k: k, n: m[k] }; }).sort(function (a, b) { return b.n - a.n; });
+  }
+
+  function bars(list, attr, max) {
+    if (!list.length) return "<div class=\"muted\">Keine Daten</div>";
+    var top = list.slice(0, max || 8);
+    var peak = top[0].n || 1;
+    return top.map(function (x) {
+      return "<div class=\"bar-row\" data-f=\"" + attr + "\" data-v=\"" + esc(x.k) + "\"><div class=\"bar-label\" title=\"" + esc(x.k) + "\">" + esc(x.k) +
+        "</div><div class=\"bar\"><span style=\"width:" + Math.round(x.n / peak * 100) + "%\"></span></div><div class=\"bar-num\">" + x.n + "</div></div>";
+    }).join("");
+  }
+
+  function renderOverview() {
+    var d = S.data;
+    $("viewTitle").textContent = "Übersicht";
+    $("viewSub").textContent = "Alle Nachbestellungen auf einen Blick";
+    var rows = d.nb.rows;
+    var open = rows.filter(isOpen);
+    var cnt = {};
+    GROUPS.forEach(function (g) { cnt[g.key] = 0; });
+    rows.forEach(function (r) { cnt[r.group]++; });
+    var avgOpen = open.length ? Math.round(open.reduce(function (a, r) { return a + (r.daysOpen || 0); }, 0) / open.length) : 0;
+    var over14 = open.filter(function (r) { return (r.daysOpen || 0) >= 14; }).length;
+    var lead = rows.filter(function (r) { return r.group === "komplett" && r.leadDays != null && r.leadDays >= 0; });
+    var avgLead = lead.length ? (lead.reduce(function (a, r) { return a + r.leadDays; }, 0) / lead.length).toFixed(1) : "–";
+    var openValue = open.reduce(function (a, r) { return a + numOf(r.f.preis); }, 0);
+    var noCostGate = open.filter(costGateOpen).length;
+    var today = d.sections.reduce(function (a, s) { return a + s.rows.filter(function (r) { return r.days === 0; }).length; }, 0);
+
+    var h = "<div class=\"grid kpis\">";
+    h += kpi("Offen", open.length, "von " + rows.length + " gesamt", "open");
+    h += kpi("Ohne Status", cnt.leer, "noch nicht bearbeitet", "g:leer");
+    h += kpi("Nicht bestellt", cnt.nichtbestellt, "muss noch bestellt werden", "g:nichtbestellt");
+    h += kpi("Bestellt", cnt.bestellt, "warten auf Lieferung", "g:bestellt");
+    h += kpi("Teilweise angeliefert", cnt.teilweise, "Rest fehlt noch", "g:teilweise");
+    h += kpi("Lieferrückstand", cnt.rueckstand, "beim Händler im Rückstand", "g:rueckstand");
+    h += kpi("Nachfrage an Werkstatt", cnt.nachfrage, "Rückfrage offen", "g:nachfrage");
+    h += kpi("Verschwunden", cnt.verschwunden, "Teil nicht auffindbar", "g:verschwunden");
+    h += kpi("≥ 14 Tage offen", over14, "Ø " + avgOpen + " Tage offen", "old");
+    h += kpi("Ø Tage bis Lieferung", avgLead, lead.length + " komplett angeliefert", "");
+    h += kpi("Offener Warenwert", eur(openValue), "Summe Preis (Netto)", "");
+    h += kpi("Cost Gate offen", noCostGate, "nicht erledigt / genehmigt", "cg");
+    h += kpi("Inputs heute", today, "über alle Bereiche", "");
+    h += "</div>";
+
+    var oldest = open.slice().sort(function (a, b) { return (b.daysOpen || 0) - (a.daysOpen || 0); }).slice(0, 12);
+    h += "<div class=\"grid cards\">";
+    h += "<div class=\"card\"><h3>Status</h3>" + bars(GROUPS.map(function (g) { return { k: g.label, n: cnt[g.key], g: g.key }; }).filter(function (x) { return x.n; }), "group", 20) + "</div>";
+    h += "<div class=\"card\"><h3>Offen nach Art</h3>" + bars(countBy(open, function (r) { return r.f.art; }), "art") + "</div>";
+    h += "<div class=\"card\"><h3>Offen nach Händler</h3>" + bars(countBy(open, function (r) { return r.f.haendler; }), "haendler") + "</div>";
+    h += "<div class=\"card\"><h3>Offen nach Besteller</h3>" + bars(countBy(open, function (r) { return r.f.besteller; }), "besteller") + "</div>";
+    h += "<div class=\"card\" style=\"grid-column:1/-1\"><h3>Am längsten offen <a href=\"#\" id=\"lnkAllOpen\" class=\"small\">alle anzeigen</a></h3>";
+    h += oldest.length ? nbTable(oldest, false) : "<div class=\"muted\">Nichts offen.</div>";
+    h += "</div>";
+    h += "<div class=\"card\" style=\"grid-column:1/-1\"><h3>Input-Bereiche</h3><div class=\"grid kpis\" style=\"margin:0\">";
+    d.sections.forEach(function (s) {
+      var t = s.rows.filter(function (r) { return r.days != null && r.days <= 7; }).length;
+      h += kpi(s.label, s.rows.length, t + " in den letzten 7 Tagen", "sec:" + s.key);
+    });
+    h += "</div></div></div>";
+    $("view").innerHTML = h;
+
+    bindKpis();
+    bindNbRows(oldest);
+    var all = $("lnkAllOpen");
+    if (all) all.onclick = function (e) { e.preventDefault(); resetNbFilter({ openOnly: true }); go("nb"); };
+    var br = $("view").querySelectorAll(".bar-row");
+    for (var i = 0; i < br.length; i++) {
+      br[i].onclick = function () {
+        var f = this.getAttribute("data-f");
+        var v = this.getAttribute("data-v");
+        var patch = { openOnly: f !== "group" };
+        if (f === "group") {
+          var g = GROUPS.filter(function (x) { return x.label === v; })[0];
+          patch.group = g ? g.key : "";
+          patch.openOnly = false;
+        } else {
+          patch[f] = v === "–" ? "__empty" : v;
+        }
+        resetNbFilter(patch);
+        go("nb");
+      };
+    }
+  }
+
+  function kpi(label, value, sub, action) {
+    return "<div class=\"kpi" + (action ? " click" : "") + "\"" + (action ? " data-a=\"" + esc(action) + "\"" : "") + "><div class=\"kpi-label\">" + esc(label) +
+      "</div><div class=\"kpi-value\">" + esc(value) + "</div><div class=\"kpi-sub\">" + esc(sub) + "</div></div>";
+  }
+  function bindKpis() {
+    var ks = $("view").querySelectorAll(".kpi.click");
+    for (var i = 0; i < ks.length; i++) {
+      ks[i].onclick = function () {
+        var a = this.getAttribute("data-a");
+        if (a.indexOf("sec:") === 0) return go(a);
+        if (a === "open") resetNbFilter({ openOnly: true });
+        else if (a === "old") resetNbFilter({ openOnly: true, sort: "daysOpen", dir: -1, minDays: 14 });
+        else if (a === "cg") resetNbFilter({ openOnly: true, cgOpen: true });
+        else if (a.indexOf("g:") === 0) resetNbFilter({ openOnly: false, group: a.slice(2) });
+        go("nb");
+      };
+    }
+  }
+
+  function resetNbFilter(patch) {
+    S.nbFilter = { q: "", group: "", art: "", haendler: "", besteller: "", openOnly: true, sort: "daysOpen", dir: -1, minDays: 0, cgOpen: false };
+    for (var k in patch) S.nbFilter[k] = patch[k];
+  }
+
+  function match(val, f) {
+    if (!f) return true;
+    if (f === "__empty") return !val;
+    return val === f;
+  }
+
+  function filteredNb() {
+    var f = S.nbFilter;
+    var q = norm(f.q);
+    var rows = S.data.nb.rows.filter(function (r) {
+      if (f.openOnly && !isOpen(r)) return false;
+      if (f.group && r.group !== f.group) return false;
+      if (!match(r.f.art, f.art)) return false;
+      if (!match(r.f.haendler, f.haendler)) return false;
+      if (!match(r.f.besteller, f.besteller)) return false;
+      if (f.minDays && (r.daysOpen || 0) < f.minDays) return false;
+      if (f.cgOpen && !costGateOpen(r)) return false;
+      if (q) {
+        var hay = norm([r.f.stockId, r.f.ersatzteil, r.f.artikelnummer, r.f.besteller, r.f.haendler, r.f.kommentar, r.f.status, r.f.art, r.f.lagerort].concat(r.nbc).join(" "));
+        if (hay.indexOf(q) < 0) return false;
+      }
+      return true;
+    });
+    var col = NB_COLS.filter(function (c) { return c.key === f.sort; })[0] || NB_COLS[1];
+    var get = col.sort || function (r) { return norm(col.get(r)); };
+    rows.sort(function (a, b) {
+      var x = get(a), y = get(b);
+      if (x < y) return -1 * f.dir;
+      if (x > y) return 1 * f.dir;
+      return 0;
+    });
+    return rows;
+  }
+
+  function uniq(rows, fn) {
+    var m = {};
+    rows.forEach(function (r) { var v = fn(r); if (v) m[v] = true; });
+    return Object.keys(m).sort(function (a, b) { return a.localeCompare(b, "de"); });
+  }
+
+  function optList(values, cur, allLabel) {
+    var h = "<option value=\"\">" + esc(allLabel) + "</option>";
+    values.forEach(function (v) { h += "<option" + (v === cur ? " selected" : "") + " value=\"" + esc(v) + "\">" + esc(v) + "</option>"; });
+    h += "<option value=\"__empty\"" + (cur === "__empty" ? " selected" : "") + ">(leer)</option>";
+    return h;
+  }
+
+  function renderNb() {
+    var d = S.data;
+    var f = S.nbFilter;
+    $("viewTitle").textContent = "Nachbestellung";
+    var rows = filteredNb();
+    $("viewSub").textContent = rows.length + " von " + d.nb.rows.length + " Einträgen" + (f.minDays ? " · ab " + f.minDays + " Tagen" : "") + (f.cgOpen ? " · Cost Gate offen" : "");
+    var all = d.nb.rows;
+    var h = "<div class=\"toolbar\">";
+    h += "<input id=\"fQ\" class=\"grow\" placeholder=\"Suche Stock ID, Ersatzteil, Artikelnr., Kommentar…\" value=\"" + esc(f.q) + "\">";
+    h += "<select id=\"fGroup\"><option value=\"\">Alle Status</option>" + GROUPS.map(function (g) {
+      return "<option value=\"" + g.key + "\"" + (f.group === g.key ? " selected" : "") + ">" + esc(g.label) + "</option>";
+    }).join("") + "</select>";
+    h += "<select id=\"fArt\">" + optList(uniq(all, function (r) { return r.f.art; }), f.art, "Alle Arten") + "</select>";
+    h += "<select id=\"fHaendler\">" + optList(uniq(all, function (r) { return r.f.haendler; }), f.haendler, "Alle Händler") + "</select>";
+    h += "<select id=\"fBesteller\">" + optList(uniq(all, function (r) { return r.f.besteller; }), f.besteller, "Alle Besteller") + "</select>";
+    h += "<label class=\"chk\"><input type=\"checkbox\" id=\"fOpen\"" + (f.openOnly ? " checked" : "") + "> nur offene</label>";
+    h += "<button type=\"button\" id=\"fReset\" class=\"btn ghost\">Zurücksetzen</button>";
+    h += "</div>";
+    h += rows.length ? nbTable(rows, true) : "<div class=\"table-wrap\"><div class=\"empty\">Keine Einträge für diese Filter.</div></div>";
+    $("view").innerHTML = h;
+
+    var qEl = $("fQ");
+    var t = null;
+    qEl.oninput = function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        f.q = qEl.value;
+        var pos = qEl.selectionStart;
+        renderNb();
+        var n = $("fQ");
+        n.focus();
+        n.setSelectionRange(pos, pos);
+      }, 200);
+    };
+    $("fGroup").onchange = function () { f.group = this.value; if (f.group && CLOSED[f.group]) f.openOnly = false; renderNb(); };
+    $("fArt").onchange = function () { f.art = this.value; renderNb(); };
+    $("fHaendler").onchange = function () { f.haendler = this.value; renderNb(); };
+    $("fBesteller").onchange = function () { f.besteller = this.value; renderNb(); };
+    $("fOpen").onchange = function () { f.openOnly = this.checked; renderNb(); };
+    $("fReset").onclick = function () { resetNbFilter({}); renderNb(); };
+    var ths = $("view").querySelectorAll("th[data-k]");
+    for (var i = 0; i < ths.length; i++) {
+      ths[i].onclick = function () {
+        var k = this.getAttribute("data-k");
+        if (f.sort === k) f.dir = -f.dir;
+        else { f.sort = k; f.dir = k === "daysOpen" || k === "datumMs" || k === "daysStatus" ? -1 : 1; }
+        renderNb();
+      };
+    }
+    bindNbRows(rows);
+  }
+
+  function nbTable(rows, sortable) {
+    var f = S.nbFilter;
+    var h = "<div class=\"table-wrap\"><table><thead><tr>";
+    NB_COLS.forEach(function (c) {
+      var on = sortable && f.sort === c.key;
+      h += "<th" + (sortable ? " data-k=\"" + c.key + "\"" : "") + (on ? " class=\"sorted\"" : "") + ">" + esc(c.label) + (on ? (f.dir < 0 ? " ▾" : " ▴") : "") + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+    rows.forEach(function (r, i) {
+      h += "<tr data-i=\"" + i + "\">";
+      NB_COLS.forEach(function (c) {
+        var cls = [];
+        if (c.num) cls.push("num");
+        if (c.wrap) cls.push("wrap");
+        var v = c.html ? c.html(r) : esc(c.get(r));
+        h += "<td" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + v + "</td>";
+      });
+      h += "</tr>";
+    });
+    return h + "</tbody></table></div>";
+  }
+
+  function bindNbRows(rows) {
+    var trs = $("view").querySelectorAll("tbody tr[data-i]");
+    for (var i = 0; i < trs.length; i++) {
+      trs[i].onclick = function () { openNb(rows[Number(this.getAttribute("data-i"))]); };
+    }
+  }
+
+  function showDrawer(title, sub, html) {
+    $("drawerTitle").textContent = title;
+    $("drawerSub").textContent = sub || "";
+    $("drawerBody").innerHTML = html;
+    $("drawer").classList.remove("hidden");
+    $("drawerBack").classList.remove("hidden");
+  }
+  function closeDrawer() {
+    S.drawer = null;
+    $("drawer").classList.add("hidden");
+    $("drawerBack").classList.add("hidden");
+  }
+  function reopenDrawer() {
+    var dr = S.drawer;
+    if (!dr) return;
+    if (dr.type === "nb") {
+      var r = findNb(dr.entryId, dr.row);
+      if (r) openNb(r, true); else closeDrawer();
+    } else if (dr.type === "input") {
+      var sec = sectionByKey(dr.sec);
+      var x = sec ? findInput(sec, dr.entryId, dr.row) : null;
+      if (x) openInput(sec, x, true); else closeDrawer();
+    }
+  }
+  function findNb(eid, row) {
+    var rows = S.data.nb.rows;
+    for (var i = 0; i < rows.length; i++) if (eid ? rows[i].entryId === eid : rows[i].row === row) return rows[i];
+    return null;
+  }
+  function findInput(sec, eid, row) {
+    for (var i = 0; i < sec.rows.length; i++) if (eid ? sec.rows[i].entryId === eid : sec.rows[i].row === row) return sec.rows[i];
+    return null;
+  }
+
+  function kv(pairs) {
+    var h = "<div class=\"kv\">";
+    pairs.forEach(function (p) { h += "<div>" + esc(p[0]) + "</div><div>" + (p[2] ? p[1] : esc(p[1] || "–")) + "</div>"; });
+    return h + "</div>";
+  }
+
+  function selectHtml(id, options, cur, allowEmpty) {
+    var opts = (options || []).slice();
+    if (cur && opts.indexOf(cur) < 0) opts.unshift(cur);
+    var h = "<select id=\"" + id + "\">";
+    if (allowEmpty !== false) h += "<option value=\"\"></option>";
+    opts.forEach(function (o) { h += "<option value=\"" + esc(o) + "\"" + (o === cur ? " selected" : "") + ">" + esc(o) + "</option>"; });
+    return h + "</select>";
+  }
+  function fieldInput(id, type, options, cur) {
+    if (type === "list" && options && options.length) return selectHtml(id, options, cur);
+    if (type === "area") return "<textarea id=\"" + id + "\">" + esc(cur) + "</textarea>";
+    return "<input id=\"" + id + "\" value=\"" + esc(cur) + "\">";
+  }
+
+  function openNb(r, keep) {
+    S.drawer = { type: "nb", entryId: r.entryId, row: r.row };
+    var d = S.data;
+    var opts = d.nb.options || {};
+    var h = "";
+    h += "<div class=\"sec\"><h4>Überblick</h4>" + kv([
+      ["Status", statusPill(r) + (r.daysStatus != null ? " <span class=\"muted\">seit " + r.daysStatus + " Tagen</span>" : ""), true],
+      ["Bestellt am", r.f.datum + (r.daysOpen != null ? "  ·  vor " + r.daysOpen + " Tagen" : "")],
+      ["Statusänderung", r.f.statusAenderung],
+      ["Besteller", r.f.besteller],
+      ["Art", r.f.art],
+      ["Ersatzteil", r.f.ersatzteil],
+      ["Sheet-Zeile", String(r.row)],
+      ["EntryID", r.entryId]
+    ]) + "</div>";
+
+    h += "<div class=\"sec\"><h4>Bearbeiten</h4><div class=\"form\">";
+    for (var i = 0; i < NB_EDIT.length; i += 2) {
+      var a = NB_EDIT[i], b = NB_EDIT[i + 1];
+      if (a.type === "area") {
+        h += "<label class=\"field\"><span>" + esc(a.label) + "</span>" + fieldInput("nb_" + a.key, a.type, opts[a.key], r.f[a.key]) + "</label>";
+        i--;
+        continue;
+      }
+      h += "<div class=\"row2\">";
+      h += "<label class=\"field\"><span>" + esc(a.label) + "</span>" + fieldInput("nb_" + a.key, a.type, opts[a.key], r.f[a.key]) + "</label>";
+      if (b && b.type !== "area") {
+        h += "<label class=\"field\"><span>" + esc(b.label) + "</span>" + fieldInput("nb_" + b.key, b.type, opts[b.key], r.f[b.key]) + "</label>";
+      } else {
+        i--;
+      }
+      h += "</div>";
+    }
+    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn\" id=\"nbSave\">Speichern</button></div>";
+    if (norm(r.f.art).indexOf("exit mechanik") >= 0) h += "<div class=\"muted small\">Exit Mechanik: Preis, Cost Gate, Carol und Status werden nach Input Exit übernommen.</div>";
+    h += "</div></div>";
+
+    if (d.nb.nbcLabels.length) {
+      var p = d.nb.nbcLabels.map(function (l, j) { return [l, r.nbc[j]]; });
+      h += "<div class=\"sec\"><h4>NBC <span class=\"badge-ro\">nur Info</span></h4>" + kv(p) + "</div>";
+    }
+    if (d.nb.extraLabels.length) {
+      var p2 = d.nb.extraLabels.map(function (l, j) { return [l, r.extra[j]]; }).filter(function (x) { return x[1]; });
+      if (p2.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(p2) + "</div>";
+    }
+    if (r.dash) {
+      h += "<div class=\"sec\"><h4>Dashboard <span class=\"badge-ro\">nur Info</span></h4>" + kv([
+        ["Herkunft", r.dash.herkunft],
+        ["Tage seit Input", r.dash.tageSeitInput],
+        ["Letzter Tageslisteneintrag", r.dash.letzterTagesliste],
+        ["Tage seit letztem Eintrag", r.dash.tageSeitLetztem],
+        ["Einträge Tagesliste", r.dash.eintraege],
+        ["Bemerkung / Verlauf", r.dash.bemerkung]
+      ]) + "</div>";
+    }
+    if (r.source) {
+      var sec = sectionByKey(r.source.sec);
+      h += "<div class=\"sec\"><h4>Ursprung</h4>" + miniInput(r.source, sec) + "</div>";
+    }
+    h += relatedHtml(r.f.stockId, r.entryId);
+    showDrawer(r.f.stockId, (r.f.art || "") + (r.f.ersatzteil ? " · " + r.f.ersatzteil : ""), h);
+    if (!keep) $("drawerBody").scrollTop = 0;
+
+    $("nbSave").onclick = function () {
+      var patch = {};
+      var any = false;
+      NB_EDIT.forEach(function (fd) {
+        var el = $("nb_" + fd.key);
+        if (!el) return;
+        var v = el.value.trim();
+        if (v !== (r.f[fd.key] || "")) { patch[fd.key] = v; any = true; }
+      });
+      if (!any) return toast("Keine Änderungen.");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Speichere…";
+      call("nbpUpdateNbEntry", [r.row, r.entryId, patch], function (res) {
+        toast("Gespeichert" + (res.exitPushed ? " · Input Exit aktualisiert" : ""), "ok");
+        load(true);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Speichern";
+      });
+    };
+    bindMini();
+  }
+
+  function miniInput(x, sec) {
+    return "<div class=\"mini\" data-sec=\"" + esc(x.sec) + "\" data-eid=\"" + esc(x.entryId) + "\" data-row=\"" + x.row + "\"><div><b>" + esc(sec ? sec.label : x.sec) + "</b> · " +
+      esc(x.datum) + " · ET " + esc(x.et || "–") + "<div class=\"muted small\">" + esc(x.grund) + "</div></div><div class=\"muted small\">" +
+      esc(x.bearbeiter) + (x.days != null ? "<br>vor " + x.days + " T" : "") + "</div></div>";
+  }
+  function miniNb(x) {
+    return "<div class=\"mini\" data-nb=\"" + esc(x.entryId) + "\" data-row=\"" + x.row + "\"><div><b>NB</b> · " + esc(x.f.datum) + " · " + esc(x.f.art) +
+      "<div class=\"muted small\">" + esc(x.f.ersatzteil) + "</div></div><div>" + statusPill(x) + "</div></div>";
+  }
+  function relatedHtml(stock, selfEid) {
+    var idx = S.data.idx;
+    var nbs = (idx.nbByStock[stock] || []).filter(function (x) { return x.entryId !== selfEid; });
+    var ins = (idx.inputByStock[stock] || []).filter(function (x) { return x.entryId !== selfEid; });
+    if (!nbs.length && !ins.length) return "";
+    var h = "<div class=\"sec\"><h4>Weitere Einträge zu " + esc(stock) + "</h4>";
+    nbs.forEach(function (x) { h += miniNb(x); });
+    ins.forEach(function (x) { h += miniInput(x, sectionByKey(x.sec)); });
+    return h + "</div>";
+  }
+  function bindMini() {
+    var ms = $("drawerBody").querySelectorAll(".mini");
+    for (var i = 0; i < ms.length; i++) {
+      ms[i].onclick = function () {
+        var row = Number(this.getAttribute("data-row"));
+        if (this.hasAttribute("data-nb")) {
+          var n = findNb(this.getAttribute("data-nb"), row);
+          if (n) openNb(n);
+          return;
+        }
+        var sec = sectionByKey(this.getAttribute("data-sec"));
+        var x = sec ? findInput(sec, this.getAttribute("data-eid"), row) : null;
+        if (x) openInput(sec, x);
+      };
+    }
+  }
+
+  function toIsoDate(s) {
+    var m = String(s || "").match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})/);
+    if (!m) return "";
+    var y = m[3].length === 2 ? "20" + m[3] : m[3];
+    return y + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
+  }
+
+  function inputFormHtml(sec, prefix, cur, isNew) {
+    var o = sec.options || {};
+    var c = cur || {};
+    var h = "<div class=\"form\">";
+    if (isNew) {
+      h += "<label class=\"field\"><span>Stock ID *</span><input id=\"" + prefix + "stockId\" autocomplete=\"off\" style=\"text-transform:uppercase\"></label>";
+    }
+    h += "<div class=\"row2\">";
+    h += "<label class=\"field\"><span>ET / Diagnose *</span>" + fieldInput(prefix + "et", "list", o.et, c.et) + "</label>";
+    h += "<label class=\"field\"><span>Bearbeiter *</span>" + fieldInput(prefix + "bearbeiter", "list", o.bearbeiter, c.bearbeiter) + "</label>";
+    h += "</div>";
+    h += "<label class=\"field\"><span>Art der Nachbestellung</span>" + fieldInput(prefix + "art", "list", o.art, c.art) + "</label>";
+    h += "<label class=\"field\"><span>Grund *</span><textarea id=\"" + prefix + "grund\">" + esc(c.grund) + "</textarea></label>";
+    if (sec.layout && sec.layout.hasBem) {
+      h += "<label class=\"field\"><span>Bemerkung</span><textarea id=\"" + prefix + "bemerkung\">" + esc(c.bemerkung) + "</textarea></label>";
+    }
+    (sec.layout ? sec.layout.extras : []).forEach(function (ex, j) {
+      if (!ex.editable) return;
+      var val = c.extra ? c.extra[j] : "";
+      var eo = o.extra ? o.extra[ex.col] : null;
+      var input;
+      if (eo && eo.length) input = selectHtml(prefix + "x" + ex.col, eo, val);
+      else if (/liefert/i.test(ex.label)) input = "<input type=\"date\" id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(toIsoDate(val)) + "\">";
+      else input = "<input id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(val) + "\">";
+      h += "<label class=\"field\"><span>" + esc(ex.label) + "</span>" + input + "</label>";
+    });
+    h += "<div class=\"form-actions\">";
+    if (isNew) h += "<button type=\"button\" class=\"btn ghost\" id=\"" + prefix + "clear\">Leeren</button>";
+    h += "<button type=\"button\" class=\"btn\" id=\"" + prefix + "save\">" + (isNew ? "Eintragen" : "Speichern") + "</button></div>";
+    h += "<div class=\"muted small\">ET = Ja + alle Pflichtfelder legt automatisch eine Zeile in Nachbestellung an. Nein/Diagnose entfernt sie.</div>";
+    return h + "</div>";
+  }
+
+  function readInputForm(sec, prefix, isNew, cur) {
+    var get = function (k) { var el = $(prefix + k); return el ? el.value.trim() : null; };
+    var out = {};
+    var keys = ["et", "bearbeiter", "art", "grund", "bemerkung"];
+    if (isNew) keys.unshift("stockId");
+    keys.forEach(function (k) {
+      var v = get(k);
+      if (v === null) return;
+      if (isNew || v !== (cur[k] || "")) out[k] = v;
+    });
+    var extra = {};
+    var anyX = false;
+    (sec.layout ? sec.layout.extras : []).forEach(function (ex, j) {
+      if (!ex.editable) return;
+      var v = get("x" + ex.col);
+      if (v === null) return;
+      var before = cur && cur.extra ? cur.extra[j] : "";
+      var cmp = /liefert/i.test(ex.label) ? toIsoDate(before) : before;
+      if (isNew ? v : v !== (cmp || "")) { extra[ex.col] = v; anyX = true; }
+    });
+    if (anyX) out.extra = extra;
+    return out;
+  }
+
+  function renderSection(key) {
+    var sec = sectionByKey(key);
+    if (!sec) return go("overview");
+    $("viewTitle").textContent = "Input " + sec.label;
+    if (sec.missing) {
+      $("viewSub").textContent = "";
+      $("view").innerHTML = "<div class=\"empty\">Tabellenblatt \"" + esc(sec.sheet) + "\" nicht gefunden.</div>";
+      return;
+    }
+    var f = S.secFilter[key] = S.secFilter[key] || { q: "", et: "" };
+    var q = norm(f.q);
+    var rows = sec.rows.filter(function (r) {
+      if (f.et && norm(r.et) !== norm(f.et)) return false;
+      if (!q) return true;
+      return norm([r.stockId, r.grund, r.art, r.bearbeiter, r.bemerkung].concat(r.extra).join(" ")).indexOf(q) >= 0;
+    }).sort(function (a, b) { return (b.datumMs || 0) - (a.datumMs || 0) || b.row - a.row; });
+    $("viewSub").textContent = rows.length + " von " + sec.rows.length + " Einträgen · Blatt \"" + sec.sheet + "\"";
+
+    var extras = sec.layout.extras;
+    var h = "<div class=\"split\">";
+    h += "<div class=\"card\"><h3>Neuer Eintrag</h3>" + inputFormHtml(sec, "new_", {}, true) + "</div>";
+    h += "<div>";
+    h += "<div class=\"toolbar\"><input id=\"sQ\" class=\"grow\" placeholder=\"Suche Stock ID, Grund, Bearbeiter…\" value=\"" + esc(f.q) + "\">";
+    h += "<select id=\"sEt\"><option value=\"\">ET: alle</option>" + (sec.options.et || ["Ja", "Nein", "Diagnose"]).map(function (o) {
+      return "<option" + (norm(o) === norm(f.et) ? " selected" : "") + ">" + esc(o) + "</option>";
+    }).join("") + "</select></div>";
+    if (!rows.length) {
+      h += "<div class=\"table-wrap\"><div class=\"empty\">Keine Einträge.</div></div>";
+    } else {
+      h += "<div class=\"table-wrap\"><table><thead><tr><th>Datum</th><th>Tage</th><th>Stock ID</th><th>ET</th><th>Art</th><th>Grund</th><th>Bearbeiter</th>";
+      if (sec.layout.hasBem) h += "<th>Bemerkung</th>";
+      extras.forEach(function (ex) { h += "<th>" + esc(ex.label) + "</th>"; });
+      h += "<th>NB</th></tr></thead><tbody>";
+      rows.forEach(function (r, i) {
+        var nb = r.entryId ? findNb(r.entryId) : null;
+        h += "<tr data-i=\"" + i + "\"><td>" + esc(r.datum) + "</td><td class=\"num\">" + (r.days == null ? "" : "<span class=\"days\">" + r.days + "</span>") + "</td><td>" + esc(r.stockId) +
+          "</td><td>" + esc(r.et) + "</td><td>" + esc(r.art) + "</td><td class=\"wrap\">" + esc(r.grund) + "</td><td>" + esc(r.bearbeiter) + "</td>";
+        if (sec.layout.hasBem) h += "<td class=\"wrap\">" + esc(r.bemerkung) + "</td>";
+        extras.forEach(function (ex, j) { h += "<td>" + esc(r.extra[j]) + "</td>"; });
+        h += "<td>" + (nb ? statusPill(nb) : "") + "</td></tr>";
+      });
+      h += "</tbody></table></div>";
+    }
+    h += "</div></div>";
+    $("view").innerHTML = h;
+
+    var qEl = $("sQ");
+    var t = null;
+    qEl.oninput = function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        f.q = qEl.value;
+        var pos = qEl.selectionStart;
+        var keepNew = snapshotNew();
+        renderSection(key);
+        restoreNew(keepNew);
+        var n = $("sQ");
+        n.focus();
+        n.setSelectionRange(pos, pos);
+      }, 200);
+    };
+    $("sEt").onchange = function () { f.et = this.value; var k = snapshotNew(); renderSection(key); restoreNew(k); };
+    var trs = $("view").querySelectorAll("tbody tr[data-i]");
+    for (var i = 0; i < trs.length; i++) {
+      trs[i].onclick = function () { openInput(sec, rows[Number(this.getAttribute("data-i"))]); };
+    }
+    $("new_clear").onclick = function () { renderSection(key); };
+    $("new_save").onclick = function () {
+      var form = readInputForm(sec, "new_", true, {});
+      if (!form.stockId) return toast("Stock ID fehlt.", "err");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Trage ein…";
+      call("nbpCreateInputEntry", [key, form], function (res) {
+        toast(form.stockId.toUpperCase() + " eingetragen (Zeile " + res.row + ")" + nbMsg(res.nb) + (res.ziel ? " · Repair Status: " + res.ziel : ""), "ok");
+        var el = $("new_stockId");
+        if (el) el.value = "";
+        ["grund", "bemerkung"].forEach(function (k) { var e = $("new_" + k); if (e) e.value = ""; });
+        btn.disabled = false;
+        btn.textContent = "Eintragen";
+        load(true);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Eintragen";
+      });
+    };
+  }
+
+  function snapshotNew() {
+    var m = {};
+    var els = $("view").querySelectorAll("[id^=new_]");
+    for (var i = 0; i < els.length; i++) if ("value" in els[i]) m[els[i].id] = els[i].value;
+    return m;
+  }
+  function restoreNew(m) {
+    for (var id in m) { var el = $(id); if (el) el.value = m[id]; }
+  }
+
+  function nbMsg(code) {
+    if (code === "nb-created") return " · NB-Zeile angelegt";
+    if (code === "nb-updated") return " · NB-Zeile aktualisiert";
+    if (code === "nb-deleted") return " · NB-Zeile entfernt";
+    return "";
+  }
+
+  function openInput(sec, r, keep) {
+    S.drawer = { type: "input", sec: sec.key, entryId: r.entryId, row: r.row };
+    var h = "<div class=\"sec\"><h4>Eintrag</h4>" + kv([
+      ["Datum", r.datum + (r.days != null ? "  ·  vor " + r.days + " Tagen" : "")],
+      ["Bereich", sec.label],
+      ["Sheet-Zeile", String(r.row)],
+      ["EntryID", r.entryId]
+    ]) + "</div>";
+    var ro = sec.layout.extras.map(function (ex, j) { return ex.editable ? null : [ex.label, r.extra[j]]; }).filter(function (x) { return x && x[1]; });
+    if (ro.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(ro) + "</div>";
+    h += "<div class=\"sec\"><h4>Bearbeiten</h4>" + inputFormHtml(sec, "ed_", r, false) + "</div>";
+    var nb = r.entryId ? findNb(r.entryId) : null;
+    if (nb) h += "<div class=\"sec\"><h4>Nachbestellung</h4>" + miniNb(nb) + "</div>";
+    h += relatedHtml(r.stockId, r.entryId);
+    showDrawer(r.stockId, sec.label + " · " + (r.et || ""), h);
+    if (!keep) $("drawerBody").scrollTop = 0;
+    $("ed_save").onclick = function () {
+      var patch = readInputForm(sec, "ed_", false, r);
+      if (!Object.keys(patch).length) return toast("Keine Änderungen.");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Speichere…";
+      call("nbpUpdateInputEntry", [sec.key, r.row, r.entryId, patch], function (res) {
+        toast("Gespeichert" + nbMsg(res.nb) + (res.ziel ? " · Repair Status: " + res.ziel : ""), "ok");
+        load(true);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Speichern";
+      });
+    };
+    bindMini();
+  }
+
+  $("btnRefresh").onclick = function () { load(false); };
+  $("drawerClose").onclick = closeDrawer;
+  $("drawerBack").onclick = closeDrawer;
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+
+  setInterval(function () {
+    if (document.hidden || S.drawer) return;
+    var a = document.activeElement;
+    if (a && /INPUT|TEXTAREA|SELECT/.test(a.tagName)) return;
+    if (S.view.indexOf("sec:") === 0) {
+      var k = snapshotNew();
+      for (var id in k) if (k[id]) return;
+    }
+    load(true);
+  }, 180000);
+
+  resetNbFilter({});
+  load(false);
+})();
+</script>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NB Panel</title>
+  <?!= include("NBP_Styles"); ?>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <div class="brand-mark">NB</div>
+        <div>
+          <div class="brand-title">NB Panel</div>
+          <div class="brand-sub">Nachbestellungen / Exit · v<?= appVersion ?></div>
+        </div>
+      </div>
+      <nav id="nav" class="nav"></nav>
+      <div class="side-foot">
+        <div id="userLine" class="muted small"></div>
+        <a id="sheetLink" class="muted small" href="#" target="_blank" rel="noopener">Sheet öffnen</a>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="top">
+        <div>
+          <h1 id="viewTitle">Übersicht</h1>
+          <div id="viewSub" class="muted small"></div>
+        </div>
+        <div class="top-actions">
+          <span id="loadedAt" class="muted small"></span>
+          <button id="btnRefresh" class="btn ghost" type="button">Aktualisieren</button>
+        </div>
+      </header>
+      <section id="view" class="view">
+        <div class="loading">Lade Daten…</div>
+      </section>
+    </main>
+  </div>
+  <div id="drawerBack" class="drawer-back hidden"></div>
+  <aside id="drawer" class="drawer hidden">
+    <div class="drawer-head">
+      <div>
+        <div id="drawerTitle" class="drawer-title"></div>
+        <div id="drawerSub" class="muted small"></div>
+      </div>
+      <button id="drawerClose" class="btn ghost icon" type="button">✕</button>
+    </div>
+    <div id="drawerBody" class="drawer-body"></div>
+  </aside>
+  <div id="toasts" class="toasts"></div>
+  <?!= include("NBP_Script"); ?>
+</body>
+</html>
