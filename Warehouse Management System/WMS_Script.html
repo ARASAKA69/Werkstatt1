@@ -1723,6 +1723,18 @@
       return;
     }
 
+    if (wmsElIsOpen('ovPrintModal')) {
+      consumeEsc();
+      closeOvPrintModal();
+      return;
+    }
+
+    if (wmsElIsOpen('ovPrintModal')) {
+      consumeEsc();
+      closeOvPrintModal();
+      return;
+    }
+
     if (window.wmsStandalone && typeof window.wmsStandalone.dismissTopWindow === 'function') {
       if (window.wmsStandalone.dismissTopWindow()) {
         consumeEsc();
@@ -2323,6 +2335,7 @@
     saveOverviewDoneMap(map);
     var row = cb.closest('tr');
     if(row) { if(cb.checked) row.classList.add('ov-row-done'); else row.classList.remove('ov-row-done'); }
+    updateOverviewStats();
   }
 
   function getStatusStyle(status) {
@@ -2385,61 +2398,314 @@
     return applyWordHighlightsToHtml(escapeHtml(s).replace(/\n/g, '<br>'), matchedWords);
   }
 
-  function renderStockOverview(entries) {
+  var ovStatusFilter = 'all';
+  var ovShelfFilter = '';
+  var ovSearchTerm = '';
+  var ovGroupByRegal = true;
+  var ovExpandAll = false;
+  var ovPrintMode = 'list';
+
+  function overviewReifenCategory(entry) {
+    if (!overviewNeedsReifen(entry)) return 'none';
+    var delivered = overviewReifenDelivered(entry);
+    if (delivered === true) return 'da';
+    if (delivered === false) return 'missing';
+    return 'offen';
+  }
+
+  function overviewIsReifenOffen(entry) {
+    return overviewReifenCategory(entry) === 'offen';
+  }
+
+  function overviewEntriesWithoutReifenOffen(entries) {
+    var out = [];
+    for (var i = 0; i < (entries || []).length; i++) {
+      if (!overviewIsReifenOffen(entries[i])) out.push(entries[i]);
+    }
+    return out;
+  }
+
+  function overviewFirstLine(text) {
+    var lines = String(text || '').split(/\n|\/\//);
+    for (var i = 0; i < lines.length; i++) {
+      var t = lines[i].trim();
+      if (t) return { text: t, more: lines.slice(i + 1).filter(function(l) { return l.trim(); }).length };
+    }
+    return null;
+  }
+
+  function overviewMatchesSearch(entry, term) {
+    if (!term) return true;
+    var hay = [entry.stockId, entry.regal, entry.status, entry.schaeden, entry.kommBestellung, entry.kommAnlieferung, getOverviewReifenLabel(entry)].join(' ').toLowerCase();
+    var parts = term.toLowerCase().split(/\s+/);
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] && hay.indexOf(parts[i]) === -1) return false;
+    }
+    return true;
+  }
+
+  function overviewMatchesStatus(entry, doneMap) {
+    switch (ovStatusFilter) {
+      case 'no-reifen-offen': return !overviewIsReifenOffen(entry);
+      case 'reifen-da': return overviewReifenCategory(entry) === 'da';
+      case 'reifen-offen': return overviewIsReifenOffen(entry);
+      case 'no-reifen': return overviewReifenCategory(entry) === 'none';
+      case 'unchecked': return !doneMap[entry.stockId];
+      default: return true;
+    }
+  }
+
+  function getFilteredOverviewIndexes() {
+    var doneMap = getOverviewDoneMap();
+    var out = [];
+    for (var i = 0; i < ovAllEntries.length; i++) {
+      var e = ovAllEntries[i];
+      if (ovShelfFilter && overviewShelfKey(e.regal) !== ovShelfFilter) continue;
+      if (!overviewMatchesStatus(e, doneMap)) continue;
+      if (!overviewMatchesSearch(e, ovSearchTerm)) continue;
+      out.push(i);
+    }
+    out.sort(function(a, b) { return compareOverviewEntries(ovAllEntries[a], ovAllEntries[b]); });
+    return out;
+  }
+
+  function overviewShelfKey(regal) {
+    var m = String(regal || '').match(/Regal\s+(\d+)/i);
+    return m ? m[1] : String(regal || '');
+  }
+
+  function updateOverviewStats() {
+    var doneMap = getOverviewDoneMap();
+    var all = ovAllEntries.length, offen = 0, da = 0, none = 0, done = 0;
+    for (var i = 0; i < all; i++) {
+      var cat = overviewReifenCategory(ovAllEntries[i]);
+      if (cat === 'offen') offen++;
+      else if (cat === 'da') da++;
+      else if (cat === 'none') none++;
+      if (doneMap[ovAllEntries[i].stockId]) done++;
+    }
+    var set = function(id, txt) { var el = document.getElementById(id); if (el) el.innerText = txt; };
+    set('ovStatAll', String(all));
+    set('ovStatReady', String(all - offen));
+    set('ovStatReifenDa', String(da));
+    set('ovStatReifenOffen', String(offen));
+    set('ovStatNoReifen', String(none));
+    set('ovStatDone', done + ' / ' + all);
+    set('ovStatDoneSub', (all - done) + ' noch nicht abgehakt');
+    var resetBtn = document.getElementById('ovResetChecksBtn');
+    if (resetBtn) resetBtn.hidden = done === 0;
+    var cards = document.querySelectorAll('#ovKpiGrid .ov-kpi-card');
+    for (var c = 0; c < cards.length; c++) {
+      cards[c].classList.toggle('is-active', cards[c].getAttribute('data-ov-filter') === ovStatusFilter);
+    }
+  }
+
+  function renderOverviewShelfBar() {
+    var bar = document.getElementById('ovShelfBar');
+    if (!bar) return;
+    if (!ovAllEntries.length) { bar.innerHTML = ''; return; }
+    var counts = {}, order = [];
+    for (var i = 0; i < ovAllEntries.length; i++) {
+      var k = overviewShelfKey(ovAllEntries[i].regal);
+      if (!counts[k]) { counts[k] = 0; order.push(k); }
+      counts[k]++;
+    }
+    order.sort(function(a, b) {
+      var na = parseInt(a, 10), nb = parseInt(b, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return String(a).localeCompare(String(b), 'de');
+    });
+    var html = '<button type="button" class="ov-shelf-pill' + (!ovShelfFilter ? ' is-active' : '') + '" onclick="setOverviewShelfFilter(\'\')">Alle Regale <span class="ov-shelf-pill-cnt">' + ovAllEntries.length + '</span></button>';
+    for (var j = 0; j < order.length; j++) {
+      var key = order[j];
+      html += '<button type="button" class="ov-shelf-pill' + (ovShelfFilter === key ? ' is-active' : '') + '" onclick="setOverviewShelfFilter(\'' + escapeJs(key) + '\')">Regal ' + escapeHtml(key) + ' <span class="ov-shelf-pill-cnt">' + counts[key] + '</span></button>';
+    }
+    bar.innerHTML = html;
+  }
+
+  function overviewReifenPillHtml(entry) {
+    var cat = overviewReifenCategory(entry);
+    var label = getOverviewReifenLabel(entry);
+    if (cat === 'da') return '<span class="ov-reifen-pill ov-reifen-pill--da">● ' + escapeHtml(label) + '</span>';
+    if (cat === 'offen') return '<span class="ov-reifen-pill ov-reifen-pill--offen">● ' + escapeHtml(label) + '</span>';
+    if (cat === 'missing') return '<span class="ov-reifen-pill ov-reifen-pill--missing">● ' + escapeHtml(label) + '</span>';
+    if (label && label !== '-') return '<span class="ov-reifen-pill" style="' + getOverviewReifenStyle(entry) + '">' + escapeHtml(label) + '</span>';
+    return '<span class="ov-reifen-pill ov-reifen-pill--none">—</span>';
+  }
+
+  function overviewSummaryHtml(entry) {
+    var isNb = entry.source === 'nachbestellung';
+    var lines = [];
+    var anl = overviewFirstLine(entry.kommAnlieferung);
+    var best = overviewFirstLine(entry.kommBestellung);
+    var sch = overviewFirstLine(entry.schaeden);
+    if (anl) lines.push({ tag: isNb ? 'Teil' : 'Anl.', cls: 'anl', v: anl });
+    if (best) lines.push({ tag: isNb ? 'Art.' : 'Best.', cls: 'best', v: best });
+    if (sch && lines.length < 2) lines.push({ tag: isNb ? 'Typ' : 'Schad.', cls: 'sch', v: sch });
+    if (!lines.length) return '<span class="ov-summary-empty">Keine Infos hinterlegt</span>';
+    var html = '<div class="ov-summary-stack">';
+    for (var i = 0; i < lines.length && i < 2; i++) {
+      var l = lines[i];
+      html += '<div class="ov-summary-line"><span class="ov-summary-tag ov-summary-tag--' + l.cls + '">' + l.tag + '</span><span class="ov-summary-text" title="' + escapeHtml(l.v.text) + '">' + escapeHtml(l.v.text) + (l.v.more ? ' <b style="color:#8b949e;">+' + l.v.more + '</b>' : '') + '</span></div>';
+    }
+    return html + '</div>';
+  }
+
+  function overviewGroupHeaderHtml(regal, idxs) {
+    var offen = 0, da = 0;
+    for (var i = 0; i < idxs.length; i++) {
+      var cat = overviewReifenCategory(ovAllEntries[idxs[i]]);
+      if (cat === 'offen') offen++;
+      else if (cat === 'da') da++;
+    }
+    var kw = idxs.length === 1 ? 'Kiste' : 'Kisten';
+    return '<tr class="ov-group-row"><td colspan="8"><div class="ov-group-bar">'
+      + '<span class="ov-group-title">📍 ' + escapeHtml(regal) + '</span>'
+      + '<span class="ov-group-badges">'
+      + '<span class="ov-group-chip">' + idxs.length + ' ' + kw + '</span>'
+      + '<span class="ov-group-chip ov-group-chip--ready">' + (idxs.length - offen) + ' prüfbereit</span>'
+      + (da ? '<span class="ov-group-chip ov-group-chip--green">' + da + ' Reifen da</span>' : '')
+      + (offen ? '<span class="ov-group-chip ov-group-chip--orange">' + offen + ' Reifen offen</span>' : '')
+      + '</span></div></td></tr>';
+  }
+
+  function overviewRowHtml(i, doneMap) {
+    var e = ovAllEntries[i];
+    var isDone = !!doneMap[e.stockId];
+    var isNb = e.source === 'nachbestellung';
+    var lblSchaeden = isNb ? 'Art der Nachbestellung' : 'Schäden (Manueller Input)';
+    var lblBestell = isNb ? 'Artikelnummer' : 'Ersatzteile Bestellung';
+    var lblAnliefer = isNb ? 'Ersatzteil / Bedarf' : 'Ersatzteile Anlieferung';
+    var open = ovExpandAll;
+    return '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + (open ? ' is-open' : '') + '" id="ov-row-' + i + '" onclick="toggleOverviewEntry(' + i + ')">'
+      + '<td class="ov-check-cell" onclick="event.stopPropagation();"><input type="checkbox"' + (isDone ? ' checked' : '') + ' onchange="toggleOverviewDone(' + i + ',\'' + escapeJs(e.stockId) + '\',this)"></td>'
+      + '<td style="color:#F27420;font-weight:800;" id="ov-chev-' + i + '">' + (open ? '▼' : '▶') + '</td>'
+      + '<td><span class="ov-stock-pill">' + escapeHtml(e.stockId) + (isNb ? '<span class="ov-nb-tag">NB</span>' : '') + '</span></td>'
+      + '<td><span class="ov-regal-badge">' + escapeHtml(e.regal) + '</span></td>'
+      + '<td><span class="ov-status-pill" style="' + getStatusStyle(e.status) + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
+      + '<td>' + overviewReifenPillHtml(e) + '</td>'
+      + '<td>' + overviewSummaryHtml(e) + '</td>'
+      + '<td style="text-align:right;white-space:nowrap;"><button type="button" class="ov-row-btn ov-row-btn--copy" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')">📋 Copy</button><button type="button" class="ov-row-btn ov-row-btn--open" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')">Im WMS öffnen</button></td>'
+      + '</tr>'
+      + '<tr class="ov-detail' + (open ? ' open' : '') + '" id="ov-detail-' + i + '"><td colspan="8"><div class="ov-detail-inner">'
+      + '<div class="ov-detail-box wide"><div class="ov-detail-lbl">' + lblSchaeden + '</div><div class="ov-detail-val schaeden-list">' + formatSchaeden(e.schaeden) + '</div></div>'
+      + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblBestell + '</div><div class="ov-detail-val">' + formatOverviewComment(e.kommBestellung, e.kommAnlieferung) + '</div></div>'
+      + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblAnliefer + '</div><div class="ov-detail-val">' + formatOverviewComment(e.kommAnlieferung, e.kommBestellung) + '</div></div>'
+      + '</div></td></tr>';
+  }
+
+  function renderStockOverview() {
     var body = document.getElementById('overviewTableBody');
-    if(!entries || !entries.length) {
-      body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#9da7b3;padding:18px;">Keine Einträge gefunden.</td></tr>';
+    updateOverviewStats();
+    renderOverviewShelfBar();
+    var fb = document.getElementById('overviewFilteredBadge');
+    if (!ovAllEntries || !ovAllEntries.length) {
+      if (fb) fb.hidden = true;
+      body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:18px;">Keine Einträge gefunden.</td></tr>';
+      return;
+    }
+    var idxs = getFilteredOverviewIndexes();
+    if (fb) {
+      var filtered = idxs.length !== ovAllEntries.length;
+      fb.hidden = !filtered;
+      if (filtered) fb.innerText = idxs.length + ' angezeigt';
+    }
+    if (!idxs.length) {
+      body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#9da7b3;padding:22px;">Keine Kisten passen zu Filter / Suche.</td></tr>';
       return;
     }
     var doneMap = getOverviewDoneMap();
     var html = '';
-    for(var i = 0; i < entries.length; i++) {
-      var e = entries[i];
-      var isDone = !!doneMap[e.stockId];
-      var statusStyle = getStatusStyle(e.status);
-      var reifenLabel = getOverviewReifenLabel(e);
-      var reifenStyle = getOverviewReifenStyle(e);
-      var schaedenHtml = formatSchaeden(e.schaeden);
-      var bestellHtml = formatOverviewComment(e.kommBestellung, e.kommAnlieferung);
-      var anlieferHtml = formatOverviewComment(e.kommAnlieferung, e.kommBestellung);
-      var isNb = e.source === 'nachbestellung';
-      var lblSchaeden = isNb ? 'Art der Nachbestellung' : 'Schäden (Manueller Input)';
-      var lblBestell = isNb ? 'Artikelnummer' : 'Ersatzteile Bestellung';
-      var lblAnliefer = isNb ? 'Ersatzteil / Bedarf' : 'Ersatzteile Anlieferung';
-      html += '<tr class="ov-row' + (isDone ? ' ov-row-done' : '') + '" onclick="toggleOverviewEntry(' + i + ')">'  
-        + '<td class="ov-check-cell" onclick="event.stopPropagation();"><input type="checkbox"' + (isDone ? ' checked' : '') + ' onchange="toggleOverviewDone(' + i + ',\'' + escapeJs(e.stockId) + '\',this)"></td>'
-        + '<td style="color:#F27420;font-weight:800;width:24px;" id="ov-chev-' + i + '">▶</td>'
-        + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + (isNb ? ' <span style="font-size:10px;color:#F27420;opacity:0.85;">NB</span>' : '') + '</td>'
-        + '<td style="color:#E88435;font-weight:700;">' + escapeHtml(e.regal) + '</td>'
-        + '<td><span style="padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:0.8px;text-transform:uppercase;' + statusStyle + '">' + escapeHtml(e.status || 'Offen') + '</span></td>'
-        + '<td><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></td>'
-        + '<td style="text-align:right;white-space:nowrap;"><button type="button" onclick="copyOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(255,255,255,0.04);color:#c9d1d9;border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;margin-right:6px;">📋 Copy</button><button type="button" onclick="openOverviewStock(event,\'' + escapeJs(e.stockId) + '\')" style="background:rgba(61,158,220,0.12);color:#3FA0DB;border:1px solid rgba(61,158,220,0.2);border-radius:10px;padding:8px 12px;font-size:12px;font-weight:800;cursor:pointer;">Im WMS öffnen</button></td>'
-        + '</tr>';
-      html += '<tr class="ov-detail" id="ov-detail-' + i + '">'
-        + '<td colspan="7">'
-        + '<div class="ov-detail-inner">'
-        + '<div class="ov-detail-box wide"><div class="ov-detail-lbl">' + lblSchaeden + '</div><div class="ov-detail-val schaeden-list">' + schaedenHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblBestell + '</div><div class="ov-detail-val">' + bestellHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">' + lblAnliefer + '</div><div class="ov-detail-val">' + anlieferHtml + '</div></div>'
-        + '<div class="ov-detail-box"><div class="ov-detail-lbl">Reifen</div><div class="ov-detail-val"><span style="' + reifenStyle + '">' + escapeHtml(reifenLabel) + '</span></div></div>'
-        + '</div>'
-        + '</td>'
-        + '</tr>';
+    if (ovGroupByRegal) {
+      var groups = [], cur = null;
+      for (var g = 0; g < idxs.length; g++) {
+        var reg = ovAllEntries[idxs[g]].regal;
+        if (!cur || cur.regal !== reg) { cur = { regal: reg, idxs: [] }; groups.push(cur); }
+        cur.idxs.push(idxs[g]);
+      }
+      for (var k = 0; k < groups.length; k++) {
+        html += overviewGroupHeaderHtml(groups[k].regal, groups[k].idxs);
+        for (var m = 0; m < groups[k].idxs.length; m++) html += overviewRowHtml(groups[k].idxs[m], doneMap);
+      }
+    } else {
+      for (var i = 0; i < idxs.length; i++) html += overviewRowHtml(idxs[i], doneMap);
     }
     body.innerHTML = html;
+  }
+
+  function setOverviewStatusFilter(f) {
+    ovStatusFilter = (ovStatusFilter === f && f !== 'all') ? 'all' : f;
+    renderStockOverview();
+  }
+
+  function setOverviewShelfFilter(key) {
+    ovShelfFilter = key || '';
+    renderStockOverview();
+  }
+
+  var ovSearchTimer = null;
+  function onOverviewSearchInput() {
+    var input = document.getElementById('ovSearchInput');
+    var clr = document.getElementById('ovSearchClear');
+    if (clr) clr.hidden = !(input && input.value);
+    clearTimeout(ovSearchTimer);
+    ovSearchTimer = setTimeout(function() {
+      ovSearchTerm = String(input ? input.value : '').trim();
+      renderStockOverview();
+    }, 120);
+  }
+
+  function onOverviewSearchKeydown(ev) {
+    if (ev && ev.key === 'Escape' && ovSearchTerm) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      clearOverviewSearch();
+    }
+  }
+
+  function clearOverviewSearch() {
+    var input = document.getElementById('ovSearchInput');
+    if (input) input.value = '';
+    var clr = document.getElementById('ovSearchClear');
+    if (clr) clr.hidden = true;
+    ovSearchTerm = '';
+    renderStockOverview();
+  }
+
+  function toggleOverviewGroupByRegal() {
+    ovGroupByRegal = !ovGroupByRegal;
+    var btn = document.getElementById('ovGroupRegalBtn');
+    if (btn) btn.classList.toggle('is-active', ovGroupByRegal);
+    renderStockOverview();
+  }
+
+  function toggleAllOverviewDetails() {
+    ovExpandAll = !ovExpandAll;
+    var btn = document.getElementById('ovExpandAllBtn');
+    if (btn) {
+      btn.classList.toggle('is-active', ovExpandAll);
+      btn.innerText = ovExpandAll ? '▲ Details zu' : '▼ Alle Details';
+    }
+    renderStockOverview();
+  }
+
+  function resetOverviewDone() {
+    if (!confirm('Alle Häkchen in der Übersicht zurücksetzen?')) return;
+    var map = getOverviewDoneMap();
+    for (var i = 0; i < ovAllEntries.length; i++) delete map[ovAllEntries[i].stockId];
+    saveOverviewDoneMap(map);
+    renderStockOverview();
   }
 
   function toggleOverviewEntry(index) {
     var detail = document.getElementById('ov-detail-' + index);
     var chev = document.getElementById('ov-chev-' + index);
+    var row = document.getElementById('ov-row-' + index);
     if(!detail) return;
-    if(detail.classList.contains('open')) {
-      detail.classList.remove('open');
-      if(chev) chev.innerText = '▶';
-    } else {
-      detail.classList.add('open');
-      if(chev) chev.innerText = '▼';
-    }
+    var open = !detail.classList.contains('open');
+    detail.classList.toggle('open', open);
+    if(row) row.classList.toggle('is-open', open);
+    if(chev) chev.innerText = open ? '▼' : '▶';
   }
 
   function copyOverviewStock(event, stockId) {
@@ -2461,14 +2727,14 @@
     var body = document.getElementById('overviewTableBody');
     modal.classList.add('open');
     if(ovSessionActive && ovOverviewReady) {
-      renderStockOverview(ovAllEntries);
+      renderStockOverview();
       return;
     }
     ovSessionActive = true;
-    body.innerHTML = hudLoadingRowHtml(7, 'Lade Übersicht…');
+    body.innerHTML = hudLoadingRowHtml(8, 'Lade Übersicht…');
     google.script.run.withSuccessHandler(function(res) {
       if(!res.success) {
-        body.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
+        body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml(res.message || 'Unbekannter Fehler') + '</td></tr>';
         return;
       }
       var entries = res.entries || [];
@@ -2477,7 +2743,9 @@
       var count = entries.length;
       var kistenWord = count === 1 ? "Kiste" : "Kisten";
       document.getElementById('overviewTotalBadge').innerText = "Insgesamt: " + count + " " + kistenWord + " im Lager";
-      renderStockOverview(entries);
+      renderStockOverview();
+    }).withFailureHandler(function(err) {
+      body.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml((err && err.message) || String(err)) + '</td></tr>';
     }).getStockRegalOverview();
   }
 
@@ -2497,7 +2765,41 @@
     return s ? escapeHtml(s).replace(/\n/g, '<br>') : '-';
   }
 
-  function buildOverviewHtml(entries, dateHeader) {
+  var OV_CODE128_PATTERNS = ['212222','222122','222221','121223','121322','131222','122213','122312','132212','221213','221312','231212','112232','122132','122231','113222','123122','123221','223211','221132','221231','213212','223112','312131','311222','321122','321221','312212','322112','322211','212123','212321','232121','111323','131123','131321','112313','132113','132311','211313','231113','231311','112133','112331','132131','113123','113321','133121','313121','211331','231131','213113','213311','213131','311123','311321','331121','312113','312311','332111','314111','221411','431111','111224','111422','121124','121421','141122','141221','112214','112412','122114','122411','142112','142211','241211','221114','413111','241112','134111','111242','121142','121241','114212','124112','124211','411212','421112','421211','212141','214121','412121','111143','111341','131141','114113','114311','411113','411311','113141','114131','311141','411131','211412','211214','211232','2331112'];
+
+  function overviewBarcodeSvg(text, widthMm, heightMm) {
+    var s = String(text || '').trim().toUpperCase().replace(/[^\x20-\x7E]/g, '');
+    if (!s) return '';
+    var codes = [104];
+    var sum = 104;
+    for (var i = 0; i < s.length; i++) {
+      var v = s.charCodeAt(i) - 32;
+      codes.push(v);
+      sum += v * (i + 1);
+    }
+    codes.push(sum % 103);
+    codes.push(106);
+    var quiet = 10;
+    var x = quiet;
+    var rects = '';
+    for (var c = 0; c < codes.length; c++) {
+      var p = OV_CODE128_PATTERNS[codes[c]];
+      for (var k = 0; k < p.length; k++) {
+        var w = parseInt(p.charAt(k), 10);
+        if (k % 2 === 0) rects += '<rect x="' + x + '" y="0" width="' + w + '" height="40"/>';
+        x += w;
+      }
+    }
+    var total = x + quiet;
+    return '<svg class="bc" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + total + ' 40" preserveAspectRatio="none" shape-rendering="crispEdges" style="display:block;width:' + (widthMm || 34) + 'mm;height:' + (heightMm || 8) + 'mm;margin-top:3px;" fill="#000">' + rects + '</svg>';
+  }
+
+  function overviewPrintFilterNote(skipped) {
+    if (!skipped) return '';
+    return ' \u2014 ohne \u201eReifen offen\u201c (' + skipped + ' weggelassen)';
+  }
+
+  function buildOverviewHtml(entries, dateHeader, filterNote) {
     var sorted = entries.slice().sort(compareOverviewEntries);
     var rows = '';
     for (var j = 0; j < sorted.length; j++) {
@@ -2505,7 +2807,7 @@
       var reifen = getOverviewReifenLabel(e);
       rows += '<tr>'
         + '<td>' + (j + 1) + '</td>'
-        + '<td style="font-weight:700;">' + escapeHtml(e.stockId) + '</td>'
+        + '<td style="font-weight:700;">' + escapeHtml(e.stockId) + overviewBarcodeSvg(e.stockId, 34, 8) + '</td>'
         + '<td style="font-weight:700;">' + escapeHtml(e.regal) + '</td>'
         + '<td>' + escapeHtml(e.status || '-') + '</td>'
         + '<td>' + escapeHtml(reifen) + '</td>'
@@ -2524,13 +2826,13 @@
       + '@media print{body{margin:10px;}@page{size:A4 portrait;margin:12mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht \u2014 ' + dateHeader + '</h2>'
-      + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
+      + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)' + (filterNote || '') + '</div>'
       + '<table><thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Status</th><th>Reifen</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + '</body></html>';
   }
 
-  function buildOverviewDetailHtml(entries, dateHeader) {
+  function buildOverviewDetailHtml(entries, dateHeader, filterNote) {
     var sorted = entries.slice().sort(compareOverviewEntries);
     var rows = '';
     for (var j = 0; j < sorted.length; j++) {
@@ -2541,7 +2843,7 @@
       var isNb = e.source === 'nachbestellung';
       rows += '<tr>'
         + '<td>' + (j + 1) + '</td>'
-        + '<td class="sid">' + escapeHtml(e.stockId) + '</td>'
+        + '<td class="sid">' + escapeHtml(e.stockId) + overviewBarcodeSvg(e.stockId, 32, 7) + '</td>'
         + '<td class="reg">' + escapeHtml(e.regal) + '</td>'
         + '<td>' + escapeHtml(e.status || '-') + '</td>'
         + '<td style="font-weight:700;color:' + reifenColor + ';">' + escapeHtml(reifen) + '</td>'
@@ -2562,12 +2864,12 @@
       + 'tr:nth-child(even){background:#f7f7f7;}'
       + 'td.sid,td.reg{font-weight:700;}'
       + 'td.note{word-wrap:break-word;overflow-wrap:break-word;}'
-      + 'col.c-n{width:24px;}col.c-sid{width:64px;}col.c-reg{width:56px;}col.c-st{width:72px;}col.c-rf{width:52px;}col.c-sch{width:20%;}col.c-et{width:auto;}col.c-an{width:auto;}'
+      + 'col.c-n{width:24px;}col.c-sid{width:35mm;}col.c-reg{width:56px;}col.c-st{width:72px;}col.c-rf{width:52px;}col.c-sch{width:20%;}col.c-et{width:auto;}col.c-an{width:auto;}'
       + 'thead{display:table-header-group;}'
       + '@media print{body{margin:8px;}@page{size:A4 landscape;margin:10mm;}}'
       + '</style></head><body>'
       + '<h2>Stock-ID + Regal \u00dcbersicht (vollst\u00e4ndig) \u2014 ' + dateHeader + '</h2>'
-      + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)</div>'
+      + '<div class="sub">' + sorted.length + ' ' + kistenWord + ' im Lager (sortiert nach Regalplatz)' + (filterNote || '') + '</div>'
       + '<table><colgroup><col class="c-n"><col class="c-sid"><col class="c-reg"><col class="c-st"><col class="c-rf"><col class="c-sch"><col class="c-et"><col class="c-an"></colgroup>'
       + '<thead><tr><th>#</th><th>Stock-ID</th><th>Regalplatz</th><th>Status</th><th>Reifen</th><th>Sch\u00e4den</th><th>Ersatzteile Bestellung</th><th>Ersatzteile Anlieferung</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
@@ -2592,13 +2894,47 @@
     });
   }
 
-  function printOverviewList() {
+  function openOvPrintModal(mode) {
     if (!ovAllEntries || !ovAllEntries.length) {
       alert('Keine Einträge zum Drucken.');
       return;
     }
-    var html = buildOverviewHtml(ovAllEntries, overviewPrintDateHeader());
-    sendOverviewPrint(html, document.querySelector('.ov-btn-print'), '\ud83d\udda8\ufe0f Drucken');
+    ovPrintMode = mode === 'detail' ? 'detail' : 'list';
+    var all = ovAllEntries.length;
+    var kept = overviewEntriesWithoutReifenOffen(ovAllEntries).length;
+    var skipped = all - kept;
+    var kw = function(n) { return n + ' ' + (n === 1 ? 'Kiste' : 'Kisten'); };
+    document.getElementById('ovPrintModalTitle').innerText = ovPrintMode === 'detail' ? '\ud83d\udda8\ufe0f Drucken + ET' : '\ud83d\udda8\ufe0f Übersicht drucken';
+    document.getElementById('ovPrintAllCountBadge').innerText = kw(all);
+    document.getElementById('ovPrintNoReifenCountBadge').innerText = kw(kept);
+    document.getElementById('ovPrintNoReifenDesc').innerText = skipped
+      ? 'Lässt ' + kw(skipped) + ' mit \u201eReifen offen\u201c weg — die müsst ihr eh noch nicht prüfen.'
+      : 'Aktuell gibt es keine Kisten mit \u201eReifen offen\u201c — Liste ist identisch mit Option 1.';
+    document.getElementById('ovPrintModal').classList.add('open');
+  }
+
+  function closeOvPrintModal() {
+    var m = document.getElementById('ovPrintModal');
+    if (m) m.classList.remove('open');
+  }
+
+  function executeOverviewPrintChoice(excludeReifenOffen) {
+    closeOvPrintModal();
+    var entries = excludeReifenOffen ? overviewEntriesWithoutReifenOffen(ovAllEntries) : ovAllEntries.slice();
+    if (!entries.length) {
+      alert('Keine Einträge zum Drucken.');
+      return;
+    }
+    var note = excludeReifenOffen ? overviewPrintFilterNote(ovAllEntries.length - entries.length) : '';
+    if (ovPrintMode === 'detail') {
+      openOverviewPrintPreview(buildOverviewDetailHtml(entries, overviewPrintDateHeader(), note));
+    } else {
+      sendOverviewPrint(buildOverviewHtml(entries, overviewPrintDateHeader(), note), document.querySelector('.ov-btn-print'), '\ud83d\udda8\ufe0f Drucken');
+    }
+  }
+
+  function printOverviewList() {
+    openOvPrintModal('list');
   }
 
   function openOverviewPrintPreview(html) {
@@ -2620,12 +2956,7 @@
   }
 
   function printOverviewDetailList() {
-    if (!ovAllEntries || !ovAllEntries.length) {
-      alert('Keine Einträge zum Drucken.');
-      return;
-    }
-    var html = buildOverviewDetailHtml(ovAllEntries, overviewPrintDateHeader());
-    openOverviewPrintPreview(html);
+    openOvPrintModal('detail');
   }
 
   function normalizeStockInput(value) {

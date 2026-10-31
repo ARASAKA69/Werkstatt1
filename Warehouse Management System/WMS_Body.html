@@ -422,32 +422,141 @@
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeStockOverview()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="overview-title">Stock-ID + Regal Übersicht</div>
-      <button type="button" onclick="refreshStockOverview()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:12px;padding:10px 14px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
-      <button type="button" class="ra-btn ra-btn-print ov-btn-print" onclick="printOverviewList()">🖨️ Drucken</button>
-      <button type="button" class="ra-btn ra-btn-print ov-btn-print-detail" onclick="printOverviewDetailList()">🖨️ Drucken + ET</button>
-      <button class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
+      <div class="ov-header-main">
+        <div class="overview-title">📦 Stock-ID + Regal Übersicht</div>
+        <span id="overviewTotalBadge" class="overview-total-badge">Insgesamt: ...</span>
+        <span id="overviewFilteredBadge" class="overview-filtered-badge" hidden></span>
+      </div>
+      <div class="ov-header-actions">
+        <button type="button" class="ov-hdr-btn overview-refresh" onclick="refreshStockOverview()">🔄 Refresh</button>
+        <button type="button" class="ra-btn ra-btn-print ov-btn-print" onclick="printOverviewList()">🖨️ Drucken</button>
+        <button type="button" class="ra-btn ra-btn-print ov-btn-print-detail" onclick="printOverviewDetailList()">🖨️ Drucken + ET</button>
+        <button type="button" class="overview-close" onclick="minimizeStockOverview()">Zurück</button>
+      </div>
     </div>
     <div class="overview-body">
-      <div class="overview-note"><span id="overviewTotalBadge" style="display:inline-block;padding:5px 12px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:13px;letter-spacing:0.8px;margin-right:12px;">Insgesamt: ...</span>Sortiert nach Regalplatz. Klicke eine Zeile an, um Details zu sehen.</div>
+      <div class="ov-dashboard">
+        <div class="ov-kpi-grid" id="ovKpiGrid">
+          <button type="button" class="ov-kpi-card ov-kpi-card--all is-active" data-ov-filter="all" onclick="setOverviewStatusFilter('all')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Gesamt im Lager</span>
+              <span class="ov-kpi-dot ov-kpi-dot--all"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatAll">0</div>
+            <div class="ov-kpi-sub" id="ovStatAllSub">Alle Kisten anzeigen</div>
+          </button>
+          <button type="button" class="ov-kpi-card ov-kpi-card--ready" data-ov-filter="no-reifen-offen" onclick="setOverviewStatusFilter('no-reifen-offen')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Ohne „Reifen offen“</span>
+              <span class="ov-kpi-dot ov-kpi-dot--ready"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatReady">0</div>
+            <div class="ov-kpi-sub" id="ovStatReadySub">Prüfbereite Kisten</div>
+          </button>
+          <button type="button" class="ov-kpi-card ov-kpi-card--reifen-da" data-ov-filter="reifen-da" onclick="setOverviewStatusFilter('reifen-da')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Reifen da</span>
+              <span class="ov-kpi-dot ov-kpi-dot--green"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatReifenDa">0</div>
+            <div class="ov-kpi-sub">Reifen bereits geliefert</div>
+          </button>
+          <button type="button" class="ov-kpi-card ov-kpi-card--reifen-offen" data-ov-filter="reifen-offen" onclick="setOverviewStatusFilter('reifen-offen')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Reifen offen</span>
+              <span class="ov-kpi-dot ov-kpi-dot--orange"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatReifenOffen">0</div>
+            <div class="ov-kpi-sub">Wartet noch auf Reifen</div>
+          </button>
+          <button type="button" class="ov-kpi-card ov-kpi-card--no-reifen" data-ov-filter="no-reifen" onclick="setOverviewStatusFilter('no-reifen')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Kein Reifen-Bedarf</span>
+              <span class="ov-kpi-dot ov-kpi-dot--slate"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatNoReifen">0</div>
+            <div class="ov-kpi-sub">Nur Ersatzteile</div>
+          </button>
+          <button type="button" class="ov-kpi-card ov-kpi-card--done" data-ov-filter="unchecked" onclick="setOverviewStatusFilter('unchecked')">
+            <div class="ov-kpi-top">
+              <span class="ov-kpi-label">Check-Status ✔</span>
+              <span class="ov-kpi-dot ov-kpi-dot--purple"></span>
+            </div>
+            <div class="ov-kpi-val" id="ovStatDone">0 / 0</div>
+            <div class="ov-kpi-sub" id="ovStatDoneSub">Offene zeigen</div>
+          </button>
+        </div>
+
+        <div class="ov-controls-row">
+          <div class="overview-search ov-search-wrap">
+            <span class="ov-search-icon" aria-hidden="true">🔍</span>
+            <input type="text" id="ovSearchInput" placeholder="Stock-ID, Regalplatz (z.B. 1.2) oder Ersatzteil / Schaden suchen..." autocomplete="off" oninput="onOverviewSearchInput()" onkeydown="onOverviewSearchKeydown(event)">
+            <button type="button" class="ov-search-clear" id="ovSearchClear" onclick="clearOverviewSearch()" hidden title="Suche leeren">✕</button>
+          </div>
+          <div class="ov-view-tools">
+            <button type="button" class="ov-tool-btn is-active" id="ovGroupRegalBtn" onclick="toggleOverviewGroupByRegal()">📚 Regal-Gruppen</button>
+            <button type="button" class="ov-tool-btn" id="ovExpandAllBtn" onclick="toggleAllOverviewDetails()">▼ Alle Details</button>
+            <button type="button" class="ov-tool-btn ov-tool-btn--reset" id="ovResetChecksBtn" onclick="resetOverviewDone()" hidden>↺ Häkchen zurücksetzen</button>
+          </div>
+        </div>
+
+        <div class="ov-shelf-bar" id="ovShelfBar"></div>
+      </div>
+
       <div class="overview-table-wrap">
         <table class="overview-table">
           <thead>
             <tr>
-              <th style="width:36px;">✔</th>
-              <th></th>
-              <th>Stock-ID</th>
-              <th>Regalplatz</th>
-              <th>Status</th>
-              <th>Reifen</th>
-              <th></th>
+              <th class="ov-col-check">✔</th>
+              <th class="ov-col-exp"></th>
+              <th class="ov-col-stock">Stock-ID</th>
+              <th class="ov-col-regal">Regalplatz</th>
+              <th class="ov-col-status">Status</th>
+              <th class="ov-col-reifen">Reifen</th>
+              <th class="ov-col-summary">Inhalt / Teile &amp; Schäden</th>
+              <th class="ov-col-actions">Aktion</th>
             </tr>
           </thead>
           <tbody id="overviewTableBody">
-            <tr><td colspan="7" style="text-align:center;color:var(--foreground-muted);">Lade Übersicht...</td></tr>
+            <tr><td colspan="8" style="text-align:center;color:var(--foreground-muted);">Lade Übersicht...</td></tr>
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="nb-choose-modal ov-print-modal" id="ovPrintModal" onclick="if(event.target===this)closeOvPrintModal()">
+  <div class="nb-choose-dialog ov-print-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title" id="ovPrintModalTitle">🖨️ Übersicht drucken</div>
+      <button type="button" class="nb-choose-x" onclick="closeOvPrintModal()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub" id="ovPrintModalSub">
+      Wähle die Druck-Option. Ohne „Reifen offen“ spart Papier und lässt Kisten weg, bei denen die Reifen ohnehin noch fehlen.
+    </div>
+    <div class="ov-print-options">
+      <button type="button" class="ov-print-opt ov-print-opt--all" onclick="executeOverviewPrintChoice(false)">
+        <div class="ov-print-opt-head">
+          <span class="ov-print-opt-num">Option 1</span>
+          <span class="ov-print-opt-badge" id="ovPrintAllCountBadge">0 Kisten</span>
+        </div>
+        <div class="ov-print-opt-title">📋 Komplett drucken (wie bisher)</div>
+        <div class="ov-print-opt-desc">Druckt alle eingelagerten Kisten komplett — inklusive Einträge mit Status „Reifen offen“.</div>
+      </button>
+      <button type="button" class="ov-print-opt ov-print-opt--no-reifen" onclick="executeOverviewPrintChoice(true)">
+        <div class="ov-print-opt-head">
+          <span class="ov-print-opt-num ov-print-opt-num--green">Option 2 · Spart Papier</span>
+          <span class="ov-print-opt-badge ov-print-opt-badge--green" id="ovPrintNoReifenCountBadge">0 Kisten</span>
+        </div>
+        <div class="ov-print-opt-title">✅ Ohne „Reifen offen“ drucken</div>
+        <div class="ov-print-opt-desc" id="ovPrintNoReifenDesc">Druckt alle Kisten zum Prüfen, lässt aber sämtliche Stock-IDs mit „Reifen offen“ weg.</div>
+      </button>
+    </div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--nb" onclick="closeOvPrintModal()">
+        <span class="nb-choose-btn-txt">Abbrechen</span>
+      </button>
     </div>
   </div>
 </div>

@@ -31,17 +31,11 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
-    version: "2.2.28",
-    date: "23.10.2026",
-    notes:
-      "• Nach Auftrag beenden steht im Badge oben rechts der letzte Regalplatz, z.B. Regal 3.4.\n\n" +
-      "• Packzettel-Teile werden in Carol über die Spare-Part-Kommentare (ETN) erkannt. Die Seite wartet nicht mehr auf „Warte auf Speichern“."
-  },
-  {
     version: "2.2.27",
     date: "23.10.2026",
     notes:
-      "• Kommentar + Regal speichern öffnet bei angehakten Packzettel-Teilen direkt die Carol-Seite. Die leere about:blank-Seite bleibt nicht mehr offen. Delivered startet erst, wenn das Speichern durch ist."
+      "• Nach Auftrag beenden steht im Badge oben rechts der letzte Regalplatz, z.B. Regal 3.4.\n\n" +
+      "• Packzettel-Teile werden in Carol über die Spare-Part-Kommentare (ETN) erkannt."
   },
   {
     version: "2.2.26",
