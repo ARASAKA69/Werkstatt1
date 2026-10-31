@@ -120,15 +120,15 @@
     { key: "daysOpen", label: "Tage", num: true, html: function (r) { return daysHtml(r.daysOpen, r); }, sort: function (r) { return r.daysOpen == null ? -1 : r.daysOpen; } },
     { key: "stockId", label: "Stock ID", html: function (r) { return stockBadge(r.f.stockId); }, sort: function (r) { return r.f.stockId; } },
     { key: "art", label: "Art", html: function (r) { return chip("art", r.f.art); }, sort: function (r) { return norm(r.f.art); } },
-    { key: "besteller", label: "Besteller", get: function (r) { return r.f.besteller; } },
+    { key: "besteller", label: "Besteller", p: 2, get: function (r) { return r.f.besteller; } },
     { key: "ersatzteil", label: "Ersatzteil", wrap: true, get: function (r) { return r.f.ersatzteil; } },
-    { key: "preis", label: "Preis", num: true, get: function (r) { return r.f.preis; }, sort: function (r) { return numOf(r.f.preis); } },
-    { key: "haendler", label: "Händler", get: function (r) { return r.f.haendler; } },
-    { key: "costGate", label: "Cost Gate", html: function (r) { return chip("costGate", r.f.costGate); }, sort: function (r) { return norm(r.f.costGate); } },
-    { key: "carol", label: "Carol", html: function (r) { return chip("carol", r.f.carol); }, sort: function (r) { return norm(r.f.carol); } },
+    { key: "preis", label: "Preis", num: true, p: 2, get: function (r) { return r.f.preis; }, sort: function (r) { return numOf(r.f.preis); } },
+    { key: "haendler", label: "Händler", p: 2, get: function (r) { return r.f.haendler; } },
+    { key: "costGate", label: "Cost Gate", p: 2, html: function (r) { return chip("costGate", r.f.costGate); }, sort: function (r) { return norm(r.f.costGate); } },
+    { key: "carol", label: "Carol", p: 3, html: function (r) { return chip("carol", r.f.carol); }, sort: function (r) { return norm(r.f.carol); } },
     { key: "status", label: "Status", html: function (r) { return statusPill(r); }, sort: function (r) { return r.f.status.toLowerCase(); } },
-    { key: "daysStatus", label: "seit Status", num: true, get: function (r) { return r.daysStatus == null ? "" : r.daysStatus + " T"; }, sort: function (r) { return r.daysStatus == null ? -1 : r.daysStatus; } },
-    { key: "lagerort", label: "Lagerort", get: function (r) { return r.f.lagerort; } }
+    { key: "daysStatus", label: "seit Status", num: true, p: 3, get: function (r) { return r.daysStatus == null ? "" : r.daysStatus + " T"; }, sort: function (r) { return r.daysStatus == null ? -1 : r.daysStatus; } },
+    { key: "lagerort", label: "Lagerort", p: 3, get: function (r) { return r.f.lagerort; } }
   ];
 
   function $(id) { return document.getElementById(id); }
@@ -718,10 +718,13 @@
 
   function nbTable(rows, sortable) {
     var f = S.nbFilter;
-    var h = "<div class=\"table-wrap\"><table><thead><tr>";
+    var h = "<div class=\"tbl-host\"><div class=\"table-wrap\"><table><thead><tr>";
     NB_COLS.forEach(function (c) {
       var on = sortable && f.sort === c.key;
-      h += "<th" + (sortable ? " data-k=\"" + c.key + "\"" : "") + (on ? " class=\"sorted\"" : "") + ">" + thBadge(c.label, c.key, on ? (f.dir < 0 ? "▾" : "▴") : "") + "</th>";
+      var cls = [];
+      if (on) cls.push("sorted");
+      if (c.p) cls.push("p" + c.p);
+      h += "<th" + (sortable ? " data-k=\"" + c.key + "\"" : "") + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + thBadge(c.label, c.key, on ? (f.dir < 0 ? "▾" : "▴") : "") + "</th>";
     });
     h += "</tr></thead><tbody>";
     rows.forEach(function (r, i) {
@@ -730,12 +733,52 @@
         var cls = [];
         if (c.num) cls.push("num");
         if (c.wrap) cls.push("wrap");
+        if (c.p) cls.push("p" + c.p);
         var v = c.html ? c.html(r) : esc(c.get(r));
         h += "<td data-l=\"" + esc(c.label) + "\"" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + v + "</td>";
       });
       h += "</tr>";
     });
-    return h + "</tbody></table></div>";
+    return h + "</tbody></table></div></div>";
+  }
+
+  function secCols(sec) {
+    var cols = [
+      { l: "Datum", k: "datumMs", v: function (r) { return esc(r.datum); } },
+      { l: "Tage", k: "daysOpen", num: true, v: function (r) { return r.days == null ? "" : "<span class=\"days\">" + r.days + "</span>"; } },
+      { l: "Stock ID", k: "stockId", v: function (r) { return stockBadge(r.stockId); } },
+      { l: "ET", k: "et", p: 2, v: function (r) { return esc(r.et); } },
+      { l: "Art", k: "art", v: function (r) { return chip("art", r.art); } },
+      { l: "Grund", k: "grund", wrap: true, v: function (r) { return esc(r.grund); } },
+      { l: "Bearbeiter", k: "bearbeiter", p: 2, v: function (r) { return esc(r.bearbeiter); } }
+    ];
+    if (sec.layout.hasBem) cols.push({ l: "Bemerkung", k: "bemerkung", p: 3, wrap: true, v: function (r) { return esc(r.bemerkung); } });
+    sec.layout.extras.forEach(function (ex, j) {
+      var liefert = /liefert/i.test(ex.label);
+      var key = liefert ? "liefert" : /claim|preis/i.test(ex.label) ? "preis" : /^status$/i.test(ex.label) ? "status" : "extra";
+      cols.push({ l: ex.label, k: key, p: liefert ? 2 : key === "status" ? 3 : 4, v: function (r) { return esc(r.extra[j]); } });
+    });
+    cols.push({ l: "NB", k: "status", v: function (r) { var nb = r.entryId ? findNb(r.entryId) : null; return nb ? statusPill(nb) : ""; } });
+    return cols;
+  }
+
+  function secTable(sec, rows) {
+    var cols = secCols(sec);
+    var h = "<div class=\"tbl-host\"><div class=\"table-wrap\"><table><thead><tr>";
+    cols.forEach(function (c) { h += "<th" + (c.p ? " class=\"p" + c.p + "\"" : "") + ">" + thBadge(c.l, c.k) + "</th>"; });
+    h += "</tr></thead><tbody>";
+    rows.forEach(function (r, i) {
+      h += "<tr data-i=\"" + i + "\">";
+      cols.forEach(function (c) {
+        var cls = [];
+        if (c.num) cls.push("num");
+        if (c.wrap) cls.push("wrap");
+        if (c.p) cls.push("p" + c.p);
+        h += "<td data-l=\"" + esc(c.l) + "\"" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + c.v(r) + "</td>";
+      });
+      h += "</tr>";
+    });
+    return h + "</tbody></table></div></div>";
   }
 
   function bindNbRows(rows) {
@@ -1018,22 +1061,7 @@
     if (!rows.length) {
       h += "<div class=\"table-wrap\"><div class=\"empty\">Keine Einträge.</div></div>";
     } else {
-      h += "<div class=\"table-wrap\"><table><thead><tr>";
-      [["Datum", "datumMs"], ["Tage", "daysOpen"], ["Stock ID", "stockId"], ["ET", "et"], ["Art", "art"], ["Grund", "grund"], ["Bearbeiter", "bearbeiter"]].forEach(function (p) {
-        h += "<th>" + thBadge(p[0], p[1]) + "</th>";
-      });
-      if (sec.layout.hasBem) h += "<th>" + thBadge("Bemerkung", "bemerkung") + "</th>";
-      extras.forEach(function (ex) { h += "<th>" + thBadge(ex.label, /liefert/i.test(ex.label) ? "liefert" : /claim/i.test(ex.label) ? "preis" : "extra") + "</th>"; });
-      h += "<th>" + thBadge("NB", "status") + "</th></tr></thead><tbody>";
-      rows.forEach(function (r, i) {
-        var nb = r.entryId ? findNb(r.entryId) : null;
-        h += "<tr data-i=\"" + i + "\"><td data-l=\"Datum\">" + esc(r.datum) + "</td><td data-l=\"Tage\" class=\"num\">" + (r.days == null ? "" : "<span class=\"days\">" + r.days + "</span>") + "</td><td data-l=\"Stock ID\">" + stockBadge(r.stockId) +
-          "</td><td data-l=\"ET\">" + esc(r.et) + "</td><td data-l=\"Art\">" + chip("art", r.art) + "</td><td data-l=\"Grund\" class=\"wrap\">" + esc(r.grund) + "</td><td data-l=\"Bearbeiter\">" + esc(r.bearbeiter) + "</td>";
-        if (sec.layout.hasBem) h += "<td data-l=\"Bemerkung\" class=\"wrap\">" + esc(r.bemerkung) + "</td>";
-        extras.forEach(function (ex, j) { h += "<td data-l=\"" + esc(ex.label) + "\">" + esc(r.extra[j]) + "</td>"; });
-        h += "<td data-l=\"NB\">" + (nb ? statusPill(nb) : "") + "</td></tr>";
-      });
-      h += "</tbody></table></div>";
+      h += secTable(sec, rows);
     }
     h += "</div></div>";
     $("view").innerHTML = h;

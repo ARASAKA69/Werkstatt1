@@ -173,8 +173,41 @@
   @keyframes nbpSpin { to { transform: rotate(360deg); } }
   .user-badge { display: inline-block; align-self: flex-start; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; background: rgba(63,160,219,.15); color: var(--blue); border: 1px solid rgba(63,160,219,.4); }
   .user-badge:empty { display: none; }
+  .footnote { margin: 6px 0 0; align-self: flex-start; max-width: 100%; padding: 6px 8px; border: 1px solid rgba(242,116,32,.45); border-radius: 8px; background: rgba(242,116,32,.08); color: #ff9a52; font-size: 9px; font-weight: 600; line-height: 1.35; letter-spacing: .02em; display: flex; flex-direction: column; gap: 2px; }
+  .view { container-type: inline-size; container-name: view; }
+  .tbl-host { container-type: inline-size; container-name: tbl; min-width: 0; }
   .table-wrap { max-height: calc(100vh - 210px); max-height: calc(100dvh - 210px); min-height: 220px; }
   .card .table-wrap { max-height: 520px; }
+  .table-wrap td { white-space: normal; padding: 8px; vertical-align: middle; }
+  .table-wrap th { padding: 9px 8px; }
+  .table-wrap td:first-child, .table-wrap td.num { white-space: nowrap; }
+  .table-wrap td.wrap { min-width: 140px; max-width: none; }
+  .pill { white-space: nowrap; }
+  .stock-badge { white-space: nowrap; }
+
+  @container view (max-width: 1300px) {
+    .split { grid-template-columns: 1fr; }
+  }
+  @container tbl (max-width: 1700px) {
+    .table-wrap .p4 { display: none; }
+  }
+  @container tbl (max-width: 1400px) {
+    .table-wrap .p3 { display: none; }
+  }
+  @container tbl (max-width: 1150px) {
+    .table-wrap .p2 { display: none; }
+  }
+  @container tbl (max-width: 720px) {
+    .tbl-host .table-wrap { max-height: none; min-height: 0; overflow: visible; background: transparent; border: 0; }
+    .table-wrap table, .table-wrap tbody { display: block; }
+    .table-wrap thead { display: none; }
+    .table-wrap tbody tr { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
+    .table-wrap tbody tr:hover { border-color: var(--orange); }
+    .table-wrap td, .table-wrap td.p2, .table-wrap td.p3, .table-wrap td.p4 { display: block; border: 0; padding: 0; white-space: normal; min-width: 0; max-width: none; text-align: left; overflow-wrap: anywhere; }
+    .table-wrap td.wrap { grid-column: 1 / -1; }
+    .table-wrap td::before { content: attr(data-l); display: block; margin-bottom: 2px; color: var(--muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
+    .table-wrap td:empty { display: none; }
+  }
   .top { flex-wrap: wrap; gap: 10px; }
   .top > div:first-child { min-width: 0; }
 
@@ -190,12 +223,11 @@
     .top { padding: 12px 14px; }
     .top h1 { font-size: 18px; }
     .view { padding: 14px 14px 30px; }
-    .split { grid-template-columns: 1fr; }
     .table-wrap { max-height: calc(100vh - 260px); max-height: calc(100dvh - 260px); }
   }
 
   @media (max-width: 760px) {
-    .brand-ver, .side-foot a { display: none; }
+    .brand-ver, .side-foot a, .footnote { display: none; }
     .user-badge { max-width: 160px; }
     .top h1 { font-size: 16px; }
     .top-actions { width: 100%; justify-content: space-between; }
@@ -209,14 +241,6 @@
     .form .row2 { grid-template-columns: 1fr; }
     .kv { grid-template-columns: 1fr; gap: 2px; }
     .kv > div:nth-child(even) { margin-bottom: 8px; }
-    .table-wrap { max-height: none; min-height: 0; overflow: visible; background: transparent; border: 0; }
-    .table-wrap table, .table-wrap tbody { display: block; }
-    .table-wrap thead { display: none; }
-    .table-wrap tbody tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; }
-    .table-wrap td { display: block; border: 0; padding: 0; white-space: normal; min-width: 0; max-width: none; text-align: left; overflow-wrap: anywhere; }
-    .table-wrap td.wrap { grid-column: 1 / -1; }
-    .table-wrap td::before { content: attr(data-l); display: block; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
-    .table-wrap td:empty { display: none; }
     .drawer { width: 100vw; }
     .toasts { left: 10px; right: 10px; }
     .toast { min-width: 0; max-width: none; }
