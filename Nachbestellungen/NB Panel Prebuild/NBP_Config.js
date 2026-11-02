@@ -23,7 +23,8 @@ var NBP_PROTECT_EDITORS = [
   "francesco.berger@auto1.com",
   "bastian.frankhauser@auto1.com",
   "joerg.eichenseher@auto1.com",
-  "tobias.nehring@auto1.com"
+  "tobias.nehring@auto1.com",
+  "helmut.mirbeth@auto1.com"
 ];
 
 var NBP_NB_FIELDS = [

@@ -27,10 +27,29 @@ function nbpUser_() {
 function nbpAllowed_() {
   var u = nbpUser_();
   if (!u) return false;
-  for (var i = 0; i < NBP_ALLOWED.length; i++) {
-    if (String(NBP_ALLOWED[i]).toLowerCase() === u) return true;
+  var lists = NBP_ALLOWED.concat(NBP_PROTECT_EDITORS);
+  for (var i = 0; i < lists.length; i++) {
+    if (String(lists[i]).trim().toLowerCase() === u) return true;
   }
-  return false;
+  return nbpSheetEditors_().indexOf(u) >= 0;
+}
+
+function nbpSheetEditors_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get("nbp_editors");
+  if (hit) return JSON.parse(hit);
+  var list = [];
+  try {
+    var ss = SpreadsheetApp.openById(NBP_MAIN_ID);
+    list = ss.getEditors().map(function (x) { return String(x.getEmail() || "").trim().toLowerCase(); });
+    var owner = ss.getOwner();
+    if (owner) list.push(String(owner.getEmail() || "").trim().toLowerCase());
+    list = list.filter(Boolean);
+    cache.put("nbp_editors", JSON.stringify(list), 600);
+  } catch (e) {
+    list = [];
+  }
+  return list;
 }
 
 function nbpSS_() {
