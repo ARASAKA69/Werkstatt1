@@ -419,6 +419,14 @@ function nbpUpdateNbEntry(row, entryId, patch) {
       var val;
       if (fd.edit === "list") {
         val = nbpCanon_(patch[fd.key], nbpColumnOptions_(nb, col, lo.dataStart));
+      } else if (fd.edit === "multi") {
+        var mOpts = nbpColumnOptions_(nb, col, lo.dataStart);
+        var seen = {};
+        val = nbpClean_(patch[fd.key]).split(/\s*,\s*/).map(function (x) { return nbpCanon_(x, mOpts); }).filter(function (x) {
+          if (!x || seen[x]) return false;
+          seen[x] = true;
+          return true;
+        }).join(", ");
       } else if (fd.key === "preis") {
         val = nbpParsePrice_(patch[fd.key]);
       } else {

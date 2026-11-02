@@ -269,7 +269,7 @@ function nbpReadNb_(ss, todayIdx) {
   var options = {};
   for (var o = 0; o < NBP_NB_FIELDS.length; o++) {
     var fd = NBP_NB_FIELDS[o];
-    if (fd.edit !== "list") continue;
+    if (fd.edit !== "list" && fd.edit !== "multi") continue;
     options[fd.key] = nbpColumnOptions_(sh, lo.cols[fd.key], lo.dataStart);
   }
   return {

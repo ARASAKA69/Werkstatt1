@@ -34,7 +34,7 @@ var NBP_NB_FIELDS = [
   { key: "ersatzteil", aliases: ["ersatzteil"], col: 5 },
   { key: "preis", aliases: ["preis"], col: 6, edit: "text" },
   { key: "artikelnummer", aliases: ["artikelnummer", "artikelnr"], col: 7, edit: "text" },
-  { key: "haendler", aliases: ["händler", "haendler", "handler"], col: 8, edit: "list" },
+  { key: "haendler", aliases: ["händler", "haendler", "handler"], col: 8, edit: "multi" },
   { key: "costGate", aliases: ["durch senior genehmigt", "cost gate", "cost calc"], col: 9, edit: "list" },
   { key: "carol", aliases: ["carol eingetragen"], col: 10, edit: "list" },
   { key: "status", aliases: ["status"], col: 11, edit: "list" },

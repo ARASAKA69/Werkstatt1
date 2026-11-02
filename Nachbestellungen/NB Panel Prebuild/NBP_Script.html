@@ -105,14 +105,14 @@
 
   var NB_EDIT = [
     { key: "status", label: "Status", type: "list" },
-    { key: "haendler", label: "Händler", type: "list" },
-    { key: "preis", label: "Preis (Netto)", type: "text" },
-    { key: "artikelnummer", label: "Artikelnummer", type: "text" },
     { key: "costGate", label: "Cost Gate (Senior)", type: "list" },
     { key: "carol", label: "Carol eingetragen", type: "list" },
+    { key: "preis", label: "Preis (Netto)", type: "text" },
+    { key: "artikelnummer", label: "Artikelnummer", type: "grow", span: 2 },
+    { key: "haendler", label: "Händler (mehrere möglich)", type: "multi", span: 9 },
     { key: "lagerort", label: "Lagerort", type: "list" },
     { key: "bearbeitetVon", label: "Bearbeitet von", type: "list" },
-    { key: "kommentar", label: "Kommentar", type: "area" }
+    { key: "kommentar", label: "Kommentar", type: "area", span: 9 }
   ];
 
   var NB_COLS = [
@@ -408,9 +408,13 @@
           el.appendChild(o);
         }
         el.value = st.vals[id].v;
+        if (el.type === "hidden") syncPicker(el);
+        if (el.tagName === "TEXTAREA") autoGrow(el);
       }
       el.setAttribute("data-dirty", "1");
     }
+    updArtRequired("new_");
+    updArtRequired("ed_");
     $("view").scrollTop = st.view;
     $("drawerBody").scrollTop = st.drawer;
     $("nav").scrollLeft = st.nav;
@@ -471,12 +475,12 @@
     var open = d.nb.rows.filter(isOpen).length;
     var h = "";
     h += "<div class=\"nav-group\">Panel</div>";
-    h += navItem("overview", "Übersicht", "");
-    h += navItem("nb", "Nachbestellung", open + " offen");
+    h += navItem("overview", "Übersicht", "", "ÜB");
+    h += navItem("nb", "Nachbestellung", open + " offen", "NB");
     h += "<div class=\"nav-group\">Input</div>";
     for (var i = 0; i < d.sections.length; i++) {
       var s = d.sections[i];
-      h += navItem("sec:" + s.key, s.label, s.missing ? "fehlt" : String(s.rows.length));
+      h += navItem("sec:" + s.key, s.label, s.missing ? "fehlt" : String(s.rows.length), s.code);
     }
     $("nav").innerHTML = h;
     var btns = $("nav").querySelectorAll(".nav-item");
@@ -484,9 +488,17 @@
       btns[b].onclick = function () { go(this.getAttribute("data-view")); };
     }
   }
-  function navItem(v, label, count) {
-    return "<button type=\"button\" class=\"nav-item" + (S.view === v ? " active" : "") + "\" data-view=\"" + v + "\"><span>" + esc(label) + "</span>" +
+  function navItem(v, label, count, short) {
+    return "<button type=\"button\" class=\"nav-item" + (S.view === v ? " active" : "") + "\" data-view=\"" + v + "\" title=\"" + esc(label + (count ? " · " + count : "")) + "\">" +
+      "<span class=\"nav-short\">" + esc(short || label.slice(0, 2)) + "</span><span class=\"nav-label\">" + esc(label) + "</span>" +
       (count ? "<span class=\"nav-count\">" + esc(count) + "</span>" : "") + "</button>";
+  }
+
+  function setSide(collapsed) {
+    document.body.classList.toggle("side-collapsed", !!collapsed);
+    var b = $("sideToggle");
+    if (b) b.title = collapsed ? "Seitenleiste öffnen" : "Seitenleiste einklappen";
+    try { localStorage.setItem("nbp_side", collapsed ? "1" : "0"); } catch (e) {}
   }
 
   function go(v) {
@@ -503,11 +515,13 @@
     if (S.view.indexOf("sec:") === 0) return renderSection(S.view.slice(4));
   }
 
-  function countBy(rows, fn) {
+  function countBy(rows, fn, multi) {
     var m = {};
     for (var i = 0; i < rows.length; i++) {
-      var k = fn(rows[i]) || "–";
-      m[k] = (m[k] || 0) + 1;
+      var raw = fn(rows[i]);
+      var ks = multi ? splitMulti(raw) : [raw];
+      if (!ks.length || !ks[0]) ks = ["–"];
+      ks.forEach(function (k) { m[k] = (m[k] || 0) + 1; });
     }
     return Object.keys(m).map(function (k) { return { k: k, n: m[k] }; }).sort(function (a, b) { return b.n - a.n; });
   }
@@ -557,7 +571,7 @@
     h += "<div class=\"grid cards\">";
     h += "<div class=\"card\"><h3>Status</h3>" + bars(GROUPS.map(function (g) { return { k: g.label, n: cnt[g.key], g: g.key }; }).filter(function (x) { return x.n; }), "group", 20) + "</div>";
     h += "<div class=\"card\"><h3>Offen nach Art</h3>" + bars(countBy(open, function (r) { return r.f.art; }), "art") + "</div>";
-    h += "<div class=\"card\"><h3>Offen nach Händler</h3>" + bars(countBy(open, function (r) { return r.f.haendler; }), "haendler") + "</div>";
+    h += "<div class=\"card\"><h3>Offen nach Händler</h3>" + bars(countBy(open, function (r) { return r.f.haendler; }, true), "haendler") + "</div>";
     h += "<div class=\"card\"><h3>Offen nach Besteller</h3>" + bars(countBy(open, function (r) { return r.f.besteller; }), "besteller") + "</div>";
     h += "<div class=\"card\" style=\"grid-column:1/-1\"><h3>Am längsten offen <a href=\"#\" id=\"lnkAllOpen\" class=\"small\">alle anzeigen</a></h3>";
     h += oldest.length ? nbTable(oldest, false) : "<div class=\"muted\">Nichts offen.</div>";
@@ -623,6 +637,12 @@
     return val === f;
   }
 
+  function matchMulti(val, f) {
+    if (!f) return true;
+    if (f === "__empty") return !val;
+    return splitMulti(val).some(function (x) { return norm(x) === norm(f); });
+  }
+
   function filteredNb() {
     var f = S.nbFilter;
     var q = norm(f.q);
@@ -630,7 +650,7 @@
       if (f.openOnly && !isOpen(r)) return false;
       if (f.group && r.group !== f.group) return false;
       if (!match(r.f.art, f.art)) return false;
-      if (!match(r.f.haendler, f.haendler)) return false;
+      if (!matchMulti(r.f.haendler, f.haendler)) return false;
       if (!match(r.f.besteller, f.besteller)) return false;
       if (f.minDays && (r.daysOpen || 0) < f.minDays) return false;
       if (f.cgOpen && !costGateOpen(r)) return false;
@@ -651,9 +671,14 @@
     return rows;
   }
 
-  function uniq(rows, fn) {
+  function uniq(rows, fn, multi) {
     var m = {};
-    rows.forEach(function (r) { var v = fn(r); if (v) m[v] = true; });
+    rows.forEach(function (r) {
+      var v = fn(r);
+      if (!v) return;
+      if (multi) splitMulti(v).forEach(function (x) { m[x] = true; });
+      else m[v] = true;
+    });
     return Object.keys(m).sort(function (a, b) { return a.localeCompare(b, "de"); });
   }
 
@@ -677,7 +702,7 @@
       return "<option value=\"" + g.key + "\"" + (f.group === g.key ? " selected" : "") + ">" + esc(g.label) + "</option>";
     }).join("") + "</select>";
     h += "<select id=\"fArt\">" + optList(uniq(all, function (r) { return r.f.art; }), f.art, "Alle Arten") + "</select>";
-    h += "<select id=\"fHaendler\">" + optList(uniq(all, function (r) { return r.f.haendler; }), f.haendler, "Alle Händler") + "</select>";
+    h += "<select id=\"fHaendler\">" + optList(uniq(all, function (r) { return r.f.haendler; }, true), f.haendler, "Alle Händler") + "</select>";
     h += "<select id=\"fBesteller\">" + optList(uniq(all, function (r) { return r.f.besteller; }), f.besteller, "Alle Besteller") + "</select>";
     h += "<label class=\"chk\"><input type=\"checkbox\" id=\"fOpen\"" + (f.openOnly ? " checked" : "") + "> nur offene</label>";
     h += "<button type=\"button\" id=\"fReset\" class=\"btn ghost\">Zurücksetzen</button>";
@@ -794,6 +819,8 @@
     $("drawerBody").innerHTML = html;
     $("drawer").classList.remove("hidden");
     $("drawerBack").classList.remove("hidden");
+    growAll($("drawerBody"));
+    updArtRequired("ed_");
   }
   function closeDrawer() {
     S.drawer = null;
@@ -822,9 +849,12 @@
     return null;
   }
 
-  function kv(pairs) {
-    var h = "<div class=\"kv\">";
-    pairs.forEach(function (p) { h += "<div>" + esc(p[0]) + "</div><div>" + (p[2] ? p[1] : esc(p[1] || "–")) + "</div>"; });
+  function kv(pairs, cols2) {
+    var h = "<div class=\"kv" + (cols2 ? " cols2" : "") + "\">";
+    pairs.forEach(function (p) {
+      var full = p[3] ? " full" : "";
+      h += "<div class=\"kv-i" + full + "\"><div class=\"kv-k\">" + esc(p[0]) + "</div><div class=\"kv-v\">" + (p[2] ? p[1] : esc(p[1] || "–")) + "</div></div>";
+    });
     return h + "</div>";
   }
 
@@ -837,55 +867,114 @@
     return h + "</select>";
   }
   function fieldInput(id, type, options, cur) {
+    if (type === "multi") return chipPicker(id, options, cur, true);
     if (type === "list" && options && options.length) return selectHtml(id, options, cur);
-    if (type === "area") return "<textarea id=\"" + id + "\">" + esc(cur) + "</textarea>";
+    if (type === "area") return "<textarea class=\"grow-ta\" rows=\"3\" id=\"" + id + "\">" + esc(cur) + "</textarea>";
+    if (type === "grow") return "<textarea class=\"grow-ta one\" rows=\"1\" id=\"" + id + "\">" + esc(cur) + "</textarea>";
     return "<input id=\"" + id + "\" value=\"" + esc(cur) + "\">";
+  }
+
+  function splitMulti(v) {
+    return String(v || "").split(/\s*,\s*/).map(function (x) { return x.trim(); }).filter(Boolean);
+  }
+  function chipPicker(id, options, cur, multi, tones) {
+    var sel = multi ? splitMulti(cur) : (cur ? [String(cur)] : []);
+    var opts = (options || []).slice();
+    sel.forEach(function (s) {
+      if (!opts.some(function (o) { return norm(o) === norm(s); })) opts.push(s);
+    });
+    var h = "<div class=\"chips" + (multi ? " multi" : "") + "\" data-picker=\"" + id + "\" data-multi=\"" + (multi ? "1" : "0") + "\">";
+    h += "<input type=\"hidden\" id=\"" + id + "\" value=\"" + esc(sel.join(", ")) + "\">";
+    if (!opts.length) h += "<span class=\"muted small\">Keine Auswahl im Sheet hinterlegt</span>";
+    opts.forEach(function (o) {
+      var on = sel.some(function (s) { return norm(s) === norm(o); });
+      var tone = tones ? tones[norm(o)] : "";
+      h += "<button type=\"button\" class=\"chip-opt" + (on ? " on" : "") + (tone ? " c-" + tone : "") + "\" data-v=\"" + esc(o) + "\">" +
+        (multi ? "<i class=\"chk\"></i>" : "") + esc(o) + "</button>";
+    });
+    return h + "</div>";
+  }
+  function syncPicker(hidden) {
+    var box = hidden.parentNode;
+    if (!box || !box.getAttribute || !box.hasAttribute("data-picker")) return;
+    var sel = splitMulti(hidden.value);
+    if (box.getAttribute("data-multi") !== "1") sel = hidden.value ? [hidden.value] : [];
+    var btns = box.querySelectorAll(".chip-opt");
+    for (var i = 0; i < btns.length; i++) {
+      var v = btns[i].getAttribute("data-v");
+      btns[i].classList.toggle("on", sel.some(function (s) { return norm(s) === norm(v); }));
+    }
+  }
+  function onChipClick(btn) {
+    var box = btn.parentNode;
+    var hidden = box.querySelector("input[type=hidden]");
+    var v = btn.getAttribute("data-v");
+    if (box.getAttribute("data-multi") === "1") {
+      var sel = splitMulti(hidden.value);
+      var idx = -1;
+      sel.forEach(function (s, i) { if (norm(s) === norm(v)) idx = i; });
+      if (idx >= 0) sel.splice(idx, 1); else sel.push(v);
+      hidden.value = sel.join(", ");
+    } else {
+      hidden.value = norm(hidden.value) === norm(v) ? "" : v;
+    }
+    hidden.setAttribute("data-dirty", "1");
+    syncPicker(hidden);
+    afterPick(hidden.id);
+  }
+  function afterPick(id) {
+    if (/(^|_)et$/.test(id)) updArtRequired(id.replace(/et$/, ""));
+  }
+  function updArtRequired(prefix) {
+    var et = $(prefix + "et");
+    var f = $(prefix + "artField");
+    if (!et || !f) return;
+    f.classList.toggle("required", norm(et.value) === "ja");
+  }
+  function autoGrow(el) {
+    if (!el || el.tagName !== "TEXTAREA") return;
+    el.style.height = "auto";
+    el.style.height = (el.scrollHeight + 2) + "px";
+  }
+  function growAll(root) {
+    var tas = (root || document).querySelectorAll("textarea.grow-ta");
+    for (var i = 0; i < tas.length; i++) autoGrow(tas[i]);
   }
 
   function openNb(r, keep) {
     S.drawer = { type: "nb", entryId: r.entryId, row: r.row };
     var d = S.data;
     var opts = d.nb.options || {};
-    var h = "";
+    var h = "<div class=\"dgrid\"><div class=\"dcol\">";
     h += "<div class=\"sec\"><h4>Überblick</h4>" + kv([
       ["Status", statusPill(r) + (r.daysStatus != null ? " <span class=\"muted\">seit " + r.daysStatus + " Tagen</span>" : ""), true],
       ["Bestellt am", r.f.datum + (r.daysOpen != null ? "  ·  vor " + r.daysOpen + " Tagen" : "")],
-      ["Statusänderung", r.f.statusAenderung],
-      ["Besteller", r.f.besteller],
       ["Art", chip("art", r.f.art) || "–", true],
-      ["Ersatzteil", r.f.ersatzteil],
+      ["Besteller", r.f.besteller],
+      ["Statusänderung", r.f.statusAenderung],
       ["Sheet-Zeile", String(r.row)],
-      ["EntryID", r.entryId]
-    ]) + "</div>";
+      ["Ersatzteil", "<span class=\"strong\">" + esc(r.f.ersatzteil || "–") + "</span>", true, true]
+    ], true) + "</div>";
 
-    h += "<div class=\"sec\"><h4>Bearbeiten</h4><div class=\"form\">";
-    for (var i = 0; i < NB_EDIT.length; i += 2) {
-      var a = NB_EDIT[i], b = NB_EDIT[i + 1];
-      if (a.type === "area") {
-        h += "<label class=\"field\"><span>" + esc(a.label) + "</span>" + fieldInput("nb_" + a.key, a.type, opts[a.key], r.f[a.key]) + "</label>";
-        i--;
-        continue;
-      }
-      h += "<div class=\"row2\">";
-      h += "<label class=\"field\"><span>" + esc(a.label) + "</span>" + fieldInput("nb_" + a.key, a.type, opts[a.key], r.f[a.key]) + "</label>";
-      if (b && b.type !== "area") {
-        h += "<label class=\"field\"><span>" + esc(b.label) + "</span>" + fieldInput("nb_" + b.key, b.type, opts[b.key], r.f[b.key]) + "</label>";
-      } else {
-        i--;
-      }
-      h += "</div>";
-    }
-    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn\" id=\"nbSave\">Speichern</button></div>";
-    if (norm(r.f.art).indexOf("exit mechanik") >= 0) h += "<div class=\"muted small\">Exit Mechanik: Preis, Cost Gate, Carol und Status werden nach Input Exit übernommen.</div>";
-    h += "</div></div>";
+    h += "<div class=\"sec\"><h4>Bearbeiten</h4><div class=\"fgrid\">";
+    NB_EDIT.forEach(function (fd) {
+      var span = fd.span === 9 ? " span-all" : fd.span === 2 ? " span-2" : "";
+      var tag = fd.type === "multi" ? "div" : "label";
+      h += "<" + tag + " class=\"field" + span + "\"><span>" + esc(fd.label) + "</span>" + fieldInput("nb_" + fd.key, fd.type, opts[fd.key], r.f[fd.key]) + "</" + tag + ">";
+    });
+    h += "</div>";
+    h += "<div class=\"form-actions\">";
+    if (norm(r.f.art).indexOf("exit mechanik") >= 0) h += "<div class=\"muted small grow\">Exit Mechanik: Preis, Cost Gate, Carol und Status werden nach Input Exit übernommen.</div>";
+    h += "<button type=\"button\" class=\"btn\" id=\"nbSave\">Speichern</button></div>";
+    h += "</div></div><div class=\"dcol\">";
 
     if (d.nb.nbcLabels.length) {
       var p = d.nb.nbcLabels.map(function (l, j) { return [l, r.nbc[j]]; });
-      h += "<div class=\"sec\"><h4>NBC <span class=\"badge-ro\">nur Info</span></h4>" + kv(p) + "</div>";
+      h += "<div class=\"sec\"><h4>NBC <span class=\"badge-ro\">nur Info</span></h4>" + kv(p, true) + "</div>";
     }
     if (d.nb.extraLabels.length) {
       var p2 = d.nb.extraLabels.map(function (l, j) { return [l, r.extra[j]]; }).filter(function (x) { return x[1]; });
-      if (p2.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(p2) + "</div>";
+      if (p2.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(p2, true) + "</div>";
     }
     if (r.dash) {
       h += "<div class=\"sec\"><h4>Dashboard <span class=\"badge-ro\">nur Info</span></h4>" + kv([
@@ -894,14 +983,15 @@
         ["Letzter Tageslisteneintrag", r.dash.letzterTagesliste],
         ["Tage seit letztem Eintrag", r.dash.tageSeitLetztem],
         ["Einträge Tagesliste", r.dash.eintraege],
-        ["Bemerkung / Verlauf", r.dash.bemerkung]
-      ]) + "</div>";
+        ["Bemerkung / Verlauf", r.dash.bemerkung, false, true]
+      ], true) + "</div>";
     }
     if (r.source) {
       var sec = sectionByKey(r.source.sec);
       h += "<div class=\"sec\"><h4>Ursprung</h4>" + miniInput(r.source, sec) + "</div>";
     }
     h += relatedHtml(r.f.stockId, r.entryId);
+    h += "</div></div>";
     showDrawer(r.f.stockId, (r.f.art || "") + (r.f.ersatzteil ? " · " + r.f.ersatzteil : ""), h);
     if (!keep) $("drawerBody").scrollTop = 0;
 
@@ -975,36 +1065,75 @@
     return y + "-" + ("0" + m[2]).slice(-2) + "-" + ("0" + m[1]).slice(-2);
   }
 
+  var ET_TONES = { "ja": "green", "nein": "red", "diagnose": "yellow" };
+
+  function fld(label, opts, inner) {
+    opts = opts || {};
+    var tag = opts.div ? "div" : "label";
+    var h = "<" + tag + " class=\"field nice" + (opts.cls ? " " + opts.cls : "") + "\"" + (opts.id ? " id=\"" + opts.id + "\"" : "") + ">";
+    h += "<span class=\"flabel\">" + esc(label) + (opts.req ? " <b class=\"req\">*</b>" : "") + (opts.reqIf ? " <b class=\"req req-if\">*</b>" : "") +
+      (opts.tag ? " <em class=\"ftag\">" + esc(opts.tag) + "</em>" : "") + "</span>";
+    h += inner;
+    if (opts.hint) h += "<small class=\"fhint\">" + opts.hint + "</small>";
+    return h + "</" + tag + ">";
+  }
+
+  function fsec(n, title, sub, body) {
+    return "<div class=\"fsec\"><div class=\"fsec-h\">" + (n ? "<span class=\"step\">" + n + "</span>" : "") +
+      "<div><div class=\"fsec-t\">" + esc(title) + "</div>" + (sub ? "<div class=\"fsec-s\">" + esc(sub) + "</div>" : "") + "</div></div>" +
+      "<div class=\"fsec-b\">" + body + "</div></div>";
+  }
+
   function inputFormHtml(sec, prefix, cur, isNew) {
     var o = sec.options || {};
     var c = cur || {};
-    var h = "<div class=\"form\">";
+    var n = 0;
+    var h = "<div class=\"form nice-form\">";
     if (isNew) {
-      h += "<label class=\"field\"><span>Stock ID *</span><input id=\"" + prefix + "stockId\" autocomplete=\"off\" style=\"text-transform:uppercase\"></label>";
+      h += "<div class=\"form-intro\"><div class=\"form-intro-t\">Neuer Eintrag · " + esc(sec.label) + "</div>" +
+        "<div class=\"form-intro-s\">Legt eine neue Zeile im Blatt „" + esc(sec.sheet) + "“ an. Bei <b>ET = Ja</b> wird automatisch eine Nachbestellung erstellt, " +
+        "bei <b>Nein</b> oder <b>Diagnose</b> nicht.</div></div>";
+      h += fsec(++n, "Fahrzeug", "Um welches Auto geht es?",
+        fld("Stock ID", { req: true, hint: "z. B. EY62534 – wird automatisch groß geschrieben." },
+          "<input id=\"" + prefix + "stockId\" class=\"mono\" autocomplete=\"off\" placeholder=\"EY62534\" style=\"text-transform:uppercase\">"));
     }
-    h += "<div class=\"row2\">";
-    h += "<label class=\"field\"><span>ET / Diagnose *</span>" + fieldInput(prefix + "et", "list", o.et, c.et) + "</label>";
-    h += "<label class=\"field\"><span>Bearbeiter *</span>" + fieldInput(prefix + "bearbeiter", "list", o.bearbeiter, c.bearbeiter) + "</label>";
-    h += "</div>";
-    h += "<label class=\"field\"><span>Art der Nachbestellung</span>" + fieldInput(prefix + "art", "list", o.art, c.art) + "</label>";
-    h += "<label class=\"field\"><span>Grund *</span><textarea id=\"" + prefix + "grund\">" + esc(c.grund) + "</textarea></label>";
+    var b2 = fld("ET / Diagnose", { req: true, div: true, hint: "<b>Ja</b> = Ersatzteil nötig → Nachbestellung · <b>Nein</b> = kein Teil nötig · <b>Diagnose</b> = erst prüfen" },
+      chipPicker(prefix + "et", o.et && o.et.length ? o.et : ["Ja", "Nein", "Diagnose"], c.et, false, ET_TONES));
+    b2 += fld("Art der Nachbestellung", { reqIf: true, id: prefix + "artField", hint: "Pflicht bei ET = Ja. Bestimmt, wie die Nachbestellung eingeordnet wird." },
+      fieldInput(prefix + "art", "list", o.art, c.art));
+    b2 += fld("Bearbeiter", { req: true, hint: "Wer das Fahrzeug bearbeitet – wird in der Nachbestellung als <b>Besteller</b> übernommen." },
+      fieldInput(prefix + "bearbeiter", "list", o.bearbeiter, c.bearbeiter));
+    h += fsec(isNew ? ++n : 0, "Einordnung", "Wird ein Teil gebraucht und von wem?", b2);
+
+    var b3 = fld("Grund", { req: true, hint: "Was fehlt / welches Teil? Wird in der Nachbestellung als <b>Ersatzteil</b> übernommen." },
+      "<textarea class=\"grow-ta\" rows=\"2\" id=\"" + prefix + "grund\" placeholder=\"z. B. Bremsbeläge VA, Spiegelglas links …\">" + esc(c.grund) + "</textarea>");
     if (sec.layout && sec.layout.hasBem) {
-      h += "<label class=\"field\"><span>Bemerkung</span><textarea id=\"" + prefix + "bemerkung\">" + esc(c.bemerkung) + "</textarea></label>";
+      b3 += fld("Bemerkung", { tag: "optional / zur Info an Besteller", hint: "Zusatzinfo für den Besteller, z. B. Teilenummer, Foto im Carol, Dringlichkeit." },
+        "<textarea class=\"grow-ta\" rows=\"2\" id=\"" + prefix + "bemerkung\">" + esc(c.bemerkung) + "</textarea>");
     }
+    h += fsec(isNew ? ++n : 0, "Beschreibung", "Was genau wird benötigt?", b3);
+
+    var b4 = "";
     (sec.layout ? sec.layout.extras : []).forEach(function (ex, j) {
       if (!ex.editable) return;
       var val = c.extra ? c.extra[j] : "";
       var eo = o.extra ? o.extra[ex.col] : null;
       var input;
+      var hint = "";
       if (eo && eo.length) input = selectHtml(prefix + "x" + ex.col, eo, val);
-      else if (/liefert/i.test(ex.label)) input = "<input type=\"date\" id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(toIsoDate(val)) + "\">";
-      else input = "<input id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(val) + "\">";
-      h += "<label class=\"field\"><span>" + esc(ex.label) + "</span>" + input + "</label>";
+      else if (/liefert/i.test(ex.label)) {
+        input = "<input type=\"date\" id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(toIsoDate(val)) + "\">";
+        hint = "Wird automatisch ins Repair-Status-Sheet übertragen.";
+      } else input = "<input id=\"" + prefix + "x" + ex.col + "\" value=\"" + esc(val) + "\">";
+      if (/claim/i.test(ex.label)) hint = "Betrag in € (netto).";
+      b4 += fld(ex.label, { tag: "optional", hint: hint }, input);
     });
+    if (b4) h += fsec(isNew ? ++n : 0, "Exit-Infos", "Zusätzliche Angaben für Input Exit", b4);
+
     h += "<div class=\"form-actions\">";
     if (isNew) h += "<button type=\"button\" class=\"btn ghost\" id=\"" + prefix + "clear\">Leeren</button>";
     h += "<button type=\"button\" class=\"btn\" id=\"" + prefix + "save\">" + (isNew ? "Eintragen" : "Speichern") + "</button></div>";
-    h += "<div class=\"muted small\">ET = Ja + alle Pflichtfelder legt automatisch eine Zeile in Nachbestellung an. Nein/Diagnose entfernt sie.</div>";
+    h += "<div class=\"muted small\"><b class=\"req\">*</b> Pflichtfeld</div>";
     return h + "</div>";
   }
 
@@ -1052,7 +1181,7 @@
 
     var extras = sec.layout.extras;
     var h = "<div class=\"split\">";
-    h += "<div class=\"card\"><h3>Neuer Eintrag</h3>" + inputFormHtml(sec, "new_", {}, true) + "</div>";
+    h += "<div class=\"card new-card\">" + inputFormHtml(sec, "new_", {}, true) + "</div>";
     h += "<div>";
     h += "<div class=\"toolbar\"><input id=\"sQ\" class=\"grow\" placeholder=\"Suche Stock ID, Grund, Bearbeiter…\" value=\"" + esc(f.q) + "\">";
     h += "<select id=\"sEt\"><option value=\"\">ET: alle</option>" + (sec.options.et || ["Ja", "Nein", "Diagnose"]).map(function (o) {
@@ -1065,6 +1194,8 @@
     }
     h += "</div></div>";
     $("view").innerHTML = h;
+    growAll($("view"));
+    updArtRequired("new_");
 
     var qEl = $("sQ");
     var t = null;
@@ -1097,7 +1228,7 @@
         toast(form.stockId.toUpperCase() + " eingetragen (Zeile " + res.row + ")" + nbMsg(res.nb) + (res.ziel ? " · Repair Status: " + res.ziel : ""), "ok");
         var el = $("new_stockId");
         if (el) el.value = "";
-        ["grund", "bemerkung"].forEach(function (k) { var e = $("new_" + k); if (e) e.value = ""; });
+        ["grund", "bemerkung"].forEach(function (k) { var e = $("new_" + k); if (e) { e.value = ""; autoGrow(e); } });
         btn.disabled = false;
         btn.textContent = "Eintragen";
         load(false);
@@ -1122,8 +1253,11 @@
       var el = $(id);
       if (!el) continue;
       el.value = m[id].v;
+      if (el.type === "hidden") syncPicker(el);
+      if (el.tagName === "TEXTAREA") autoGrow(el);
       if (m[id].d) el.setAttribute("data-dirty", "1");
     }
+    updArtRequired("new_");
   }
 
   function nbMsg(code) {
@@ -1135,18 +1269,24 @@
 
   function openInput(sec, r, keep) {
     S.drawer = { type: "input", sec: sec.key, entryId: r.entryId, row: r.row };
-    var h = "<div class=\"sec\"><h4>Eintrag</h4>" + kv([
+    var h = "<div class=\"dgrid\"><div class=\"dcol\">";
+    h += "<div class=\"sec\"><h4>Bearbeiten</h4>" + inputFormHtml(sec, "ed_", r, false) + "</div>";
+    h += "</div><div class=\"dcol\">";
+    h += "<div class=\"sec\"><h4>Eintrag</h4>" + kv([
       ["Datum", r.datum + (r.days != null ? "  ·  vor " + r.days + " Tagen" : "")],
       ["Bereich", sec.label],
+      ["ET / Diagnose", r.et],
+      ["Art", chip("art", r.art) || "–", true],
       ["Sheet-Zeile", String(r.row)],
-      ["EntryID", r.entryId]
-    ]) + "</div>";
+      ["Bearbeiter", r.bearbeiter],
+      ["EntryID", r.entryId, false, true]
+    ], true) + "</div>";
     var ro = sec.layout.extras.map(function (ex, j) { return ex.editable ? null : [ex.label, r.extra[j]]; }).filter(function (x) { return x && x[1]; });
-    if (ro.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(ro) + "</div>";
-    h += "<div class=\"sec\"><h4>Bearbeiten</h4>" + inputFormHtml(sec, "ed_", r, false) + "</div>";
+    if (ro.length) h += "<div class=\"sec\"><h4>Weitere Spalten <span class=\"badge-ro\">nur Info</span></h4>" + kv(ro, true) + "</div>";
     var nb = r.entryId ? findNb(r.entryId) : null;
     if (nb) h += "<div class=\"sec\"><h4>Nachbestellung</h4>" + miniNb(nb) + "</div>";
     h += relatedHtml(r.stockId, r.entryId);
+    h += "</div></div>";
     showDrawer(r.stockId, sec.label + " · " + (r.et || ""), h);
     if (!keep) $("drawerBody").scrollTop = 0;
     $("ed_save").onclick = function () {
@@ -1170,6 +1310,8 @@
   }
 
   $("btnRefresh").onclick = function () { load(true); };
+  $("sideToggle").onclick = function () { setSide(!document.body.classList.contains("side-collapsed")); };
+  try { setSide(localStorage.getItem("nbp_side") === "1"); } catch (e) {}
   $("drawerClose").onclick = closeDrawer;
   $("drawerBack").onclick = closeDrawer;
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
@@ -1192,6 +1334,16 @@
       toast("Kopieren nicht möglich", "err");
     }
   }, true);
+  document.addEventListener("click", function (e) {
+    var c = e.target && e.target.closest ? e.target.closest(".chip-opt") : null;
+    if (c) {
+      e.preventDefault();
+      onChipClick(c);
+    }
+  });
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains("grow-ta")) autoGrow(e.target);
+  });
   document.addEventListener("input", markDirty, true);
   document.addEventListener("change", markDirty, true);
   document.addEventListener("focusout", flushPending, true);
