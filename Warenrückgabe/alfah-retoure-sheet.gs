@@ -7,6 +7,11 @@ var ALFAH_REJECT_TAB = "Alfah Abgelehnt";
 var ALFAH_REJECT_TITLE = "Alfah Abgelehnt";
 var ALFAH_REJECT_RED = "#cc0000";
 var ALFAH_BLUE = "#3c78d8";
+var ALFAH_GREEN = "#00b050";
+var ALFAH_ORANGE = "#e69138";
+var ALFAH_DONE_GID = 1870949588;
+var ALFAH_DONE_TAB = "Alfah Geliefert";
+var ALFAH_DONE_TITLE = "Alfah Geliefert";
 var ALFAH_HEADERS = ["Auftrag", "Stock-ID", "R-Nummer", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer"];
 
 function alfahOut_(value) {
@@ -464,10 +469,22 @@ function alfahMailKind_(text) {
   if (/keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)) return "ABGELEHNT";
   if (/r[üu]ckgabefrist/i.test(t) && /[üu]berschritten/i.test(t)) return "ABGELEHNT";
   if (/nicht\s+retourf[aä]hig|retourunf[aä]hig|nicht\s+retournierbar/i.test(t)) return "ABGELEHNT";
-  if (/retoure\s+wird\s+(eingeleitet|veranlasst)/i.test(t) || /r[üu]cksendung\s+(wird\s+)?eingeleitet/i.test(t)) return "RUECK";
-  if (/wird\s+.{0,80}abgeholt/i.test(t) || (/durch\s+dhl/i.test(t) && /abhol/i.test(t)) || /retourenlabel/i.test(t)) return "RUECK";
+  if (alfahLabelMail_(t)) return "RUECK";
+  if (/wird\s+.{0,80}abgeholt/i.test(t) || (/durch\s+dhl/i.test(t) && /abhol/i.test(t))) return "RUECK";
   if (/retoure\s+(ist|wurde)\s+vorbereitet|r[üu]cksendung\s+vorbereitet/i.test(t)) return "VORBEREITET";
+  if (/(retoure|r[üu]cksendung|r[üu]ckgabe)\s+(wird|wurde|ist)\s+(eingeleitet|veranlasst)/i.test(t)) return "VERANLASST";
+  if (/r[üu]cksendung\s+eingeleitet|wir\s+veranlassen\s+(die\s+)?(retoure|r[üu]cksendung)/i.test(t)) return "VERANLASST";
   return "";
+}
+
+function alfahLabelMail_(text) {
+  var t = String(text || "");
+  if (/retouren?\s*-?\s*(label|unterlagen|schein)/i.test(t)) return true;
+  if (/r[üu]cksende\s*-?\s*(label|unterlagen|schein)/i.test(t)) return true;
+  if (/\blabels?\b.{0,100}(paket|packst[üu]ck|anbringen|befestigen|ausdrucken|aufkleben)/i.test(t)) return true;
+  if (/(paket|packst[üu]ck|ausdrucken|anbringen).{0,100}\blabels?\b/i.test(t)) return true;
+  if (/ihre\s+labels/i.test(t)) return true;
+  return false;
 }
 
 function alfahMailDetail_(text, kind) {
@@ -482,6 +499,8 @@ function alfahMailDetail_(text, kind) {
   if (kind === "RUECK" && /dhl/i.test(t) && /abhol/i.test(t)) return "Abholung durch DHL";
   var vk = t.match(/VK-RE\d+/i);
   if (vk && kind === "RUECK") return vk[0].toUpperCase();
+  if (kind === "RUECK" && alfahLabelMail_(t)) return "Retourenlabel";
+  if (kind === "VERANLASST") return "Retoure veranlasst";
   var reason = t.match(/ablehnen\s*:\s*([^.]{6,90})/i);
   if (reason && kind === "ABGELEHNT") return reason[1].replace(/\s+/g, " ").trim();
   return "";
@@ -490,7 +509,8 @@ function alfahMailDetail_(text, kind) {
 function alfahStatusPaint_(kind) {
   if (kind === "ABGELEHNT") return { text: "ABGELEHNT", bg: "#cc0000", fg: "#ffffff" };
   if (kind === "STORNO") return { text: "STORNO", bg: "#cc0000", fg: "#ffffff" };
-  if (kind === "RUECK") return { text: "Rücksendung", bg: "#00b050", fg: "#ffffff" };
+  if (kind === "RUECK") return { text: "Rücksendung", bg: ALFAH_GREEN, fg: "#ffffff" };
+  if (kind === "VERANLASST") return { text: "Rücksendung", bg: ALFAH_ORANGE, fg: "#ffffff" };
   if (kind === "VORBEREITET") return { text: "VORBEREITET", bg: "#f1c232", fg: "#1f2933" };
   return null;
 }
@@ -638,8 +658,14 @@ function alfahThreadUrl_(threadId) {
 }
 
 function alfahSearchUrl_(rNumber) {
-  var q = encodeURIComponent(String(rNumber || "") + " RETOURE");
+  var q = encodeURIComponent('"' + String(rNumber || "").toUpperCase() + '"');
   return alfahGmailUrl_("#search/" + q);
+}
+
+function alfahSearchCurrent_(rich, rNumber) {
+  var url = "";
+  try { url = rich ? String(rich.getLinkUrl() || "") : ""; } catch (err) { url = ""; }
+  return !!url && url === alfahSearchUrl_(rNumber);
 }
 
 function alfahInboxLink_(rich) {
@@ -755,6 +781,7 @@ function alfahScanMail() {
       if (!id) continue;
       var hit = found[id[0]];
       var paint = hit ? alfahStatusPaint_(hit.kind) : null;
+      if (paint && hit.kind === "VERANLASST" && alfahIsRueck_(current[i][0]) && String(current[i][1] || "") === "Alfah System") continue;
       if (!paint) {
         var infoNow = String(current[i][1] || "");
         var manual = infoNow === "Alfah System";
@@ -763,7 +790,7 @@ function alfahScanMail() {
           alfahClearAutoRow_(sheet, rowNumber);
           alfahPutSearch_(sheet, rowNumber, id[0], mailbox, ALFAH_BLUE);
           cleared++;
-        } else if (!alfahInboxLink_(searchRich[i][0])) {
+        } else if (!alfahSearchCurrent_(searchRich[i][0], id[0])) {
           alfahPutSearch_(sheet, rowNumber, id[0], mailbox, alfahSearchColor_(String(current[i][0] || "")));
         }
         if (!auto) {
@@ -782,34 +809,43 @@ function alfahScanMail() {
     }
     PropertiesService.getScriptProperties().setProperty(ALFAH_MAIL_KEY, "1");
     var moved = alfahMoveRejected_(sheet);
-    return { ok: true, updated: updated, cleared: cleared, moved: moved.moved, mails: Object.keys(found).length };
+    var delivered = alfahMoveDelivered_(sheet);
+    return { ok: true, updated: updated, cleared: cleared, moved: moved.moved, delivered: delivered.moved, mails: Object.keys(found).length };
   } finally {
     lock.releaseLock();
   }
 }
 
-function alfahRejectTab_(ss) {
+function alfahSideTab_(ss, gid, name) {
   var sheets = ss.getSheets();
   var i;
   for (i = 0; i < sheets.length; i++) {
-    if (sheets[i].getSheetId() === ALFAH_REJECT_GID) return sheets[i];
+    if (sheets[i].getSheetId() === gid) return sheets[i];
   }
-  var named = ss.getSheetByName(ALFAH_REJECT_TAB);
+  var named = ss.getSheetByName(name);
   if (named) return named;
-  return ss.insertSheet(ALFAH_REJECT_TAB);
+  return ss.insertSheet(name);
 }
 
 function alfahPrepareReject_(source) {
-  var sheet = alfahRejectTab_(source.getParent());
-  sheet.setTabColor(ALFAH_REJECT_RED);
+  return alfahPrepareSide_(source, ALFAH_REJECT_GID, ALFAH_REJECT_TAB, ALFAH_REJECT_TITLE, ALFAH_REJECT_RED);
+}
+
+function alfahPrepareDone_(source) {
+  return alfahPrepareSide_(source, ALFAH_DONE_GID, ALFAH_DONE_TAB, ALFAH_DONE_TITLE, ALFAH_GREEN);
+}
+
+function alfahPrepareSide_(source, gid, name, title, color) {
+  var sheet = alfahSideTab_(source.getParent(), gid, name);
+  sheet.setTabColor(color);
   if (String(sheet.getRange(1, 1).getValue() || "")) return sheet;
   var headers = source.getRange(2, 1, 1, ALFAH_LAST_COL).getValues();
   var titleRange = sheet.getRange(1, 1, 1, ALFAH_LAST_COL);
   if (titleRange.isPartOfMerge()) titleRange.breakApart();
   titleRange.merge();
   titleRange
-    .setValue(ALFAH_REJECT_TITLE)
-    .setBackground(ALFAH_REJECT_RED)
+    .setValue(title)
+    .setBackground(color)
     .setFontColor("#ffffff")
     .setFontWeight("bold")
     .setFontSize(11)
@@ -818,7 +854,7 @@ function alfahPrepareReject_(source) {
     .setVerticalAlignment("middle");
   var head = sheet.getRange(2, 1, 1, ALFAH_LAST_COL);
   head.setValues(headers);
-  head.setBackground(ALFAH_REJECT_RED);
+  head.setBackground(color);
   head.setFontColor("#ffffff");
   head.setFontWeight("bold");
   head.setFontSize(ALFAH_FONT);
@@ -850,7 +886,6 @@ function alfahMoveRejected_(sheet) {
   var count = last - 2;
   var status = sheet.getRange(3, ALFAH_STATUS_COL, count, 1).getDisplayValues();
   var bg = sheet.getRange(3, 1, count, 1).getBackgrounds();
-  var pairs = sheet.getRange(3, 3, count, 2).getValues();
   var rows = [];
   var i;
   for (i = 0; i < count; i++) {
@@ -859,8 +894,32 @@ function alfahMoveRejected_(sheet) {
     if (state === "ABGELEHNT" || state === "STORNO" || color === ALFAH_REJECT_RED) rows.push(3 + i);
   }
   if (!rows.length) return { moved: 0, removed: 0 };
-  var dest = alfahPrepareReject_(sheet);
+  return alfahMoveRows_(sheet, rows, alfahPrepareReject_(sheet), ALFAH_REJECT_RED);
+}
+
+function alfahMoveDelivered_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return { moved: 0, removed: 0 };
+  var count = last - 2;
+  var status = sheet.getRange(3, ALFAH_STATUS_COL, count, 1).getDisplayValues();
+  var bg = sheet.getRange(3, 1, count, 1).getBackgrounds();
+  var boxes = sheet.getRange(3, ALFAH_PREP_COL, count, 2).getValues();
+  var rows = [];
+  var i;
+  for (i = 0; i < count; i++) {
+    if (!alfahIsRueck_(status[i][0])) continue;
+    if (String(bg[i][0] || "").toLowerCase() !== ALFAH_GREEN) continue;
+    if (!wmChecked_(boxes[i][0]) || !wmChecked_(boxes[i][1])) continue;
+    rows.push(3 + i);
+  }
+  if (!rows.length) return { moved: 0, removed: 0 };
+  return alfahMoveRows_(sheet, rows, alfahPrepareDone_(sheet), "");
+}
+
+function alfahMoveRows_(sheet, rows, dest, paint) {
+  var pairs = sheet.getRange(3, 3, sheet.getLastRow() - 2, 2).getValues();
   var have = {};
+  var i;
   var destLast = dest.getLastRow();
   if (destLast >= 3) {
     var existing = dest.getRange(3, 3, destLast - 2, 2).getValues();
@@ -880,7 +939,7 @@ function alfahMoveRejected_(sheet) {
     var key = String(pairs[rowNumber - 3][0] || "").toUpperCase() + "|" + String(pairs[rowNumber - 3][1] || "").toUpperCase();
     if (key !== "|" && have[key]) continue;
     sheet.getRange(rowNumber, 1, 1, ALFAH_LAST_COL).copyTo(dest.getRange(cursor, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-    dest.getRange(cursor, 1, 1, ALFAH_LAST_COL).setBackground(ALFAH_REJECT_RED);
+    if (paint) dest.getRange(cursor, 1, 1, ALFAH_LAST_COL).setBackground(paint);
     try { dest.setRowHeight(cursor, sheet.getRowHeight(rowNumber)); } catch (err) {}
     if (key !== "|") have[key] = true;
     moved++;
@@ -888,7 +947,8 @@ function alfahMoveRejected_(sheet) {
   }
   for (i = rows.length - 1; i >= 0; i--) {
     var drop = rows[i];
-    var span = alfahRowBlank_(sheet, drop + 1) ? 2 : 1;
+    var above = drop <= 3 || alfahRowBlank_(sheet, drop - 1);
+    var span = above && alfahRowBlank_(sheet, drop + 1) ? 2 : 1;
     sheet.deleteRows(drop, span);
   }
   return { moved: moved, removed: rows.length };
@@ -971,7 +1031,8 @@ function alfahApplyRuecksendung(raw) {
           skipped.push(key + " ist " + status);
           continue;
         }
-        if (alfahIsRueck_(status) && info && info !== "Alfah System") {
+        var rowBg = String(sheet.getRange(rows[r], 1).getBackground() || "").toLowerCase();
+        if (alfahIsRueck_(status) && info && info !== "Alfah System" && rowBg !== ALFAH_ORANGE) {
           skipped.push(key + " schon grün");
           continue;
         }
