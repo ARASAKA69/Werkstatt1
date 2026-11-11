@@ -95,6 +95,9 @@ function alfahHandle_(params) {
     if (action === "scanMail") {
       return alfahOut_(alfahScanMail());
     }
+    if (action === "oemSync") {
+      return alfahOut_(alfahSyncOemTeile());
+    }
     return alfahOut_({ ok: false, error: "unbekannt" });
   } catch (err) {
     return alfahOut_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -434,6 +437,7 @@ function onOpen() {
       .addItem("Rücksendung eintragen", "alfahMarkRuecksendung")
       .addItem("Mails jetzt lesen", "alfahScanMail")
       .addItem("Mail-Scan alle 30 Minuten", "installAlfahMailScan")
+      .addItem("OEM_Teile abgleichen", "alfahSyncOemTeileMenu")
       .addToUi();
   } catch (err) {}
   try { alfahSheet_(); } catch (err2) {}
@@ -813,7 +817,9 @@ function alfahScanMail() {
     PropertiesService.getScriptProperties().setProperty(ALFAH_MAIL_KEY, "1");
     var moved = alfahMoveRejected_(sheet);
     var delivered = alfahMoveDelivered_(sheet);
-    return { ok: true, updated: updated, cleared: cleared, moved: moved.moved, delivered: delivered.moved, mails: Object.keys(found).length };
+    var oem = null;
+    try { oem = alfahSyncOemTeile(); } catch (errOem) { oem = { ok: false, error: String(errOem && errOem.message ? errOem.message : errOem) }; }
+    return { ok: true, updated: updated, cleared: cleared, moved: moved.moved, delivered: delivered.moved, mails: Object.keys(found).length, oem: oem };
   } finally {
     lock.releaseLock();
   }
@@ -1673,4 +1679,235 @@ function staAppend_(entries) {
   } finally {
     lock.releaseLock();
   }
+}
+
+var OEM_SHEET_ID = "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM";
+var OEM_GID = 1905682522;
+var OEM_TAB = "OEM_Teile";
+var OEM_REPORT_MAIL = "francesco.berger@auto1.com";
+var OEM_AUTO_RE = /^Alfah (R-\d{4,}|ohne R-Nr)\b/;
+var OEM_AUTO_STATUS = { "": true, "offen": true, "in klärung": true, "zurückgegeben": true, "nicht rückgabefähig": true, "storniert": true };
+
+function oemFindTab_(ss, gid, name) {
+  var sheets = ss.getSheets();
+  var i;
+  for (i = 0; i < sheets.length; i++) {
+    if (sheets[i].getSheetId() === gid) return sheets[i];
+  }
+  return ss.getSheetByName(name);
+}
+
+function oemNorm_(value) {
+  return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function oemPartKeys_(raw) {
+  var text = String(raw || "").toUpperCase();
+  var keys = [];
+  var seen = {};
+  function add(part) {
+    var k = oemNorm_(part);
+    if (k.length < 5 || !/\d/.test(k) || seen[k]) return;
+    seen[k] = true;
+    keys.push(k);
+  }
+  var brackets = text.match(/\[[^\]]+\]/g) || [];
+  var i;
+  for (i = 0; i < brackets.length; i++) add(brackets[i]);
+  add(text.replace(/\[[^\]]*\]/g, " ").replace(/\([^)]*\)/g, " "));
+  var tokens = text.split(/[\s\/,;:()\[\]]+/);
+  for (i = 0; i < tokens.length; i++) add(tokens[i]);
+  add(text);
+  return keys;
+}
+
+function oemPartsMatch_(a, b) {
+  var i;
+  var j;
+  for (i = 0; i < a.length; i++) {
+    for (j = 0; j < b.length; j++) {
+      var x = a[i];
+      var y = b[j];
+      if (x === y) return true;
+      if (x.length >= 6 && y.length >= 6 && (x.indexOf(y) !== -1 || y.indexOf(x) !== -1)) return true;
+    }
+  }
+  return false;
+}
+
+function oemResult_(kind, status, info, bg, rNumber, date) {
+  var st = String(status || "").trim().toUpperCase();
+  var color = String(bg || "").toLowerCase();
+  var tag = "Alfah " + (rNumber || "ohne R-Nr");
+  var infoTxt = String(info || "").trim();
+  var extra = infoTxt ? " · " + infoTxt : "";
+  if (st === "STORNO") return { status: "storniert", rank: 3, note: tag + " storniert" + extra };
+  if (kind === "reject" || st === "ABGELEHNT") return { status: "nicht rückgabefähig", rank: 3, note: tag + " abgelehnt" + extra };
+  if (kind === "done" || (alfahIsRueck_(status) && color === ALFAH_GREEN)) return { status: "zurückgegeben", rank: 3, note: tag + " zurückgeschickt" + extra };
+  var step = st === "VORBEREITET" ? "vorbereitet" : (alfahIsRueck_(status) ? "Rücksendung veranlasst" : "angemeldet");
+  return { status: "in Klärung", rank: 1, note: tag + " " + step + (date ? " " + date : "") + " · warten auf Alfah" };
+}
+
+function oemRetoureEntries_() {
+  var ss = alfahBook_();
+  var tabs = [
+    { gid: ALFAH_GID, name: ALFAH_TAB, kind: "open" },
+    { gid: ALFAH_REJECT_GID, name: ALFAH_REJECT_TAB, kind: "reject" },
+    { gid: ALFAH_DONE_GID, name: ALFAH_DONE_TAB, kind: "done" }
+  ];
+  var byStock = {};
+  var t;
+  for (t = 0; t < tabs.length; t++) {
+    var sheet = oemFindTab_(ss, tabs[t].gid, tabs[t].name);
+    if (!sheet) continue;
+    var last = sheet.getLastRow();
+    if (last < 3) continue;
+    var count = last - 2;
+    var vals = sheet.getRange(3, 1, count, ALFAH_LAST_COL).getDisplayValues();
+    var bgs = sheet.getRange(3, 1, count, 1).getBackgrounds();
+    var i;
+    for (i = 0; i < vals.length; i++) {
+      var v = vals[i];
+      var stock = alfahStock_(v[1]);
+      var keys = oemPartKeys_(v[3]);
+      if (!stock || !keys.length) continue;
+      var r = String(v[2] || "").toUpperCase().match(/R-\d{4,}/);
+      var res = oemResult_(tabs[t].kind, v[ALFAH_STATUS_COL - 1], v[ALFAH_INFO_COL - 1], bgs[i][0], r ? r[0] : "", String(v[7] || "").trim());
+      if (!byStock[stock]) byStock[stock] = [];
+      byStock[stock].push({ keys: keys, res: res });
+    }
+  }
+  return byStock;
+}
+
+function oemFindCol_(headers, test) {
+  var i;
+  for (i = 0; i < headers.length; i++) {
+    if (test(String(headers[i] || "").trim())) return i;
+  }
+  return -1;
+}
+
+function alfahSyncOemTeile() {
+  var sheet = oemFindTab_(SpreadsheetApp.openById(OEM_SHEET_ID), OEM_GID, OEM_TAB);
+  if (!sheet) return { ok: false, error: "Tab " + OEM_TAB + " nicht gefunden" };
+  var lastRow = sheet.getLastRow();
+  var lastCol = sheet.getLastColumn();
+  if (lastRow < 3 || lastCol < 1) return { ok: true, matched: 0, updated: 0, kept: 0 };
+  var top = sheet.getRange(1, 1, Math.min(6, lastRow), lastCol).getDisplayValues();
+  var headerIdx = -1;
+  var h;
+  for (h = 0; h < top.length; h++) {
+    if (oemFindCol_(top[h], function (s) { return s === "Rückgabe-Status"; }) !== -1) { headerIdx = h; break; }
+  }
+  if (headerIdx === -1) return { ok: false, error: "Spalte Rückgabe-Status nicht gefunden" };
+  var head = top[headerIdx];
+  var stockCol = oemFindCol_(head, function (s) { return /^stock/i.test(s); });
+  var oeCol = oemFindCol_(head, function (s) { return /^oe\b/i.test(s) || /art\.?-?\s*nr/i.test(s); });
+  var statusCol = oemFindCol_(head, function (s) { return s === "Rückgabe-Status"; });
+  var noteCol = oemFindCol_(head, function (s) { return /^notiz/i.test(s); });
+  if (stockCol === -1 || oeCol === -1 || noteCol === -1) return { ok: false, error: "Spalten Stock-Nr / OE / Notiz nicht gefunden" };
+  var start = headerIdx + 2;
+  if (lastRow < start) return { ok: true, matched: 0, updated: 0, kept: 0 };
+  var data = sheet.getRange(start, 1, lastRow - start + 1, lastCol).getDisplayValues();
+  var entries = oemRetoureEntries_();
+  var matched = 0;
+  var updated = 0;
+  var kept = 0;
+  var changes = [];
+  var i;
+  for (i = 0; i < data.length; i++) {
+    var row = data[i];
+    var stock = alfahStock_(row[stockCol]);
+    var list = stock ? entries[stock] : null;
+    if (!list) continue;
+    var keys = oemPartKeys_(row[oeCol]);
+    if (!keys.length) continue;
+    var best = null;
+    var e;
+    for (e = 0; e < list.length; e++) {
+      if (!oemPartsMatch_(keys, list[e].keys)) continue;
+      if (!best || list[e].res.rank >= best.rank) best = list[e].res;
+    }
+    if (!best) continue;
+    matched++;
+    var curStatus = String(row[statusCol] || "").trim();
+    var curNote = String(row[noteCol] || "").trim();
+    var ours = OEM_AUTO_RE.test(curNote);
+    var free = !curStatus || curStatus.toLowerCase() === "offen";
+    if (!free && !(ours && OEM_AUTO_STATUS[curStatus.toLowerCase()])) {
+      kept++;
+      continue;
+    }
+    var cut = curNote.indexOf(" | ");
+    var manual = ours ? (cut !== -1 ? curNote.substring(cut + 3) : "") : curNote;
+    var nextNote = best.note + (manual ? " | " + manual : "");
+    if (curStatus === best.status && curNote === nextNote) continue;
+    var rowNumber = start + i;
+    if (alfahStock_(sheet.getRange(rowNumber, stockCol + 1).getDisplayValue()) !== stock) continue;
+    sheet.getRange(rowNumber, statusCol + 1).setValue(best.status);
+    sheet.getRange(rowNumber, noteCol + 1).setValue(nextNote);
+    updated++;
+    changes.push({ row: rowNumber, stock: stock, oe: String(row[oeCol] || ""), oldStatus: curStatus, status: best.status, oldNote: curNote, note: nextNote });
+  }
+  var mailed = false;
+  if (changes.length) {
+    try {
+      oemSendReport_(changes, matched, kept, sheet);
+      mailed = true;
+    } catch (errMail) {}
+  }
+  return { ok: true, matched: matched, updated: updated, kept: kept, mailed: mailed };
+}
+
+function oemEsc_(value) {
+  return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function oemSendReport_(changes, matched, kept, sheet) {
+  var tz = Session.getScriptTimeZone() || "Europe/Berlin";
+  var stamp = Utilities.formatDate(new Date(), tz, "dd.MM.yyyy HH:mm");
+  var link = "https://docs.google.com/spreadsheets/d/" + OEM_SHEET_ID + "/edit#gid=" + sheet.getSheetId();
+  var cell = "border:1px solid #d0d7de;padding:4px 8px;font:12px Arial,sans-serif;vertical-align:top;";
+  var head = "background:#f6f8fa;font-weight:bold;" + cell;
+  var rows = changes.map(function (c) {
+    return "<tr>"
+      + "<td style=\"" + cell + "\"><a href=\"" + link + "&range=A" + c.row + "\">" + c.row + "</a></td>"
+      + "<td style=\"" + cell + "\">" + oemEsc_(c.stock) + "</td>"
+      + "<td style=\"" + cell + "\">" + oemEsc_(c.oe) + "</td>"
+      + "<td style=\"" + cell + "\">" + oemEsc_(c.oldStatus || "leer") + "</td>"
+      + "<td style=\"" + cell + "font-weight:bold;\">" + oemEsc_(c.status) + "</td>"
+      + "<td style=\"" + cell + "\">" + oemEsc_(c.oldNote || "leer") + "</td>"
+      + "<td style=\"" + cell + "\">" + oemEsc_(c.note) + "</td>"
+      + "</tr>";
+  }).join("");
+  var html = "<div style=\"font:13px Arial,sans-serif;\">"
+    + "<p><b>OEM_Teile Abgleich " + oemEsc_(stamp) + "</b></p>"
+    + "<p>Gesetzt: " + changes.length + " · Treffer gesamt: " + matched + " · Von Hand gesetzt, nicht angefasst: " + kept + "</p>"
+    + "<table style=\"border-collapse:collapse;\"><tr>"
+    + "<th style=\"" + head + "\">Zeile</th><th style=\"" + head + "\">Stock-ID</th><th style=\"" + head + "\">OE-Nr</th>"
+    + "<th style=\"" + head + "\">Status vorher</th><th style=\"" + head + "\">Status neu</th>"
+    + "<th style=\"" + head + "\">Notiz vorher</th><th style=\"" + head + "\">Notiz neu</th></tr>"
+    + rows + "</table>"
+    + "<p><a href=\"" + link + "\">OEM_Teile öffnen</a></p></div>";
+  var text = "OEM_Teile Abgleich " + stamp + "\nGesetzt: " + changes.length + "\n\n" + changes.map(function (c) {
+    return "Zeile " + c.row + " | " + c.stock + " | " + c.oe + " | " + (c.oldStatus || "leer") + " -> " + c.status + " | " + c.note;
+  }).join("\n");
+  MailApp.sendEmail({
+    to: OEM_REPORT_MAIL,
+    subject: "OEM_Teile Abgleich " + stamp + " · " + changes.length + " geändert",
+    body: text,
+    htmlBody: html,
+    name: "Alfah Retouren"
+  });
+}
+
+function alfahSyncOemTeileMenu() {
+  var res;
+  try { res = alfahSyncOemTeile(); } catch (err) { res = { ok: false, error: String(err && err.message ? err.message : err) }; }
+  var msg = res.ok
+    ? "Treffer: " + res.matched + "\nGesetzt: " + res.updated + "\nVon Hand gesetzt, nicht angefasst: " + res.kept + (res.updated ? "\nReport-Mail: " + (res.mailed ? "raus an " + OEM_REPORT_MAIL : "fehlgeschlagen") : "")
+    : "Fehler: " + res.error;
+  try { SpreadsheetApp.getUi().alert("OEM_Teile Abgleich", msg, SpreadsheetApp.getUi().ButtonSet.OK); } catch (err2) {}
+  return res;
 }
