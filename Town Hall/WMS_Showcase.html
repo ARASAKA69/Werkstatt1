@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>ARASAKA WMS · Town Hall Showcase</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #050506;
+    --bg-1: #0a0a0f;
+    --bg-2: #0e1014;
+    --win-1: #12151c;
+    --win-2: #161a22;
+    --teal: #0D9488;
+    --teal-bright: #14B8A6;
+    --teal-soft: #5EEAD4;
+    --orange: #EA580C;
+    --orange-bright: #FB923C;
+    --fg: #EDEDEF;
+    --muted: #8A8F98;
+    --subtle: #6B7280;
+    --border: rgba(255,255,255,0.08);
+    --border-strong: rgba(255,255,255,0.14);
+    --ok: #34D399;
+    --warn: #FBBF24;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg-0); }
+  body {
+    font-family: "Plus Jakarta Sans", system-ui, sans-serif;
+    color: var(--fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  .stage {
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+    padding: 84px 96px;
+    display: grid;
+    grid-template-columns: 820px 1fr;
+    gap: 72px;
+    background:
+      radial-gradient(900px 600px at 8% 0%, rgba(13,148,136,0.22), transparent 60%),
+      radial-gradient(800px 600px at 100% 100%, rgba(234,88,12,0.18), transparent 60%),
+      linear-gradient(160deg, var(--bg-1), var(--bg-0) 60%, var(--bg-2));
+    overflow: hidden;
+  }
+  .stage::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at 30% 40%, #000 30%, transparent 75%);
+    pointer-events: none;
+  }
+  .left, .right { position: relative; z-index: 1; }
+  .left { display: flex; flex-direction: column; }
+
+  .brand-row { display: flex; align-items: center; gap: 18px; }
+  .logo-chip {
+    background: #fff;
+    border-radius: 12px;
+    padding: 12px 18px;
+    display: flex; align-items: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  }
+  .logo-chip img { height: 26px; display: block; }
+  .eyebrow {
+    font-size: 18px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--teal-soft); white-space: nowrap;
+  }
+  .ai-pill {
+    margin-left: auto;
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 10px 18px; border-radius: 999px;
+    border: 1px solid rgba(251,146,60,0.45);
+    background: rgba(234,88,12,0.12);
+    color: var(--orange-bright); white-space: nowrap;
+    font-size: 16px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .ai-pill .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--orange-bright); box-shadow: 0 0 12px var(--orange-bright); }
+
+  h1 {
+    margin-top: 64px;
+    font-size: 124px; line-height: 0.95; font-weight: 800; letter-spacing: -0.035em;
+  }
+  h1 .grad {
+    background: linear-gradient(90deg, var(--teal-bright), var(--teal-soft) 45%, var(--orange-bright));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .tagline {
+    margin-top: 36px;
+    font-size: 33px; line-height: 1.3; font-weight: 500; color: #C9CCD3;
+    max-width: 760px;
+  }
+  .tagline b { color: var(--fg); font-weight: 700; }
+
+  .stats {
+    margin-top: 52px;
+    margin-bottom: 32px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
+  }
+  .stat {
+    padding: 26px 26px 24px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+    border: 1px solid var(--border-strong);
+  }
+  .stat .num { font-size: 60px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .stat .num.teal { color: var(--teal-soft); }
+  .stat .num.orange { color: var(--orange-bright); }
+  .stat .num.green { color: var(--ok); }
+  .stat .lbl { margin-top: 12px; font-size: 20px; font-weight: 600; color: var(--muted); line-height: 1.3; }
+
+  .author {
+    margin-top: auto;
+    display: flex; align-items: center; gap: 18px;
+    font-size: 22px; color: var(--muted);
+  }
+  .author .mono { font-family: "JetBrains Mono", monospace; font-weight: 700; color: var(--teal-soft); letter-spacing: 0.06em; }
+  .author .sep { width: 6px; height: 6px; border-radius: 50%; background: var(--subtle); }
+
+  .right { display: flex; flex-direction: column; gap: 28px; }
+  .hud {
+    position: relative;
+    border-radius: 24px;
+    background: linear-gradient(180deg, var(--win-2), var(--bg-2));
+    border: 2px solid rgba(20,184,166,0.45);
+    box-shadow:
+      0 0 0 1px rgba(255,255,255,0.04) inset,
+      0 30px 80px rgba(0,0,0,0.6),
+      0 0 80px rgba(13,148,136,0.25);
+    padding: 26px;
+    transform: perspective(2200px) rotateY(-7deg) rotateX(3deg);
+    transform-origin: left center;
+  }
+  .hud-top { display: flex; align-items: center; gap: 12px; }
+  .hud-btn {
+    padding: 9px 14px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-strong);
+    font-size: 14px; font-weight: 600; color: #D5D7DC; white-space: nowrap;
+  }
+  .hud-cache {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 14px; border-radius: 999px;
+    background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.4);
+    font-size: 14px; font-weight: 700; color: var(--ok); white-space: nowrap;
+  }
+  .hud-cache .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+  .hud-brand { text-align: center; margin: 22px 0 18px; }
+  .hud-brand .t { font-size: 13px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .hud-brand .c {
+    display: inline-block; margin-top: 8px; padding: 5px 12px; border-radius: 999px;
+    font-family: "JetBrains Mono", monospace; font-size: 12px; font-weight: 700; color: var(--teal-soft);
+    border: 1px solid rgba(94,234,212,0.35); background: rgba(13,148,136,0.12);
+  }
+  .hud-search { display: flex; gap: 10px; }
+  .hud-input {
+    flex: 1; padding: 18px 20px; border-radius: 14px;
+    background: rgba(0,0,0,0.35); border: 2px solid rgba(20,184,166,0.6);
+    font-family: "JetBrains Mono", monospace; font-size: 20px; font-weight: 700; letter-spacing: 0.08em; color: var(--fg);
+    box-shadow: 0 0 24px rgba(20,184,166,0.25);
+  }
+  .hud-input .caret { display: inline-block; width: 3px; height: 22px; background: var(--teal-soft); vertical-align: -3px; margin-left: 4px; }
+  .hud-load {
+    padding: 18px 26px; border-radius: 14px; font-weight: 800; font-size: 18px; letter-spacing: 0.08em;
+    background: linear-gradient(180deg, var(--teal-bright), var(--teal)); color: #fff;
+  }
+  .hud-status { margin-top: 12px; font-size: 14px; color: var(--ok); font-weight: 600; }
+  .hud-grid { margin-top: 20px; display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 14px; }
+  .hud-card {
+    border-radius: 16px; padding: 16px;
+    background: rgba(255,255,255,0.035); border: 1.5px solid rgba(20,184,166,0.35);
+    min-height: 250px;
+  }
+  .hud-card h4 { font-size: 15px; font-weight: 800; margin-bottom: 12px; }
+  .badges { display: flex; gap: 6px; margin-bottom: 12px; }
+  .b { padding: 4px 9px; border-radius: 8px; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; }
+  .b.ok { color: var(--ok); background: rgba(52,211,153,0.12); border: 1px solid rgba(52,211,153,0.4); }
+  .b.or { color: var(--orange-bright); background: rgba(234,88,12,0.12); border: 1px solid rgba(251,146,60,0.4); }
+  .line { height: 10px; border-radius: 6px; background: rgba(255,255,255,0.08); margin-bottom: 9px; }
+  .line.g { background: rgba(52,211,153,0.35); }
+  .line.w70 { width: 70%; } .line.w50 { width: 50%; } .line.w85 { width: 85%; } .line.w60 { width: 60%; }
+  .shelf {
+    margin-top: 6px; padding: 16px; border-radius: 12px; text-align: center;
+    background: rgba(13,148,136,0.14); border: 1.5px solid rgba(94,234,212,0.45);
+  }
+  .shelf .s1 { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+  .shelf .s2 { font-size: 34px; font-weight: 800; color: var(--teal-soft); margin-top: 4px; }
+  .scan-btn { margin-top: 12px; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; font-weight: 700; border: 1px solid var(--border-strong); background: rgba(255,255,255,0.04); }
+  .label {
+    margin-top: 4px; border-radius: 10px; background: #F5F5F4; color: #111; padding: 12px;
+    font-family: "JetBrains Mono", monospace;
+  }
+  .label .id { font-size: 17px; font-weight: 700; }
+  .label .bars { margin-top: 8px; height: 34px; background: repeating-linear-gradient(90deg, #111 0 2px, transparent 2px 4px, #111 4px 7px, transparent 7px 8px, #111 8px 9px, transparent 9px 12px); }
+  .print-btn { margin-top: 12px; padding: 10px; border-radius: 10px; text-align: center; font-size: 13px; font-weight: 800; color: #fff; background: linear-gradient(180deg, var(--orange-bright), var(--orange)); }
+
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .feat {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 16px; border-radius: 16px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border-strong);
+    font-size: 18px; font-weight: 700; line-height: 1.2;
+  }
+  .feat .i { font-size: 26px; }
+  .flow {
+    display: flex; align-items: center; justify-content: center; gap: 18px;
+    font-size: 26px; font-weight: 800; letter-spacing: 0.02em;
+  }
+  .flow .step { padding: 12px 22px; border-radius: 999px; border: 1.5px solid rgba(94,234,212,0.45); background: rgba(13,148,136,0.12); color: var(--teal-soft); }
+  .flow .step.end { border-color: rgba(251,146,60,0.5); background: rgba(234,88,12,0.12); color: var(--orange-bright); }
+  .flow .arr { color: var(--subtle); font-size: 28px; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <section class="left">
+    <div class="brand-row">
+      <div class="logo-chip"><img src="../Warehouse Management System/autohero-logo.png" alt="AUTOHERO"></div>
+      <span class="eyebrow">Werkstatt · Lager</span>
+      <span class="ai-pill"><span class="dot"></span>Gebaut mit Hilfe von KI</span>
+    </div>
+
+    <h1>Ein HUD.<br><span class="grad">Das ganze Lager.</span></h1>
+
+    <p class="tagline">Ein komplettes <b>Lagerverwaltungssystem</b>, allein gebaut und mit Hilfe von KI verbessert. Vom Scan übers Regal bis zum Etikett, mit <b>fast null Packfehlern</b>.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="num teal">1</div><div class="lbl">Person hat alles<br>selbst gebaut</div></div>
+      <div class="stat"><div class="num orange">40+</div><div class="lbl">Updates<br>veröffentlicht</div></div>
+      <div class="stat"><div class="num green">≈0</div><div class="lbl">Packfehler<br>im Lager</div></div>
+    </div>
+
+    <div class="author">
+      <span class="mono">ARASAKA WMS v2.0</span>
+      <span class="sep"></span>
+      <span>Francesco Berger</span>
+    </div>
+  </section>
+
+  <section class="right">
+    <div class="hud">
+      <div class="hud-top">
+        <span class="hud-btn">📋 Übersicht</span>
+        <span class="hud-btn">🛞 Reifen Annahme</span>
+        <span class="hud-btn">📦 Nachbestellungen</span>
+        <span class="hud-btn">📄 Packzettel</span>
+        <span class="hud-btn">📱 Cast</span>
+        <span class="hud-cache"><span class="dot"></span>Cache Live</span>
+      </div>
+      <div class="hud-brand">
+        <div class="t">Warehouse Management System</div>
+        <span class="c">BY ARASAKA v2.0</span>
+      </div>
+      <div class="hud-search">
+        <div class="hud-input">STOCK-ID / BESTELLNUMMER SCAN...<span class="caret"></span></div>
+        <div class="hud-load">LADEN</div>
+      </div>
+      <div class="hud-status">● System bereit.</div>
+      <div class="hud-grid">
+        <div class="hud-card">
+          <h4>🔍 Auftrags Infos</h4>
+          <div class="badges"><span class="b ok">REIFEN: JA</span><span class="b or">WSS: VORHANDEN</span></div>
+          <div class="line w85"></div>
+          <div class="line g w60"></div>
+          <div class="line w70"></div>
+          <div class="line g w50"></div>
+          <div class="line w85"></div>
+          <div class="line w60"></div>
+        </div>
+        <div class="hud-card">
+          <h4>📦 Einlagern</h4>
+          <div class="shelf"><div class="s1">Regal</div><div class="s2">1.2</div></div>
+          <div class="scan-btn">📷 Regal scannen</div>
+        </div>
+        <div class="hud-card">
+          <h4>🏷️ DYMO Druck</h4>
+          <div class="label"><div class="id">STOCK-ID</div><div class="bars"></div></div>
+          <div class="print-btn">Drucken + Rausgeben</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="flow">
+      <span class="step">Scannen</span><span class="arr">→</span>
+      <span class="step">Prüfen</span><span class="arr">→</span>
+      <span class="step">Einlagern</span><span class="arr">→</span>
+      <span class="step end">Etikett &amp; Raus</span>
+    </div>
+
+    <div class="features">
+      <div class="feat"><span class="i">🔎</span>Stock-ID- &amp; Bestellsuche</div>
+      <div class="feat"><span class="i">🛞</span>Reifen rein &amp; raus</div>
+      <div class="feat"><span class="i">📧</span>Packzettel aus Gmail</div>
+      <div class="feat"><span class="i">🏷️</span>DYMO-Druck per Klick</div>
+      <div class="feat"><span class="i">📱</span>Handy-Cast &amp; Regal-Scan</div>
+      <div class="feat"><span class="i">⚡</span>Live-Cache der Listen</div>
+      <div class="feat"><span class="i">🤖</span>Eingebauter KI-Assistent</div>
+      <div class="feat"><span class="i">🌍</span>Jede Sprache</div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

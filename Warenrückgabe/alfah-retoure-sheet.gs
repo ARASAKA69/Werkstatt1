@@ -92,6 +92,9 @@ function alfahHandle_(params) {
       if (!Array.isArray(staEntries)) staEntries = [params];
       return alfahOut_(staAppend_(staEntries));
     }
+    if (action === "scanMail") {
+      return alfahOut_(alfahScanMail());
+    }
     return alfahOut_({ ok: false, error: "unbekannt" });
   } catch (err) {
     return alfahOut_({ ok: false, error: String(err && err.message ? err.message : err) });
