@@ -3290,13 +3290,36 @@
     nbChooserCacheReady = true;
   }
 
+  function applyNbCachePayload(res) {
+    if(!res || !res.success) return;
+    var entries = res.entries || [];
+    nbAllEntries = entries;
+    if(res.lagerortOptions) nbLagerortOptions = res.lagerortOptions;
+    if(res.statusOptions) nbStatusOptions = res.statusOptions;
+    nbSessionActive = true;
+    nbDataReady = true;
+    setNbChooserCache(entries);
+    var modal = document.getElementById('nbModal');
+    var open = !!(modal && modal.classList.contains('open'));
+    var active = document.activeElement;
+    var editing = !!(open && active && modal.contains(active) && active.id !== 'nbSearchInput');
+    var nbb = document.getElementById('nbTotalBadge');
+    if(nbb && !editing) {
+      var cur = String(nbb.textContent || '');
+      if(!nbb.querySelector('.hud-spin') && (cur.indexOf('offen') !== -1 || cur.indexOf('Lade') !== -1 || !cur.trim())) {
+        nbb.textContent = entries.length + ' offen';
+      }
+    }
+    if(open && !editing) filterNbBySearch();
+  }
+
   function loadNbChooserCache(force) {
     if(nbChooserCacheLoading) return;
     if(nbChooserCacheReady && !force) return;
     nbChooserCacheLoading = true;
     google.script.run.withSuccessHandler(function(res) {
       nbChooserCacheLoading = false;
-      if(res && res.success) setNbChooserCache(res.entries || []);
+      if(res && res.success) applyNbCachePayload(res);
     }).withFailureHandler(function() {
       nbChooserCacheLoading = false;
     }).getNachbestellungen();
@@ -8636,7 +8659,7 @@
   function prefetchMenuPanelCaches() {
     if (menuPanelPrefetchBusy) return;
     menuPanelPrefetchBusy = true;
-    var pending = 6;
+    var pending = 4;
     function doneOne() {
       pending--;
       if (pending <= 0) menuPanelPrefetchBusy = false;
@@ -8668,20 +8691,6 @@
       }
       doneOne();
     }).withFailureHandler(function() { doneOne(); }).getHeutigeReifenausgabe();
-    google.script.run.withSuccessHandler(function(res) {
-      if (res && res.success) {
-        nbAllEntries = res.entries || [];
-        nbFilteredEntries = nbAllEntries;
-        nbLagerortOptions = res.lagerortOptions || [];
-        nbStatusOptions = res.statusOptions || [];
-        nbSessionActive = true;
-        nbDataReady = true;
-        setNbChooserCache(res.entries || []);
-        var nbb = document.getElementById('nbTotalBadge');
-        if (nbb) nbb.innerText = nbAllEntries.length + ' offen';
-      }
-      doneOne();
-    }).withFailureHandler(function() { doneOne(); }).getNachbestellungen();
     loadReifenHudCache(function() { doneOne(); }, { showOverlay: false, prefetch: true });
   }
 
@@ -8697,6 +8706,7 @@
     var req = ++refurbCacheReq;
     var showLoadUi = !refurbCache;
     refurbCacheLoading = true;
+    loadNbChooserCache(true);
     if (showLoadUi) startRefurbCacheProgressUi();
     google.script.run
       .withSuccessHandler(function(res) {
@@ -10350,17 +10360,14 @@
   loadRefurbishmentCache(true);
   loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();
-  loadNbChooserCache(true);
   loadPzPartsCache(true);
   loadAagLieferscheinCache(true);
   setInterval(function() { loadPzPartsCache(true); }, REFURB_CACHE_POLL_MS);
   setInterval(function() { loadAagLieferscheinCache(true); }, REFURB_CACHE_POLL_MS);
-  setInterval(function() { loadNbChooserCache(true); }, REFURB_CACHE_POLL_MS);
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
       loadRefurbishmentCache(true);
       loadKommentarVerlaufCache(true);
-      loadNbChooserCache(true);
       loadPzPartsCache(true);
       loadAagLieferscheinCache(true);
       if (stockLockHeldId && normalizeStockIdJs(currentStock) === stockLockHeldId) {

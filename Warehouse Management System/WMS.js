@@ -31,6 +31,12 @@ const WMS_WEB_APP_URL = "https://script.google.com/a/macros/auto1.com/s/AKfycbxb
 const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/messages?key=AIzaSyDdI0hCZtE6vySjMm-WEfRq3CPzqKqqsHI&token=EWcUXzhFOjX-bdHAbN6tFOWO08r-utt9cS1aqoqjcQc";
 const WMS_CHANGELOG_HISTORY = [
   {
+    version: "2.2.28",
+    date: "11.11.2026",
+    notes:
+      "• Nachbestellung-Cache lädt jetzt zusammen mit dem Main-HUD-Cache: gleicher 75-Sekunden-Takt und bei jedem HUD-Cache-Reload. Liste und Auswahl bleiben damit gleich aktuell."
+  },
+  {
     version: "2.2.27",
     date: "23.10.2026",
     notes:
