@@ -1,0 +1,1112 @@
+<script>
+(function () {
+  var S = {
+    data: null,
+    view: "overview",
+    filters: {},
+    sorts: {},
+    drawer: null,
+    busy: false,
+    writes: 0,
+    writeSeq: 0,
+    fromCache: false,
+    idx: {},
+    scanBusy: false
+  };
+
+  var STATE_INFO = {
+    offen: { label: "Offen", bar: "" },
+    veranlasst: { label: "Veranlasst", bar: "orange" },
+    bereit: { label: "Rücksendung bereit", bar: "green" },
+    vorbereitet_mail: { label: "Vorbereitet (Mail)", bar: "yellow" },
+    abgelehnt: { label: "Abgelehnt", bar: "red" },
+    storno: { label: "Storno", bar: "red" },
+    geliefert: { label: "Geliefert", bar: "green" },
+    sonstige: { label: "Sonstige", bar: "" },
+    done: { label: "In der Liste", bar: "green" }
+  };
+  var EDIT_STATES = ["offen", "veranlasst", "bereit", "vorbereitet_mail", "abgelehnt", "storno"];
+  var STATE_FILTERS = [
+    { v: "", l: "Alle Status" },
+    { v: "todoPack", l: "Grün, noch nicht vorbereitet" },
+    { v: "todoShip", l: "Vorbereitet, nicht geliefert" },
+    { v: "offen", l: "Offen (keine Antwort)" },
+    { v: "veranlasst", l: "Veranlasst (orange)" },
+    { v: "bereit", l: "Rücksendung bereit (grün)" },
+    { v: "vorbereitet_mail", l: "Vorbereitet (Mail)" },
+    { v: "abgelehnt", l: "Abgelehnt" },
+    { v: "storno", l: "Storno" },
+    { v: "sonstige", l: "Sonstige" }
+  ];
+  var CACHE_KEY = "rtp_cache_v1";
+  var AUTO_MS = 60000;
+  var CHECK_SVG = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 6L9 17l-5-5\"/></svg>";
+  var COPY_SVG = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2\"/><path d=\"M5 15V5a1 1 0 0 1 1-1h9\"/></svg>";
+
+  function $(id) { return document.getElementById(id); }
+  function esc(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function norm(v) { return String(v == null ? "" : v).toLowerCase().replace(/\s+/g, " ").trim(); }
+  function compact(v) { return String(v == null ? "" : v).toLowerCase().replace(/[^a-z0-9]/g, ""); }
+
+  function toast(msg, kind) {
+    var el = document.createElement("div");
+    el.className = "toast " + (kind || "");
+    el.textContent = msg;
+    $("toasts").appendChild(el);
+    setTimeout(function () { el.remove(); }, kind === "err" ? 7000 : 3800);
+  }
+
+  var pending = 0;
+  function busyBar(delta) {
+    pending = Math.max(0, pending + delta);
+    $("loadBar").classList.toggle("on", pending > 0);
+  }
+
+  function call(fn, args, ok, fail) {
+    busyBar(1);
+    var isWrite = fn !== "getPanelData";
+    if (isWrite) {
+      S.writes++;
+      S.writeSeq++;
+    }
+    var end = function () {
+      busyBar(-1);
+      if (isWrite) {
+        S.writes--;
+        S.writeSeq++;
+      }
+    };
+    var r = google.script.run
+      .withSuccessHandler(function (res) {
+        end();
+        if (res && res.ok === false) {
+          toast(res.message || "Fehler", "err");
+          if (fail) fail(res);
+          return;
+        }
+        if (ok) ok(res || {});
+      })
+      .withFailureHandler(function (err) {
+        end();
+        toast(String(err && err.message ? err.message : err), "err");
+        if (fail) fail(err);
+      });
+    r[fn].apply(r, args || []);
+  }
+
+  function readCache() {
+    try {
+      var raw = localStorage.getItem(CACHE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeCache(raw) {
+    try {
+      localStorage.setItem(CACHE_KEY, raw);
+    } catch (e) {
+      try { localStorage.removeItem(CACHE_KEY); } catch (e2) {}
+    }
+  }
+
+  function copyText(text) {
+    var ok = false;
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch (e) {}
+    ta.remove();
+    if (!ok && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(function () {});
+      ok = true;
+    }
+    return ok;
+  }
+
+  function stockBadge(s, size) {
+    if (!s) return "";
+    return "<button type=\"button\" class=\"stock-badge" + (size ? " " + size : "") + "\" data-copy=\"" + esc(s) + "\" title=\"Stock-ID kopieren\"><span>" + esc(s) + "</span>" + COPY_SVG + "</button>";
+  }
+  function rBadge(s, size) {
+    if (!s) return "";
+    return "<button type=\"button\" class=\"rnum-badge" + (size ? " " + size : "") + "\" data-copy=\"" + esc(s) + "\" title=\"R-Nummer kopieren\"><span>" + esc(s) + "</span>" + COPY_SVG + "</button>";
+  }
+  function partBadge(s) {
+    if (!s) return "";
+    return "<button type=\"button\" class=\"part-badge\" data-copy=\"" + esc(s) + "\" title=\"Teilenummer kopieren\"><span>" + esc(s) + "</span>" + COPY_SVG + "</button>";
+  }
+  function tabPill(key) {
+    var t = S.data && S.data.tabs[key];
+    return "<span class=\"pill tab-" + esc(key) + "\">" + esc(t ? t.label : key) + "</span>";
+  }
+  function stateLabel(r) {
+    if (r.state === "sonstige") return r.status || "Sonstige";
+    return (STATE_INFO[r.state] || {}).label || r.status || "–";
+  }
+  function statePill(r) {
+    var cls = r.state === "offen" ? "t-none" : "t-" + r.state;
+    return "<span class=\"pill " + cls + "\">" + esc(stateLabel(r)) + "</span>";
+  }
+  function rowLabel(r) {
+    return r.rNumber || r.stockId || r.article || r.name || ("Zeile " + r.row);
+  }
+  function ident(r) {
+    return { rNumber: r.rNumber, article: r.article, stockId: r.stockId, orderId: r.orderId, name: r.name };
+  }
+  function isActiveRow(r) {
+    return r.kind === "alfah" && r.tab === "alfah" && (r.state === "offen" || r.state === "veranlasst" || r.state === "vorbereitet_mail");
+  }
+  function daysHtml(r) {
+    if (r.daysOpen == null) return "";
+    var cls = "";
+    if (isActiveRow(r)) cls = r.daysOpen >= 14 ? "bad" : r.daysOpen >= 7 ? "warn" : "ok";
+    return "<span class=\"days " + cls + "\">" + r.daysOpen + "</span>";
+  }
+  function chkBtn(r, field) {
+    var on = !!r[field];
+    var title = field === "geliefert" ? "Geliefert" : "Vorbereitet";
+    return "<button type=\"button\" class=\"rt-chk" + (on ? " on" : "") + (field === "geliefert" ? " deliver" : "") + "\" data-chk=\"" + field + "\" data-u=\"" + esc(r.uid) + "\" title=\"" + title + " umschalten\">" + CHECK_SVG + "</button>";
+  }
+  function linksHtml(r) {
+    var h = "";
+    if (r.mailUrl) h += "<a class=\"ext-pill mail\" href=\"" + esc(r.mailUrl) + "\" target=\"_blank\" rel=\"noopener\">Mail</a>";
+    if (r.searchUrl) h += "<a class=\"ext-pill\" href=\"" + esc(r.searchUrl) + "\" target=\"_blank\" rel=\"noopener\">Suche</a>";
+    return h ? "<span class=\"ext-links\">" + h + "</span>" : "";
+  }
+
+  var TH_TONES = {
+    tab: "gray", datumMs: "blue", daysOpen: "orange", orderId: "gray", stockId: "blue", rNumber: "purple", article: "gray",
+    name: "gray", supplier: "orange", brand: "teal", who: "teal", state: "yellow", info: "gray", links: "blue", vorbereitet: "green", geliefert: "green"
+  };
+  function thBadge(label, key, arrow) {
+    return "<span class=\"th-badge h-" + (TH_TONES[key] || "gray") + "\">" + esc(label) + (arrow ? "<i>" + arrow + "</i>" : "") + "</span>";
+  }
+
+  function colsFor(kind, withTab) {
+    var c = [];
+    if (withTab) c.push({ k: "tab", l: "Tab", html: function (r) { return tabPill(r.tab); }, sort: function (r) { return r.tab; } });
+    c.push({ k: "datumMs", l: "Datum", cls: "nowrap", html: function (r) { return esc(r.date) + (r.time ? " <span class=\"muted\">" + esc(r.time) + "</span>" : ""); }, sort: function (r) { return r.datumMs || 0; } });
+    c.push({ k: "daysOpen", l: "Tage", cls: "num", html: daysHtml, sort: function (r) { return r.daysOpen == null ? -1 : r.daysOpen; } });
+    c.push({ k: "orderId", l: "Auftrag", p: 3, cls: "nowrap", html: function (r) { return esc(r.orderId); } });
+    c.push({ k: "stockId", l: "Stock-ID", html: function (r) { return stockBadge(r.stockId); } });
+    if (kind === "alfah") c.push({ k: "rNumber", l: "R-Nummer", html: function (r) { return rBadge(r.rNumber); } });
+    c.push({ k: "article", l: "Teilenummer", p: 2, html: function (r) { return partBadge(r.article); } });
+    c.push({ k: "name", l: "Name", cls: "wrap", html: function (r) { return esc(r.name); } });
+    c.push({ k: "supplier", l: "Lieferant", p: 2, cls: "wrap", html: function (r) { return esc(r.supplier); } });
+    c.push({ k: "brand", l: "Hersteller", p: 3, html: function (r) { return esc(r.brand); } });
+    c.push({ k: "who", l: "Wer", p: 3, html: function (r) { return esc(r.who); } });
+    if (kind === "alfah") {
+      c.push({ k: "state", l: "Status", html: statePill, sort: function (r) { return r.state; } });
+      c.push({ k: "info", l: "Info", p: 2, cls: "wrap", html: function (r) { return esc(r.info); } });
+      c.push({ k: "links", l: "Mail", p: 2, nosort: true, html: linksHtml });
+    } else {
+      c.push({ k: "info", l: "Info", p: 2, cls: "wrap", html: function (r) { return esc(r.info); } });
+    }
+    if (kind === "alfah") {
+      c.push({ k: "vorbereitet", l: "Vorb.", chk: true, html: function (r) { return chkBtn(r, "vorbereitet"); }, sort: function (r) { return r.vorbereitet ? 1 : 0; } });
+      c.push({ k: "geliefert", l: "Gel.", chk: true, html: function (r) { return chkBtn(r, "geliefert"); }, sort: function (r) { return r.geliefert ? 1 : 0; } });
+    }
+    return c;
+  }
+
+  function sortRows(rows, cols, s) {
+    var col = cols.filter(function (c) { return c.k === s.k; })[0] || cols[0];
+    var get = col.sort || function (r) { return norm(r[col.k]); };
+    return rows.slice().sort(function (a, b) {
+      var x = get(a), y = get(b);
+      if (x < y) return -1 * s.d;
+      if (x > y) return 1 * s.d;
+      return (b.datumMs || 0) - (a.datumMs || 0);
+    });
+  }
+
+  function tableHtml(rows, cols, s) {
+    var h = "<div class=\"tbl-host\"><div class=\"table-wrap\"><table><thead><tr>";
+    cols.forEach(function (c) {
+      var on = s && s.k === c.k;
+      var cls = [];
+      if (on) cls.push("sorted");
+      if (c.p) cls.push("p" + c.p);
+      if (c.chk) cls.push("chk-th");
+      if (!s || c.nosort) cls.push("no-sort");
+      h += "<th" + (s && !c.nosort ? " data-k=\"" + c.k + "\"" : "") + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + thBadge(c.l, c.k, on ? (s.d < 0 ? "▾" : "▴") : "") + "</th>";
+    });
+    h += "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      h += "<tr class=\"st-" + esc(r.state) + "\" data-u=\"" + esc(r.uid) + "\">";
+      cols.forEach(function (c) {
+        var cls = [];
+        if (c.cls) cls.push(c.cls);
+        if (c.p) cls.push("p" + c.p);
+        if (c.chk) cls.push("chk-td");
+        h += "<td data-l=\"" + esc(c.l) + "\"" + (cls.length ? " class=\"" + cls.join(" ") + "\"" : "") + ">" + c.html(r) + "</td>";
+      });
+      h += "</tr>";
+    });
+    return h + "</tbody></table></div></div>";
+  }
+
+  function bindTable(root, s, rerender) {
+    var ths = root.querySelectorAll("th[data-k]");
+    for (var i = 0; i < ths.length; i++) {
+      ths[i].onclick = function () {
+        var k = this.getAttribute("data-k");
+        if (s.k === k) s.d = -s.d;
+        else { s.k = k; s.d = k === "datumMs" || k === "daysOpen" ? -1 : 1; }
+        rerender();
+      };
+    }
+    var trs = root.querySelectorAll("tbody tr[data-u]");
+    for (var j = 0; j < trs.length; j++) {
+      trs[j].onclick = function (e) {
+        if (e.target.closest && e.target.closest("a,button,[data-copy],[data-chk]")) return;
+        var r = S.idx[this.getAttribute("data-u")];
+        if (r) openEntry(r);
+      };
+    }
+  }
+
+  function hay(r) {
+    return norm([r.orderId, r.stockId, r.rNumber, r.article, r.name, r.supplier, r.brand, r.who, r.info, r.status, stateLabel(r)].join(" ")) + " " + compact(r.article);
+  }
+
+  function tabFilter(key) {
+    return S.filters[key] = S.filters[key] || { q: "", state: "", supplier: "", openOnly: true };
+  }
+  function tabSort(key) {
+    return S.sorts[key] = S.sorts[key] || { k: "datumMs", d: -1 };
+  }
+
+  function filterRows(tab, f) {
+    var q = norm(f.q);
+    var qc = compact(f.q);
+    return tab.rows.filter(function (r) {
+      if (tab.kind === "alfah") {
+        if (f.state === "todoPack") { if (!(r.state === "bereit" && !r.vorbereitet)) return false; }
+        else if (f.state === "todoShip") { if (!(r.vorbereitet && !r.geliefert)) return false; }
+        else if (f.state && r.state !== f.state) return false;
+      }
+      if (f.supplier && r.supplier !== f.supplier) return false;
+      if (q) {
+        var h = hay(r);
+        if (h.indexOf(q) < 0 && !(qc.length >= 3 && h.indexOf(qc) >= 0)) return false;
+      }
+      return true;
+    });
+  }
+
+  function uniq(rows, key) {
+    var m = {};
+    rows.forEach(function (r) { if (r[key]) m[r[key]] = true; });
+    return Object.keys(m).sort(function (a, b) { return a.localeCompare(b, "de"); });
+  }
+
+  function stampLine() {
+    var chip = $("liveChip");
+    chip.classList.remove("loading", "live", "cache");
+    if (!S.data) {
+      chip.classList.add("loading");
+      $("loadedAt").textContent = "Lade Daten…";
+      return;
+    }
+    if (S.busy) chip.classList.add("loading");
+    else chip.classList.add(S.fromCache ? "cache" : "live");
+    var clock = S.data.loadedClock || S.data.loadedAt;
+    $("loadedAt").textContent = (S.busy ? "Synchronisiere · " : S.fromCache ? "Cache · " : "Live · ") + clock;
+    chip.title = "Stand " + S.data.loadedAt + " · automatisch alle 60 Sekunden";
+  }
+
+  function load(manual) {
+    if (S.busy) {
+      S.reloadQueued = true;
+      if (manual) S.manualQueued = true;
+      return;
+    }
+    S.busy = true;
+    S.lastLoad = Date.now();
+    var seq = S.writeSeq;
+    var btn = $("btnRefresh");
+    if (manual) {
+      btn.disabled = true;
+      btn.classList.add("loading");
+    }
+    stampLine();
+    var done = function () {
+      S.busy = false;
+      btn.disabled = false;
+      btn.classList.remove("loading");
+      stampLine();
+      if (S.reloadQueued && S.writes === 0) {
+        var m = S.manualQueued;
+        S.reloadQueued = false;
+        S.manualQueued = false;
+        load(m);
+      }
+    };
+    call("getPanelData", [], function (d) {
+      if (seq !== S.writeSeq || S.writes > 0) {
+        S.reloadQueued = true;
+        S.manualQueued = S.manualQueued || manual;
+        done();
+        return;
+      }
+      writeCache(JSON.stringify(d));
+      S.fromCache = false;
+      applyData(d);
+      if (manual && S.loadedOnce) toast("Daten aktualisiert", "ok");
+      S.loadedOnce = true;
+      done();
+    }, function () {
+      done();
+      if (!S.data) $("view").innerHTML = "<div class=\"empty\">Daten konnten nicht geladen werden.</div>";
+    });
+  }
+
+  function prepare(d) {
+    S.idx = {};
+    (d.tabOrder || []).forEach(function (key) {
+      var t = d.tabs[key];
+      if (!t) return;
+      t.rows.forEach(function (r) {
+        r.uid = key + "|" + r.row;
+        S.idx[r.uid] = r;
+      });
+    });
+  }
+
+  function fillList(id, list) {
+    var el = $(id);
+    if (!el) return;
+    el.innerHTML = (list || []).map(function (v) { return "<option value=\"" + esc(v) + "\"></option>"; }).join("");
+  }
+
+  function captureUi() {
+    var st = { view: $("view").scrollTop, tw: [], active: null };
+    var tws = $("view").querySelectorAll(".table-wrap");
+    for (var t = 0; t < tws.length; t++) st.tw.push({ t: tws[t].scrollTop, l: tws[t].scrollLeft });
+    var a = document.activeElement;
+    if (a && a.id && $("view").contains(a) && /INPUT|TEXTAREA/.test(a.tagName)) {
+      st.active = { id: a.id, s: null, e: null };
+      try { st.active.s = a.selectionStart; st.active.e = a.selectionEnd; } catch (e) {}
+    }
+    return st;
+  }
+  function restoreUi(st) {
+    if (!st) return;
+    $("view").scrollTop = st.view;
+    var tws = $("view").querySelectorAll(".table-wrap");
+    for (var t = 0; t < tws.length && t < st.tw.length; t++) {
+      tws[t].scrollTop = st.tw[t].t;
+      tws[t].scrollLeft = st.tw[t].l;
+    }
+    if (st.active) {
+      var a = $(st.active.id);
+      if (a) {
+        a.focus({ preventScroll: true });
+        try { if (st.active.s != null) a.setSelectionRange(st.active.s, st.active.e); } catch (e) {}
+      }
+    }
+  }
+
+  function applyData(d) {
+    var st = S.data ? captureUi() : null;
+    prepare(d);
+    S.data = d;
+    stampLine();
+    $("userLine").textContent = d.user || "";
+    $("sheetLink").href = d.sheetUrl || "#";
+    fillList("dlSuppliers", d.lists && d.lists.suppliers);
+    fillList("dlBrands", d.lists && d.lists.brands);
+    fillList("dlWorkers", d.lists && d.lists.workers);
+    renderNav();
+    render();
+    restoreUi(st);
+  }
+
+  function navItem(v, label, count, short, color, ready) {
+    return "<button type=\"button\" class=\"nav-item" + (S.view === v ? " active" : "") + "\" data-view=\"" + esc(v) + "\" title=\"" + esc(label + (count ? " · " + count : "")) + "\">" +
+      (color ? "<span class=\"nav-dot\" style=\"background:" + esc(color) + "\"></span>" : "") +
+      "<span class=\"nav-short\">" + esc(short) + "</span><span class=\"nav-label\">" + esc(label) + "</span>" +
+      (count !== "" && count != null ? "<span class=\"nav-count" + (ready ? " ready" : "") + "\">" + esc(count) + "</span>" : "") + "</button>";
+  }
+
+  function renderNav() {
+    var d = S.data;
+    var tabs = d.tabs;
+    var total = 0;
+    d.tabOrder.forEach(function (k) { total += tabs[k] ? tabs[k].rows.length : 0; });
+    var h = "<div class=\"nav-group\">Panel</div>";
+    h += navItem("overview", "Übersicht", "", "ÜB");
+    h += navItem("all", "Alle durchsuchen", String(total), "SU");
+    h += "<div class=\"nav-group\">Alfah</div>";
+    ["alfah", "geliefert", "abgelehnt"].forEach(function (k) {
+      var t = tabs[k];
+      if (!t) return;
+      var cnt = t.missing ? "fehlt" : String(t.rows.length);
+      var ready = false;
+      if (k === "alfah" && !t.missing) {
+        var pack = t.rows.filter(function (r) { return r.state === "bereit" && !r.vorbereitet; }).length;
+        if (pack) { cnt = pack + " grün"; ready = true; }
+      }
+      h += navItem("tab:" + k, t.label, cnt, t.code, t.color, ready);
+    });
+    h += "<div class=\"nav-group\">Lieferanten</div>";
+    ["wm", "aag", "sta"].forEach(function (k) {
+      var t = tabs[k];
+      if (!t) return;
+      h += navItem("tab:" + k, t.label, t.missing ? "fehlt" : String(t.rows.length), t.code, t.color, false);
+    });
+    $("nav").innerHTML = h;
+    var btns = $("nav").querySelectorAll(".nav-item");
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].onclick = function () { go(this.getAttribute("data-view")); };
+    }
+  }
+
+  function setSide(collapsed) {
+    document.body.classList.toggle("side-collapsed", !!collapsed);
+    var b = $("sideToggle");
+    if (b) b.title = collapsed ? "Seitenleiste öffnen" : "Seitenleiste einklappen";
+    try { localStorage.setItem("rtp_side", collapsed ? "1" : "0"); } catch (e) {}
+  }
+
+  function go(v) {
+    S.view = v;
+    renderNav();
+    render();
+    $("view").scrollTop = 0;
+  }
+
+  function render() {
+    if (!S.data) return;
+    if (S.view === "overview") return renderOverview();
+    if (S.view === "all") return renderAll();
+    if (S.view.indexOf("tab:") === 0) return renderTab(S.view.slice(4));
+    go("overview");
+  }
+
+  function kpi(label, value, sub, action, tone) {
+    return "<div class=\"kpi" + (action ? " click" : "") + (tone ? " tone-" + tone : "") + "\"" + (action ? " data-a=\"" + esc(action) + "\"" : "") + "><div class=\"kpi-label\">" + esc(label) +
+      "</div><div class=\"kpi-value\">" + esc(value) + "</div><div class=\"kpi-sub\">" + esc(sub) + "</div></div>";
+  }
+
+  function jump(action) {
+    var p = String(action || "").split(":");
+    var key = p[0];
+    if (!S.data.tabs[key]) return;
+    var f = tabFilter(key);
+    f.q = "";
+    f.supplier = "";
+    if (S.data.tabs[key].kind === "alfah") f.state = p[1] || "";
+    else f.openOnly = p[1] !== "all";
+    if (p[2]) f.supplier = p.slice(2).join(":");
+    go("tab:" + key);
+  }
+
+  function bars(list) {
+    if (!list.length) return "<div class=\"muted\">Keine Daten</div>";
+    var peak = list[0].n || 1;
+    list.forEach(function (x) { if (x.n > peak) peak = x.n; });
+    return list.map(function (x) {
+      return "<div class=\"bar-row\" data-a=\"" + esc(x.a) + "\"><div class=\"bar-label\" title=\"" + esc(x.k) + "\">" + esc(x.k) +
+        "</div><div class=\"bar\"><span class=\"" + (x.bar ? "b-" + x.bar : "") + "\" style=\"width:" + Math.max(3, Math.round(x.n / peak * 100)) + "%\"></span></div><div class=\"bar-num\">" + x.n + "</div></div>";
+    }).join("");
+  }
+
+  function renderOverview() {
+    var d = S.data;
+    $("viewTitle").textContent = "Übersicht";
+    $("viewSub").textContent = "Alle Retouren auf einen Blick · Stand " + d.loadedAt;
+    var al = d.tabs.alfah && !d.tabs.alfah.missing ? d.tabs.alfah.rows : [];
+    var cnt = {};
+    al.forEach(function (r) { cnt[r.state] = (cnt[r.state] || 0) + 1; });
+    var waiting = al.filter(function (r) { return r.state === "offen"; });
+    var old = waiting.filter(function (r) { return (r.daysOpen || 0) >= 14; });
+    var pack = al.filter(function (r) { return r.state === "bereit" && !r.vorbereitet; });
+    var ship = al.filter(function (r) { return r.vorbereitet && !r.geliefert; });
+    var gel = d.tabs.geliefert ? d.tabs.geliefert.rows.length : 0;
+    var abg = d.tabs.abgelehnt ? d.tabs.abgelehnt.rows.length : 0;
+
+    var h = "<div class=\"grid kpis\">";
+    h += kpi("Alfah aktiv", al.length, "Teile im Tab Alfah", "alfah:", "blue");
+    h += kpi("Ohne Antwort", cnt.offen || 0, old.length + " davon ≥ 14 Tage", "alfah:offen", "");
+    h += kpi("Veranlasst", cnt.veranlasst || 0, "Retoure eingeleitet, kein Label", "alfah:veranlasst", "orange");
+    h += kpi("Rücksendung bereit", cnt.bereit || 0, "grün · Label / Abholung da", "alfah:bereit", "green");
+    h += kpi("Zum Packen", pack.length, "grün, noch nicht vorbereitet", "alfah:todoPack", pack.length ? "green" : "");
+    h += kpi("Wartet auf Abholung", ship.length, "vorbereitet, nicht geliefert", "alfah:todoShip", "");
+    h += kpi("Alfah Geliefert", gel, "Archiv", "geliefert:", "");
+    h += kpi("Alfah Abgelehnt", abg, "Archiv (inkl. Storno)", "abgelehnt:", abg ? "red" : "");
+    ["wm", "aag", "sta"].forEach(function (k) {
+      var t = d.tabs[k];
+      if (!t) return;
+      h += kpi(t.label, t.rows.length, "in der Liste", k + ":", "");
+    });
+    h += "</div>";
+
+    var stateList = ["offen", "veranlasst", "vorbereitet_mail", "bereit", "sonstige"].filter(function (k) { return cnt[k]; }).map(function (k) {
+      return { k: STATE_INFO[k].label, n: cnt[k], a: "alfah:" + k, bar: STATE_INFO[k].bar };
+    });
+    var supCnt = {};
+    al.forEach(function (r) { var s = r.supplier || "–"; supCnt[s] = (supCnt[s] || 0) + 1; });
+    var supList = Object.keys(supCnt).map(function (k) { return { k: k, n: supCnt[k], a: "alfah::" + (k === "–" ? "" : k) }; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
+    var brandCnt = {};
+    waiting.forEach(function (r) { var s = r.brand || "–"; brandCnt[s] = (brandCnt[s] || 0) + 1; });
+    var brandList = Object.keys(brandCnt).map(function (k) { return { k: k, n: brandCnt[k], a: "alfah:offen" }; }).sort(function (a, b) { return b.n - a.n; }).slice(0, 10);
+    var supTabs = ["wm", "aag", "sta"].filter(function (k) { return d.tabs[k]; }).map(function (k) {
+      var t = d.tabs[k];
+      return { k: t.label, n: t.rows.length, a: k + ":", bar: "green" };
+    });
+
+    h += "<div class=\"grid cards\">";
+    h += "<div class=\"card\"><h3>Alfah nach Status</h3>" + bars(stateList) + "</div>";
+    h += "<div class=\"card\"><h3>Alfah nach Lieferant</h3>" + bars(supList) + "</div>";
+    h += "<div class=\"card\"><h3>Ohne Antwort nach Hersteller</h3>" + bars(brandList) + "</div>";
+    h += "<div class=\"card\"><h3>Lieferanten-Retouren</h3>" + bars(supTabs) + "</div>";
+
+    var cols = colsFor("alfah", false);
+    h += "<div class=\"card\" style=\"grid-column:1/-1\"><h3>Zum Packen · grün, noch nicht vorbereitet <a href=\"#\" class=\"small\" data-jump=\"alfah:todoPack\">alle anzeigen</a></h3>";
+    h += pack.length ? tableHtml(sortRows(pack, cols, { k: "datumMs", d: 1 }), cols, null) : "<div class=\"muted\">Nichts zu packen.</div>";
+    h += "</div>";
+    var oldest = waiting.slice().sort(function (a, b) { return (b.daysOpen || 0) - (a.daysOpen || 0); }).slice(0, 12);
+    h += "<div class=\"card\" style=\"grid-column:1/-1\"><h3>Am längsten ohne Antwort <a href=\"#\" class=\"small\" data-jump=\"alfah:offen\">alle anzeigen</a></h3>";
+    h += oldest.length ? tableHtml(oldest, cols, null) : "<div class=\"muted\">Alles beantwortet.</div>";
+    h += "</div></div>";
+    $("view").innerHTML = h;
+
+    var ks = $("view").querySelectorAll("[data-a]");
+    for (var i = 0; i < ks.length; i++) {
+      ks[i].onclick = function () { jump(this.getAttribute("data-a")); };
+    }
+    var js = $("view").querySelectorAll("[data-jump]");
+    for (var j = 0; j < js.length; j++) {
+      js[j].onclick = function (e) { e.preventDefault(); jump(this.getAttribute("data-jump")); };
+    }
+    bindTable($("view"), { k: "", d: 1 }, renderOverview);
+  }
+
+  function bindSearch(id, f, rerender) {
+    var el = $(id);
+    var t = null;
+    el.oninput = function () {
+      clearTimeout(t);
+      t = setTimeout(function () {
+        f.q = el.value;
+        var pos = el.selectionStart;
+        rerender();
+        var n = $(id);
+        n.focus();
+        try { n.setSelectionRange(pos, pos); } catch (e) {}
+      }, 200);
+    };
+  }
+
+  function renderTab(key) {
+    var tab = S.data.tabs[key];
+    if (!tab) return go("overview");
+    $("viewTitle").textContent = tab.label;
+    if (tab.missing) {
+      $("viewSub").textContent = "";
+      $("view").innerHTML = "<div class=\"empty\">Tabellenblatt \"" + esc(tab.sheet) + "\" nicht gefunden.</div>";
+      return;
+    }
+    var f = tabFilter(key);
+    var s = tabSort(key);
+    var cols = colsFor(tab.kind, false);
+    var rows = sortRows(filterRows(tab, f), cols, s);
+    $("viewSub").textContent = rows.length + " von " + tab.rows.length + " Einträgen · Blatt \"" + tab.sheet + "\"" + (tab.archive ? " · Archiv" : "");
+    var h = "<div class=\"toolbar\">";
+    h += "<input id=\"fQ\" class=\"grow\" placeholder=\"Suche Stock-ID, R-Nummer, Teilenummer, Name, Auftrag…\" value=\"" + esc(f.q) + "\">";
+    if (tab.kind === "alfah" && !tab.archive) {
+      h += "<select id=\"fState\">" + STATE_FILTERS.map(function (o) {
+        return "<option value=\"" + o.v + "\"" + (f.state === o.v ? " selected" : "") + ">" + esc(o.l) + "</option>";
+      }).join("") + "</select>";
+    }
+    var sups = uniq(tab.rows, "supplier");
+    if (sups.length > 1) {
+      h += "<select id=\"fSup\"><option value=\"\">Alle Lieferanten</option>" + sups.map(function (v) {
+        return "<option value=\"" + esc(v) + "\"" + (f.supplier === v ? " selected" : "") + ">" + esc(v) + "</option>";
+      }).join("") + "</select>";
+    }
+    h += "<button type=\"button\" id=\"fReset\" class=\"btn ghost\">Zurücksetzen</button>";
+    if (!tab.archive) h += "<button type=\"button\" id=\"fNew\" class=\"btn\">+ Neuer Eintrag</button>";
+    h += "</div>";
+    h += rows.length ? tableHtml(rows, cols, s) : "<div class=\"table-wrap\"><div class=\"empty\">Keine Einträge für diese Filter.</div></div>";
+    $("view").innerHTML = h;
+
+    var re = function () { renderTab(key); };
+    bindSearch("fQ", f, re);
+    if ($("fState")) $("fState").onchange = function () { f.state = this.value; re(); };
+    if ($("fSup")) $("fSup").onchange = function () { f.supplier = this.value; re(); };
+    $("fReset").onclick = function () { S.filters[key] = null; S.sorts[key] = null; re(); };
+    if ($("fNew")) $("fNew").onclick = function () { openNew(key); };
+    bindTable($("view"), s, re);
+  }
+
+  function renderAll() {
+    var d = S.data;
+    var f = tabFilter("__all");
+    var s = tabSort("__all");
+    $("viewTitle").textContent = "Alle durchsuchen";
+    var all = [];
+    d.tabOrder.forEach(function (k) {
+      var t = d.tabs[k];
+      if (t && !t.missing) all = all.concat(t.rows);
+    });
+    var q = norm(f.q);
+    var qc = compact(f.q);
+    var rows = all.filter(function (r) {
+      if (f.supplier && r.tab !== f.supplier) return false;
+      if (!q) return true;
+      var h = hay(r);
+      return h.indexOf(q) >= 0 || (qc.length >= 3 && h.indexOf(qc) >= 0);
+    });
+    var cols = colsFor("alfah", true);
+    rows = sortRows(rows, cols, s);
+    $("viewSub").textContent = rows.length + " von " + all.length + " Einträgen über alle Retoure-Tabs";
+    var h = "<div class=\"toolbar\">";
+    h += "<input id=\"aQ\" class=\"grow\" placeholder=\"Stock-ID, R-Nummer, Teilenummer, Auftrag, Name… über alle Tabs\" value=\"" + esc(f.q) + "\">";
+    h += "<select id=\"aTab\"><option value=\"\">Alle Tabs</option>" + d.tabOrder.map(function (k) {
+      return "<option value=\"" + esc(k) + "\"" + (f.supplier === k ? " selected" : "") + ">" + esc(d.tabs[k].label) + "</option>";
+    }).join("") + "</select>";
+    h += "</div>";
+    h += rows.length ? tableHtml(rows.slice(0, 600), cols, s) : "<div class=\"table-wrap\"><div class=\"empty\">Nichts gefunden.</div></div>";
+    $("view").innerHTML = h;
+    bindSearch("aQ", f, renderAll);
+    $("aTab").onchange = function () { f.supplier = this.value; renderAll(); };
+    bindTable($("view"), s, renderAll);
+  }
+
+  function kv(pairs, cols2) {
+    var h = "<div class=\"kv" + (cols2 ? " cols2" : "") + "\">";
+    pairs.forEach(function (p) {
+      h += "<div class=\"kv-i" + (p[3] ? " full" : "") + "\"><div class=\"kv-k\">" + esc(p[0]) + "</div><div class=\"kv-v\">" + (p[2] ? p[1] : esc(p[1] || "–")) + "</div></div>";
+    });
+    return h + "</div>";
+  }
+
+  function showDrawer(titleHtml, sub, html, narrow) {
+    $("drawerTitle").innerHTML = titleHtml;
+    $("drawerSub").textContent = sub || "";
+    $("drawerBody").innerHTML = html;
+    $("drawer").classList.toggle("narrow", !!narrow);
+    $("drawer").classList.remove("hidden");
+    $("drawerBack").classList.remove("hidden");
+    $("drawerBody").scrollTop = 0;
+    growAll($("drawerBody"));
+  }
+  function closeDrawer() {
+    S.drawer = null;
+    $("drawer").classList.add("hidden");
+    $("drawerBack").classList.add("hidden");
+  }
+
+  function autoGrow(el) {
+    if (!el || el.tagName !== "TEXTAREA" || !el.classList.contains("grow-ta")) return;
+    el.style.height = "auto";
+    el.style.height = (el.scrollHeight + 2) + "px";
+  }
+  function growAll(root) {
+    var tas = (root || document).querySelectorAll("textarea.grow-ta");
+    for (var i = 0; i < tas.length; i++) autoGrow(tas[i]);
+  }
+
+  var FIELDS = [
+    { k: "orderId", l: "Auftrag" },
+    { k: "stockId", l: "Stock-ID", mono: true, upper: true },
+    { k: "rNumber", l: "R-Nummer", mono: true, upper: true, alfah: true },
+    { k: "article", l: "Teilenummer", mono: true },
+    { k: "name", l: "Name", span: "2" },
+    { k: "supplier", l: "Lieferant", dl: "dlSuppliers" },
+    { k: "brand", l: "Hersteller", dl: "dlBrands" },
+    { k: "who", l: "Wer", dl: "dlWorkers" },
+    { k: "date", l: "Datum", ph: "TT.MM.JJJJ" },
+    { k: "time", l: "Uhrzeit", ph: "HH:MM" },
+    { k: "info", l: "Info", span: "all", area: true }
+  ];
+
+  function fieldHtml(prefix, fd, val) {
+    var id = prefix + fd.k;
+    var inner;
+    if (fd.area) inner = "<textarea class=\"grow-ta\" rows=\"1\" id=\"" + id + "\">" + esc(val) + "</textarea>";
+    else inner = "<input id=\"" + id + "\" autocomplete=\"off\"" + (fd.mono ? " class=\"mono\"" : "") + (fd.upper ? " style=\"text-transform:uppercase\"" : "") +
+      (fd.dl ? " list=\"" + fd.dl + "\"" : "") + (fd.ph ? " placeholder=\"" + esc(fd.ph) + "\"" : "") + " value=\"" + esc(val) + "\">";
+    var span = fd.span === "all" ? " span-all" : fd.span === "2" ? " span-2" : "";
+    return "<label class=\"field" + span + "\"><span>" + esc(fd.l) + "</span>" + inner + "</label>";
+  }
+
+  function stateSelect(id, cur) {
+    var h = "<select id=\"" + id + "\">";
+    if (cur && EDIT_STATES.indexOf(cur) < 0) h += "<option value=\"" + esc(cur) + "\" selected>" + esc((STATE_INFO[cur] || {}).label || cur) + "</option>";
+    EDIT_STATES.forEach(function (k) {
+      h += "<option value=\"" + k + "\"" + (k === cur ? " selected" : "") + ">" + esc(STATE_INFO[k].label) + "</option>";
+    });
+    return h + "</select>";
+  }
+
+  function relatedRows(r) {
+    var out = [];
+    var d = S.data;
+    d.tabOrder.forEach(function (k) {
+      var t = d.tabs[k];
+      if (!t || t.missing) return;
+      t.rows.forEach(function (x) {
+        if (x.uid === r.uid) return;
+        var same = (r.orderId && x.orderId === r.orderId) || (r.stockId && x.stockId === r.stockId) || (r.rNumber && x.rNumber === r.rNumber);
+        if (same) out.push(x);
+      });
+    });
+    return out.slice(0, 25);
+  }
+
+  function miniRow(x) {
+    return "<div class=\"mini\" data-u=\"" + esc(x.uid) + "\"><div>" + tabPill(x.tab) + " " + (x.rNumber ? "<b>" + esc(x.rNumber) + "</b> · " : "") + esc(x.article || "") +
+      "<div class=\"muted small\">" + esc(x.name) + (x.supplier ? " · " + esc(x.supplier) : "") + "</div></div><div>" + (x.kind === "alfah" ? statePill(x) : "<span class=\"pill t-" + x.state + "\">" + esc(stateLabel(x)) + "</span>") + "</div></div>";
+  }
+
+  function openEntry(r) {
+    var tab = S.data.tabs[r.tab];
+    S.drawer = { type: "entry", uid: r.uid };
+    var isAlfah = r.kind === "alfah";
+    var title = (r.stockId ? stockBadge(r.stockId, "lg") : "") + (r.rNumber ? rBadge(r.rNumber, "lg") : "") + tabPill(r.tab);
+    var sub = [r.name, r.article, r.supplier].filter(Boolean).join(" · ");
+
+    var h = "<div class=\"dgrid\"><div class=\"dcol\">";
+    h += "<div class=\"quick-bar\">";
+    if (isAlfah) h += "<span class=\"quick-chk" + (r.vorbereitet ? " on" : "") + "\">" + chkBtn(r, "vorbereitet") + " Vorbereitet</span>";
+    if (isAlfah) h += "<span class=\"quick-chk" + (r.geliefert ? " on" : "") + "\">" + chkBtn(r, "geliefert") + " Geliefert</span>";
+    if (r.tab === "alfah" && r.state !== "bereit") h += "<button type=\"button\" class=\"btn green\" id=\"qGreen\">Auf Grün setzen</button>";
+    if (tab.archive) h += "<button type=\"button\" class=\"btn ghost\" id=\"qRestore\">Zurück nach Alfah</button>";
+    h += linksHtml(r);
+    h += "</div>";
+    if (r.tab === "alfah" && r.state === "bereit") h += "<div class=\"muted small\" style=\"margin:-8px 0 16px\">Wenn Vorbereitet und Geliefert beide gesetzt sind, wandert die Zeile automatisch nach Alfah Geliefert.</div>";
+
+    h += "<div class=\"sec\"><h4>Bearbeiten</h4><div class=\"fgrid\">";
+    FIELDS.forEach(function (fd) {
+      if (fd.alfah && !isAlfah) return;
+      h += fieldHtml("ed_", fd, r[fd.k]);
+    });
+    if (isAlfah && !tab.archive) {
+      h += "<label class=\"field\"><span>Status</span>" + stateSelect("ed_state", r.state) + "</label>";
+    }
+    h += "</div><div class=\"form-actions\"><button type=\"button\" class=\"btn\" id=\"edSave\">Speichern</button></div></div>";
+    h += "</div><div class=\"dcol\">";
+    h += "<div class=\"sec\"><h4>Überblick</h4>" + kv([
+      ["Status", isAlfah ? statePill(r) : "<span class=\"pill t-" + r.state + "\">" + esc(stateLabel(r)) + "</span>", true],
+      ["Info", r.info],
+      ["Datum", (r.date || "–") + (r.time ? " " + r.time : "") + (r.daysOpen != null ? "  ·  vor " + r.daysOpen + " Tagen" : "")],
+      ["Wer", r.who],
+      ["Auftrag", r.orderId],
+      ["Hersteller", r.brand],
+      ["Blatt", tab.sheet + " · Zeile " + r.row],
+      ["Name", "<span class=\"strong\">" + esc(r.name || "–") + "</span>", true, true]
+    ], true) + "</div>";
+    var rel = relatedRows(r);
+    if (rel.length) {
+      h += "<div class=\"sec\"><h4>Weitere Teile (gleicher Auftrag / Stock-ID / R-Nummer)</h4>";
+      rel.forEach(function (x) { h += miniRow(x); });
+      h += "</div>";
+    }
+    h += "</div></div>";
+    showDrawer(title, sub, h, false);
+
+    var minis = $("drawerBody").querySelectorAll(".mini[data-u]");
+    for (var i = 0; i < minis.length; i++) {
+      minis[i].onclick = function () { var x = S.idx[this.getAttribute("data-u")]; if (x) openEntry(x); };
+    }
+    if ($("qGreen")) $("qGreen").onclick = function () {
+      var btn = this;
+      btn.disabled = true;
+      call("rtpQuickSetGreen", [r.row, ident(r)], function (res) {
+        toast(rowLabel(r) + " auf Grün gesetzt" + (res.movedTo === "geliefert" ? " · nach Alfah Geliefert verschoben" : ""), "ok");
+        closeDrawer();
+        load(false);
+      }, function () { btn.disabled = false; });
+    };
+    if ($("qRestore")) $("qRestore").onclick = function () {
+      var btn = this;
+      if (!confirm(rowLabel(r) + " zurück in den Tab Alfah verschieben?")) return;
+      btn.disabled = true;
+      call("rtpRestoreAlfahRow", [r.tab, r.row, ident(r)], function () {
+        toast(rowLabel(r) + " zurück nach Alfah verschoben", "ok");
+        closeDrawer();
+        load(false);
+      }, function () { btn.disabled = false; });
+    };
+    $("edSave").onclick = function () {
+      var patch = {};
+      var any = false;
+      FIELDS.forEach(function (fd) {
+        if (fd.alfah && !isAlfah) return;
+        var el = $("ed_" + fd.k);
+        if (!el) return;
+        var v = el.value.trim();
+        if (fd.upper) v = v.toUpperCase();
+        if (v !== (r[fd.k] || "")) { patch[fd.k] = v; any = true; }
+      });
+      var stEl = $("ed_state");
+      if (stEl && stEl.value !== r.state) { patch.state = stEl.value; any = true; }
+      if (!any) return toast("Keine Änderungen.");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Speichere…";
+      call("rtpUpdateEntry", [r.tab, r.row, ident(r), patch], function (res) {
+        var msg = "Gespeichert · " + rowLabel(r);
+        if (res.movedTo === "geliefert") msg += " · nach Alfah Geliefert verschoben";
+        if (res.movedTo === "abgelehnt") msg += " · nach Alfah Abgelehnt verschoben";
+        toast(msg, "ok");
+        closeDrawer();
+        load(false);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Speichern";
+      });
+    };
+  }
+
+  function fsec(n, title, sub, body) {
+    return "<div class=\"fsec\"><div class=\"fsec-h\"><span class=\"step\">" + n + "</span><div><div class=\"fsec-t\">" + esc(title) + "</div>" +
+      (sub ? "<div class=\"fsec-s\">" + esc(sub) + "</div>" : "") + "</div></div><div class=\"fsec-b\"><div class=\"fgrid\">" + body + "</div></div></div>";
+  }
+
+  function openNew(key) {
+    var tab = S.data.tabs[key];
+    if (!tab || tab.archive) return;
+    S.drawer = { type: "new", tab: key };
+    var isAlfah = tab.kind === "alfah";
+    var pick = function (k) { return FIELDS.filter(function (f) { return f.k === k; })[0]; };
+    var h = "<div class=\"form nice-form\">";
+    h += "<div class=\"form-intro\"><div class=\"form-intro-t\">Neuer Eintrag · " + esc(tab.label) + "</div><div class=\"form-intro-s\">Legt eine neue Zeile im Blatt „" + esc(tab.sheet) +
+      "“ an, im gleichen Format wie die Bots. Datum und Uhrzeit leer lassen = jetzt. Nach dem Eintragen bleiben Auftrag, Lieferant und Hersteller stehen, damit du weitere Teile vom gleichen Auftrag schnell nachtragen kannst.</div></div>";
+    var b1 = fieldHtml("nw_", pick("orderId"), "") + fieldHtml("nw_", pick("stockId"), "");
+    if (isAlfah) b1 += fieldHtml("nw_", pick("rNumber"), "");
+    b1 += fieldHtml("nw_", pick("article"), "") + fieldHtml("nw_", pick("name"), "");
+    h += fsec(1, "Teil", isAlfah ? "R-Nummer + Teilenummer verhindern Doppelte" : "Mindestens Stock-ID, Teilenummer oder Name", b1);
+    var b2 = fieldHtml("nw_", pick("supplier"), isAlfah ? "" : (tab.defaultSupplier || "")) + fieldHtml("nw_", pick("brand"), "") + fieldHtml("nw_", pick("who"), S.data.defaultWho || "") +
+      fieldHtml("nw_", pick("date"), "") + fieldHtml("nw_", pick("time"), "");
+    h += fsec(2, "Herkunft", "Lieferant, Hersteller, wer und wann", b2);
+    var b3 = "";
+    if (isAlfah) b3 += "<label class=\"field\"><span>Status</span>" + stateSelect("nw_state", "offen") + "</label>";
+    b3 += fieldHtml("nw_", pick("info"), "");
+    if (isAlfah) b3 += "<label class=\"chk\"><input type=\"checkbox\" id=\"nw_vorbereitet\"> Vorbereitet</label>";
+    if (isAlfah) b3 += "<label class=\"chk\"><input type=\"checkbox\" id=\"nw_geliefert\"> Geliefert</label>";
+    h += fsec(3, "Status", isAlfah ? "Offen = noch keine Antwort von Alfah" : "", b3);
+    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn ghost\" id=\"nwClear\">Leeren</button><button type=\"button\" class=\"btn\" id=\"nwSave\">Eintragen</button></div>";
+    h += "</div>";
+    showDrawer("<span>+ Neuer Eintrag</span>" + tabPill(key), tab.sheet, h, true);
+
+    $("nwClear").onclick = function () { openNew(key); };
+    $("nwSave").onclick = function () {
+      var form = {};
+      ["orderId", "stockId", "rNumber", "article", "name", "supplier", "brand", "who", "date", "time", "info"].forEach(function (k) {
+        var el = $("nw_" + k);
+        if (el) form[k] = el.value.trim();
+      });
+      if (form.stockId) form.stockId = form.stockId.toUpperCase();
+      if (form.rNumber) form.rNumber = form.rNumber.toUpperCase();
+      if ($("nw_state")) form.state = $("nw_state").value;
+      form.vorbereitet = !!($("nw_vorbereitet") && $("nw_vorbereitet").checked);
+      form.geliefert = !!($("nw_geliefert") && $("nw_geliefert").checked);
+      if (isAlfah && !form.rNumber && !form.stockId && !form.article) return toast("R-Nummer, Stock-ID oder Teilenummer fehlt.", "err");
+      if (!isAlfah && !form.stockId && !form.article && !form.name) return toast("Stock-ID, Teilenummer oder Name fehlt.", "err");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Trage ein…";
+      call("rtpCreateEntry", [key, form], function (res) {
+        toast((form.rNumber || form.stockId || form.article || form.name) + " eingetragen (Zeile " + res.row + ")" + (res.movedTo ? " · nach " + (res.movedTo === "geliefert" ? "Alfah Geliefert" : "Alfah Abgelehnt") + " verschoben" : ""), "ok");
+        ["rNumber", "article", "name", "info"].forEach(function (k) {
+          var el = $("nw_" + k);
+          if (el) { el.value = ""; autoGrow(el); }
+        });
+        var first = $(isAlfah ? "nw_rNumber" : "nw_article");
+        if (first) first.focus();
+        btn.disabled = false;
+        btn.textContent = "Eintragen";
+        load(false);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Eintragen";
+      });
+    };
+  }
+
+  function openRueck() {
+    S.drawer = { type: "rueck" };
+    var h = "<div class=\"form nice-form\">";
+    h += "<div class=\"form-intro\"><div class=\"form-intro-t\">Rücksendung eintragen</div><div class=\"form-intro-s\">R-Nummern einfügen, die Alfah im System vorbereitet hat und zu denen keine Mail kam. Jede gefundene Zeile im Tab Alfah wird grün mit Info „Alfah System“. Orange Zeilen werden ebenfalls grün. Nur die Zahl reicht auch (z. B. 96434).</div></div>";
+    h += "<textarea id=\"rkRaw\" class=\"mono\" style=\"min-height:170px\" placeholder=\"R-96434&#10;R-96432&#10;96431\"></textarea>";
+    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn green\" id=\"rkGo\">Grün setzen</button></div>";
+    h += "<div id=\"rkOut\"></div></div>";
+    showDrawer("<span>Rücksendung eintragen</span>" + tabPill("alfah"), "Manuell grün setzen", h, true);
+    $("rkRaw").focus();
+    $("rkGo").onclick = function () {
+      var raw = $("rkRaw").value;
+      if (!raw.trim()) return toast("Keine R-Nummer eingetragen.", "err");
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = "Schreibe…";
+      call("rtpApplyRuecksendung", [raw], function (res) {
+        btn.disabled = false;
+        btn.textContent = "Grün setzen";
+        var lines = [];
+        (res.done || []).forEach(function (x) { lines.push("Grün: " + x); });
+        (res.skipped || []).forEach(function (x) { lines.push(x); });
+        (res.missing || []).forEach(function (x) { lines.push("Nicht in Alfah: " + x); });
+        if (res.deliveredMoved) lines.push(res.deliveredMoved + " Zeile(n) nach Alfah Geliefert verschoben");
+        if (!lines.length) lines.push("Keine R-Nummer erkannt.");
+        var bad = (res.missing || []).length || (res.skipped || []).length;
+        $("rkOut").innerHTML = "<div class=\"res-box " + (bad ? "warn" : "ok") + "\">" + esc(lines.join("\n")) + "</div>";
+        if ((res.done || []).length) toast((res.done || []).length + " R-Nummer(n) grün gesetzt", "ok");
+        load(false);
+      }, function () {
+        btn.disabled = false;
+        btn.textContent = "Grün setzen";
+      });
+    };
+  }
+
+  function openMailCfg() {
+    var d = S.data;
+    if (!d) return;
+    S.drawer = { type: "mail" };
+    var same = norm(d.effectiveUser) === norm(d.mailInbox);
+    var h = "<div class=\"form nice-form\">";
+    h += "<div class=\"form-intro\"><div class=\"form-intro-t\">Mail-Scan</div><div class=\"form-intro-s\">Der Scan liest die RETOURE-Mails im Postfach <b>" + esc(d.mailInbox) +
+      "</b> und färbt die Alfah-Zeilen (orange = veranlasst, grün = Label / Abholung, rot = abgelehnt). Danach werden abgelehnte Zeilen nach Alfah Abgelehnt und fertige Zeilen nach Alfah Geliefert verschoben.</div></div>";
+    h += kv([
+      ["Ziel-Postfach", d.mailInbox],
+      ["Panel läuft als", d.effectiveUser || "–"],
+      ["Scan über", d.mailBridgeUrl ? "Bridge (Alfah Retoure Sheet Web-App)" : "direkt in diesem Panel"]
+    ], false);
+    if (!same && !d.mailBridgeUrl) {
+      h += "<div class=\"res-box warn\">Das Panel läuft nicht unter " + esc(d.mailInbox) + ". Ohne Bridge liest der Scan das falsche Postfach. Trag unten die /exec-URL der Alfah Retoure Sheet Web-App ein (die gleiche URL wie in den Bots).</div>";
+    }
+    h += "<label class=\"field nice\"><span class=\"flabel\">Bridge-URL (Alfah Retoure Sheet Web-App)</span><input id=\"mbUrl\" class=\"mono\" placeholder=\"https://script.google.com/.../exec\" value=\"" + esc(d.mailBridgeUrl || "") + "\"><small class=\"fhint\">Leer lassen = direkt scannen. Die Web-App muss die Version mit der Aktion <b>scanMail</b> haben.</small></label>";
+    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn\" id=\"mbSave\">Speichern</button></div></div>";
+    showDrawer("<span>Mail-Scan Einstellungen</span>", "", h, true);
+    $("mbSave").onclick = function () {
+      var btn = this;
+      btn.disabled = true;
+      call("rtpSaveMailBridge", [$("mbUrl").value.trim()], function (res) {
+        btn.disabled = false;
+        S.data.mailBridgeUrl = res.mailBridgeUrl || "";
+        toast(res.mailBridgeUrl ? "Bridge gespeichert" : "Bridge entfernt, Scan läuft direkt", "ok");
+        closeDrawer();
+      }, function () { btn.disabled = false; });
+    };
+  }
+
+  function runMailScan() {
+    if (S.scanBusy) return;
+    S.scanBusy = true;
+    var btn = $("btnMailScan");
+    btn.disabled = true;
+    btn.classList.add("loading");
+    var end = function () {
+      S.scanBusy = false;
+      btn.disabled = false;
+      btn.classList.remove("loading");
+    };
+    toast("Mail-Scan läuft… das kann bis zu einer Minute dauern.");
+    call("rtpScanMail", [], function (res) {
+      end();
+      var parts = [];
+      parts.push(Number(res.updated || 0) + " Zeile(n) aktualisiert");
+      if (res.moved) parts.push(res.moved + " nach Abgelehnt");
+      if (res.delivered) parts.push(res.delivered + " nach Geliefert");
+      parts.push(Number(res.mails || 0) + " R-Nummern in Mails");
+      toast("Mail-Scan (" + (res.via === "bridge" ? "Bridge" : "direkt") + "): " + parts.join(" · "), "ok");
+      load(false);
+    }, function () { end(); });
+  }
+
+  function setChkUi(uid, field, on, busy) {
+    var btns = document.querySelectorAll("[data-chk=\"" + field + "\"][data-u=\"" + uid.replace(/"/g, "\\\"") + "\"]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("on", !!on);
+      btns[i].classList.toggle("busy", !!busy);
+      var wrap = btns[i].parentNode;
+      if (wrap && wrap.classList && wrap.classList.contains("quick-chk")) wrap.classList.toggle("on", !!on);
+    }
+  }
+
+  function toggleChk(btn) {
+    var r = S.idx[btn.getAttribute("data-u")];
+    var field = btn.getAttribute("data-chk");
+    if (!r || btn.classList.contains("busy")) return;
+    var next = !r[field];
+    r[field] = next;
+    setChkUi(r.uid, field, next, true);
+    call("rtpToggleCheck", [r.tab, r.row, ident(r), field, next], function (res) {
+      setChkUi(r.uid, field, next, false);
+      var msg = (field === "geliefert" ? "Geliefert" : "Vorbereitet") + (next ? " gesetzt" : " entfernt") + " · " + rowLabel(r);
+      if (res.movedTo === "geliefert") msg += " · nach Alfah Geliefert verschoben";
+      else if (res.bothCheckedNotGreen) msg += " · noch nicht grün, bleibt in Alfah";
+      toast(msg, "ok");
+      if (res.movedTo && S.drawer && S.drawer.uid === r.uid) closeDrawer();
+      load(false);
+    }, function () {
+      r[field] = !next;
+      setChkUi(r.uid, field, !next, false);
+    });
+  }
+
+  document.addEventListener("click", function (e) {
+    var c = e.target && e.target.closest ? e.target.closest("[data-chk]") : null;
+    if (c) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleChk(c);
+      return;
+    }
+    var b = e.target && e.target.closest ? e.target.closest("[data-copy]") : null;
+    if (!b) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var val = b.getAttribute("data-copy");
+    if (copyText(val)) {
+      b.classList.add("copied");
+      setTimeout(function () { b.classList.remove("copied"); }, 1200);
+      toast(val + " kopiert", "ok");
+    } else {
+      toast("Kopieren nicht möglich", "err");
+    }
+  }, true);
+  document.addEventListener("input", function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains("grow-ta")) autoGrow(e.target);
+  });
+
+  $("btnRefresh").onclick = function () { load(true); };
+  $("btnRueckTop").onclick = openRueck;
+  $("btnMailScan").onclick = runMailScan;
+  $("btnMailCfg").onclick = openMailCfg;
+  $("sideToggle").onclick = function () { setSide(!document.body.classList.contains("side-collapsed")); };
+  try { setSide(localStorage.getItem("rtp_side") === "1"); } catch (e) {}
+  $("drawerClose").onclick = closeDrawer;
+  $("drawerBack").onclick = closeDrawer;
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeDrawer(); });
+
+  setInterval(function () {
+    if (document.hidden) return;
+    load(false);
+  }, AUTO_MS);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && Date.now() - (S.lastLoad || 0) > AUTO_MS) load(false);
+  });
+
+  var cached = readCache();
+  if (cached && cached.ok) {
+    S.fromCache = true;
+    applyData(cached);
+  }
+  load(!cached);
+})();
+</script>

@@ -1087,9 +1087,8 @@ var WM_GID = 891953845;
 var WM_TAB = "WM";
 var WM_TITLE = "WM Retouren";
 var WM_GREEN = "#18884a";
-var WM_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info", "Vorbereitet"];
-var WM_WIDTHS = [72, 78, 132, 120, 72, 84, 92, 76, 72, 96, 92];
-var WM_PREP_COL = 11;
+var WM_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info"];
+var WM_WIDTHS = [72, 78, 132, 120, 72, 84, 92, 76, 72, 96];
 
 function wmBook_() {
   return SpreadsheetApp.openById(ALFAH_SHEET_ID);
@@ -1109,8 +1108,6 @@ function wmTab_(ss) {
 function wmSheet_() {
   var sheet = wmTab_(wmBook_());
   sheet.setTabColor(WM_GREEN);
-  var title = String(sheet.getRange(1, 1).getValue() || "");
-  if (title && title !== WM_TITLE) return sheet;
   wmFitLayout_(sheet);
   return sheet;
 }
@@ -1182,14 +1179,6 @@ function wmClearExtra_(sheet) {
   extra.setBorder(false, false, false, false, false, false);
 }
 
-function wmPutCheck_(sheet, rowNumber) {
-  var box = sheet.getRange(rowNumber, WM_PREP_COL);
-  box.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
-  box.setHorizontalAlignment("center");
-  box.setVerticalAlignment("middle");
-  box.setFontSize(ALFAH_FONT);
-}
-
 function wmPaintRow_(sheet, rowNumber) {
   var rowRange = sheet.getRange(rowNumber, 1, 1, WM_HEADERS.length);
   rowRange.setBackground("#ffffff");
@@ -1201,7 +1190,6 @@ function wmPaintRow_(sheet, rowNumber) {
   rowRange.setBorder(true, true, true, true, true, true, "#d6deea", SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(rowNumber, 2).setFontWeight("bold");
   sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(WM_GREEN);
-  wmPutCheck_(sheet, rowNumber);
   sheet.autoResizeRows(rowNumber, 1);
 }
 
@@ -1216,7 +1204,6 @@ function wmStyleBody_(sheet) {
     var has = !!(String(keys[i][0] || "") || String(keys[i][1] || "") || String(keys[i][2] || "") || String(keys[i][3] || ""));
     var rowRange = sheet.getRange(rowNumber, 1, 1, WM_HEADERS.length);
     if (!has) {
-      sheet.getRange(rowNumber, WM_PREP_COL).clearDataValidations().clearContent();
       rowRange.setBackground(null);
       rowRange.setBorder(false, false, false, false, false, false);
       continue;
@@ -1385,9 +1372,8 @@ var AAG_GID = 0;
 var AAG_TAB = "KNOLL / AAG";
 var AAG_TITLE = "KNOLL / AAG Retouren";
 var AAG_NAVY = "#00244e";
-var AAG_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info", "Vorbereitet"];
-var AAG_WIDTHS = [72, 78, 132, 120, 72, 84, 92, 76, 72, 96, 92];
-var AAG_PREP_COL = 11;
+var AAG_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info"];
+var AAG_WIDTHS = [72, 78, 132, 120, 72, 84, 92, 76, 72, 96];
 
 function aagBook_() {
   return SpreadsheetApp.openById(ALFAH_SHEET_ID);
@@ -1407,8 +1393,6 @@ function aagTab_(ss) {
 function aagSheet_() {
   var sheet = aagTab_(aagBook_());
   sheet.setTabColor(AAG_NAVY);
-  var title = String(sheet.getRange(1, 1).getValue() || "");
-  if (title && title !== AAG_TITLE) return sheet;
   aagFitLayout_(sheet);
   return sheet;
 }
@@ -1424,14 +1408,6 @@ function aagClearExtra_(sheet) {
   extra.setBorder(false, false, false, false, false, false);
 }
 
-function aagPutCheck_(sheet, rowNumber) {
-  var box = sheet.getRange(rowNumber, AAG_PREP_COL);
-  box.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
-  box.setHorizontalAlignment("center");
-  box.setVerticalAlignment("middle");
-  box.setFontSize(ALFAH_FONT);
-}
-
 function aagPaintRow_(sheet, rowNumber) {
   var rowRange = sheet.getRange(rowNumber, 1, 1, AAG_HEADERS.length);
   rowRange.setBackground("#ffffff");
@@ -1443,7 +1419,6 @@ function aagPaintRow_(sheet, rowNumber) {
   rowRange.setBorder(true, true, true, true, true, true, "#d6deea", SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(rowNumber, 2).setFontWeight("bold");
   sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(AAG_NAVY);
-  aagPutCheck_(sheet, rowNumber);
   sheet.autoResizeRows(rowNumber, 1);
 }
 
@@ -1557,9 +1532,8 @@ var STA_GID = 441953307;
 var STA_TAB = "STA";
 var STA_TITLE = "STA Retouren";
 var STA_BLUE = "#1d4ed8";
-var STA_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info", "Vorbereitet"];
-var STA_WIDTHS = [110, 90, 140, 180, 90, 110, 92, 76, 90, 160, 92];
-var STA_PREP_COL = 11;
+var STA_HEADERS = ["Auftrag", "Stock-ID", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Info"];
+var STA_WIDTHS = [110, 90, 140, 180, 90, 110, 92, 76, 90, 160];
 
 function staBook_() {
   return SpreadsheetApp.openById(ALFAH_SHEET_ID);
@@ -1579,18 +1553,8 @@ function staTab_(ss) {
 function staSheet_() {
   var sheet = staTab_(staBook_());
   sheet.setTabColor(STA_BLUE);
-  var title = String(sheet.getRange(1, 1).getValue() || "");
-  if (title && title !== STA_TITLE) return sheet;
   staFitLayout_(sheet);
   return sheet;
-}
-
-function staPutCheck_(sheet, rowNumber) {
-  var box = sheet.getRange(rowNumber, STA_PREP_COL);
-  box.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
-  box.setHorizontalAlignment("center");
-  box.setVerticalAlignment("middle");
-  box.setFontSize(ALFAH_FONT);
 }
 
 function staPaintRow_(sheet, rowNumber) {
@@ -1604,11 +1568,11 @@ function staPaintRow_(sheet, rowNumber) {
   rowRange.setBorder(true, true, true, true, true, true, "#d6deea", SpreadsheetApp.BorderStyle.SOLID);
   sheet.getRange(rowNumber, 2).setFontWeight("bold");
   sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(STA_BLUE);
-  staPutCheck_(sheet, rowNumber);
   sheet.autoResizeRows(rowNumber, 1);
 }
 
 function staFitLayout_(sheet) {
+  aagClearExtra_(sheet);
   var titleRange = sheet.getRange(1, 1, 1, STA_HEADERS.length);
   wmUnmerge_(titleRange);
   titleRange.merge();
