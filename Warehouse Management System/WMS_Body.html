@@ -14,7 +14,6 @@
           <button type="button" class="topbar-action" onclick="openPzModal()">📄 Packzettel</button>
           <button type="button" class="topbar-action" onclick="openRaModal()">🛞 Reifen Ausgabe</button>
           <button type="button" class="topbar-action" id="castTopbarBtnOverlay" onclick="openWmsCastModal()">📱 Cast</button>
-          <button type="button" class="topbar-action topbar-action--last-regal" id="lastRegalTopBtn" onclick="showLastEndedRegal()" title="Letzten Regalplatz nach Auftrag beenden anzeigen">Letzte Stock Regal Platz anzeigen</button>
         </div>
         <div class="wms-nav-dropdown wms-nav-inline--standalone" id="wmsMainMenuWrap">
           <button type="button" class="wms-menutrigger btn-glow" id="wmsMainMenuTrigger" aria-expanded="false" aria-haspopup="true" aria-controls="wmsMainMenuPanel">
@@ -108,13 +107,6 @@
             </div>
             <div class="wms-menugroup wms-menugroup--actions" role="presentation">
               <div class="wms-menugroup-label">Schnellaktionen</div>
-              <button type="button" class="wms-menuitem wms-menuitem--flat" id="lastRegalMenuBtn" role="menuitem" onclick="showLastEndedRegal(); closeWmsMainMenu();">
-                <span class="wms-menuitem-icon">📍</span>
-                <span class="wms-menuitem-body">
-                  <span class="wms-menuitem-title">Letzte Stock Regal Platz anzeigen</span>
-                  <span class="wms-menuitem-sub" id="lastRegalMenuSub">Nach Auftrag beenden, nur auf Klick</span>
-                </span>
-              </button>
               <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsReloadLastOrder(); closeWmsMainMenu();">
                 <span class="wms-menuitem-icon">↻</span>
                 <span class="wms-menuitem-body">
@@ -129,13 +121,6 @@
                   <span class="wms-menuitem-sub">Refurbishment-Daten frisch holen</span>
                 </span>
               </button>
-              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsTestDymoPrint(); closeWmsMainMenu();">
-                <span class="wms-menuitem-icon">🖨️</span>
-                <span class="wms-menuitem-body">
-                  <span class="wms-menuitem-title">DYMO Test drucken</span>
-                  <span class="wms-menuitem-sub">Aktuellen Auftrag als Etikett</span>
-                </span>
-              </button>
               <button type="button" class="wms-menuitem wms-menuitem--flat wms-menuitem--panic" role="menuitem" onclick="wmsPanicReload(); closeWmsMainMenu();">
                 <span class="wms-menuitem-icon">🔄</span>
                 <span class="wms-menuitem-body">
@@ -144,50 +129,14 @@
                 </span>
               </button>
             </div>
-            <div class="wms-menugroup" role="presentation" translate="no">
-              <div class="wms-menugroup-label">Info</div>
-              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsChangelogModal(); closeWmsMainMenu();">
-                <span class="wms-menuitem-icon">📰</span>
-                <span class="wms-menuitem-body">
-                  <span class="wms-menuitem-title">Changelog</span>
-                  <span class="wms-menuitem-sub">Was war neu in welchem Build</span>
-                </span>
-              </button>
-              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsShortcutsModal(); closeWmsMainMenu();">
-                <span class="wms-menuitem-icon">⌨️</span>
-                <span class="wms-menuitem-body">
-                  <span class="wms-menuitem-title">Shortcuts</span>
-                  <span class="wms-menuitem-sub">Alle Tastenkombis auf einen Blick</span>
-                </span>
-              </button>
-            </div>
             <div class="wms-menugroup" role="presentation">
-              <div class="wms-menugroup-label">Darstellung</div>
-              <div class="wms-theme-toggle">
-                <span class="wms-theme-toggle-label">Dark / Light</span>
-                <button type="button" class="wms-theme-switch" id="wmsThemeSwitch" role="switch" aria-checked="false" aria-label="Design umschalten">
-                  <span class="wms-theme-thumb" aria-hidden="true"></span>
-                </button>
-              </div>
-            </div>
-            <div class="wms-menugroup" role="presentation" translate="no">
-              <div class="wms-menugroup-label">Sprache / Language</div>
-              <div class="wms-lang-dd" id="wmsLangDd">
-                <button type="button" class="wms-lang-trigger" id="wmsLangTrigger" aria-haspopup="listbox" aria-expanded="false">
-                  <span class="wms-lang-trigger-flag" id="wmsLangTriggerFlag">🇩🇪</span>
-                  <span class="wms-lang-trigger-text" id="wmsLangTriggerText">Deutsch</span>
-                  <span class="wms-lang-chevron" aria-hidden="true">▼</span>
-                </button>
-                <div class="wms-lang-panel" id="wmsLangPanel" role="listbox" hidden></div>
-              </div>
-              <div class="wms-lang-note">Automatische Übersetzung via Google · Original = Deutsch</div>
-              <div class="wms-theme-toggle wms-update-check-toggle" translate="no">
-                <span class="wms-theme-toggle-label" id="wmsUpdateCheckLabel">Update prüfen</span>
-                <button type="button" class="wms-theme-switch" id="wmsUpdateCheckSwitch" role="switch" aria-checked="false" aria-label="Manuell nach Update suchen" onclick="manualWmsUpdateCheck()">
-                  <span class="wms-theme-thumb" aria-hidden="true"></span>
-                </button>
-              </div>
-              <div class="wms-build-note" id="wmsBuildNote" translate="no">WMS build —</div>
+              <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsSettings(); closeWmsMainMenu();">
+                <span class="wms-menuitem-icon">⚙️</span>
+                <span class="wms-menuitem-body">
+                  <span class="wms-menuitem-title">Einstellungen</span>
+                  <span class="wms-menuitem-sub">Theme, Sprache, Extras</span>
+                </span>
+              </button>
             </div>
             <div class="wms-menugroup wms-menugroup--cast" role="presentation">
               <div class="wms-menugroup-label">Handy</div>
@@ -213,6 +162,16 @@
         <button type="button" class="cast-hud-pill" id="castHudPill" hidden onclick="openWmsCastModal()">
           <span class="cast-hud-dot" aria-hidden="true"></span>
           Handy verbunden
+        </button>
+        <button type="button" class="auto-dymo-badge" id="autoDymoBadge" onclick="toggleAutoDymoOnOpen()" title="Auto DYMO bei Stock-ID öffnen (Alt+D)">
+          <span class="auto-dymo-badge-dot" aria-hidden="true"></span>
+          <span class="auto-dymo-badge-label">Auto DYMO</span>
+          <span class="auto-dymo-badge-state" id="autoDymoBadgeState">AUS</span>
+        </button>
+        <button type="button" class="last-regal-badge" id="lastRegalBadge" hidden onclick="showLastEndedRegal()" title="Letzter Regalplatz nach Auftrag beenden">
+          <span class="last-regal-badge-kicker">Letzter Regalplatz</span>
+          <span class="last-regal-badge-value" id="lastRegalBadgeValue">—</span>
+          <span class="last-regal-badge-stock" id="lastRegalBadgeStock"></span>
         </button>
         <div class="topbar-cache-card" role="button" tabindex="0" title="Klicken, um Cache neu aufzubauen" onclick="if(window.wmsRebuildCache)window.wmsRebuildCache()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();if(window.wmsRebuildCache)window.wmsRebuildCache();}">
           <div class="topbar-cache-sub">
@@ -562,22 +521,22 @@
 </div>
 
 <div class="ra-modal" id="raModal">
-  <div class="ra-dialog">
+  <div class="ra-dialog wms-ov-skin">
     <div class="ra-header">
       <div class="wms-window-dots" aria-hidden="true" data-window="ra">
         <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="minimizeRaModal()"></span>
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeRaModal()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="ra-header-top">
+      <div class="ov-header-main">
         <div class="ra-title">🛞 Reifen Ausgabe</div>
         <span id="raTotalBadge" class="ra-total-badge ra-total-loading">...</span>
       </div>
-      <div class="ra-toolbar">
+      <div class="ov-header-actions">
         <button type="button" class="ra-alle-btn" id="raAlleBtn" onclick="stelleAlleReifenHud()">✅ Alle Reifen Stellen</button>
+        <button type="button" class="ov-hdr-btn" onclick="refreshRaModal()">🔄 Refresh</button>
         <button type="button" class="ra-btn ra-btn-print" onclick="printRaList()">🖨️ Drucken</button>
-        <button type="button" class="ra-btn ra-btn-refresh" onclick="refreshRaModal()">🔄 Refresh</button>
-        <button class="ra-close" onclick="minimizeRaModal()">Zurück</button>
+        <button type="button" class="ra-close" onclick="minimizeRaModal()">Zurück</button>
       </div>
     </div>
     <div class="ra-body">
@@ -599,23 +558,34 @@
 </div>
 
 <div class="nb-modal" id="nbModal">
-  <div class="nb-dialog">
+  <div class="nb-dialog wms-ov-skin">
     <div class="nb-header">
       <div class="wms-window-dots" aria-hidden="true" data-window="nb">
         <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeNbModal()"></span>
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeNbModal()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="nb-title">Nachbestellungen</div>
-      <span id="nbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
-      <button class="nb-close" onclick="minimizeNbModal()">Zurück</button>
+      <div class="ov-header-main">
+        <div class="nb-title">📦 Nachbestellungen</div>
+        <span id="nbTotalBadge" class="overview-total-badge">...</span>
+      </div>
+      <div class="ov-header-actions">
+        <button type="button" class="ov-hdr-btn" onclick="refreshNbModal()">🔄 Refresh</button>
+        <button type="button" class="nb-close" onclick="minimizeNbModal()">Zurück</button>
+      </div>
     </div>
-    <div class="nb-toolbar">
-      <div class="nb-search-wrap">
-        <input type="text" id="nbSearchInput" placeholder="STOCK-ID & Artikel Nummer Suchen..." autocomplete="off">
+    <div class="nb-toolbar ov-controls-row">
+      <div class="nb-search-wrap ov-search-wrap">
+        <span class="ov-search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="nbSearchInput" placeholder="Stock-ID oder Artikel-Nr. suchen..." autocomplete="off">
         <div class="nb-autocomplete-list" id="nbAutocompleteList"></div>
       </div>
-      <button type="button" onclick="refreshNbModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <div class="nb-komplett-toggle">
+        <span class="nb-komplett-toggle-label">Zeige Komplett angelieferte ebenfalls</span>
+        <button type="button" class="wms-theme-switch" id="nbShowKomplettSwitch" role="switch" aria-checked="false" aria-label="Komplett angelieferte anzeigen" onclick="toggleNbShowKomplett()">
+          <span class="wms-theme-thumb" aria-hidden="true"></span>
+        </button>
+      </div>
     </div>
     <div class="nb-body">
       <table class="nb-table">
@@ -689,20 +659,25 @@
 </div>
 
 <div class="nb-modal pz-modal" id="pzModal">
-  <div class="nb-dialog pz-dialog">
+  <div class="nb-dialog pz-dialog wms-ov-skin">
     <div class="nb-header">
       <div class="wms-window-dots" aria-hidden="true" data-window="pz">
         <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closePzModal()"></span>
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizePzModal()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="nb-title">📄 Packzettel &amp; Belege</div>
-      <span id="pzTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;">...</span>
-      <button type="button" onclick="refreshPzModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
-      <button class="nb-close" onclick="minimizePzModal()">Zurück</button>
+      <div class="ov-header-main">
+        <div class="nb-title">📄 Packzettel &amp; Belege</div>
+        <span id="pzTotalBadge" class="overview-total-badge">...</span>
+      </div>
+      <div class="ov-header-actions">
+        <button type="button" class="ov-hdr-btn" onclick="refreshPzModal()">🔄 Refresh</button>
+        <button type="button" class="nb-close" onclick="minimizePzModal()">Zurück</button>
+      </div>
     </div>
-    <div class="nb-toolbar">
-      <div class="nb-search-wrap">
+    <div class="nb-toolbar ov-controls-row">
+      <div class="nb-search-wrap ov-search-wrap">
+        <span class="ov-search-icon" aria-hidden="true">🔍</span>
         <input type="text" id="pzSearchInput" placeholder="Bestellnr / Referenz / Stock-ID / Kennzeichen suchen..." autocomplete="off" oninput="filterPzBySearch()">
       </div>
     </div>
@@ -733,17 +708,21 @@
 </div>
 
 <div class="reifen-modal" id="reifenModal">
-  <div class="reifen-dialog">
+  <div class="reifen-dialog wms-ov-skin">
     <div class="reifen-header">
       <div class="wms-window-dots" aria-hidden="true" data-window="reifen">
         <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeReifenModal()"></span>
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeReifenModal()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="reifen-title">Reifen Annahme</div>
-      <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
-      <button type="button" onclick="refreshReifenModal()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:12px;padding:10px 18px;font-size:13px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Cache</button>
-      <button type="button" class="reifen-close" id="reifenMinimizeBtn" onclick="minimizeReifenModal()">Zurück</button>
+      <div class="ov-header-main">
+        <div class="reifen-title">🛞 Reifen Annahme</div>
+        <span class="reifen-cache-hud" id="reifenCacheHud">Cache: —</span>
+      </div>
+      <div class="ov-header-actions">
+        <button type="button" class="ov-hdr-btn" onclick="refreshReifenModal()">🔄 Cache</button>
+        <button type="button" class="reifen-close" id="reifenMinimizeBtn" onclick="minimizeReifenModal()">Zurück</button>
+      </div>
     </div>
     <div class="reifen-body-outer">
     <div class="reifen-body">
@@ -986,24 +965,28 @@
 </div>
 
 <div class="nb-modal" id="wssEinbuchenModal">
-  <div class="nb-dialog">
+  <div class="nb-dialog wms-ov-skin">
     <div class="nb-header">
       <div class="wms-window-dots" aria-hidden="true" data-window="wssEinbuchen">
         <span class="wms-window-dot wms-window-dot--close" title="Schließen" onclick="closeWssEinbuchenModal()"></span>
         <span class="wms-window-dot wms-window-dot--min" title="Minimieren" onclick="minimizeWssEinbuchenModal()"></span>
         <span class="wms-window-dot wms-window-dot--idle"></span>
       </div>
-      <div class="nb-title">🪟 WSS Einbuchen</div>
-      <button class="nb-close" onclick="minimizeWssEinbuchenModal()">Zurück</button>
-    </div>
-    <div class="nb-toolbar">
-      <div class="nb-search-wrap wss-eb-search-wrap">
-        <span class="wss-eb-search-icon" aria-hidden="true">🔍</span>
-        <input type="text" id="wssEbSearchInput" placeholder="Stock-ID, Artikel-Nr. oder Belegnummer scannen / eingeben..." autocomplete="off" oninput="filterWssEbBySearch()" onkeydown="onWssEbSearchKeydown(event)">
-        <button type="button" class="wss-eb-search-clear" id="wssEbSearchClear" onclick="clearWssEbSearch()" aria-label="Suche leeren" style="display:none;">✕</button>
+      <div class="ov-header-main">
+        <div class="nb-title">🪟 WSS Einbuchen</div>
+        <span id="wssEbTotalBadge" class="overview-total-badge">—</span>
       </div>
-      <span id="wssEbTotalBadge" style="padding:8px 16px;border-radius:999px;background:rgba(234,88,12,0.12);border:2px solid rgba(234,88,12,0.26);color:var(--wms-orange);font-weight:800;font-size:16px;letter-spacing:0.8px;white-space:nowrap;">—</span>
-      <button type="button" onclick="refreshWssEbBelege()" style="background:rgba(20,184,166,0.12);color:var(--wms-blue);border:1px solid rgba(20,184,166,0.2);border-radius:14px;padding:12px 22px;font-size:16px;font-weight:800;cursor:pointer;white-space:nowrap;">🔄 Refresh</button>
+      <div class="ov-header-actions">
+        <button type="button" class="ov-hdr-btn" onclick="refreshWssEbBelege()">🔄 Refresh</button>
+        <button type="button" class="nb-close" onclick="minimizeWssEinbuchenModal()">Zurück</button>
+      </div>
+    </div>
+    <div class="nb-toolbar ov-controls-row">
+      <div class="nb-search-wrap wss-eb-search-wrap ov-search-wrap">
+        <span class="ov-search-icon" aria-hidden="true">🔍</span>
+        <input type="text" id="wssEbSearchInput" placeholder="Stock-ID, Artikel-Nr. oder Belegnummer scannen / eingeben..." autocomplete="off" oninput="filterWssEbBySearch()" onkeydown="onWssEbSearchKeydown(event)">
+        <button type="button" class="ov-search-clear" id="wssEbSearchClear" onclick="clearWssEbSearch()" aria-label="Suche leeren" style="display:none;">✕</button>
+      </div>
     </div>
     <div class="pz-split">
       <div class="pz-list-wrap">
@@ -1081,6 +1064,94 @@
   </div>
 </div>
 
+<div class="nb-choose-modal wms-settings-modal" id="wmsSettingsModal" aria-hidden="true" onclick="if(event.target===this)closeWmsSettings()">
+  <div class="nb-choose-dialog wms-settings-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title">Einstellungen</div>
+      <button type="button" class="nb-choose-x" onclick="closeWmsSettings()" title="Schließen">✕</button>
+    </div>
+    <div class="wms-settings-body">
+      <div class="wms-menugroup" role="presentation">
+        <div class="wms-menugroup-label">Darstellung</div>
+        <div class="wms-theme-toggle">
+          <span class="wms-theme-toggle-label">Dark / Light</span>
+          <button type="button" class="wms-theme-switch" id="wmsThemeSwitch" role="switch" aria-checked="false" aria-label="Design umschalten">
+            <span class="wms-theme-thumb" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <div class="wms-menugroup" role="presentation" translate="no">
+        <div class="wms-menugroup-label">Sprache / Language</div>
+        <div class="wms-lang-dd" id="wmsLangDd">
+          <button type="button" class="wms-lang-trigger" id="wmsLangTrigger" aria-haspopup="listbox" aria-expanded="false">
+            <span class="wms-lang-trigger-flag" id="wmsLangTriggerFlag">🇩🇪</span>
+            <span class="wms-lang-trigger-text" id="wmsLangTriggerText">Deutsch</span>
+            <span class="wms-lang-chevron" aria-hidden="true">▼</span>
+          </button>
+          <div class="wms-lang-panel" id="wmsLangPanel" role="listbox" hidden></div>
+        </div>
+        <div class="wms-lang-note">Automatische Übersetzung via Google · Original = Deutsch</div>
+        <div class="wms-theme-toggle wms-update-check-toggle" translate="no">
+          <span class="wms-theme-toggle-label" id="wmsUpdateCheckLabel">Update prüfen</span>
+          <button type="button" class="wms-theme-switch" id="wmsUpdateCheckSwitch" role="switch" aria-checked="false" aria-label="Manuell nach Update suchen" onclick="manualWmsUpdateCheck()">
+            <span class="wms-theme-thumb" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="wms-build-note" id="wmsBuildNote" translate="no">WMS build —</div>
+      </div>
+      <div class="wms-menugroup" role="presentation" translate="no">
+        <div class="wms-menugroup-label">Info</div>
+        <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsChangelogModal();">
+          <span class="wms-menuitem-icon">📰</span>
+          <span class="wms-menuitem-body">
+            <span class="wms-menuitem-title">Changelog</span>
+            <span class="wms-menuitem-sub">Was war neu in welchem Build</span>
+          </span>
+        </button>
+        <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="openWmsShortcutsModal();">
+          <span class="wms-menuitem-icon">⌨️</span>
+          <span class="wms-menuitem-body">
+            <span class="wms-menuitem-title">Shortcuts</span>
+            <span class="wms-menuitem-sub">Alle Tastenkombis auf einen Blick</span>
+          </span>
+        </button>
+      </div>
+      <div class="wms-menugroup" role="presentation">
+        <div class="wms-menugroup-label">Extras</div>
+        <div class="wms-theme-toggle">
+          <span class="wms-theme-toggle-label">Auto DYMO Druck bei Stock-ID öffnen <span class="auto-dymo-state" id="wmsAutoDymoState">AUS</span></span>
+          <button type="button" class="wms-theme-switch" id="wmsAutoDymoSwitch" role="switch" aria-checked="false" aria-label="Auto DYMO an oder aus" onclick="toggleAutoDymoOnOpen()">
+            <span class="wms-theme-thumb" aria-hidden="true"></span>
+          </button>
+        </div>
+        <div class="wms-lang-note">Alt+D schaltet das an und aus. Stückzahl kommt aus dem DYMO Feld im HUD. An = druckt sobald der Auftrag da ist, Auftrag beenden druckt dann nicht nochmal. Aus = beenden druckt wie bisher.</div>
+        <button type="button" class="wms-menuitem wms-menuitem--flat" role="menuitem" onclick="wmsTestDymoPrint(); closeWmsSettings();">
+          <span class="wms-menuitem-icon">🖨️</span>
+          <span class="wms-menuitem-body">
+            <span class="wms-menuitem-title">DYMO Test drucken</span>
+            <span class="wms-menuitem-sub">Aktuellen Auftrag als Etikett</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="nb-choose-modal" id="nbTeilweiseWarnModal" aria-hidden="true">
+  <div class="nb-choose-dialog">
+    <div class="nb-choose-head">
+      <div class="nb-choose-title" id="nbTeilweiseWarnTitle">Erst den Kommentar</div>
+      <button type="button" class="nb-choose-x" onclick="closeNbTeilweiseWarn()" title="Schließen">✕</button>
+    </div>
+    <div class="nb-choose-sub" id="nbTeilweiseWarnSub"></div>
+    <div class="nb-choose-actions">
+      <button type="button" class="nb-choose-btn nb-choose-btn--refurb" onclick="closeNbTeilweiseWarn()">
+        <span class="nb-choose-btn-txt">Zum Kommentar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="nb-choose-modal" id="regalRequiredModal" aria-hidden="true">
   <div class="nb-choose-dialog">
     <div class="nb-choose-head">
@@ -1103,8 +1174,8 @@
   <div class="regal-scan-card">
     <div class="regal-scan-icon">📷</div>
     <div class="regal-scan-title">Regal scannen</div>
-    <div class="regal-scan-hint">Box ins Regal stellen und den Regal-Barcode scannen…</div>
-    <input type="text" id="regalScanInput" class="regal-scan-input" placeholder="Regal Barcode…" autocomplete="off" spellcheck="false">
+    <div class="regal-scan-hint">Box ins Regal stellen und den Regal-Barcode scannen… oder tippen, z.B. 22 = 2.2</div>
+    <input type="text" id="regalScanInput" class="regal-scan-input" placeholder="Regal Barcode oder 22…" autocomplete="off" spellcheck="false">
     <div class="regal-scan-status" id="regalScanStatus">Warte auf Scan…</div>
     <button type="button" class="regal-scan-close" onclick="closeRegalScan()">✖ Abbrechen</button>
   </div>

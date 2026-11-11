@@ -951,7 +951,7 @@
   function normalizeScannedRegal(raw) {
     var s = String(raw == null ? '' : raw).trim();
     if(!s) return '';
-    var m = s.match(/(\d+)\s*\.\s*(\d+)/);
+    var m = s.match(/(\d+)\s*[.,]\s*(\d+)/) || s.match(/^(?:regal\s*)?(\d)(\d)$/i);
     if(!m) return '';
     var day = parseInt(m[1], 10);
     var slot = parseInt(m[2], 10);
@@ -1652,6 +1652,11 @@
       closeKommentarVerlauf();
       return;
     }
+    if (wmsElIsOpen('wmsSettingsModal')) {
+      consumeEsc();
+      closeWmsSettings();
+      return;
+    }
     if (wmsElIsOpen('wmsShortcutsModal')) {
       consumeEsc();
       closeWmsShortcutsModal();
@@ -1694,6 +1699,11 @@
       consumeEsc();
       closeRegalScan();
       focusSearchBar();
+      return;
+    }
+    if (wmsElIsOpen('nbTeilweiseWarnModal')) {
+      consumeEsc();
+      closeNbTeilweiseWarn();
       return;
     }
     if (wmsElIsOpen('regalRequiredModal')) {
@@ -3259,7 +3269,7 @@
       nbFilteredEntries = nbAllEntries;
       nbDataReady = true;
       setNbChooserCache(res.entries || []);
-      document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+      document.getElementById('nbTotalBadge').innerText = nbListBadgeText(nbAllEntries);
       nbLagerortOptions = res.lagerortOptions || [];
       nbStatusOptions = res.statusOptions || [];
       if(document.getElementById('nbSearchInput').value.trim()) {
@@ -3270,7 +3280,7 @@
       applyNbPendingFocus();
     }).withFailureHandler(function(err) {
       document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
-    }).getNachbestellungen();
+    }).getNachbestellungen(!!nbShowKomplett);
   }
 
   function openNbForStock(stockId) {
@@ -3284,10 +3294,88 @@
   var nbChooserCache = [];
   var nbChooserCacheReady = false;
   var nbChooserCacheLoading = false;
+  var nbChooserCacheReq = 0;
+
+  var nbShowKomplett = false;
+  try { nbShowKomplett = localStorage.getItem('wms_nb_show_komplett') === '1'; } catch (eNbKomplett) {}
 
   function setNbChooserCache(entries) {
-    nbChooserCache = entries || [];
+    var list = entries || [];
+    var open = [];
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i].closed) open.push(list[i]);
+    }
+    nbChooserCache = open;
     nbChooserCacheReady = true;
+  }
+
+  function nbListBadgeText(entries) {
+    var list = entries || [];
+    var open = 0;
+    var komp = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (list[i] && list[i].closed) komp++;
+      else open++;
+    }
+    if (nbShowKomplett && komp) return open + ' offen · ' + komp + ' komplett';
+    return open + ' offen';
+  }
+
+  function syncNbKomplettSwitch() {
+    var sw = document.getElementById('nbShowKomplettSwitch');
+    if (!sw) return;
+    sw.setAttribute('aria-checked', nbShowKomplett ? 'true' : 'false');
+  }
+
+  var nbKomplettBusy = false;
+
+  function setNbKomplettLoading(on) {
+    nbKomplettBusy = !!on;
+    var sw = document.getElementById('nbShowKomplettSwitch');
+    if (!sw) return;
+    sw.classList.toggle('is-loading', !!on);
+    sw.disabled = !!on;
+  }
+
+  function toggleNbShowKomplett() {
+    nbShowKomplett = !nbShowKomplett;
+    try { localStorage.setItem('wms_nb_show_komplett', nbShowKomplett ? '1' : '0'); } catch (eNbKomplettSet) {}
+    syncNbKomplettSwitch();
+    var wantKomplett = nbShowKomplett;
+    var req = ++nbChooserCacheReq;
+    nbChooserCacheLoading = true;
+    setNbKomplettLoading(true);
+    document.getElementById('nbTableBody').innerHTML = hudLoadingRowHtml(8, wantKomplett ? 'Lade inkl. Komplett angelieferte…' : 'Lade nur offene…');
+    document.getElementById('nbTotalBadge').innerHTML = '<span class="hud-spin hud-spin--sm"></span><span style="margin-left:6px">Lade…</span>';
+    closeNbAutocomplete();
+    google.script.run.withSuccessHandler(function(res) {
+      if (req !== nbChooserCacheReq) return;
+      nbChooserCacheLoading = false;
+      setNbKomplettLoading(false);
+      if (!res || !res.success) {
+        document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Fehler: ' + escapeHtml((res && res.message) || 'Unbekannt') + '</td></tr>';
+        document.getElementById('nbTotalBadge').innerText = 'Fehler';
+        return;
+      }
+      nbAllEntries = res.entries || [];
+      nbFilteredEntries = nbAllEntries;
+      nbSessionActive = true;
+      nbDataReady = true;
+      setNbChooserCache(nbAllEntries);
+      if (res.lagerortOptions) nbLagerortOptions = res.lagerortOptions;
+      if (res.statusOptions) nbStatusOptions = res.statusOptions;
+      document.getElementById('nbTotalBadge').innerText = nbListBadgeText(nbAllEntries);
+      filterNbBySearch();
+      var komp = 0;
+      for (var i = 0; i < nbAllEntries.length; i++) if (nbAllEntries[i] && nbAllEntries[i].closed) komp++;
+      showStickyToast('ok', wantKomplett ? 'Komplett angelieferte AN' : 'Komplett angelieferte AUS', wantKomplett ? (komp + ' komplett angelieferte mit in der Liste.') : 'Nur noch die offenen in der Liste.');
+    }).withFailureHandler(function(err) {
+      if (req !== nbChooserCacheReq) return;
+      nbChooserCacheLoading = false;
+      setNbKomplettLoading(false);
+      document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err && err.message ? err.message : String(err)) + '</td></tr>';
+      document.getElementById('nbTotalBadge').innerText = 'Fehler';
+    }).getNachbestellungen(wantKomplett);
   }
 
   function applyNbCachePayload(res) {
@@ -3302,27 +3390,34 @@
     var modal = document.getElementById('nbModal');
     var open = !!(modal && modal.classList.contains('open'));
     var active = document.activeElement;
-    var editing = !!(open && active && modal.contains(active) && active.id !== 'nbSearchInput');
+    var editing = !!(open && active && modal.contains(active) && active.id !== 'nbSearchInput'
+      && (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable));
     var nbb = document.getElementById('nbTotalBadge');
     if(nbb && !editing) {
       var cur = String(nbb.textContent || '');
-      if(!nbb.querySelector('.hud-spin') && (cur.indexOf('offen') !== -1 || cur.indexOf('Lade') !== -1 || !cur.trim())) {
-        nbb.textContent = entries.length + ' offen';
+      if(!nbb.querySelector('.hud-spin') && (cur.indexOf('offen') !== -1 || cur.indexOf('Lade') !== -1 || cur.indexOf('komplett') !== -1 || !cur.trim())) {
+        nbb.textContent = nbListBadgeText(entries);
       }
     }
     if(open && !editing) filterNbBySearch();
   }
 
   function loadNbChooserCache(force) {
-    if(nbChooserCacheLoading) return;
+    if(nbKomplettBusy) return;
+    if(nbChooserCacheLoading && !force) return;
     if(nbChooserCacheReady && !force) return;
+    var req = ++nbChooserCacheReq;
+    var wantKomplett = !!nbShowKomplett;
     nbChooserCacheLoading = true;
     google.script.run.withSuccessHandler(function(res) {
+      if (req !== nbChooserCacheReq) return;
       nbChooserCacheLoading = false;
+      if (nbKomplettBusy || wantKomplett !== !!nbShowKomplett) return;
       if(res && res.success) applyNbCachePayload(res);
     }).withFailureHandler(function() {
+      if (req !== nbChooserCacheReq) return;
       nbChooserCacheLoading = false;
-    }).getNachbestellungen();
+    }).getNachbestellungen(wantKomplett);
   }
 
   function closeNbChooser() {
@@ -3656,6 +3751,7 @@
   }
 
   function renderNbTable(entries) {
+    if (nbKomplettBusy) return;
     var body = document.getElementById('nbTableBody');
     if(!entries || !entries.length) {
       nbDisplayEntries = [];
@@ -3685,7 +3781,7 @@
           + '</div>'
           + '</div>';
       }
-      html += '<tr class="nb-row" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
+      html += '<tr class="nb-row' + (e.closed ? ' is-komplett' : '') + '" style="cursor:pointer;' + rowStyle + '" onclick="toggleNbDetail(' + i + ')">'
         + '<td style="color:#F27420;font-weight:800;width:24px;" id="nb-chev-' + i + '">▶</td>'
         + '<td style="white-space:nowrap;">' + escapeHtml(e.date) + '</td>'
         + '<td style="color:#3FA0DB;font-weight:800;">' + escapeHtml(e.stockId) + '</td>'
@@ -3712,7 +3808,7 @@
         + '</div>'
         + '<div class="nb-detail-box nb-box-comment' + (showNbRegal ? ' is-teilweise' : '') + '" id="nb-comment-wrap-' + i + '">'
         +   '<div class="nb-detail-lbl">Kommentar — welche Teile schon da</div>'
-        +   '<textarea class="nb-edit-input nb-comment-input" id="nb-comment-' + i + '" rows="3" placeholder="z.B. Ölfilter da, Dichtung fehlt noch…" onclick="event.stopPropagation();">' + escapeHtml(kommText) + '</textarea>'
+        +   '<textarea class="nb-edit-input nb-comment-input" id="nb-comment-' + i + '" rows="3" placeholder="z.B. Ölfilter da, Dichtung fehlt noch…" onclick="event.stopPropagation();" oninput="nbKommentarDirty(' + i + ')">' + escapeHtml(kommText) + '</textarea>'
         +   '<button type="button" class="nb-save-btn" id="nb-comment-btn-' + i + '" onclick="saveNbKommentar(event,' + e.row + ',' + i + ')">Kommentar speichern</button>'
         + '</div>'
         + '<div class="nb-detail-actions">'
@@ -4314,11 +4410,84 @@
     }).updateNachbestellung(sheetRow, 'status', value, nbEnt.stockId || '', nbEnt.entryId || '');
   }
 
+  function nbKommentarSavedText(index) {
+    var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
+    return String(nbEnt.kommentar || '').trim();
+  }
+
+  function nbKommentarDraftText(index) {
+    var ta = document.getElementById('nb-comment-' + index);
+    if (!ta) return nbKommentarSavedText(index);
+    return String(ta.value || '').trim();
+  }
+
+  function nbTeilweiseCommentReady(index) {
+    var saved = nbKommentarSavedText(index);
+    if (!saved) return false;
+    return nbKommentarDraftText(index) === saved;
+  }
+
+  var nbTeilweiseWarnIndex = -1;
+
+  function nbKommentarDirty(index) {
+    var btn = document.getElementById('nb-comment-btn-' + index);
+    var wrap = document.getElementById('nb-comment-wrap-' + index);
+    var dirty = nbKommentarDraftText(index) !== nbKommentarSavedText(index);
+    if (btn) {
+      btn.classList.toggle('is-dirty', dirty);
+      btn.textContent = dirty ? 'Nicht gespeichert — jetzt speichern' : 'Kommentar speichern';
+    }
+    if (wrap && !dirty) wrap.classList.remove('is-warn');
+  }
+
+  function openNbTeilweiseWarn(index) {
+    nbTeilweiseWarnIndex = index;
+    var draft = nbKommentarDraftText(index);
+    var saved = nbKommentarSavedText(index);
+    var title = document.getElementById('nbTeilweiseWarnTitle');
+    var sub = document.getElementById('nbTeilweiseWarnSub');
+    var wrap = document.getElementById('nb-comment-wrap-' + index);
+    if (wrap) wrap.classList.add('is-warn');
+    if (!draft) {
+      if (title) title.textContent = 'Erst Kommentar füllen';
+      if (sub) sub.textContent = 'Teilweise angeliefert geht erst wenn im Kommentar steht welche Teile schon da sind und du auf Speichern gedrückt hast. Sonst weiß später keiner was eigentlich schon da ist.';
+    } else if (draft !== saved) {
+      if (title) title.textContent = 'Kommentar noch nicht gespeichert';
+      if (sub) sub.textContent = 'Steht nur im Feld, nicht im Sheet. Erst auf Kommentar speichern, dann nochmal Teilweise angeliefert.';
+    } else {
+      if (title) title.textContent = 'Erst Kommentar speichern';
+      if (sub) sub.textContent = 'Ohne gespeicherten Kommentar bleibt der Status wo er ist.';
+    }
+    var el = document.getElementById('nbTeilweiseWarnModal');
+    if (!el) return;
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+    wmsBeep('err');
+  }
+
+  function closeNbTeilweiseWarn() {
+    var el = document.getElementById('nbTeilweiseWarnModal');
+    if (el) {
+      el.classList.remove('open');
+      el.setAttribute('aria-hidden', 'true');
+    }
+    var idx = nbTeilweiseWarnIndex;
+    nbTeilweiseWarnIndex = -1;
+    if (idx < 0) return;
+    var ta = document.getElementById('nb-comment-' + idx);
+    if (ta) setTimeout(function() { try { ta.focus(); } catch (e) {} }, 40);
+  }
+
   function saveNbStatus(event, sheetRow, value, index) {
     if (event) { event.stopPropagation(); event.preventDefault(); }
     var nbEnt = (nbDisplayEntries && nbDisplayEntries[index]) ? nbDisplayEntries[index] : {};
     var sel = event ? event.target : null;
     var prevStatus = String(nbEnt.status || '');
+    if (nbIsTeilweiseStatus(value) && !nbTeilweiseCommentReady(index)) {
+      if (sel) sel.value = prevStatus;
+      openNbTeilweiseWarn(index);
+      return;
+    }
     if (nbIsKomplettStatus(value)) {
       if (nbEnt.stockId) prefetchNbCarol(nbEnt.stockId);
       scheduleNbKomplettCommit(sheetRow, value, index, sel, prevStatus);
@@ -4375,6 +4544,10 @@
           if (nbAllEntries[k].row === sheetRow) { nbAllEntries[k].kommentar = val; break; }
         }
         if (nbDisplayEntries && nbDisplayEntries[index]) nbDisplayEntries[index].kommentar = val;
+        nbKommentarDirty(index);
+        var wrapOk = document.getElementById('nb-comment-wrap-' + index);
+        if (wrapOk) wrapOk.classList.remove('is-warn');
+        if (String(val || '').trim()) closeNbTeilweiseWarn();
         var tbNbK = document.getElementById('nbTableBody');
         if (tbNbK && tbNbK.children[2 * index]) {
           var cellsK = tbNbK.children[2 * index].querySelectorAll('td');
@@ -4412,13 +4585,14 @@
       nbAllEntries = res.entries || [];
       nbFilteredEntries = nbAllEntries;
       nbDataReady = true;
-      document.getElementById('nbTotalBadge').innerText = nbAllEntries.length + ' offen';
+      setNbChooserCache(res.entries || []);
+      document.getElementById('nbTotalBadge').innerText = nbListBadgeText(nbAllEntries);
       nbLagerortOptions = res.lagerortOptions || [];
       nbStatusOptions = res.statusOptions || [];
       renderNbTable(nbAllEntries);
     }).withFailureHandler(function(err) {
       document.getElementById('nbTableBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:#f85149;padding:18px;">Serverfehler: ' + escapeHtml(err.message || String(err)) + '</td></tr>';
-    }).getNachbestellungen();
+    }).getNachbestellungen(!!nbShowKomplett);
   }
 
   var pzAllEntries = [];
@@ -7060,6 +7234,7 @@
         return;
       }
       currentReifenResult = res;
+      handleVerlaufSaveSuccess(res);
       statusEl.style.color = '#56d364';
       var finalMessage = '✅ ' + res.message;
       printReifenDymoLabels(tire.stockId, res.tireInfo || '', res.menge || tire.menge, res.regal || '', tireModelForSize(tire.groesse));
@@ -7843,6 +8018,7 @@
             return;
           }
           currentReifenResult = res;
+          handleVerlaufSaveSuccess(res);
           showReifenInfo(res);
           var finalMessage = "✅ " + res.message;
           var bookedSizeCanon = canonicalTireSize(res.tireInfo) || activeSizeCanon;
@@ -9052,6 +9228,7 @@
       }
       toggleUI(true);
       rememberPendingStellantisTracking(id);
+      maybeAutoDymoOnStockOpen(loadedStock);
 
       updatePzContext(id, res.kommBestellung);
       maybeShowPzPartsThenNb(id, { tagesliste: isRegalTagesliste(regalVal) });
@@ -9983,18 +10160,102 @@
     if (modal) modal.classList.remove('open');
   }
 
-  function updateLastRegalButton() {
-    var btn = document.getElementById('lastRegalTopBtn');
-    var sub = document.getElementById('lastRegalMenuSub');
-    var ready = !!(lastEndedRegal && lastEndedRegal.stockId);
-    var tip = ready
-      ? (lastEndedRegal.stockId + ' stand in ' + formatOldRegalDisplay(lastEndedRegal.regal))
-      : 'Noch kein Auftrag beendet';
-    if (btn) {
-      btn.classList.toggle('is-ready', ready);
-      btn.title = tip;
+  function isAutoDymoOnOpen() {
+    try { return localStorage.getItem('wms_auto_dymo_on_open') === '1'; } catch (e) { return false; }
+  }
+
+  function syncAutoDymoSwitch() {
+    var on = isAutoDymoOnOpen();
+    var sw = document.getElementById('wmsAutoDymoSwitch');
+    if (sw) sw.setAttribute('aria-checked', on ? 'true' : 'false');
+    var st = document.getElementById('wmsAutoDymoState');
+    if (st) {
+      st.textContent = on ? 'AN' : 'AUS';
+      st.classList.toggle('is-on', on);
     }
-    if (sub) sub.textContent = ready ? tip : 'Nach Auftrag beenden, nur auf Klick';
+    var badge = document.getElementById('autoDymoBadge');
+    if (badge) {
+      badge.classList.toggle('is-on', on);
+      badge.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    var bs = document.getElementById('autoDymoBadgeState');
+    if (bs) bs.textContent = on ? 'AN' : 'AUS';
+  }
+
+  function flashAutoDymoBadge() {
+    var badge = document.getElementById('autoDymoBadge');
+    if (!badge) return;
+    badge.classList.remove('is-flash');
+    void badge.offsetWidth;
+    badge.classList.add('is-flash');
+    setTimeout(function () { badge.classList.remove('is-flash'); }, 900);
+  }
+
+  function setAutoDymoOnOpen(on) {
+    try { localStorage.setItem('wms_auto_dymo_on_open', on ? '1' : '0'); } catch (e) {}
+    syncAutoDymoSwitch();
+  }
+
+  function toggleAutoDymoOnOpen() {
+    var on = !isAutoDymoOnOpen();
+    setAutoDymoOnOpen(on);
+    flashAutoDymoBadge();
+    if (typeof showStickyToast === 'function') {
+      showStickyToast('ok', on ? 'Auto DYMO AN' : 'Auto DYMO AUS', on
+        ? 'Stock-ID öffnen = Etiketten kommen von allein.'
+        : 'Auftrag beenden druckt wieder selbst.');
+    }
+    setStatus(on
+      ? 'Auto DYMO an. Beim Öffnen einer Stock-ID kommen die Etiketten von allein.'
+      : 'Auto DYMO aus. Auftrag beenden druckt wieder selbst.',
+      on ? '#56d364' : '#F27420');
+  }
+
+  function maybeAutoDymoOnStockOpen(stockId) {
+    if (!isAutoDymoOnOpen()) return;
+    var sid = normalizeStockInput(stockId);
+    if (!sid) return;
+    var printed = sendDymoPrint({ silent: true, requireInitials: false, stockId: sid });
+    if (!printed || printed.skipped) return;
+    if (printed.success) {
+      var n = parseInt(document.getElementById('dymoCount').value, 10);
+      if (isNaN(n) || n < 1) n = 1;
+      showStickyToast('ok', 'Auto DYMO', n + ' Etiketten für ' + sid);
+    } else {
+      showStickyToast('err', 'Auto DYMO', printed.message || 'Druck ging nicht raus');
+    }
+  }
+
+  function openWmsSettings() {
+    var el = document.getElementById('wmsSettingsModal');
+    if (!el) return;
+    syncAutoDymoSwitch();
+    el.classList.add('open');
+    el.setAttribute('aria-hidden', 'false');
+  }
+
+  function closeWmsSettings() {
+    var el = document.getElementById('wmsSettingsModal');
+    if (!el) return;
+    el.classList.remove('open');
+    el.setAttribute('aria-hidden', 'true');
+  }
+
+  function updateLastRegalButton() {
+    var badge = document.getElementById('lastRegalBadge');
+    var valueEl = document.getElementById('lastRegalBadgeValue');
+    var stockEl = document.getElementById('lastRegalBadgeStock');
+    var ready = !!(lastEndedRegal && lastEndedRegal.stockId);
+    if (!badge) return;
+    if (!ready) {
+      badge.hidden = true;
+      return;
+    }
+    var shown = formatOldRegalDisplay(lastEndedRegal.regal);
+    badge.hidden = false;
+    if (valueEl) valueEl.textContent = shown;
+    if (stockEl) stockEl.textContent = lastEndedRegal.stockId;
+    badge.title = lastEndedRegal.stockId + ' stand in ' + shown;
   }
 
   function rememberLastEndedRegal(oldRegal, stockId) {
@@ -10109,7 +10370,9 @@
       return { success: false };
     }
 
-    var dymoResult = sendDymoPrint({ silent: true, requireInitials: true });
+    var dymoResult = isAutoDymoOnOpen()
+      ? { success: true, skipped: true, message: 'Auto DYMO schon beim Öffnen' }
+      : sendDymoPrint({ silent: true, requireInitials: true });
     delete pzCarolDeliverQueue[stockId];
     var autoBase = String(currentCarolUrl || '').replace(/[?&]arasaka_[^=&]*=[^&]*/g, '').replace(/\?&/g, '?').replace(/[?&]$/, '');
     var autoUrl = autoBase + (autoBase.indexOf('?') >= 0 ? '&' : '?') + 'arasaka_auto=1';
@@ -10250,6 +10513,7 @@
     { keys: ['Strg', 'X'], where: 'Überall', text: 'Springt direkt in die Suchleiste und markiert den kompletten Inhalt – einfach lostippen oder scannen und die alte Stock-ID wird ersetzt.' },
     { keys: ['Strg', 'S'], where: 'Kommentarfeld', text: 'Speichert nur den Kommentartext – rührt Tagesliste, Regal oder die Farbe im Sheet nicht an. Reine Textspeicherung, sonst nichts.' },
     { keys: ['Alt', 'X'], where: 'Überall', text: 'Speichert Kommentar und Regal zusammen, gleicher Knopf wie „Kommentar + Regal speichern“. Ohne Regalplatz (z.B. 3.4) geht das nicht durch.' },
+    { keys: ['Alt', 'D'], where: 'Überall', text: 'Auto DYMO beim Öffnen einer Stock-ID an oder aus. An = Etiketten kommen von allein in der Stückzahl aus dem DYMO Feld, Auftrag beenden druckt dann nicht nochmal.' },
     { keys: ['Tab'], where: 'Kommentarfeld', text: 'Steht da ein grauer Textvorschlag? Tab drücken und der wird direkt übernommen.' },
     { keys: ['Esc'], where: 'Überall', text: 'Macht das, was gerade offen ist, wieder zu – Menüs, Fenster, Popups, einfach alles.' }
   ];
@@ -10297,6 +10561,12 @@
       e.preventDefault();
       e.stopPropagation();
       focusSearchBar({ select: true, delay: 0 });
+      return;
+    }
+    if ((e.key === 'd' || e.key === 'D') && e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleAutoDymoOnOpen();
       return;
     }
     if ((e.key === 'x' || e.key === 'X') && e.altKey && !e.ctrlKey && !e.metaKey) {
@@ -10352,11 +10622,13 @@
     panel.addEventListener('click', function(e) { e.stopPropagation(); });
     document.addEventListener('click', closeWmsMainMenu);
     document.addEventListener('keydown', function(e) {
-      if(e.key === 'Escape') { closeWmsMainMenu(); closeNbChooser(); closeKommentarVerlauf(); closeWmsShortcutsModal(); }
+      if(e.key === 'Escape') { closeWmsMainMenu(); closeNbChooser(); closeKommentarVerlauf(); closeWmsShortcutsModal(); closeWmsSettings(); }
     });
   })();
 
   restoreLastEndedRegal();
+  syncNbKomplettSwitch();
+  syncAutoDymoSwitch();
   loadRefurbishmentCache(true);
   loadKommentarVerlaufCache(true);
   startRefurbishmentBackgroundRefresh();

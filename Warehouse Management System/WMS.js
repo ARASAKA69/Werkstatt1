@@ -34,7 +34,18 @@ const WMS_CHANGELOG_HISTORY = [
     version: "2.2.28",
     date: "11.11.2026",
     notes:
-      "• Nachbestellung-Cache lädt jetzt zusammen mit dem Main-HUD-Cache: gleicher 75-Sekunden-Takt und bei jedem HUD-Cache-Reload. Liste und Auswahl bleiben damit gleich aktuell."
+      "• Nachbestellung Cache läuft jetzt mit dem Main HUD Cache mit, gleicher 75 Sekunden Takt. Wenn oben der Cache neu lädt, zieht die Nachbestellung gleich mit, sonst ist die Liste wieder alt.\n\n" +
+      "• Teilweise angeliefert geht nicht mehr einfach so. Erst reinschreiben welche Teile schon da sind, auf Kommentar speichern, dann erst den Status setzen. Ohne gespeicherten Kommentar kommt ne Warnung und der Status springt zurück.\n\n" +
+      "• Nachbestellung hat oben nen Schalter „Zeige Komplett angelieferte ebenfalls“. An = die stehen in der Liste, kann man anklicken und die Suche findet sie. Aus = nur die offenen, wie vorher.\n\n" +
+      "• Letzte Stock Regal Platz in der Sidebar ist weg. Steht oben rechts im Badge, größer und grün, da liest man's direkt ab.\n\n" +
+      "• Einstellungen ist ein eigener Menüpunkt. Theme, Sprache, Changelog, Shortcuts und Update-Check sind da drin, die Sidebar bleibt zum Arbeiten.\n\n" +
+      "• Extras: Auto DYMO bei Stock-ID öffnen, Alt+D an und aus. An = sobald der Auftrag im HUD da ist, druckt er die Stückzahl aus dem DYMO Feld. Auftrag beenden druckt dann nicht nochmal. Aus = beenden druckt wie bisher.\n\n" +
+      "• Oben in der Leiste gibts jetzt das Auto DYMO Badge. Grün + AN = druckt beim Öffnen, grau + AUS = aus. Draufklicken oder Alt+D schaltet um, blinkt kurz und kommt ne kurze Meldung, damit man sieht was jetzt Sache ist.\n\n" +
+      "• Nachbestellungen, Reifen Annahme, Reifen Ausgabe, Packzettel & Belege und WSS Einbuchen sehen jetzt aus wie die Übersicht. Gleiche Kopfzeile, gleiche Badges, Refresh oben rechts, Suchfeld mit Lupe und die Tabellen im gleichen Kasten-Look.\n\n" +
+      "• Main HUD hat jetzt auch den Übersicht-Look. Karten mit der gleichen Kopfzeile oben, Panels und Felder im gleichen Kasten-Style, Reifen/WSS/Regal Badges wie die Übersicht Badges. Oben rechts sind Handy, Auto DYMO, Letzter Regalplatz und Cache jetzt alle gleich hoch und im gleichen Kachel-Style.\n\n" +
+      "• Reifen da über die Reifen Annahme steht jetzt im Verlauf. Mit Email vom Bearbeiter, Größe, Stückzahl und dem Regal wo die Kiste steht. So sieht man immer wer die Reifen eingetragen hat.\n\n" +
+      "• Regal scannen oder tippen geht jetzt auch ohne Punkt. 22 = 2.2, 48 = 4.8 usw. Geht im HUD und im Handy Regal Scan.\n\n" +
+      "• Nachbestellung Schalter „Komplett angelieferte“: Fenster muss nicht mehr zu und wieder auf. Beim Umschalten kommt direkt Laden in der Liste und im Badge, dann baut sich die Liste neu auf + kurze Meldung. Der Schalter selbst ist jetzt schnell und ruckelt nicht mehr."
   },
   {
     version: "2.2.27",
@@ -348,8 +359,14 @@ const WMS_CHANGELOG_HISTORY = [
       "• Build-Nummer unten im Menü — weißt immer worauf du stehst"
   }
 ];
-const WMS_APP_VERSION = String((WMS_CHANGELOG_HISTORY[0] && WMS_CHANGELOG_HISTORY[0].version) || "2.1.0");
-const WMS_APP_CHANGELOG = String((WMS_CHANGELOG_HISTORY[0] && WMS_CHANGELOG_HISTORY[0].notes) || "");
+const WMS_APP_VERSION = "2.2.27";
+const WMS_APP_CHANGELOG = (function () {
+  var want = WMS_APP_VERSION;
+  for (var i = 0; i < WMS_CHANGELOG_HISTORY.length; i++) {
+    if (String(WMS_CHANGELOG_HISTORY[i].version) === want) return String(WMS_CHANGELOG_HISTORY[i].notes || "");
+  }
+  return String((WMS_CHANGELOG_HISTORY[0] && WMS_CHANGELOG_HISTORY[0].notes) || "");
+})();
 const GMAIL_LOOKUP_SHEET_ID = "16QFzXPUkxvpTHwSSAtjRAeKYb5YdrQPhUrBWInygASE";
 const GMAIL_LOOKUP_TAB = "Lookup";
 const PACKZETTEL_TAB = "Packzettel";
@@ -1512,6 +1529,7 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
       var regalLabel = "";
       var writtenComment = "";
       var reifenDaReady = false;
+      var verlaufEntry = null;
       if (hemauRow !== -1) {
         var oldLocation = String(sheetHemau.getRange(hemauRow, 28).getValue() || "").trim();
         regalLabel = formatReifenRegalLabel(oldLocation);
@@ -1531,6 +1549,8 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
           reifenDaReady = true;
           sheetHemau.getRange(hemauRow, 30).setValue("Werkstatt 1");
           hemauMsg = "Reifen als da gebucht & Refurbishment aktualisiert!";
+          var reifenTxt = [String(groesseVal || "").trim(), (String(lastIndexVal || "").trim() + String(gwIndexVal || "").trim())].filter(function (p) { return p; }).join(" ");
+          verlaufEntry = logReifenVerlauf_(stockId, "Reifen da // " + (reifenTxt ? reifenTxt + " · " : "") + mengeValNum + " Stk über Reifen Annahme", oldLocation);
         } else {
           sheetHemau.getRange(hemauRow, 30).setValue("Reifen nicht vorhanden");
           hemauMsg = "Reifen als fehlend gebucht & Refurbishment aktualisiert!";
@@ -1560,7 +1580,8 @@ function processReifenStock(tabName, stockId, isDelivered, sizeHint, allowPaketd
         reifenKontrolleAdded: !!(kontrolle && kontrolle.added),
         reifenKontrolleSkipped: !!(kontrolle && kontrolle.skipped),
         reifenDaReady: reifenDaReady,
-        kommAnlieferung: writtenComment
+        kommAnlieferung: writtenComment,
+        verlaufEntry: verlaufEntry
       };
     } catch (err) {
       return { success: false, message: "Fehler: " + err.message };
@@ -3445,6 +3466,22 @@ function logKommentarVerlauf_(stockId, oldText, newText, action, previousRegal) 
     var regalLabel = previousRegal === undefined ? "" : verlaufRegalBadgeLabel_(previousRegal);
     sheet.appendRow([tsStr, stockId, email, delta, action, regalLabel]);
     return { ts: tsStr, stockId: stockId, email: email, text: delta, action: action, regal: regalLabel };
+  } catch (e) {
+    return null;
+  }
+}
+
+function logReifenVerlauf_(stockId, text, previousRegal) {
+  try {
+    stockId = normalizeStockId(stockId);
+    if (!stockId || !text) return null;
+    var sheet = ensureKommentarVerlaufSheet_();
+    if (!sheet) return null;
+    var tsStr = formatVerlaufTimestamp_(new Date());
+    var email = getActiveUserEmail_();
+    var regalLabel = verlaufRegalBadgeLabel_(previousRegal);
+    sheet.appendRow([tsStr, stockId, email, text, "reifen-annahme", regalLabel]);
+    return { ts: tsStr, stockId: stockId, email: email, text: text, action: "reifen-annahme", regal: regalLabel };
   } catch (e) {
     return null;
   }
@@ -5608,7 +5645,7 @@ function getAagLieferscheinByLs(receiptNumber) {
     }
   }
 
-function getNachbestellungen() {
+function getNachbestellungen(includeKomplett) {
     try {
       var ss = SpreadsheetApp.openById(NACHBESTELL_SHEET_ID);
       var sheet = ss.getSheetByName(NACHBESTELL_TAB);
@@ -5665,7 +5702,9 @@ function getNachbestellungen() {
         if (!stockId) continue;
 
         var rawStatus = cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "";
-        if (nachbestellungIsClosedStatus(rawStatus)) continue;
+        var isClosed = nachbestellungIsClosedStatus(rawStatus);
+        var isKomplett = String(rawStatus || "").toLowerCase().indexOf("komplett angeliefert") !== -1;
+        if (isClosed && !(includeKomplett && isKomplett)) continue;
 
         var dateVal = cols.date !== undefined ? data[i][cols.date] : "";
         var dateStr = "";
@@ -5713,6 +5752,7 @@ function getNachbestellungen() {
           preis: cols.preis !== undefined ? String(data[i][cols.preis] || "").trim() : "",
           artikel: cols.artikel !== undefined ? String(data[i][cols.artikel] || "").trim() : "",
           status: cols.status !== undefined ? String(data[i][cols.status] || "").trim() : "",
+          closed: isClosed,
           regal: regalVal,
           kommentar: cols.kommentar !== undefined ? String(data[i][cols.kommentar] || "").trim() : ""
         });

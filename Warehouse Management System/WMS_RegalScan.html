@@ -584,7 +584,7 @@
     function normalizeRegal(raw) {
       var s = String(raw == null ? '' : raw).trim();
       if (!s) return '';
-      var m = s.match(/(\d+)\s*[.,]\s*(\d+)/);
+      var m = s.match(/(\d+)\s*[.,]\s*(\d+)/) || s.match(/^(?:regal\s*)?(\d)(\d)$/i);
       if (!m) return '';
       var day = parseInt(m[1], 10);
       var slot = parseInt(m[2], 10);
