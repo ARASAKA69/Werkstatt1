@@ -10,8 +10,7 @@
     writes: 0,
     writeSeq: 0,
     fromCache: false,
-    idx: {},
-    scanBusy: false
+    idx: {}
   };
 
   var STATE_INFO = {
@@ -973,61 +972,6 @@
     };
   }
 
-  function openMailCfg() {
-    var d = S.data;
-    if (!d) return;
-    S.drawer = { type: "mail" };
-    var same = norm(d.effectiveUser) === norm(d.mailInbox);
-    var h = "<div class=\"form nice-form\">";
-    h += "<div class=\"form-intro\"><div class=\"form-intro-t\">Mail-Scan</div><div class=\"form-intro-s\">Der Scan liest die RETOURE-Mails im Postfach <b>" + esc(d.mailInbox) +
-      "</b> und färbt die Alfah-Zeilen (orange = veranlasst, grün = Label / Abholung, rot = abgelehnt). Danach werden abgelehnte Zeilen nach Alfah Abgelehnt und fertige Zeilen nach Alfah Geliefert verschoben.</div></div>";
-    h += kv([
-      ["Ziel-Postfach", d.mailInbox],
-      ["Panel läuft als", d.effectiveUser || "–"],
-      ["Scan über", d.mailBridgeUrl ? "Bridge (Alfah Retoure Sheet Web-App)" : "direkt in diesem Panel"]
-    ], false);
-    if (!same && !d.mailBridgeUrl) {
-      h += "<div class=\"res-box warn\">Das Panel läuft nicht unter " + esc(d.mailInbox) + ". Ohne Bridge liest der Scan das falsche Postfach. Trag unten die /exec-URL der Alfah Retoure Sheet Web-App ein (die gleiche URL wie in den Bots).</div>";
-    }
-    h += "<label class=\"field nice\"><span class=\"flabel\">Bridge-URL (Alfah Retoure Sheet Web-App)</span><input id=\"mbUrl\" class=\"mono\" placeholder=\"https://script.google.com/.../exec\" value=\"" + esc(d.mailBridgeUrl || "") + "\"><small class=\"fhint\">Leer lassen = direkt scannen. Die Web-App muss die Version mit der Aktion <b>scanMail</b> haben.</small></label>";
-    h += "<div class=\"form-actions\"><button type=\"button\" class=\"btn\" id=\"mbSave\">Speichern</button></div></div>";
-    showDrawer("<span>Mail-Scan Einstellungen</span>", "", h, true);
-    $("mbSave").onclick = function () {
-      var btn = this;
-      btn.disabled = true;
-      call("rtpSaveMailBridge", [$("mbUrl").value.trim()], function (res) {
-        btn.disabled = false;
-        S.data.mailBridgeUrl = res.mailBridgeUrl || "";
-        toast(res.mailBridgeUrl ? "Bridge gespeichert" : "Bridge entfernt, Scan läuft direkt", "ok");
-        closeDrawer();
-      }, function () { btn.disabled = false; });
-    };
-  }
-
-  function runMailScan() {
-    if (S.scanBusy) return;
-    S.scanBusy = true;
-    var btn = $("btnMailScan");
-    btn.disabled = true;
-    btn.classList.add("loading");
-    var end = function () {
-      S.scanBusy = false;
-      btn.disabled = false;
-      btn.classList.remove("loading");
-    };
-    toast("Mail-Scan läuft… das kann bis zu einer Minute dauern.");
-    call("rtpScanMail", [], function (res) {
-      end();
-      var parts = [];
-      parts.push(Number(res.updated || 0) + " Zeile(n) aktualisiert");
-      if (res.moved) parts.push(res.moved + " nach Abgelehnt");
-      if (res.delivered) parts.push(res.delivered + " nach Geliefert");
-      parts.push(Number(res.mails || 0) + " R-Nummern in Mails");
-      toast("Mail-Scan (" + (res.via === "bridge" ? "Bridge" : "direkt") + "): " + parts.join(" · "), "ok");
-      load(false);
-    }, function () { end(); });
-  }
-
   function setChkUi(uid, field, on, busy) {
     var btns = document.querySelectorAll("[data-chk=\"" + field + "\"][data-u=\"" + uid.replace(/"/g, "\\\"") + "\"]");
     for (var i = 0; i < btns.length; i++) {
@@ -1086,8 +1030,6 @@
 
   $("btnRefresh").onclick = function () { load(true); };
   $("btnRueckTop").onclick = openRueck;
-  $("btnMailScan").onclick = runMailScan;
-  $("btnMailCfg").onclick = openMailCfg;
   $("sideToggle").onclick = function () { setSide(!document.body.classList.contains("side-collapsed")); };
   try { setSide(localStorage.getItem("rtp_side") === "1"); } catch (e) {}
   $("drawerClose").onclick = closeDrawer;

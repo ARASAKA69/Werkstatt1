@@ -1,13 +1,10 @@
-var RTP_VERSION = "1.0.1";
+var RTP_VERSION = "1.0.3";
 var RTP_ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3FA0DB"/><stop offset="1" stop-color="#1E56B8"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#b)"/><path d="M32 14 49 23v16L32 48 15 39V23Z" fill="#fff" fill-opacity=".14"/><path d="M15 23 32 32l17-9M32 32v16M23.2 18.6l17 9" fill="none" stroke="#fff" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="46" cy="46" r="11" fill="#F27420"/><path d="M50 42.5a5.2 5.2 0 1 0 .9 5.7" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round"/><path d="M50.6 39.6 51.2 43.4 47.6 44.2" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 var RTP_SHEET_ID = "1P8s15IFPyQb3OFkjW__YZZ9Q1-Qui9b4Y5k4RJMJtpc";
 var RTP_TZ = "Europe/Berlin";
 var RTP_INBOX = "ersatzteile.hemau@autohero.com";
 var RTP_LOCK_MS = 20000;
-var RTP_MAIL_BRIDGE_URL = "";
-var RTP_BRIDGE_PROP = "rtp_mail_bridge_url";
-var RTP_MAIL_PRIMED_PROP = "alfah_mail_primed_v3";
 
 var RTP_ALLOWED = [
   "francesco.berger@auto1.com",

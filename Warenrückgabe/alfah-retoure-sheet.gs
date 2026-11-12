@@ -95,6 +95,10 @@ function alfahHandle_(params) {
     if (action === "scanMail") {
       return alfahOut_(alfahScanMail());
     }
+    if (action === "scanStatus") {
+      var lastScanMs = Number(PropertiesService.getScriptProperties().getProperty("alfah_mail_last_scan_ms") || 0);
+      return alfahOut_({ ok: true, lastScanMs: lastScanMs, intervalMin: 30 });
+    }
     if (action === "oemSync") {
       return alfahOut_(alfahSyncOemTeile());
     }
@@ -814,7 +818,9 @@ function alfahScanMail() {
       alfahPaintRow_(sheet, rowNumber, paint, info, alfahThreadUrl_(hit.threadId, mailbox), alfahSearchUrl_(id[0], mailbox));
       updated++;
     }
-    PropertiesService.getScriptProperties().setProperty(ALFAH_MAIL_KEY, "1");
+    var props = PropertiesService.getScriptProperties();
+    props.setProperty(ALFAH_MAIL_KEY, "1");
+    props.setProperty("alfah_mail_last_scan_ms", String(Date.now()));
     var moved = alfahMoveRejected_(sheet);
     var delivered = alfahMoveDelivered_(sheet);
     var oem = null;
