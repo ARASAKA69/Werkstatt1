@@ -359,7 +359,7 @@ const WMS_CHANGELOG_HISTORY = [
       "• Build-Nummer unten im Menü — weißt immer worauf du stehst"
   }
 ];
-const WMS_APP_VERSION = "2.2.27";
+const WMS_APP_VERSION = "2.2.28";
 const WMS_APP_CHANGELOG = (function () {
   var want = WMS_APP_VERSION;
   for (var i = 0; i < WMS_CHANGELOG_HISTORY.length; i++) {
