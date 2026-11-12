@@ -940,9 +940,10 @@ function rtpScanMail() {
   var bridge = rtpMailBridgeUrl_();
   if (bridge) {
     try {
-      var sep = bridge.indexOf("?") >= 0 ? "&" : "?";
-      var resp = UrlFetchApp.fetch(bridge + sep + "action=scanMail", {
-        method: "get",
+      var resp = UrlFetchApp.fetch(bridge, {
+        method: "post",
+        contentType: "application/json",
+        payload: JSON.stringify({ action: "scanMail" }),
         muteHttpExceptions: true,
         followRedirects: true
       });
