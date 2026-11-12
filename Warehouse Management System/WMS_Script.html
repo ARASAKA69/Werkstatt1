@@ -10173,22 +10173,6 @@
       st.textContent = on ? 'AN' : 'AUS';
       st.classList.toggle('is-on', on);
     }
-    var badge = document.getElementById('autoDymoBadge');
-    if (badge) {
-      badge.classList.toggle('is-on', on);
-      badge.setAttribute('aria-pressed', on ? 'true' : 'false');
-    }
-    var bs = document.getElementById('autoDymoBadgeState');
-    if (bs) bs.textContent = on ? 'AN' : 'AUS';
-  }
-
-  function flashAutoDymoBadge() {
-    var badge = document.getElementById('autoDymoBadge');
-    if (!badge) return;
-    badge.classList.remove('is-flash');
-    void badge.offsetWidth;
-    badge.classList.add('is-flash');
-    setTimeout(function () { badge.classList.remove('is-flash'); }, 900);
   }
 
   function setAutoDymoOnOpen(on) {
@@ -10199,7 +10183,6 @@
   function toggleAutoDymoOnOpen() {
     var on = !isAutoDymoOnOpen();
     setAutoDymoOnOpen(on);
-    flashAutoDymoBadge();
     if (typeof showStickyToast === 'function') {
       showStickyToast('ok', on ? 'Auto DYMO AN' : 'Auto DYMO AUS', on
         ? 'Stock-ID öffnen = Etiketten kommen von allein.'
@@ -10513,6 +10496,7 @@
     { keys: ['Strg', 'X'], where: 'Überall', text: 'Springt direkt in die Suchleiste und markiert den kompletten Inhalt – einfach lostippen oder scannen und die alte Stock-ID wird ersetzt.' },
     { keys: ['Strg', 'S'], where: 'Kommentarfeld', text: 'Speichert nur den Kommentartext – rührt Tagesliste, Regal oder die Farbe im Sheet nicht an. Reine Textspeicherung, sonst nichts.' },
     { keys: ['Alt', 'X'], where: 'Überall', text: 'Speichert Kommentar und Regal zusammen, gleicher Knopf wie „Kommentar + Regal speichern“. Ohne Regalplatz (z.B. 3.4) geht das nicht durch.' },
+    { keys: ['Strg', 'Leertaste'], where: 'Überall', text: 'Speichert Kommentar und Regal zusammen, gleicher Knopf wie „Kommentar + Regal speichern“.' },
     { keys: ['Alt', 'D'], where: 'Überall', text: 'Auto DYMO beim Öffnen einer Stock-ID an oder aus. An = Etiketten kommen von allein in der Stückzahl aus dem DYMO Feld, Auftrag beenden druckt dann nicht nochmal.' },
     { keys: ['Tab'], where: 'Kommentarfeld', text: 'Steht da ein grauer Textvorschlag? Tab drücken und der wird direkt übernommen.' },
     { keys: ['Esc'], where: 'Überall', text: 'Macht das, was gerade offen ist, wieder zu – Menüs, Fenster, Popups, einfach alles.' }
@@ -10561,6 +10545,12 @@
       e.preventDefault();
       e.stopPropagation();
       focusSearchBar({ select: true, delay: 0 });
+      return;
+    }
+    if (e.code === 'Space' && (e.ctrlKey || e.metaKey) && !e.altKey) {
+      e.preventDefault();
+      e.stopPropagation();
+      saveKommentarUndRegalFlow();
       return;
     }
     if ((e.key === 'd' || e.key === 'D') && e.altKey && !e.ctrlKey && !e.metaKey) {
