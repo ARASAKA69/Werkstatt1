@@ -431,9 +431,12 @@
     restoreUi(st);
   }
 
-  function navItem(v, label, count, short, color, ready) {
+  var SPARK_SVG = "<svg class=\"nav-ico\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3c.9 4.6 2.5 6.2 7.1 7.1-4.6.9-6.2 2.5-7.1 7.1-.9-4.6-2.5-6.2-7.1-7.1 4.6-.9 6.2-2.5 7.1-7.1Z\"/><path d=\"M19 15c.4 1.8 1 2.4 2.8 2.8-1.8.4-2.4 1-2.8 2.8-.4-1.8-1-2.4-2.8-2.8 1.8-.4 2.4-1 2.8-2.8Z\"/></svg>";
+  var LENS_SVG = "<svg class=\"nav-ico\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><circle cx=\"11\" cy=\"11\" r=\"6.5\"/><path d=\"M16 16l4.5 4.5\"/></svg>";
+
+  function navItem(v, label, count, short, dotKey, ready, ico) {
     return "<button type=\"button\" class=\"nav-item" + (S.view === v ? " active" : "") + "\" data-view=\"" + esc(v) + "\" title=\"" + esc(label + (count ? " · " + count : "")) + "\">" +
-      (color ? "<span class=\"nav-dot\" style=\"background:" + esc(color) + "\"></span>" : "") +
+      (ico || (dotKey ? "<span class=\"nav-dot dot-" + esc(dotKey) + "\"></span>" : "")) +
       "<span class=\"nav-short\">" + esc(short) + "</span><span class=\"nav-label\">" + esc(label) + "</span>" +
       (count !== "" && count != null ? "<span class=\"nav-count" + (ready ? " ready" : "") + "\">" + esc(count) + "</span>" : "") + "</button>";
   }
@@ -444,8 +447,8 @@
     var total = 0;
     d.tabOrder.forEach(function (k) { total += tabs[k] ? tabs[k].rows.length : 0; });
     var h = "<div class=\"nav-group\">Panel</div>";
-    h += navItem("overview", "Übersicht", "", "ÜB");
-    h += navItem("all", "Alle durchsuchen", String(total), "SU");
+    h += navItem("overview", "Übersicht", "", "ÜB", "", false, SPARK_SVG);
+    h += navItem("all", "Alle durchsuchen", String(total), "SU", "", false, LENS_SVG);
     h += "<div class=\"nav-group\">Alfah</div>";
     ["alfah", "geliefert", "abgelehnt"].forEach(function (k) {
       var t = tabs[k];
@@ -456,13 +459,13 @@
         var pack = t.rows.filter(function (r) { return r.state === "bereit" && !r.vorbereitet; }).length;
         if (pack) { cnt = pack + " grün"; ready = true; }
       }
-      h += navItem("tab:" + k, t.label, cnt, t.code, t.color, ready);
+      h += navItem("tab:" + k, t.label, cnt, t.code, k, ready);
     });
     h += "<div class=\"nav-group\">Lieferanten</div>";
     ["wm", "aag", "sta"].forEach(function (k) {
       var t = tabs[k];
       if (!t) return;
-      h += navItem("tab:" + k, t.label, t.missing ? "fehlt" : String(t.rows.length), t.code, t.color, false);
+      h += navItem("tab:" + k, t.label, t.missing ? "fehlt" : String(t.rows.length), t.code, k, false);
     });
     $("nav").innerHTML = h;
     var btns = $("nav").querySelectorAll(".nav-item");
@@ -537,11 +540,11 @@
 
     var h = "<div class=\"grid kpis\">";
     h += kpi("Alfah aktiv", al.length, "Teile im Tab Alfah", "alfah:", "blue");
-    h += kpi("Ohne Antwort", cnt.offen || 0, old.length + " davon ≥ 14 Tage", "alfah:offen", "");
+    h += kpi("Ohne Antwort", cnt.offen || 0, old.length + " davon ≥ 14 Tage", "alfah:offen", old.length ? "violet" : "");
     h += kpi("Veranlasst", cnt.veranlasst || 0, "Retoure eingeleitet, kein Label", "alfah:veranlasst", "orange");
     h += kpi("Rücksendung bereit", cnt.bereit || 0, "grün · Label / Abholung da", "alfah:bereit", "green");
     h += kpi("Zum Packen", pack.length, "grün, noch nicht vorbereitet", "alfah:todoPack", pack.length ? "green" : "");
-    h += kpi("Wartet auf Abholung", ship.length, "vorbereitet, nicht geliefert", "alfah:todoShip", "");
+    h += kpi("Wartet auf Abholung", ship.length, "vorbereitet, nicht geliefert", "alfah:todoShip", ship.length ? "cyan" : "");
     h += kpi("Alfah Geliefert", gel, "Archiv", "geliefert:", "");
     h += kpi("Alfah Abgelehnt", abg, "Archiv (inkl. Storno)", "abgelehnt:", abg ? "red" : "");
     ["wm", "aag", "sta"].forEach(function (k) {

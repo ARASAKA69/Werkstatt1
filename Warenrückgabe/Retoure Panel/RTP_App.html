@@ -5,15 +5,21 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Retoure Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,<?= appIcon ?>">
   <?!= include("RTP_Styles"); ?>
 </head>
 <body>
+  <div class="ambient-bg" aria-hidden="true"></div>
   <div id="loadBar" class="loadbar on"><span></span></div>
   <div class="app">
     <aside class="side">
       <div class="brand">
-        <img class="brand-mark" alt="Retoure Panel" src="data:image/svg+xml;base64,<?= appIcon ?>">
+        <div class="brand-logo-wrap">
+          <img class="brand-mark" alt="Retoure Panel" src="data:image/svg+xml;base64,<?= appIcon ?>">
+        </div>
         <div class="brand-text">
           <span class="brand-title">Retoure Panel</span>
           <span class="brand-ver">v<?= appVersion ?></span>
@@ -25,7 +31,10 @@
       <nav id="nav" class="nav"></nav>
       <div class="side-foot">
         <div id="userLine" class="user-badge"></div>
-        <a id="sheetLink" class="muted small" href="#" target="_blank" rel="noopener">Sheet öffnen</a>
+        <a id="sheetLink" class="sheet-link" href="#" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h7v7"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
+          <span>Sheet öffnen</span>
+        </a>
         <p class="footnote">
           <span>Part of Warehouse Management System</span>
           <span>by Arasaka</span>
@@ -65,7 +74,7 @@
         <div id="drawerTitle" class="drawer-title"></div>
         <div id="drawerSub" class="muted small"></div>
       </div>
-      <button id="drawerClose" class="btn ghost icon" type="button">✕</button>
+      <button id="drawerClose" class="btn ghost icon" type="button" aria-label="Schließen">✕</button>
     </div>
     <div id="drawerBody" class="drawer-body"></div>
   </aside>
