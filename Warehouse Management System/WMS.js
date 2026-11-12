@@ -32,20 +32,20 @@ const WSS_CHAT_WEBHOOK_URL = "https://chat.googleapis.com/v1/spaces/AAQAClYphY0/
 const WMS_CHANGELOG_HISTORY = [
   {
     version: "2.2.28",
-    date: "11.11.2026",
+    date: "12.11.2026",
     notes:
       "• Nachbestellung Cache läuft jetzt mit dem Main HUD Cache mit, gleicher 75 Sekunden Takt. Wenn oben der Cache neu lädt, zieht die Nachbestellung gleich mit, sonst ist die Liste wieder alt.\n\n" +
       "• Teilweise angeliefert geht nicht mehr einfach so. Erst reinschreiben welche Teile schon da sind, auf Kommentar speichern, dann erst den Status setzen. Ohne gespeicherten Kommentar kommt ne Warnung und der Status springt zurück.\n\n" +
       "• Nachbestellung hat oben nen Schalter „Zeige Komplett angelieferte ebenfalls“. An = die stehen in der Liste, kann man anklicken und die Suche findet sie. Aus = nur die offenen, wie vorher.\n\n" +
       "• Letzte Stock Regal Platz in der Sidebar ist weg. Steht oben rechts im Badge, größer und grün, da liest man's direkt ab.\n\n" +
-      "• Einstellungen ist ein eigener Menüpunkt. Theme, Sprache, Changelog, Shortcuts und Update-Check sind da drin, die Sidebar bleibt zum Arbeiten.\n\n" +
+      "• Einstellungen ist ein eigener Menüpunkt. Theme, Sprache, Changelog, Shortcuts und Update-Check sind da drin, die Sidebar bleibt zum Arbeiten. Nur halt eben sortierter.\n\n" +
       "• Extras: Auto DYMO bei Stock-ID öffnen, Alt+D an und aus. An = sobald der Auftrag im HUD da ist, druckt er die Stückzahl aus dem DYMO Feld. Auftrag beenden druckt dann nicht nochmal. Aus = beenden druckt wie bisher.\n\n" +
-      "• Oben in der Leiste gibts jetzt das Auto DYMO Badge. Grün + AN = druckt beim Öffnen, grau + AUS = aus. Draufklicken oder Alt+D schaltet um, blinkt kurz und kommt ne kurze Meldung, damit man sieht was jetzt Sache ist.\n\n" +
+      "• Oben in der Leiste gibts jetzt das Auto DYMO Badge ebenfall. Grün + AN = druckt beim Öffnen, grau + AUS = aus. Draufklicken oder Alt+D schaltet um, blinkt kurz und kommt ne kurze Meldung, damit man sieht was jetzt Sache ist.\n\n" +
       "• Nachbestellungen, Reifen Annahme, Reifen Ausgabe, Packzettel & Belege und WSS Einbuchen sehen jetzt aus wie die Übersicht. Gleiche Kopfzeile, gleiche Badges, Refresh oben rechts, Suchfeld mit Lupe und die Tabellen im gleichen Kasten-Look.\n\n" +
       "• Main HUD hat jetzt auch den Übersicht-Look. Karten mit der gleichen Kopfzeile oben, Panels und Felder im gleichen Kasten-Style, Reifen/WSS/Regal Badges wie die Übersicht Badges. Oben rechts sind Handy, Auto DYMO, Letzter Regalplatz und Cache jetzt alle gleich hoch und im gleichen Kachel-Style.\n\n" +
       "• Reifen da über die Reifen Annahme steht jetzt im Verlauf. Mit Email vom Bearbeiter, Größe, Stückzahl und dem Regal wo die Kiste steht. So sieht man immer wer die Reifen eingetragen hat.\n\n" +
       "• Regal scannen oder tippen geht jetzt auch ohne Punkt. 22 = 2.2, 48 = 4.8 usw. Geht im HUD und im Handy Regal Scan.\n\n" +
-      "• Nachbestellung Schalter „Komplett angelieferte“: Fenster muss nicht mehr zu und wieder auf. Beim Umschalten kommt direkt Laden in der Liste und im Badge, dann baut sich die Liste neu auf + kurze Meldung. Der Schalter selbst ist jetzt schnell und ruckelt nicht mehr."
+      "• Nachbestellung Schalter „Komplett angelieferte“: Fenster muss nicht mehr zu und wieder auf. Beim Umschalten kommt direkt Laden in der Liste und im Badge, dann baut sich die Liste neu auf + kurze Meldung."
   },
   {
     version: "2.2.27",
