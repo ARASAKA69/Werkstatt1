@@ -142,7 +142,16 @@ function rtpStatePaintSpec_(stateKey) {
   if (stateKey === "vorbereitet_mail") return { text: "VORBEREITET", bg: RTP_ALFAH_YELLOW, fg: "#1f2933", defaultInfo: "" };
   if (stateKey === "abgelehnt") return { text: "ABGELEHNT", bg: RTP_ALFAH_RED, fg: "#ffffff", defaultInfo: "" };
   if (stateKey === "storno") return { text: "STORNO", bg: RTP_ALFAH_RED, fg: "#ffffff", defaultInfo: "" };
+  if (stateKey === "rueckfrage") return { text: "RÜCKFRAGE", bg: "#674ea7", fg: "#ffffff", defaultInfo: "Rückfrage beantworten" };
+  if (stateKey === "pruefung") return { text: "IN PRÜFUNG", bg: "#9fc5e8", fg: "#1f2933", defaultInfo: "in Prüfung" };
+  if (stateKey === "antwort") return { text: "ANTWORT PRÜFEN", bg: "#c27ba0", fg: "#ffffff", defaultInfo: "neue Antwort lesen" };
   return null;
+}
+
+function rtpEnsureAlfahCols_(sh) {
+  var max = sh.getMaxColumns();
+  if (max < RTP_ALFAH_COLS) sh.insertColumnsAfter(max, RTP_ALFAH_COLS - max);
+  return sh;
 }
 
 function rtpApplyAlfahState_(sheet, rowNumber, stateKey, infoOpt, keepMail) {
@@ -191,7 +200,7 @@ function rtpApplyAlfahState_(sheet, rowNumber, stateKey, infoOpt, keepMail) {
 function rtpRowBlank_(sheet, rowNumber, width) {
   var last = sheet.getLastRow();
   if (rowNumber < 1 || rowNumber > last) return false;
-  var vals = sheet.getRange(rowNumber, 1, 1, width || 16).getDisplayValues()[0];
+  var vals = sheet.getRange(rowNumber, 1, 1, width || RTP_ALFAH_COLS).getDisplayValues()[0];
   for (var i = 0; i < vals.length; i++) {
     if (String(vals[i] || "").trim()) return false;
   }
@@ -202,8 +211,9 @@ function rtpEnsureAlfahTab_(ss, cfg) {
   var sh = rtpFindSheet_(ss, cfg);
   if (!sh) sh = ss.insertSheet(cfg.sheet);
   sh.setTabColor(cfg.color);
+  rtpEnsureAlfahCols_(sh);
   if (!String(sh.getRange(1, 1).getValue() || "")) {
-    var titleRange = sh.getRange(1, 1, 1, 16);
+    var titleRange = sh.getRange(1, 1, 1, RTP_ALFAH_COLS);
     if (titleRange.isPartOfMerge()) titleRange.breakApart();
     titleRange.merge();
     titleRange
@@ -215,7 +225,7 @@ function rtpEnsureAlfahTab_(ss, cfg) {
       .setFontFamily("Arial")
       .setHorizontalAlignment("left")
       .setVerticalAlignment("middle");
-    var head = sh.getRange(2, 1, 1, 16);
+    var head = sh.getRange(2, 1, 1, RTP_ALFAH_COLS);
     head.setValues([RTP_ALFAH_HEADERS]);
     head.setBackground(cfg.color);
     head.setFontColor("#ffffff");
@@ -270,6 +280,8 @@ function rtpEnsureSupplierTab_(ss, cfg) {
 
 function rtpMoveAlfahRows_(sourceSheet, rows, destSheet, forceBg) {
   if (!rows || !rows.length) return { moved: 0, removed: 0 };
+  rtpEnsureAlfahCols_(sourceSheet);
+  rtpEnsureAlfahCols_(destSheet);
   var sorted = rows.slice().sort(function (a, b) { return a - b; });
   var srcLast = sourceSheet.getLastRow();
   var pairs = srcLast >= 3 ? sourceSheet.getRange(3, 3, srcLast - 2, 2).getValues() : [];
@@ -293,8 +305,8 @@ function rtpMoveAlfahRows_(sourceSheet, rows, destSheet, forceBg) {
     var pairRow = pairs[rowNumber - 3] || ["", ""];
     var key = String(pairRow[0] || "").toUpperCase() + "|" + String(pairRow[1] || "").toUpperCase();
     if (key !== "|" && have[key]) continue;
-    sourceSheet.getRange(rowNumber, 1, 1, 16).copyTo(destSheet.getRange(cursor, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
-    if (forceBg) destSheet.getRange(cursor, 1, 1, 16).setBackground(forceBg);
+    sourceSheet.getRange(rowNumber, 1, 1, RTP_ALFAH_COLS).copyTo(destSheet.getRange(cursor, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    if (forceBg) destSheet.getRange(cursor, 1, 1, RTP_ALFAH_COLS).setBackground(forceBg);
     try { destSheet.setRowHeight(cursor, sourceSheet.getRowHeight(rowNumber)); } catch (e) {}
     if (key !== "|") have[key] = true;
     moved++;
@@ -302,8 +314,8 @@ function rtpMoveAlfahRows_(sourceSheet, rows, destSheet, forceBg) {
   }
   for (var d = sorted.length - 1; d >= 0; d--) {
     var drop = sorted[d];
-    var above = drop <= 3 || rtpRowBlank_(sourceSheet, drop - 1, 16);
-    var span = above && rtpRowBlank_(sourceSheet, drop + 1, 16) ? 2 : 1;
+    var above = drop <= 3 || rtpRowBlank_(sourceSheet, drop - 1, RTP_ALFAH_COLS);
+    var span = above && rtpRowBlank_(sourceSheet, drop + 1, RTP_ALFAH_COLS) ? 2 : 1;
     sourceSheet.deleteRows(drop, span);
   }
   return { moved: moved, removed: sorted.length };
@@ -678,17 +690,18 @@ function rtpRestoreAlfahRow(fromTabKey, row, ident) {
     var src = rtpFindSheet_(ss, srcCfg);
     if (!src) throw new Error("Quell-Tab fehlt.");
     var targetRow = rtpLocateRow_(src, srcCfg, row, ident);
+    rtpEnsureAlfahCols_(src);
     var dest = rtpEnsureAlfahTab_(ss, rtpTabConfig_("alfah"));
     var cursor = rtpSupplierStartRow_(dest, 5);
-    src.getRange(targetRow, 1, 1, 16).copyTo(dest.getRange(cursor, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
+    src.getRange(targetRow, 1, 1, RTP_ALFAH_COLS).copyTo(dest.getRange(cursor, 1), SpreadsheetApp.CopyPasteType.PASTE_NORMAL, false);
     if (fromTabKey === "geliefert") {
       rtpPutAlfahChecks_(dest, cursor);
       dest.getRange(cursor, 16).setValue(false);
     } else {
       rtpApplyAlfahState_(dest, cursor, "offen", "", true);
     }
-    var above = targetRow <= 3 || rtpRowBlank_(src, targetRow - 1, 16);
-    var span = above && rtpRowBlank_(src, targetRow + 1, 16) ? 2 : 1;
+    var above = targetRow <= 3 || rtpRowBlank_(src, targetRow - 1, RTP_ALFAH_COLS);
+    var span = above && rtpRowBlank_(src, targetRow + 1, RTP_ALFAH_COLS) ? 2 : 1;
     src.deleteRows(targetRow, span);
     return { restoredRow: cursor };
   });

@@ -104,6 +104,14 @@ function rtpNorm_(s) {
     .toLowerCase();
 }
 
+function rtpStampMs_(text) {
+  var m = String(text || "").match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})(?:\D+(\d{1,2}):(\d{2}))?/);
+  if (!m) return 0;
+  var y = Number(m[3]);
+  if (y < 100) y += 2000;
+  return new Date(y, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0)).getTime();
+}
+
 function rtpIsDate_(v) {
   return Object.prototype.toString.call(v) === "[object Date]" && !isNaN(v.getTime());
 }
@@ -204,6 +212,9 @@ function rtpClassifyAlfah_(status, info, bgHex, tabKey) {
   if (tabKey === "abgelehnt" || st === "abgelehnt" || bg === RTP_ALFAH_RED) return "abgelehnt";
   if (st === "storno") return "storno";
   if (tabKey === "geliefert") return "geliefert";
+  if (st === "rückfrage" || st === "ruckfrage") return "rueckfrage";
+  if (st === "in prüfung" || st === "in prufung") return "pruefung";
+  if (st === "antwort prüfen" || st === "antwort prufen") return "antwort";
   if (bg === RTP_ALFAH_GREEN) return "bereit";
   if (bg === RTP_ALFAH_ORANGE) return "veranlasst";
   if (bg === RTP_ALFAH_YELLOW || st === "vorbereitet") return "vorbereitet_mail";
@@ -234,11 +245,12 @@ function rtpReadAlfahTab_(ss, cfg, todayIdx) {
   var last = sh.getLastRow();
   if (last < 3) return out;
   var count = last - 2;
-  var width = Math.max(16, Math.min(sh.getLastColumn(), 16));
+  var width = Math.min(sh.getMaxColumns(), RTP_ALFAH_COLS);
   var rng = sh.getRange(3, 1, count, width);
   var vals = rng.getValues();
   var disp = rng.getDisplayValues();
   var bgs = sh.getRange(3, 1, count, 1).getBackgrounds();
+  var chaseBgs = width >= 17 ? sh.getRange(3, 17, count, 1).getBackgrounds() : null;
   var richLinks = sh.getRange(3, 13, count, 2).getRichTextValues();
   var formulas = sh.getRange(3, 13, count, 2).getFormulas();
   for (var i = 0; i < count; i++) {
@@ -262,6 +274,11 @@ function rtpReadAlfahTab_(ss, cfg, todayIdx) {
     var geliefert = rtpChecked_(vals[i][15]);
     var bg = String(bgs[i][0] || "").trim().toLowerCase();
     var ms = rtpToMs_(vals[i][7], d[8]);
+    var mailAt = String(d[16] || "").trim();
+    var ask = String(d[17] || "").trim();
+    var mailText = String(d[18] || "").trim();
+    var chaseBg = chaseBgs ? String(chaseBgs[i][0] || "").trim().toLowerCase() : "";
+    var chase = chaseBg === RTP_ALFAH_RED ? "red" : (chaseBg === RTP_ALFAH_ORANGE ? "orange" : "");
     out.rows.push({
       row: 3 + i,
       tab: cfg.key,
@@ -284,6 +301,11 @@ function rtpReadAlfahTab_(ss, cfg, todayIdx) {
       geliefert: geliefert,
       bg: bg,
       state: rtpClassifyAlfah_(status, info, bg, cfg.key),
+      mailAt: mailAt,
+      mailAtMs: rtpStampMs_(mailAt),
+      ask: ask,
+      mailText: mailText,
+      chase: cfg.key === "alfah" ? chase : "",
       datumMs: ms,
       daysOpen: rtpDaysSince_(ms, todayIdx)
     });

@@ -688,6 +688,9 @@
   .bar > span.b-orange { background: linear-gradient(90deg, #f97316, #fbbf24); box-shadow: 0 0 10px rgba(251, 146, 60, 0.45); }
   .bar > span.b-yellow { background: linear-gradient(90deg, #eab308, #fde047); box-shadow: 0 0 10px rgba(250, 204, 21, 0.4); }
   .bar > span.b-red { background: linear-gradient(90deg, #ef4444, #f472b6); box-shadow: 0 0 10px rgba(248, 113, 113, 0.45); }
+  .bar > span.b-violet { background: linear-gradient(90deg, #7c3aed, #a78bfa); box-shadow: 0 0 10px rgba(167, 139, 250, 0.45); }
+  .bar > span.b-cyan { background: linear-gradient(90deg, #0891b2, #67e8f9); box-shadow: 0 0 10px rgba(103, 232, 249, 0.45); }
+  .bar > span.b-pink { background: linear-gradient(90deg, #db2777, #f9a8d4); box-shadow: 0 0 10px rgba(249, 168, 212, 0.45); }
   .bar-num { text-align: right; color: var(--muted); font-weight: 600; font-variant-numeric: tabular-nums; }
 
   .toolbar { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; margin-bottom: 14px; }
@@ -779,6 +782,12 @@
   tbody tr.st-vorbereitet_mail:hover { background: rgba(251, 191, 36, 0.15); }
   tbody tr.st-abgelehnt, tbody tr.st-storno { background: rgba(248, 113, 113, 0.08); box-shadow: inset 3px 0 0 #f87171; }
   tbody tr.st-abgelehnt:hover, tbody tr.st-storno:hover { background: rgba(248, 113, 113, 0.15); }
+  tbody tr.st-rueckfrage { background: rgba(167, 139, 250, 0.08); box-shadow: inset 3px 0 0 #a78bfa; }
+  tbody tr.st-rueckfrage:hover { background: rgba(167, 139, 250, 0.15); }
+  tbody tr.st-pruefung { background: rgba(103, 232, 249, 0.06); box-shadow: inset 3px 0 0 #67e8f9; }
+  tbody tr.st-pruefung:hover { background: rgba(103, 232, 249, 0.12); }
+  tbody tr.st-antwort { background: rgba(244, 114, 182, 0.08); box-shadow: inset 3px 0 0 #f472b6; }
+  tbody tr.st-antwort:hover { background: rgba(244, 114, 182, 0.15); }
   tbody tr.st-geliefert, tbody tr.st-done { box-shadow: inset 3px 0 0 rgba(52, 211, 153, 0.6); }
 
   td.wrap { white-space: normal; min-width: 140px; }
@@ -802,6 +811,12 @@
   .pill.t-bereit { background: rgba(16, 185, 129, 0.22); color: #6ee7b7; border-color: rgba(52, 211, 153, 0.5); box-shadow: 0 0 12px rgba(16, 185, 129, 0.24); }
   .pill.t-veranlasst { background: rgba(251, 146, 60, 0.22); color: #fed7aa; border-color: rgba(251, 146, 60, 0.5); box-shadow: 0 0 12px rgba(251, 146, 60, 0.2); }
   .pill.t-vorbereitet_mail { background: rgba(251, 191, 36, 0.22); color: #fde68a; border-color: rgba(251, 191, 36, 0.5); }
+  .pill.t-rueckfrage { background: rgba(124, 58, 237, 0.26); color: #ddd6fe; border-color: rgba(167, 139, 250, 0.55); box-shadow: 0 0 12px rgba(139, 92, 246, 0.25); }
+  .pill.t-pruefung { background: rgba(8, 145, 178, 0.22); color: #a5f3fc; border-color: rgba(103, 232, 249, 0.5); }
+  .pill.t-antwort { background: rgba(219, 39, 119, 0.24); color: #fbcfe8; border-color: rgba(244, 114, 182, 0.55); box-shadow: 0 0 12px rgba(236, 72, 153, 0.25); }
+  .mail-at { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; padding: 2px 7px; border-radius: 999px; border: 1px solid transparent; color: var(--muted, #94a3b8); }
+  .mail-at.warn { color: #fed7aa; background: rgba(249, 115, 22, 0.2); border-color: rgba(251, 146, 60, 0.5); }
+  .mail-at.bad { color: #fecaca; background: rgba(239, 68, 68, 0.24); border-color: rgba(248, 113, 113, 0.55); box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
   .pill.t-abgelehnt, .pill.t-storno { background: rgba(239, 68, 68, 0.24); color: #fecaca; border-color: rgba(248, 113, 113, 0.52); box-shadow: 0 0 12px rgba(239, 68, 68, 0.22); }
   .pill.t-geliefert { background: rgba(5, 150, 105, 0.24); color: #a7f3d0; border-color: rgba(52, 211, 153, 0.42); }
   .pill.t-done { background: rgba(52, 211, 153, 0.16); color: #6ee7b7; border-color: rgba(52, 211, 153, 0.38); }

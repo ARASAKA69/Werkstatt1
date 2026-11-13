@@ -139,8 +139,14 @@ function alfahSheet_() {
   return sheet;
 }
 
+function alfahEnsureCols_(sheet) {
+  var max = sheet.getMaxColumns();
+  if (max < ALFAH_LAST_COL) sheet.insertColumnsAfter(max, ALFAH_LAST_COL - max);
+}
+
 function alfahFitLayout_(sheet) {
-  var headers = ["Auftrag", "Stock-ID", "R-Nummer", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Status", "Info", "Mail", "Suche", "Vorbereitet", "Geliefert"];
+  var headers = ["Auftrag", "Stock-ID", "R-Nummer", "Teilenummer", "Name", "Lieferant", "Hersteller", "Datum", "Uhrzeit", "Wer", "Status", "Info", "Mail", "Suche", "Vorbereitet", "Geliefert", "Letzte Mail", "Nachfrage", "Mail-Text"];
+  alfahEnsureCols_(sheet);
   var titleRange = sheet.getRange(1, 1, 1, ALFAH_LAST_COL);
   if (titleRange.isPartOfMerge()) titleRange.breakApart();
   titleRange.merge();
@@ -178,6 +184,7 @@ function alfahFitLayout_(sheet) {
   body.setVerticalAlignment("middle");
   alfahFitChecks_(sheet, rows);
   alfahCompactLabels_(sheet, rows);
+  alfahFitExtraCols_(sheet, rows);
 }
 
 function alfahRowHasPart_(row) {
@@ -427,18 +434,28 @@ var ALFAH_LINK_COL = 13;
 var ALFAH_SEARCH_COL = 14;
 var ALFAH_PREP_COL = 15;
 var ALFAH_DELIVER_COL = 16;
-var ALFAH_LAST_COL = 16;
+var ALFAH_MAILAT_COL = 17;
+var ALFAH_ASK_COL = 18;
+var ALFAH_TEXT_COL = 19;
+var ALFAH_LAST_COL = 19;
 var ALFAH_FONT = 8;
-var ALFAH_WIDTHS = [60, 62, 64, 74, 100, 84, 68, 58, 38, 48, 80, 70, 36, 40, 48, 44];
+var ALFAH_WIDTHS = [60, 62, 64, 74, 100, 84, 68, 58, 38, 48, 80, 70, 36, 40, 48, 44, 78, 78, 320];
 var ALFAH_MAIL_KEY = "alfah_mail_primed_v3";
 var ALFAH_BOX_KEY = "alfah_mail_box";
+var ALFAH_CURSOR_KEY = "alfah_mail_cursor";
 var ALFAH_INBOX = "ersatzteile.hemau@autohero.com";
+var ALFAH_CHASE_DAYS = 7;
+var ALFAH_CHASE_RED = "#cc0000";
+var ALFAH_CHASE_ORANGE = "#e69138";
+var ALFAH_SCAN_BUDGET_MS = 240000;
+var ALFAH_FINAL = { RUECK: true, ABGELEHNT: true, STORNO: true, VORBEREITET: true };
 
 function onOpen() {
   try {
     SpreadsheetApp.getUi()
       .createMenu("Alfah Retouren")
       .addItem("Rücksendung eintragen", "alfahMarkRuecksendung")
+      .addItem("Nachfrage gesendet (markierte Zeilen)", "alfahMarkNachfrage")
       .addItem("Mails jetzt lesen", "alfahScanMail")
       .addItem("Mail-Scan alle 30 Minuten", "installAlfahMailScan")
       .addItem("OEM_Teile abgleichen", "alfahSyncOemTeileMenu")
@@ -446,6 +463,18 @@ function onOpen() {
   } catch (err) {}
   try { alfahSheet_(); } catch (err2) {}
   try { wmSheet_(); } catch (err3) {}
+}
+
+function onEdit(e) {
+  try {
+    if (!e || !e.range) return;
+    var sheet = e.range.getSheet();
+    if (sheet.getSheetId() !== ALFAH_GID) return;
+    var first = e.range.getColumn();
+    var lastCol = first + e.range.getNumColumns() - 1;
+    if (lastCol < ALFAH_STATUS_COL || first > ALFAH_ASK_COL) return;
+    alfahPaintChase_(sheet);
+  } catch (err) {}
 }
 
 function installAlfahMailScan() {
@@ -458,33 +487,180 @@ function installAlfahMailScan() {
   return alfahScanMail();
 }
 
-function alfahFreshBody_(body) {
+function alfahMarkNachfrage() {
+  var ui = SpreadsheetApp.getUi();
+  var sheet = alfahSheet_();
+  var range = SpreadsheetApp.getActiveSpreadsheet().getActiveRange();
+  if (!range || range.getSheet().getSheetId() !== sheet.getSheetId()) {
+    ui.alert("Bitte im Tab Alfah die Zeilen markieren, für die eine Nachfrage gesendet wurde.");
+    return;
+  }
+  var start = Math.max(range.getRow(), 3);
+  var end = range.getRow() + range.getNumRows() - 1;
+  if (end < start) return;
+  var ids = sheet.getRange(start, 3, end - start + 1, 1).getDisplayValues();
+  var stamp = alfahStampText_(Date.now());
+  var marked = 0;
+  var i;
+  for (i = 0; i < ids.length; i++) {
+    if (!/R-\d{4,}/i.test(String(ids[i][0] || ""))) continue;
+    var cell = sheet.getRange(start + i, ALFAH_ASK_COL);
+    cell.setNumberFormat("@");
+    cell.setValue(stamp);
+    marked++;
+  }
+  alfahPaintChase_(sheet);
+  SpreadsheetApp.getActiveSpreadsheet().toast(marked + " Zeile(n) als nachgefragt markiert.", "Alfah Retouren", 4);
+}
+
+function alfahStampText_(ms) {
+  return Utilities.formatDate(new Date(ms), Session.getScriptTimeZone(), "dd.MM.yyyy HH:mm");
+}
+
+function alfahStampMs_(value, display) {
+  if (Object.prototype.toString.call(value) === "[object Date]" && !isNaN(value.getTime())) return value.getTime();
+  var s = String(display || value || "").trim();
+  var m = s.match(/(\d{1,2})\.(\d{1,2})\.(\d{2,4})(?:\D+(\d{1,2}):(\d{2}))?/);
+  if (!m) return 0;
+  var y = Number(m[3]);
+  if (y < 100) y += 2000;
+  return new Date(y, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0)).getTime();
+}
+
+function alfahCellText_(value) {
+  var text = String(value == null ? "" : value).replace(/\s+/g, " ").trim();
+  if (text.length > 500) text = text.substring(0, 497) + "…";
+  if (/^[=+\-@]/.test(text)) text = "'" + text;
+  return text;
+}
+
+function alfahFlat_(text) {
+  return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function alfahCutQuote_(body) {
   var raw = String(body || "").replace(/\r/g, "\n");
   var cut = -1;
-  var marks = [/\n\s*-----Original/i, /\n\s*Am .{0,120} schrieb/i, /\n_{5,}/];
+  var marks = [/\n\s*-{3,}\s*(?:Original|Urspr[üu]ngliche)/i, /\n\s*Am .{0,160}schrieb/i, /\n\s*On .{0,160}wrote/i, /\n_{5,}/];
   var i;
   for (i = 0; i < marks.length; i++) {
     var at = raw.search(marks[i]);
     if (at > 80 && (cut < 0 || at < cut)) cut = at;
   }
-  if (cut > 0) raw = raw.substring(0, cut);
-  return raw.replace(/\s+/g, " ").trim();
+  var heads = [];
+  var re = /(^|\n)[ \t>*]*(?:Von|From)\s*:/gi;
+  var m;
+  while ((m = re.exec(raw))) heads.push(m.index);
+  if (heads.length) {
+    var before = alfahFlat_(raw.substring(0, heads[0]));
+    var intro = before.length < 80 || (/folgende\s+(?:nachricht|r[üu]ckmeldung)/i.test(before) && !/gr[üu][ßs]en|regards/i.test(before));
+    var headCut = intro ? (heads.length > 1 ? heads[1] : -1) : heads[0];
+    if (headCut > 0 && (cut < 0 || headCut < cut)) cut = headCut;
+  }
+  return cut > 0 ? raw.substring(0, cut) : raw;
+}
+
+function alfahFreshBody_(body) {
+  return alfahFlat_(alfahCutQuote_(body));
+}
+
+function alfahMailSnippet_(text) {
+  var t = String(text || "").replace(/\r/g, "\n");
+  t = t.replace(/^[ \t>*]*(?:von|from|gesendet|sent|an|to|cc|betreff|subject|datum|date|priorit[äa]t|wichtigkeit)\s*:.*$/gim, " ");
+  t = t.replace(/(?:lieber\s+kunde|liebe\s+kundin|guten\s+(?:tag|morgen|abend)(?:\s+zusammen)?|hallo(?:\s+zusammen)?|sehr\s+geehrte[^,\n]{0,60}|verehrte[^,\n]{0,40}|moin)\s*[,!]?/gi, " ");
+  t = t.replace(/wir\s+haben\s+(?:nach)?folgende\s+(?:nachricht|r[üu]ckmeldung)[^:\n]{0,80}:?/gi, " ");
+  t = t.replace(/vielen\s+dank\s+f[üu]r\s+ihre\s+nachricht\.?/gi, " ");
+  var end = t.search(/mit\s+freundlichen\s+gr[üu][ßs]en|freundliche\s+gr[üu][ßs]e|herzliche\s+gr[üu][ßs]e|viele\s+gr[üu][ßs]e|beste\s+gr[üu][ßs]e|\bmfg\b|bei\s+r[üu]ckfragen\s+erreichen|with\s+kind(?:est)?\s+regards|best\s+regards/i);
+  if (end > 0) t = t.substring(0, end);
+  return alfahCellText_(t);
+}
+
+function alfahPolicyFree_(t) {
+  return String(t || "")
+    .replace(/(?:bis\s+zum|vom)\s+\d+\.\s*(?:bis\s+zum\s+\d+\.\s*)?tag\s*:[^:]{0,90}?m[öo]glich(?:\s+mit\s+einem\s+abzug\s+von\s+\d+\s*%)?/gi, " ")
+    .replace(/nach\s+ablauf\s+von\s+\d+\s+tagen\s*:[^.]{0,90}\./gi, " ");
+}
+
+function alfahRejectText_(text) {
+  var t = alfahPolicyFree_(text);
+  return /ablehn/i.test(t)
+    || /unter\s+wert/i.test(t)
+    || /kein(?:en|e)?\s+lagerort/i.test(t)
+    || /keine\s+lagerware/i.test(t)
+    || /keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)
+    || /nicht\s+retourf[aä]hig|retourunf[aä]hig|nicht\s+retournierbar|nicht\s+r[üu]ckgabef[aä]hig/i.test(t)
+    || /frist\s*[üu]berschreitung|frist(?:en)?\s+(?:\S+\s+){0,3}(?:[üu]berschritten|verstrichen|abgelaufen)/i.test(t)
+    || /(?:r[üu]ckgabe|r[üu]cknahme|retoure|r[üu]cksendung)[^.!?]{0,60}nicht\s+(?:mehr\s+)?m[öo]glich/i.test(t)
+    || /keine\s+(?:retoure|r[üu]ckgabe|r[üu]cknahme)\s+(?:anmelden|m[öo]glich|annehmen)/i.test(t)
+    || /nicht\s+(?:mehr\s+)?zur\s+retoure/i.test(t)
+    || /mindest\S*wert/i.test(t)
+    || /unter\s+dem\s+(?:\S+\s+){0,2}\S*wert/i.test(t)
+    || /unter\s+\d+(?:[.,]\d+)?\s*(?:€|eur)/i.test(t);
+}
+
+function alfahAskText_(t) {
+  return /\d+\s+m[öo]glichkeiten/i.test(t)
+    || /bitte\s+nennen\s+sie\s+(?:uns\s+)?(?:ein(?:en)?\s+)?(?:abhol|termin|datum)/i.test(t)
+    || /sollen\s+wir\s+(?:die\s+)?(?:abholung|retoure|r[üu]cksendung|r[üu]ckgabe)/i.test(t)
+    || /(?:ben[öo]tigen|brauchen)\s+wir\s+(?:\S+\s+){0,4}(?:fotos?|bilder?)/i.test(t)
+    || /bitte\s+(?:senden|schicken|[üu]bermitteln)\s+sie\s+(?:uns\s+)?(?:\S+\s+){0,3}(?:fotos|bilder)/i.test(t)
+    || /(?:retoure|r[üu]ckgabe|r[üu]cknahme|r[üu]cksendung)\s+w[äa]re\s+(?:nur\s+)?(?:\S+\s+){0,2}m[öo]glich/i.test(t)
+    || /(?:sind|w[äa]ren)\s+sie\s+(?:damit\s+)?einverstanden/i.test(t)
+    || /(?:wie|welche)\s+(?:\S+\s+){0,2}(?:m[öo]chten|wollen|w[üu]nschen)\s+sie/i.test(t);
+}
+
+function alfahSoftAskText_(t) {
+  return /bitte\s+um\s+(?:eine\s+)?(?:kurze\s+)?r[üu]ckmeldung|bitte\s+teilen\s+sie\s+uns\s+mit|um\s+(?:kurze\s+)?r[üu]ckmeldung\s+wird\s+gebeten/i.test(t);
+}
+
+function alfahPickupText_(t) {
+  return /wird\s+.{0,80}abgeholt/i.test(t)
+    || (/durch\s+(?:dhl|dpd|ups|gls)/i.test(t) && /abhol/i.test(t))
+    || /abholer\s+(?:ist|wurde)\s+(?:erstellt|beauftragt|bestellt|angelegt)/i.test(t)
+    || /abholung\s+(?:ist|wurde|wird)\s+(?:\S+\s+){0,2}(?:erstellt|beauftragt|bestellt|veranlasst|eingeleitet|angelegt)/i.test(t)
+    || /fahrer\s+(?:\S+\s+){0,3}(?:vorbeikommen|abholen|kommen)/i.test(t)
+    || /um\s+(?:das|die|den)\s+(?:\S+\s+){0,2}abzuholen/i.test(t)
+    || /abholauftrag/i.test(t);
+}
+
+function alfahSelfShipText_(t) {
+  return /(?:auf|per)\s+eigenem\s+(?:post)?weg/i.test(t)
+    || /an\s+folgende\s+adresse\s+(?:\S+\s+){0,2}(?:zur[üu]ck|senden|schicken)/i.test(t)
+    || /(?:senden|schicken)\s+sie\s+(?:uns\s+)?(?:das|die|den)\s+(?:\S+\s+){0,6}(?:zur[üu]ck|an\s+folgende)/i.test(t)
+    || /uns\s+zusenden|zur[üu]cksenden\s+an/i.test(t);
+}
+
+function alfahApprovedText_(t) {
+  return /genehmigt|freigegeben/i.test(t)
+    || /(?:retoure|r[üu]cksendung|r[üu]ckgabe|r[üu]cknahme)\s+(?:wird|wurde|ist)\s+(?:eingeleitet|veranlasst)/i.test(t)
+    || /r[üu]cksendung\s+eingeleitet|wir\s+veranlassen\s+(?:die\s+)?(?:retoure|r[üu]cksendung)/i.test(t);
+}
+
+function alfahCheckText_(t) {
+  return /muss\s+(?:\S+\s+){0,2}angemeldet\s+werden/i.test(t)
+    || /(?:wird|werden)\s+(?:\S+\s+){0,3}gepr[üu]ft|in\s+pr[üu]fung/i.test(t)
+    || /etwas\s+geduld/i.test(t)
+    || /warte[nt]?\s+(?:noch\s+)?auf\s+(?:die\s+)?(?:r[üu]ckmeldung|antwort|freigabe)/i.test(t)
+    || /r[üu]ckmeldung\s+(?:\S+\s+){0,3}(?:folgt|steht\s+(?:noch\s+)?aus)/i.test(t)
+    || /(?:haben|wurde)\s+(?:\S+\s+){0,3}nachgefragt/i.test(t)
+    || /melden\s+uns\s+(?:\S+\s+){0,3}(?:sobald|wieder)/i.test(t)
+    || /(?:retoure|r[üu]ckgabe)\s+(?:wurde|ist)\s+angemeldet/i.test(t)
+    || /weitergeleitet/i.test(t);
 }
 
 function alfahMailKind_(text) {
-  var t = String(text || "");
+  var t = alfahFlat_(text);
+  if (!t) return "";
   if (/stornier|\bstorno\b/i.test(t)) return "STORNO";
-  if (/ablehn/i.test(t)) return "ABGELEHNT";
-  if (/unter\s+wert/i.test(t)) return "ABGELEHNT";
-  if (/kein(?:en|e)?\s+lagerort/i.test(t)) return "ABGELEHNT";
-  if (/keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)) return "ABGELEHNT";
-  if (/r[üu]ckgabefrist/i.test(t) && /[üu]berschritten/i.test(t)) return "ABGELEHNT";
-  if (/nicht\s+retourf[aä]hig|retourunf[aä]hig|nicht\s+retournierbar/i.test(t)) return "ABGELEHNT";
+  if (alfahRejectText_(t)) return "ABGELEHNT";
+  if (alfahAskText_(t)) return "RUECKFRAGE";
   if (alfahLabelMail_(t)) return "RUECK";
-  if (/wird\s+.{0,80}abgeholt/i.test(t) || (/durch\s+dhl/i.test(t) && /abhol/i.test(t))) return "RUECK";
+  if (alfahPickupText_(t)) return "RUECK";
+  if (alfahSelfShipText_(t)) return "RUECK";
   if (/retoure\s+(ist|wurde)\s+vorbereitet|r[üu]cksendung\s+vorbereitet/i.test(t)) return "VORBEREITET";
-  if (/(retoure|r[üu]cksendung|r[üu]ckgabe)\s+(wird|wurde|ist)\s+(eingeleitet|veranlasst)/i.test(t)) return "VERANLASST";
-  if (/r[üu]cksendung\s+eingeleitet|wir\s+veranlassen\s+(die\s+)?(retoure|r[üu]cksendung)/i.test(t)) return "VERANLASST";
+  if (alfahSoftAskText_(t)) return "RUECKFRAGE";
+  if (alfahApprovedText_(t)) return "VERANLASST";
+  if (alfahCheckText_(t)) return "PRUEFUNG";
   return "";
 }
 
@@ -498,23 +674,71 @@ function alfahLabelMail_(text) {
   return false;
 }
 
+function alfahNoiseMail_(fresh) {
+  var t = String(fresh || "");
+  if (/die\s+retoure?\s+muss\s+in\s+der\s+originalverpackung\s+erfolgen/i.test(t) && t.length < 2000) return true;
+  if (/ihre\s+(?:anfrage|nachricht|reklamation)\s+(?:ist|wurde)\s+(?:bei\s+uns\s+)?eingegangen|eingangsbest[äa]tigung|automatische\s+antwort|abwesenheitsnotiz|out\s+of\s+office/i.test(t) && t.length < 900) return true;
+  return false;
+}
+
+function alfahConditions_(t) {
+  var out = [];
+  var p = t.match(/(\d{1,2})\s*%\s*(?:abzug|des\s+blp|geb[üu]hr|abschlag)/i) || t.match(/(?:abzug|abschlag|geb[üu]hr)\s+(?:von\s+)?(\d{1,2})\s*%/i) || t.match(/-\s?(\d{1,2})\s*%/);
+  if (p) out.push(p[1] + "% Abzug");
+  var f = t.match(/(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur\w*)\s*r[üu]ckfracht/i) || t.match(/r[üu]ckfracht\s+(?:von\s+)?(\d+(?:[.,]\d{1,2})?)\s*(?:€|eur)/i);
+  if (f) out.push(f[1] + " € Rückfracht");
+  return out;
+}
+
 function alfahMailDetail_(text, kind) {
-  var t = String(text || "");
-  if (/r[üu]ckgabefrist/i.test(t) && /[üu]berschritten/i.test(t)) return "Rückgabefrist überschritten";
-  if (/nicht\s+retourf[aä]hig|retourunf[aä]hig|nicht\s+retournierbar/i.test(t)) return "nicht retourfähig";
-  if (/unter\s+wert/i.test(t)) return "unter Wert, keine Rückgabe";
-  if (/keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)) return "keine Rückgabemöglichkeit";
-  if (/kein(?:en|e)?\s+lagerort/i.test(t)) return "kein Lagerort";
-  if (/35[,.]\s*00/.test(t)) return "unter 35,00 € Netto";
-  if (/sonderbeschaffung/i.test(t)) return "Sonderbeschaffung";
-  if (kind === "RUECK" && /dhl/i.test(t) && /abhol/i.test(t)) return "Abholung durch DHL";
-  var vk = t.match(/VK-RE\d+/i);
-  if (vk && kind === "RUECK") return vk[0].toUpperCase();
-  if (kind === "RUECK" && alfahLabelMail_(t)) return "Retourenlabel";
-  if (kind === "VERANLASST") return "Retoure veranlasst";
-  var reason = t.match(/ablehnen\s*:\s*([^.]{6,90})/i);
-  if (reason && kind === "ABGELEHNT") return reason[1].replace(/\s+/g, " ").trim();
-  return "";
+  var t = alfahPolicyFree_(alfahFlat_(text));
+  var parts = [];
+  if (kind === "STORNO") parts.push("storniert");
+  if (kind === "ABGELEHNT") {
+    if (/frist/i.test(t) && /[üu]berschr|verstrichen|abgelaufen/i.test(t)) parts.push("Rückgabefrist überschritten");
+    if (/nicht\s+retourf|retourunf|nicht\s+retournierbar|nicht\s+r[üu]ckgabef/i.test(t)) parts.push("nicht retourfähig");
+    if (/keine\s+lagerware/i.test(t)) parts.push("keine Lagerware");
+    if (/kein(?:en|e)?\s+lagerort/i.test(t)) parts.push("kein Lagerort");
+    if (/sonderbeschaffung/i.test(t)) parts.push("Sonderbeschaffung");
+    if (/mindest\S*wert|unter\s+wert|unter\s+dem\s+(?:\S+\s+){0,2}\S*wert|unter\s+\d+(?:[.,]\d+)?\s*(?:€|eur)/i.test(t)) {
+      var amt = t.match(/unter\s+(\d+(?:[.,]\d+)?)\s*(?:€|eur)/i) || t.match(/warenwert\s+von\s+(\d+(?:[.,]\d+)?)\s*(?:€|eur)/i) || t.match(/(\d+[.,]\d{2})\s*(?:€|eur)\s*netto/i);
+      parts.push("unter Mindestwarenwert" + (amt ? " " + amt[1] + " €" : ""));
+    }
+    if (/keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)) parts.push("keine Rückgabemöglichkeit");
+    var reason = t.match(/ablehnen\s*:\s*([^.]{6,90})/i);
+    if (reason) parts.push(reason[1].trim());
+    if (!parts.length) parts.push("Rückgabe nicht möglich");
+  }
+  if (kind === "RUECK") {
+    if (alfahSelfShipText_(t)) {
+      var addr = t.match(/adresse\s+(?:\S+\s+){0,2}zur[üu]ck\s*:?\s*([\s\S]{8,140}?)(?=\s+(?:mit\s+freundlichen|freundliche|viele\s+gr|bei\s+r[üu]ckfragen)|$)/i);
+      parts.push("Selbstversand" + (addr ? " an " + addr[1].trim() : ""));
+    } else if (/dhl/i.test(t) && /abhol/i.test(t)) {
+      parts.push("Abholung durch DHL");
+    } else if (alfahPickupText_(t)) {
+      parts.push("Abholung beauftragt");
+    } else {
+      var vk = t.match(/VK-RE\d+/i);
+      parts.push(vk ? vk[0].toUpperCase() : "Retourenlabel");
+    }
+  }
+  if (kind === "VERANLASST") parts.push(/genehmigt|freigegeben/i.test(t) ? "Retoure genehmigt" : "Retoure veranlasst");
+  if (kind === "RUECKFRAGE") {
+    if (/\d+\s+m[öo]glichkeiten/i.test(t)) parts.push("Versandart wählen");
+    if (/nennen\s+sie\s+(?:uns\s+)?(?:ein(?:en)?\s+)?abhol/i.test(t)) parts.push("Abholdatum nennen");
+    if (/fotos?|bilder/i.test(t)) parts.push("Fotos benötigt");
+    if (/sollen\s+wir/i.test(t)) parts.push("Abholung bestätigen");
+    if (/w[äa]re\s+(?:nur\s+)?(?:\S+\s+){0,2}m[öo]glich|einverstanden/i.test(t)) parts.push("Bedingungen bestätigen");
+    if (!parts.length) parts.push("Rückfrage beantworten");
+  }
+  if (kind === "PRUEFUNG") {
+    if (/angemeldet\s+werden/i.test(t)) parts.push("wird beim Lieferanten angemeldet");
+    else if (/nachgefragt/i.test(t)) parts.push("Alfah hat nachgefragt");
+    else if (/weitergeleitet/i.test(t)) parts.push("an Lieferanten weitergeleitet");
+    else parts.push("in Prüfung");
+  }
+  if (kind === "RUECK" || kind === "VERANLASST" || kind === "RUECKFRAGE") parts = parts.concat(alfahConditions_(t));
+  return parts.join(" · ");
 }
 
 function alfahStatusPaint_(kind) {
@@ -523,6 +747,9 @@ function alfahStatusPaint_(kind) {
   if (kind === "RUECK") return { text: "Rücksendung", bg: ALFAH_GREEN, fg: "#ffffff" };
   if (kind === "VERANLASST") return { text: "Rücksendung", bg: ALFAH_ORANGE, fg: "#ffffff" };
   if (kind === "VORBEREITET") return { text: "VORBEREITET", bg: "#f1c232", fg: "#1f2933" };
+  if (kind === "RUECKFRAGE") return { text: "RÜCKFRAGE", bg: "#674ea7", fg: "#ffffff" };
+  if (kind === "PRUEFUNG") return { text: "IN PRÜFUNG", bg: "#9fc5e8", fg: "#1f2933" };
+  if (kind === "ANTWORT") return { text: "ANTWORT PRÜFEN", bg: "#c27ba0", fg: "#ffffff" };
   return null;
 }
 
@@ -546,8 +773,8 @@ function alfahMessageText_(msg) {
   var html = "";
   try { plain = msg.getPlainBody() || ""; } catch (err) {}
   try { html = alfahHtmlText_(msg.getBody() || ""); } catch (err2) {}
-  if (plain && alfahMailKind_(plain)) return plain;
-  if (html.length > plain.length) return html;
+  if (plain && alfahMailKind_(alfahFreshBody_(plain))) return plain;
+  if (html.length > plain.length * 1.2 && alfahMailKind_(alfahFreshBody_(html))) return html;
   return plain || html;
 }
 
@@ -557,7 +784,8 @@ function alfahMailThreads_(query, limit) {
   var cap = limit || 400;
   while (start < cap) {
     var size = Math.min(100, cap - start);
-    var batch = GmailApp.search(query, start, size);
+    var batch = [];
+    try { batch = GmailApp.search(query, start, size); } catch (err) { batch = []; }
     if (!batch.length) break;
     var i;
     for (i = 0; i < batch.length; i++) threads.push(batch[i]);
@@ -567,80 +795,156 @@ function alfahMailThreads_(query, limit) {
   return threads;
 }
 
-function alfahRememberMail_(found, looked, id, when, kind, detail, threadId) {
-  if (!id) return;
-  looked[id] = true;
-  if (!kind) return;
-  var prev = found[id];
-  if (prev && prev.when > when) return;
-  if (prev && prev.when === when && (prev.kind === "ABGELEHNT" || prev.kind === "STORNO") && kind !== "ABGELEHNT" && kind !== "STORNO") return;
-  found[id] = { kind: kind, when: when, detail: detail, threadId: threadId };
+function alfahIdsIn_(text) {
+  var list = String(text || "").toUpperCase().match(/R-\d{4,}/g) || [];
+  var out = [];
+  var seen = {};
+  var i;
+  for (i = 0; i < list.length; i++) {
+    if (seen[list[i]]) continue;
+    seen[list[i]] = true;
+    out.push(list[i]);
+  }
+  return out;
 }
 
-function alfahReadThreads_(threads, found, looked) {
+function alfahRec_(data, id) {
+  if (!data.recs[id]) data.recs[id] = { best: null, last: null, lastIn: 0, ask: 0 };
+  return data.recs[id];
+}
+
+function alfahOurAddresses_() {
+  var out = [ALFAH_INBOX.toLowerCase()];
+  var box = String(alfahMailbox_() || "").toLowerCase();
+  if (box && out.indexOf(box) < 0) out.push(box);
+  return out;
+}
+
+function alfahFromUs_(from, ours) {
+  var i;
+  for (i = 0; i < ours.length; i++) {
+    if (ours[i] && from.indexOf(ours[i]) >= 0) return true;
+  }
+  return false;
+}
+
+function alfahRememberMail_(rec, when, kind, detail, threadId, text) {
+  if (kind) {
+    var b = rec.best;
+    var keep = b && (b.when > when || (b.when === when && (b.kind === "ABGELEHNT" || b.kind === "STORNO") && kind !== "ABGELEHNT" && kind !== "STORNO"));
+    if (!keep) rec.best = { kind: kind, when: when, detail: detail, threadId: threadId, text: text };
+  }
+  if (!rec.last || when >= rec.last.when) rec.last = { kind: kind, when: when, threadId: threadId, text: text };
+}
+
+function alfahReadMessage_(msg, threadId, data, index) {
+  var subject = "";
+  var when = 0;
+  var from = "";
+  var to = "";
+  try { subject = msg.getSubject() || ""; } catch (e1) {}
+  try { when = msg.getDate() ? msg.getDate().getTime() : 0; } catch (e2) {}
+  try { from = String(msg.getFrom() || "").toLowerCase(); } catch (e3) {}
+  try { to = (String(msg.getTo() || "") + "," + String(msg.getCc() || "")).toLowerCase(); } catch (e4) {}
+  var ids = alfahIdsIn_(subject);
+  var n;
+  if (alfahFromUs_(from, data.ours)) {
+    if (!ids.length || !index || to.indexOf("alfah") < 0) return;
+    for (n = 0; n < ids.length; n++) {
+      var mine = alfahRec_(data, ids[n]);
+      if (when > mine.ask) mine.ask = when;
+    }
+    return;
+  }
+  var body = "";
+  try { body = alfahMessageText_(msg); } catch (e5) {}
+  var cut = alfahCutQuote_(body);
+  var fresh = alfahFlat_(cut);
+  if (!ids.length) ids = alfahIdsIn_(fresh);
+  if (!ids.length) return;
+  var scan = fresh.length >= 40 ? fresh : alfahFlat_(body);
+  var kind = alfahMailKind_(scan);
+  for (n = 0; n < ids.length; n++) {
+    var seenRec = alfahRec_(data, ids[n]);
+    if (when > seenRec.lastIn) seenRec.lastIn = when;
+  }
+  if (!kind && alfahNoiseMail_(fresh)) return;
+  var detail = kind ? alfahMailDetail_(scan, kind) : "";
+  var text = alfahMailSnippet_(fresh.length >= 40 ? cut : body);
+  for (n = 0; n < ids.length; n++) {
+    alfahRememberMail_(alfahRec_(data, ids[n]), when, kind, detail, threadId, text);
+  }
+}
+
+function alfahReadThreads_(threads, data) {
+  var fresh = [];
+  var i;
+  for (i = 0; i < threads.length; i++) {
+    var tid = "";
+    try { tid = threads[i].getId(); } catch (err) { tid = ""; }
+    if (!tid || data.done[tid]) continue;
+    data.done[tid] = true;
+    fresh.push(threads[i]);
+  }
   var step;
-  for (step = 0; step < threads.length; step += 40) {
-    var slice = threads.slice(step, step + 40);
+  for (step = 0; step < fresh.length; step += 40) {
+    var slice = fresh.slice(step, step + 40);
     var groups = [];
-    try { groups = GmailApp.getMessagesForThreads(slice); } catch (err) { groups = []; }
+    try { groups = GmailApp.getMessagesForThreads(slice); } catch (err2) { groups = []; }
     var g;
     for (g = 0; g < groups.length; g++) {
       var messages = groups[g] || [];
       var threadId = slice[g] ? slice[g].getId() : "";
       var m;
       for (m = 0; m < messages.length; m++) {
-        var msg = messages[m];
-        var subject = "";
-        var body = "";
-        var when = 0;
-        try { subject = msg.getSubject() || ""; } catch (e1) {}
-        try { body = alfahMessageText_(msg); } catch (e2) {}
-        try { when = msg.getDate() ? msg.getDate().getTime() : 0; } catch (e3) {}
-        var fresh = alfahFreshBody_(body);
-        var kind = alfahMailKind_(subject + "\n" + fresh);
-        var used = fresh;
-        if (!kind) {
-          kind = alfahMailKind_(subject + "\n" + body);
-          used = body;
-        }
-        var ids = subject.match(/R-\d{4,}/gi) || [];
-        if (!ids.length) ids = (fresh + "\n" + body).match(/R-\d{4,}/gi) || [];
-        var seen = {};
-        var n;
-        for (n = 0; n < ids.length; n++) {
-          var id = String(ids[n] || "").toUpperCase();
-          if (!id || seen[id]) continue;
-          seen[id] = true;
-          alfahRememberMail_(found, looked, id, when, kind, kind ? alfahMailDetail_(used, kind) : "", threadId);
-        }
+        try { alfahReadMessage_(messages[m], threadId, data, m); } catch (err3) {}
       }
     }
   }
 }
 
-function alfahCollectMail_(extraIds) {
-  var primed = PropertiesService.getScriptProperties().getProperty(ALFAH_MAIL_KEY) === "1";
-  var query = primed ? "subject:RETOURE newer_than:21d" : "subject:RETOURE newer_than:120d";
-  var found = {};
-  var looked = {};
-  alfahReadThreads_(alfahMailThreads_(query, primed ? 400 : 400), found, looked);
+function alfahCollectMail_(openIds, started) {
+  var props = PropertiesService.getScriptProperties();
+  var primed = props.getProperty(ALFAH_MAIL_KEY) === "1";
+  var data = { recs: {}, covered: {}, done: {}, ours: alfahOurAddresses_(), complete: true };
+  var query = primed ? "subject:RETOURE newer_than:21d" : "subject:RETOURE newer_than:150d";
+  alfahReadThreads_(alfahMailThreads_(query, 400), data);
   var need = [];
-  var seenNeed = {};
-  var e;
-  for (e = 0; e < (extraIds || []).length; e++) {
-    var want = String(extraIds[e] || "").toUpperCase();
-    if (!/^R-\d{4,}$/.test(want) || found[want] || seenNeed[want]) continue;
-    seenNeed[want] = true;
-    need.push(want);
+  var i;
+  for (i = 0; i < openIds.length; i++) {
+    var rec = data.recs[openIds[i]];
+    if (rec && rec.best && ALFAH_FINAL[rec.best.kind] && rec.last && rec.last.when <= rec.best.when) continue;
+    need.push(openIds[i]);
   }
+  if (!need.length) return data;
+  var startAt = Number(props.getProperty(ALFAH_CURSOR_KEY) || 0) % need.length;
+  var order = need.slice(startAt).concat(need.slice(0, startAt));
+  var processed = 0;
   var b;
-  for (b = 0; b < need.length && b < 180; b += 12) {
-    var chunk = need.slice(b, b + 12);
-    var q = chunk.map(function(id) { return '"' + id + '"'; }).join(" OR ") + " newer_than:60d";
-    alfahReadThreads_(alfahMailThreads_(q, 40), found, looked);
+  for (b = 0; b < order.length; b += 10) {
+    if (Date.now() - started > ALFAH_SCAN_BUDGET_MS) {
+      data.complete = false;
+      break;
+    }
+    var chunk = order.slice(b, b + 10);
+    var q = "(" + chunk.map(function(id) { return '"' + id + '"'; }).join(" OR ") + ") newer_than:180d";
+    alfahReadThreads_(alfahMailThreads_(q, 80), data);
+    var c;
+    for (c = 0; c < chunk.length; c++) data.covered[chunk[c]] = true;
+    processed += chunk.length;
   }
-  found._looked = looked;
-  return found;
+  props.setProperty(ALFAH_CURSOR_KEY, String(processed >= order.length ? 0 : (startAt + processed) % need.length));
+  return data;
+}
+
+function alfahDecide_(rec) {
+  if (!rec) return null;
+  var best = rec.best;
+  var last = rec.last;
+  if (last && !last.kind && (!best || last.when > best.when) && (!best || !ALFAH_FINAL[best.kind])) {
+    return { kind: "ANTWORT", when: last.when, detail: "neue Antwort lesen", threadId: last.threadId };
+  }
+  return best || null;
 }
 
 function alfahMailbox_() {
@@ -679,19 +983,20 @@ function alfahSearchCurrent_(rich, rNumber) {
   return !!url && url === alfahSearchUrl_(rNumber);
 }
 
-function alfahInboxLink_(rich) {
+function alfahRichUrl_(rich) {
+  if (!rich) return "";
   var url = "";
-  try { url = rich ? String(rich.getLinkUrl() || "") : ""; } catch (err) { url = ""; }
-  var text = "";
-  try { text = decodeURIComponent(url); } catch (err2) { text = url; }
-  return text.toLowerCase().indexOf(ALFAH_INBOX) !== -1;
-}
-
-function alfahThreadFromUrl_(url) {
-  var text = String(url || "");
-  try { text = decodeURIComponent(text); } catch (err) {}
-  var match = text.match(/#(?:all|inbox)\/([a-f0-9]{8,})/i);
-  return match ? match[1] : "";
+  try { url = String(rich.getLinkUrl() || ""); } catch (err) { url = ""; }
+  if (url) return url;
+  try {
+    var runs = rich.getRuns();
+    var i;
+    for (i = 0; i < runs.length; i++) {
+      var u = runs[i].getLinkUrl();
+      if (u) return String(u);
+    }
+  } catch (err2) {}
+  return "";
 }
 
 function alfahIsRueck_(text) {
@@ -701,7 +1006,7 @@ function alfahIsRueck_(text) {
 
 function alfahOurStatus_(text) {
   var t = String(text || "");
-  return t === "ABGELEHNT" || t === "STORNO" || alfahIsRueck_(t) || t === "VORBEREITET";
+  return t === "ABGELEHNT" || t === "STORNO" || alfahIsRueck_(t) || t === "VORBEREITET" || t === "RÜCKFRAGE" || t === "IN PRÜFUNG" || t === "ANTWORT PRÜFEN";
 }
 
 function alfahBox_() {
@@ -709,8 +1014,8 @@ function alfahBox_() {
 }
 
 function alfahSearchColor_(status) {
-  if (status === "ABGELEHNT" || status === "STORNO" || alfahIsRueck_(status)) return "#ffffff";
-  if (status === "VORBEREITET") return "#1f2933";
+  if (status === "ABGELEHNT" || status === "STORNO" || alfahIsRueck_(status) || status === "RÜCKFRAGE" || status === "ANTWORT PRÜFEN") return "#ffffff";
+  if (status === "VORBEREITET" || status === "IN PRÜFUNG") return "#1f2933";
   return ALFAH_BLUE;
 }
 
@@ -743,89 +1048,177 @@ function alfahPaintRow_(sheet, rowNumber, paint, info, mailUrl, searchUrl) {
   sheet.getRange(rowNumber, ALFAH_STATUS_COL).setFontWeight("bold");
 }
 
-function alfahClearAutoRow_(sheet, rowNumber) {
-  sheet.getRange(rowNumber, ALFAH_STATUS_COL, 1, 3).clearContent();
-  var row = sheet.getRange(rowNumber, 1, 1, ALFAH_SEARCH_COL);
-  row.setBackground("#ffffff");
-  row.setFontColor("#1f2933");
-  row.setFontFamily("Arial");
-  row.setFontSize(ALFAH_FONT);
-  row.setWrap(true);
-  sheet.getRange(rowNumber, 2).setFontWeight("bold");
-  sheet.getRange(rowNumber, 3).setFontWeight("bold").setFontColor(ALFAH_BLUE);
+function alfahChaseTone_(disp, vals, rowBg, now) {
+  var st = String(disp[ALFAH_STATUS_COL - 1] || "").trim();
+  var bg = String(rowBg || "").toLowerCase();
+  if (st === "ABGELEHNT" || st === "STORNO" || st === "VORBEREITET") return "";
+  if (alfahIsRueck_(st) && bg !== ALFAH_ORANGE) return "";
+  var mailMs = alfahStampMs_(vals[ALFAH_MAILAT_COL - 1], disp[ALFAH_MAILAT_COL - 1]);
+  var askMs = alfahStampMs_(vals[ALFAH_ASK_COL - 1], disp[ALFAH_ASK_COL - 1]);
+  var baseMs = mailMs || alfahStampMs_("", String(disp[7] || "") + " " + String(disp[8] || ""));
+  var limit = ALFAH_CHASE_DAYS * 864e5;
+  if (askMs && askMs >= baseMs) return now - askMs >= limit ? "red" : "orange";
+  if (baseMs && now - baseMs >= limit) return "red";
+  return "";
+}
+
+function alfahPaintChase_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return 0;
+  var count = last - 2;
+  var range = sheet.getRange(3, 1, count, ALFAH_LAST_COL);
+  var vals = range.getValues();
+  var disp = range.getDisplayValues();
+  var rowBg = sheet.getRange(3, 1, count, 1).getBackgrounds();
+  var cell = sheet.getRange(3, ALFAH_MAILAT_COL, count, 1);
+  var bgs = cell.getBackgrounds();
+  var fgs = cell.getFontColors();
+  var weights = cell.getFontWeights();
+  var now = Date.now();
+  var due = 0;
+  var i;
+  for (i = 0; i < count; i++) {
+    if (!/R-\d{4,}/i.test(String(disp[i][2] || ""))) continue;
+    var tone = alfahChaseTone_(disp[i], vals[i], rowBg[i][0], now);
+    if (tone === "red") {
+      bgs[i][0] = ALFAH_CHASE_RED;
+      fgs[i][0] = "#ffffff";
+      weights[i][0] = "bold";
+      due++;
+    } else if (tone === "orange") {
+      bgs[i][0] = ALFAH_CHASE_ORANGE;
+      fgs[i][0] = "#ffffff";
+      weights[i][0] = "bold";
+    } else {
+      bgs[i][0] = "#ffffff";
+      fgs[i][0] = "#1f2933";
+      weights[i][0] = "normal";
+    }
+  }
+  cell.setBackgrounds(bgs);
+  cell.setFontColors(fgs);
+  cell.setFontWeights(weights);
+  return due;
+}
+
+function alfahFitExtraCols_(sheet, rows) {
+  if (!rows) return;
+  var extra = sheet.getRange(3, ALFAH_MAILAT_COL, rows, 3);
+  extra.setFontFamily("Arial");
+  extra.setFontSize(ALFAH_FONT);
+  extra.setVerticalAlignment("middle");
+  sheet.getRange(3, ALFAH_MAILAT_COL, rows, 2).setHorizontalAlignment("center").setWrap(true);
+  sheet.getRange(3, ALFAH_TEXT_COL, rows, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
 }
 
 function alfahScanMail() {
   var lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    var started = Date.now();
     var sheet = alfahSheet_();
-    var mailbox = alfahMailbox_();
     var last = sheet.getLastRow();
     var count = last >= 3 ? last - 2 : 0;
     var cases = count ? sheet.getRange(3, 3, count, 1).getValues() : [];
     var current = count ? sheet.getRange(3, ALFAH_STATUS_COL, count, 2).getValues() : [];
     var openIds = [];
+    var openSeen = {};
     var i;
     for (i = 0; i < cases.length; i++) {
       var openId = String(cases[i][0] || "").toUpperCase().match(/R-\d{4,}/);
-      if (!openId) continue;
+      if (!openId || openSeen[openId[0]]) continue;
       var openStatus = String(current[i][0] || "");
       if (openStatus === "ABGELEHNT" || openStatus === "STORNO") continue;
+      openSeen[openId[0]] = true;
       openIds.push(openId[0]);
     }
-    var found = alfahCollectMail_(openIds);
-    var looked = found._looked || {};
-    delete found._looked;
-    if (last < 3) {
-      PropertiesService.getScriptProperties().setProperty(ALFAH_MAIL_KEY, "1");
-      return { ok: true, updated: 0, mails: Object.keys(found).length };
+    var mail = alfahCollectMail_(openIds, started);
+    var props = PropertiesService.getScriptProperties();
+    if (!count) {
+      props.setProperty(ALFAH_MAIL_KEY, "1");
+      props.setProperty("alfah_mail_last_scan_ms", String(Date.now()));
+      return { ok: true, updated: 0, mails: Object.keys(mail.recs).length };
     }
-    var links = sheet.getRange(3, ALFAH_LINK_COL, count, 1).getFormulas();
-    var searchRich = sheet.getRange(3, ALFAH_SEARCH_COL, count, 1).getRichTextValues();
     var mailRich = sheet.getRange(3, ALFAH_LINK_COL, count, 1).getRichTextValues();
+    var searchRich = sheet.getRange(3, ALFAH_SEARCH_COL, count, 1).getRichTextValues();
+    var rowBg = sheet.getRange(3, 1, count, 1).getBackgrounds();
+    var extra = sheet.getRange(3, ALFAH_MAILAT_COL, count, 3);
+    var extraVals = extra.getValues();
+    var extraDisp = extra.getDisplayValues();
+    var extraChanged = false;
     var updated = 0;
-    var cleared = 0;
+    var review = 0;
     for (i = 0; i < cases.length; i++) {
       var rowNumber = 3 + i;
       var id = String(cases[i][0] || "").toUpperCase().match(/R-\d{4,}/);
       if (!id) continue;
-      var hit = found[id[0]];
-      var paint = hit ? alfahStatusPaint_(hit.kind) : null;
-      if (paint && hit.kind === "VERANLASST" && alfahIsRueck_(current[i][0]) && String(current[i][1] || "") === "Alfah System") continue;
-      if (!paint) {
-        var infoNow = String(current[i][1] || "");
-        var manual = infoNow === "Alfah System";
-        var auto = !manual && looked[id[0]] && alfahOurStatus_(current[i][0]) && (links[i][0] || infoNow);
-        if (auto) {
-          alfahClearAutoRow_(sheet, rowNumber);
-          alfahPutSearch_(sheet, rowNumber, id[0], mailbox, ALFAH_BLUE);
-          cleared++;
-        } else if (!alfahSearchCurrent_(searchRich[i][0], id[0])) {
-          alfahPutSearch_(sheet, rowNumber, id[0], mailbox, alfahSearchColor_(String(current[i][0] || "")));
+      var key = id[0];
+      var rec = mail.recs[key];
+      if (rec && rec.lastIn) {
+        var stamp = alfahStampText_(rec.lastIn);
+        if (extraDisp[i][0] !== stamp) {
+          extraVals[i][0] = stamp;
+          extraChanged = true;
         }
-        if (!auto) {
-          var oldMail = "";
-          try { oldMail = mailRich[i][0] ? String(mailRich[i][0].getLinkUrl() || "") : ""; } catch (errMail) { oldMail = ""; }
-          var oldThread = alfahThreadFromUrl_(oldMail);
-          if (oldThread && !alfahInboxLink_(mailRich[i][0])) {
-            alfahPutLink_(sheet.getRange(rowNumber, ALFAH_LINK_COL), alfahThreadUrl_(oldThread), "Mail", alfahSearchColor_(String(current[i][0] || "")));
-          }
+      } else if (mail.covered[key] && !String(extraDisp[i][0] || "").trim()) {
+        extraVals[i][0] = "keine Mail";
+        extraChanged = true;
+      }
+      if (rec && rec.ask) {
+        var oldAsk = alfahStampMs_(extraVals[i][1], extraDisp[i][1]);
+        if (rec.ask > oldAsk + 60000) {
+          extraVals[i][1] = alfahStampText_(rec.ask);
+          extraChanged = true;
         }
+      }
+      var snippet = rec ? ((rec.last && rec.last.text) || (rec.best && rec.best.text) || "") : "";
+      if (snippet && extraDisp[i][2] !== snippet) {
+        extraVals[i][2] = snippet;
+        extraChanged = true;
+      }
+      var res = alfahDecide_(rec);
+      if (!res) {
+        if (!alfahSearchCurrent_(searchRich[i][0], key)) alfahPutSearch_(sheet, rowNumber, key, "", alfahSearchColor_(String(current[i][0] || "")));
         continue;
       }
-      var info = alfahText_(hit.detail);
-      alfahPaintRow_(sheet, rowNumber, paint, info, alfahThreadUrl_(hit.threadId, mailbox), alfahSearchUrl_(id[0], mailbox));
+      var paint = alfahStatusPaint_(res.kind);
+      if (!paint) continue;
+      var curStatus = String(current[i][0] || "").trim();
+      var curInfo = String(current[i][1] || "").trim();
+      var curBg = String(rowBg[i][0] || "").toLowerCase();
+      var manualGreen = curInfo === "Alfah System" && alfahIsRueck_(curStatus);
+      if (manualGreen && res.kind !== "RUECK" && res.kind !== "ABGELEHNT" && res.kind !== "STORNO") continue;
+      if (res.kind === "ANTWORT") {
+        var bestPaint = rec.best ? alfahStatusPaint_(rec.best.kind) : null;
+        if (curStatus && curStatus !== paint.text && curStatus !== (bestPaint ? bestPaint.text : "")) continue;
+        review++;
+      }
+      var info = alfahText_(res.detail);
+      var mailUrl = alfahThreadUrl_(res.threadId);
+      if (curStatus === paint.text && curInfo === info && curBg === paint.bg && alfahRichUrl_(mailRich[i][0]) === mailUrl) continue;
+      alfahPaintRow_(sheet, rowNumber, paint, info, mailUrl, alfahSearchUrl_(key));
       updated++;
     }
-    var props = PropertiesService.getScriptProperties();
+    if (extraChanged) {
+      var r;
+      var c;
+      for (r = 0; r < extraVals.length; r++) {
+        for (c = 0; c < 3; c++) {
+          var v = extraVals[r][c];
+          if (Object.prototype.toString.call(v) === "[object Date]") extraVals[r][c] = isNaN(v.getTime()) ? "" : alfahStampText_(v.getTime());
+        }
+      }
+      extra.setNumberFormat("@");
+      extra.setValues(extraVals);
+    }
     props.setProperty(ALFAH_MAIL_KEY, "1");
     props.setProperty("alfah_mail_last_scan_ms", String(Date.now()));
     var moved = alfahMoveRejected_(sheet);
     var delivered = alfahMoveDelivered_(sheet);
+    var due = alfahPaintChase_(sheet);
     var oem = null;
     try { oem = alfahSyncOemTeile(); } catch (errOem) { oem = { ok: false, error: String(errOem && errOem.message ? errOem.message : errOem) }; }
-    return { ok: true, updated: updated, cleared: cleared, moved: moved.moved, delivered: delivered.moved, mails: Object.keys(found).length, oem: oem };
+    return { ok: true, updated: updated, review: review, due: due, complete: mail.complete, moved: moved.moved, delivered: delivered.moved, mails: Object.keys(mail.recs).length, oem: oem };
   } finally {
     lock.releaseLock();
   }
@@ -853,8 +1246,17 @@ function alfahPrepareDone_(source) {
 function alfahPrepareSide_(source, gid, name, title, color) {
   var sheet = alfahSideTab_(source.getParent(), gid, name);
   sheet.setTabColor(color);
-  if (String(sheet.getRange(1, 1).getValue() || "")) return sheet;
+  alfahEnsureCols_(sheet);
   var headers = source.getRange(2, 1, 1, ALFAH_LAST_COL).getValues();
+  if (String(sheet.getRange(1, 1).getValue() || "")) {
+    if (String(sheet.getRange(2, ALFAH_LAST_COL).getValue() || "")) return sheet;
+    var extraHead = sheet.getRange(2, ALFAH_MAILAT_COL, 1, ALFAH_LAST_COL - ALFAH_MAILAT_COL + 1);
+    extraHead.setValues([headers[0].slice(ALFAH_MAILAT_COL - 1)]);
+    extraHead.setBackground(color).setFontColor("#ffffff").setFontWeight("bold").setFontSize(ALFAH_FONT).setFontFamily("Arial").setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
+    var w;
+    for (w = ALFAH_MAILAT_COL; w <= ALFAH_LAST_COL; w++) sheet.setColumnWidth(w, ALFAH_WIDTHS[w - 1]);
+    return sheet;
+  }
   var titleRange = sheet.getRange(1, 1, 1, ALFAH_LAST_COL);
   if (titleRange.isPartOfMerge()) titleRange.breakApart();
   titleRange.merge();

@@ -20,13 +20,21 @@
     vorbereitet_mail: { label: "Vorbereitet (Mail)", bar: "yellow" },
     abgelehnt: { label: "Abgelehnt", bar: "red" },
     storno: { label: "Storno", bar: "red" },
+    rueckfrage: { label: "Rückfrage", bar: "violet" },
+    pruefung: { label: "In Prüfung", bar: "cyan" },
+    antwort: { label: "Antwort prüfen", bar: "pink" },
     geliefert: { label: "Geliefert", bar: "green" },
     sonstige: { label: "Sonstige", bar: "" },
     done: { label: "In der Liste", bar: "green" }
   };
-  var EDIT_STATES = ["offen", "veranlasst", "bereit", "vorbereitet_mail", "abgelehnt", "storno"];
+  var EDIT_STATES = ["offen", "veranlasst", "bereit", "vorbereitet_mail", "rueckfrage", "pruefung", "antwort", "abgelehnt", "storno"];
   var STATE_FILTERS = [
     { v: "", l: "Alle Status" },
+    { v: "chase", l: "Nachhaken (rot, ≥ 7 Tage)" },
+    { v: "asked", l: "Nachfrage gesendet (orange)" },
+    { v: "rueckfrage", l: "Rückfrage von Alfah" },
+    { v: "antwort", l: "Antwort prüfen" },
+    { v: "pruefung", l: "In Prüfung" },
     { v: "todoPack", l: "Grün, noch nicht vorbereitet" },
     { v: "todoShip", l: "Vorbereitet, nicht geliefert" },
     { v: "offen", l: "Offen (keine Antwort)" },
@@ -162,7 +170,13 @@
     return { rNumber: r.rNumber, article: r.article, stockId: r.stockId, orderId: r.orderId, name: r.name };
   }
   function isActiveRow(r) {
-    return r.kind === "alfah" && r.tab === "alfah" && (r.state === "offen" || r.state === "veranlasst" || r.state === "vorbereitet_mail");
+    return r.kind === "alfah" && r.tab === "alfah" && (r.state === "offen" || r.state === "veranlasst" || r.state === "vorbereitet_mail" || r.state === "rueckfrage" || r.state === "pruefung" || r.state === "antwort");
+  }
+  function mailAtHtml(r) {
+    if (!r.mailAt) return "";
+    var cls = r.chase === "red" ? "bad" : r.chase === "orange" ? "warn" : "";
+    var tip = r.chase === "red" ? "Nachhaken: 7 Tage ohne Bewegung" : r.chase === "orange" ? "Nachfrage gesendet " + (r.ask || "") : "";
+    return "<span class=\"mail-at " + cls + "\"" + (tip ? " title=\"" + esc(tip) + "\"" : "") + ">" + esc(r.mailAt) + "</span>";
   }
   function daysHtml(r) {
     if (r.daysOpen == null) return "";
@@ -184,7 +198,7 @@
 
   var TH_TONES = {
     tab: "gray", datumMs: "blue", daysOpen: "orange", orderId: "gray", stockId: "blue", rNumber: "purple", article: "gray",
-    name: "gray", supplier: "orange", brand: "teal", who: "teal", state: "yellow", info: "gray", links: "blue", vorbereitet: "green", geliefert: "green"
+    name: "gray", supplier: "orange", brand: "teal", who: "teal", state: "yellow", info: "gray", links: "blue", mailAt: "orange", vorbereitet: "green", geliefert: "green"
   };
   function thBadge(label, key, arrow) {
     return "<span class=\"th-badge h-" + (TH_TONES[key] || "gray") + "\">" + esc(label) + (arrow ? "<i>" + arrow + "</i>" : "") + "</span>";
@@ -207,6 +221,7 @@
       c.push({ k: "state", l: "Status", html: statePill, sort: function (r) { return r.state; } });
       c.push({ k: "info", l: "Info", p: 2, cls: "wrap", html: function (r) { return esc(r.info); } });
       c.push({ k: "links", l: "Mail", p: 2, nosort: true, html: linksHtml });
+      c.push({ k: "mailAt", l: "Letzte Mail", p: 2, cls: "nowrap", html: mailAtHtml, sort: function (r) { return r.mailAtMs || 0; } });
     } else {
       c.push({ k: "info", l: "Info", p: 2, cls: "wrap", html: function (r) { return esc(r.info); } });
     }
@@ -290,7 +305,9 @@
     var qc = compact(f.q);
     return tab.rows.filter(function (r) {
       if (tab.kind === "alfah") {
-        if (f.state === "todoPack") { if (!(r.state === "bereit" && !r.vorbereitet)) return false; }
+        if (f.state === "chase") { if (r.chase !== "red") return false; }
+        else if (f.state === "asked") { if (r.chase !== "orange") return false; }
+        else if (f.state === "todoPack") { if (!(r.state === "bereit" && !r.vorbereitet)) return false; }
         else if (f.state === "todoShip") { if (!(r.vorbereitet && !r.geliefert)) return false; }
         else if (f.state && r.state !== f.state) return false;
       }
@@ -535,12 +552,18 @@
     var old = waiting.filter(function (r) { return (r.daysOpen || 0) >= 14; });
     var pack = al.filter(function (r) { return r.state === "bereit" && !r.vorbereitet; });
     var ship = al.filter(function (r) { return r.vorbereitet && !r.geliefert; });
+    var chase = al.filter(function (r) { return r.chase === "red"; });
+    var asked = al.filter(function (r) { return r.chase === "orange"; });
+    var reply = (cnt.rueckfrage || 0) + (cnt.antwort || 0);
     var gel = d.tabs.geliefert ? d.tabs.geliefert.rows.length : 0;
     var abg = d.tabs.abgelehnt ? d.tabs.abgelehnt.rows.length : 0;
 
     var h = "<div class=\"grid kpis\">";
     h += kpi("Alfah aktiv", al.length, "Teile im Tab Alfah", "alfah:", "blue");
     h += kpi("Ohne Antwort", cnt.offen || 0, old.length + " davon ≥ 14 Tage", "alfah:offen", old.length ? "violet" : "");
+    h += kpi("Nachhaken", chase.length, "≥ 7 Tage seit letzter Mail / Nachfrage", "alfah:chase", chase.length ? "red" : "");
+    h += kpi("Nachfrage gesendet", asked.length, "warten auf Alfah", "alfah:asked", asked.length ? "orange" : "");
+    h += kpi("Rückfrage / Antwort", reply, "Alfah wartet auf uns", "alfah:rueckfrage", reply ? "violet" : "");
     h += kpi("Veranlasst", cnt.veranlasst || 0, "Retoure eingeleitet, kein Label", "alfah:veranlasst", "orange");
     h += kpi("Rücksendung bereit", cnt.bereit || 0, "grün · Label / Abholung da", "alfah:bereit", "green");
     h += kpi("Zum Packen", pack.length, "grün, noch nicht vorbereitet", "alfah:todoPack", pack.length ? "green" : "");
@@ -554,7 +577,7 @@
     });
     h += "</div>";
 
-    var stateList = ["offen", "veranlasst", "vorbereitet_mail", "bereit", "sonstige"].filter(function (k) { return cnt[k]; }).map(function (k) {
+    var stateList = ["offen", "rueckfrage", "antwort", "pruefung", "veranlasst", "vorbereitet_mail", "bereit", "sonstige"].filter(function (k) { return cnt[k]; }).map(function (k) {
       return { k: STATE_INFO[k].label, n: cnt[k], a: "alfah:" + k, bar: STATE_INFO[k].bar };
     });
     var supCnt = {};
@@ -805,6 +828,9 @@
       ["Status", isAlfah ? statePill(r) : "<span class=\"pill t-" + r.state + "\">" + esc(stateLabel(r)) + "</span>", true],
       ["Info", r.info],
       ["Datum", (r.date || "–") + (r.time ? " " + r.time : "") + (r.daysOpen != null ? "  ·  vor " + r.daysOpen + " Tagen" : "")],
+      ["Letzte Mail", isAlfah ? (mailAtHtml(r) || "–") : "–", true],
+      ["Nachfrage", r.ask],
+      ["Mail-Text", r.mailText, false, true],
       ["Wer", r.who],
       ["Auftrag", r.orderId],
       ["Hersteller", r.brand],
