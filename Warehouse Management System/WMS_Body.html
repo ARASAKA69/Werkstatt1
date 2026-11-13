@@ -157,12 +157,17 @@
           <span class="eyebrow">Warehouse Management System</span>
         </div>
         <span class="topbar-credit" id="arasakaCreditBadge" role="button" tabindex="0" title="ARASAKA Assistent öffnen" onclick="openAiChat()">BY ARASAKA v2.0</span>
-        <span class="topbar-build" id="topbarBuildBadge">WMS build <?!= appVersion ?></span>
+        <span class="topbar-build" id="topbarBuildBadge" translate="no">WMS build</span>
       </div>
       <div class="topbar-cache-cluster">
         <button type="button" class="cast-hud-pill" id="castHudPill" hidden onclick="openWmsCastModal()">
           <span class="cast-hud-dot" aria-hidden="true"></span>
           Handy verbunden
+        </button>
+        <button type="button" class="auto-dymo-badge" id="wmsAutoDymoBadge" aria-pressed="false" title="Auto DYMO beim Öffnen einer Stock-ID. Alt+D schaltet um." onclick="toggleAutoDymoOnOpen()">
+          <span class="auto-dymo-badge-dot" aria-hidden="true"></span>
+          <span class="auto-dymo-badge-label">Auto DYMO</span>
+          <span class="auto-dymo-badge-state" id="wmsAutoDymoBadgeState">AUS</span>
         </button>
         <button type="button" class="last-regal-badge" id="lastRegalBadge" hidden onclick="showLastEndedRegal()" title="Letzter Regalplatz nach Auftrag beenden">
           <span class="last-regal-badge-kicker">Letzter Regalplatz</span>

@@ -641,10 +641,12 @@
   initWmsUserCapabilities();
 
   (function initWmsBuildNote() {
-    var el = document.getElementById('wmsBuildNote');
-    if (!el) return;
     var v = String(window.WMS_CLIENT_VERSION || '').trim();
-    el.textContent = v ? ('WMS build ' + v) : 'WMS build —';
+    var label = v ? ('WMS build ' + v) : 'WMS build —';
+    var el = document.getElementById('wmsBuildNote');
+    if (el) el.textContent = label;
+    var badge = document.getElementById('topbarBuildBadge');
+    if (badge) badge.textContent = v ? ('WMS build ' + v) : 'WMS build';
   })();
 
   var wmsUpdateCheckBusy = false;
@@ -10173,6 +10175,13 @@
       st.textContent = on ? 'AN' : 'AUS';
       st.classList.toggle('is-on', on);
     }
+    var badge = document.getElementById('wmsAutoDymoBadge');
+    if (badge) {
+      badge.classList.toggle('is-on', on);
+      badge.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    var badgeState = document.getElementById('wmsAutoDymoBadgeState');
+    if (badgeState) badgeState.textContent = on ? 'AN' : 'AUS';
   }
 
   function setAutoDymoOnOpen(on) {
@@ -10183,6 +10192,12 @@
   function toggleAutoDymoOnOpen() {
     var on = !isAutoDymoOnOpen();
     setAutoDymoOnOpen(on);
+    var badge = document.getElementById('wmsAutoDymoBadge');
+    if (badge) {
+      badge.classList.remove('is-flash');
+      void badge.offsetWidth;
+      badge.classList.add('is-flash');
+    }
     if (typeof showStickyToast === 'function') {
       showStickyToast('ok', on ? 'Auto DYMO AN' : 'Auto DYMO AUS', on
         ? 'Stock-ID öffnen = Etiketten kommen von allein.'

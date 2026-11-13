@@ -2,7 +2,9 @@ const ZIEL_TABELLEN_ID = "1nE6SErc1-jmZYd_Ydviw28Pa5qdJmwNepXCiVbsdsVo";
 const ZIEL_TABELLENBLATT_NAME = "BLANCO Reparaturauftrag";
 const MEINE_EMAIL = "francesco.berger@auto1.com";
 const HEMAU_SHEET_ID = "13Oh7gDT8NAul2s0cwQUeaGwMcS3B2MYu0QOdFNMhXzM";
-const HEMAU_DAILY_PLANNING_TAB = "Daily Planning List";
+const HEMAU_REFURB_TAB = "Refurbisment List";
+const HEMAU_REFURB_STOCK_COL = 2;
+const HEMAU_REFURB_MARKE_COL = 13;
 
 function normalizeStockIdLocal(value) {
   return String(value || "").replace(/\s+/g, "").toUpperCase();
@@ -19,37 +21,18 @@ function lookupHemauMarkeModellLocal(stockId) {
     stockId = normalizeStockIdLocal(stockId);
     if (!stockId) return "";
     var ss = SpreadsheetApp.openById(HEMAU_SHEET_ID);
-    var sheet = ss.getSheetByName(HEMAU_DAILY_PLANNING_TAB);
+    var sheet = ss.getSheetByName(HEMAU_REFURB_TAB);
     if (!sheet) return "";
-    var lastRow = Math.max(1, sheet.getLastRow());
-    var lastCol = Math.max(1, Math.min(80, sheet.getLastColumn()));
-    var headerData = sheet.getRange(1, 1, Math.min(30, lastRow), lastCol).getValues();
-    var headerIdx = -1;
-    var stockCol = -1;
-    var markeCol = -1;
-    for (var h = 0; h < headerData.length; h++) {
-      for (var c = 0; c < headerData[h].length; c++) {
-        var txt = String(headerData[h][c] || "").toLowerCase().replace(/[^a-z0-9äöüß]/g, "");
-        if (stockCol === -1 && txt.indexOf("stock") !== -1) {
-          headerIdx = h;
-          stockCol = c + 1;
-        }
-        if (markeCol === -1 && (txt.indexOf("marke") !== -1 || txt.indexOf("modell") !== -1)) {
-          markeCol = c + 1;
-        }
-      }
-      if (stockCol !== -1) break;
+    var lastRow = Math.max(2, sheet.getLastRow());
+    var stockColData = sheet.getRange(1, HEMAU_REFURB_STOCK_COL, lastRow, 1).getValues();
+    var markeColData = sheet.getRange(1, HEMAU_REFURB_MARKE_COL, lastRow, 1).getValues();
+    var found = "";
+    for (var s = 1; s < stockColData.length; s++) {
+      if (!cellMatchesStockIdLocal(stockColData[s][0], stockId)) continue;
+      var marke = String((markeColData[s] && markeColData[s][0]) || "").trim();
+      if (marke) found = marke;
     }
-    if (stockCol === -1) stockCol = 2;
-    if (markeCol === -1) markeCol = 9;
-    if (headerIdx === -1) headerIdx = 0;
-    var colData = sheet.getRange(1, stockCol, lastRow, 1).getValues();
-    for (var i = headerIdx + 1; i < colData.length; i++) {
-      if (cellMatchesStockIdLocal(colData[i][0], stockId)) {
-        return String(sheet.getRange(i + 1, markeCol).getValue() || "").trim();
-      }
-    }
-    return "";
+    return found;
   } catch (err) {
     return "";
   }
