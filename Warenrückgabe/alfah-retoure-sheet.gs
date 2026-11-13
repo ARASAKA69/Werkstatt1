@@ -570,7 +570,11 @@ function alfahMailSnippet_(text) {
   t = t.replace(/(?:lieber\s+kunde|liebe\s+kundin|guten\s+(?:tag|morgen|abend)(?:\s+zusammen)?|hallo(?:\s+zusammen)?|sehr\s+geehrte[^,\n]{0,60}|verehrte[^,\n]{0,40}|moin)\s*[,!]?/gi, " ");
   t = t.replace(/wir\s+haben\s+(?:nach)?folgende\s+(?:nachricht|r[üu]ckmeldung)[^:\n]{0,80}:?/gi, " ");
   t = t.replace(/vielen\s+dank\s+f[üu]r\s+ihre\s+nachricht\.?/gi, " ");
-  var end = t.search(/mit\s+freundlichen\s+gr[üu][ßs]en|freundliche\s+gr[üu][ßs]e|herzliche\s+gr[üu][ßs]e|viele\s+gr[üu][ßs]e|beste\s+gr[üu][ßs]e|\bmfg\b|bei\s+r[üu]ckfragen\s+erreichen|with\s+kind(?:est)?\s+regards|best\s+regards/i);
+  t = t.replace(/[\-\u2010-\u2015_=#'\s]*(?:please\s+)?(?:type\s+your\s+)?(?:reply|write)\s+above\s+this\s+line[\-\u2010-\u2015_=#\s]*/gi, " ");
+  t = t.replace(/[\-\u2010-\u2015_=#'\s]*bitte\s+(?:nur\s+)?(?:oberhalb|über)\s+dieser\s+zeile\s+antworten[\-\u2010-\u2015_=#\s]*/gi, " ");
+  t = t.replace(/\[cid:[^\]]*\]?/gi, " ");
+  t = t.replace(/\[image:[^\]]*\]/gi, " ");
+  var end = t.search(/mit\s+freundliche[nm]\s+gr[üu](?:[ßs]|ss)(?:en)?|freundlicher\s+gr[üu][ßs]|freundliche\s+gr[üu][ßs]e|herzliche\s+gr[üu][ßs]e|viele\s+gr[üu][ßs]e|beste\s+gr[üu][ßs]e|\bmfg\b|bei\s+r[üu]ckfragen\s+erreichen|with\s+kind(?:est)?\s+regards|best\s+regards/i);
   if (end > 0) t = t.substring(0, end);
   return alfahCellText_(t);
 }
@@ -583,7 +587,8 @@ function alfahPolicyFree_(t) {
 
 function alfahRejectText_(text) {
   var t = alfahPolicyFree_(text);
-  return /ablehn/i.test(t)
+  return /ablehn|abgelehnt|abgewiesen/i.test(t)
+    || /lehne[nt]?\s+(?:\S+\s+){0,5}ab\b/i.test(t)
     || /unter\s+wert/i.test(t)
     || /kein(?:en|e)?\s+lagerort/i.test(t)
     || /keine\s+lagerware/i.test(t)
@@ -617,7 +622,8 @@ function alfahPickupText_(t) {
   return /wird\s+.{0,80}abgeholt/i.test(t)
     || (/durch\s+(?:dhl|dpd|ups|gls)/i.test(t) && /abhol/i.test(t))
     || /abholer\s+(?:ist|wurde)\s+(?:erstellt|beauftragt|bestellt|angelegt)/i.test(t)
-    || /abholung\s+(?:ist|wurde|wird)\s+(?:\S+\s+){0,2}(?:erstellt|beauftragt|bestellt|veranlasst|eingeleitet|angelegt)/i.test(t)
+    || /abholung\s+(?:\S+\s+){0,4}(?:erstellt|beauftragt|bestellt|veranlasst|eingeleitet|angelegt|gebucht)/i.test(t)
+    || /(?:holen|holt)\s+(?:\S+\s+){0,6}ab\b/i.test(t)
     || /fahrer\s+(?:\S+\s+){0,3}(?:vorbeikommen|abholen|kommen)/i.test(t)
     || /um\s+(?:das|die|den)\s+(?:\S+\s+){0,2}abzuholen/i.test(t)
     || /abholauftrag/i.test(t);
@@ -705,6 +711,10 @@ function alfahMailDetail_(text, kind) {
       parts.push("unter Mindestwarenwert" + (amt ? " " + amt[1] + " €" : ""));
     }
     if (/keine\s+r[üu]ckgabem[öo]glichkeit/i.test(t)) parts.push("keine Rückgabemöglichkeit");
+    if (/nie\s+(?:\S+\s+){0,3}(?:an)?geliefert|nicht\s+(?:\S+\s+){0,3}(?:an)?geliefert|nicht\s+(?:bei\s+uns\s+)?(?:gekauft|bezogen)/i.test(t)) parts.push("nicht vom Lieferanten geliefert");
+    var swap = t.match(/ersetzt\s+(?:\S+\s+){0,2}(?:in|durch)\s+([A-Z0-9][A-Z0-9\-]{4,})/i);
+    if (swap) parts.push("ersetzt durch " + swap[1]);
+    if (!parts.length && /abgelehnt|abgewiesen|lehne[nt]?\s/i.test(t)) parts.push("Retoure abgelehnt");
     var reason = t.match(/ablehnen\s*:\s*([^.]{6,90})/i);
     if (reason) parts.push(reason[1].trim());
     if (!parts.length) parts.push("Rückgabe nicht möglich");
@@ -1108,7 +1118,7 @@ function alfahFitExtraCols_(sheet, rows) {
   extra.setFontSize(ALFAH_FONT);
   extra.setVerticalAlignment("middle");
   sheet.getRange(3, ALFAH_MAILAT_COL, rows, 2).setHorizontalAlignment("center").setWrap(true);
-  sheet.getRange(3, ALFAH_TEXT_COL, rows, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  sheet.getRange(3, ALFAH_TEXT_COL, rows, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.WRAP).setHorizontalAlignment("left");
 }
 
 function alfahScanMail() {
